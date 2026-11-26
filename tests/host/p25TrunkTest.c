@@ -451,7 +451,7 @@ static void mk_sccb(uint8_t b[P25_TSBK_BYTES], uint16_t ch)
 static void retune(p25_follow_t *f)
 {
 	tune_pending = false;
-	p25_follow_retuned(f, now_ms);
+	p25_follow_retuned(f, now_ms, true);
 }
 static void unit_duid(p25_follow_t *f, uint8_t duid)
 {
@@ -483,6 +483,42 @@ static p25_follow_view_t view(const p25_follow_t *f)
 
 	p25_follow_view(f, &v);
 	return v;
+}
+
+// An unavailable implicit offset is sign-only, distinct from the all-zero simplex value. Build the air fields
+// independently of the encoder: a parser/encoder sharing the same wrong signed-zero conversion would round trip.
+static void testIdentifierOffsets(void)
+{
+	static const uint8_t forms[] = { P25_OP_IDEN_UP, P25_OP_IDEN_UP_VU, P25_OP_IDEN_UP_TDMA };
+
+	for (unsigned f = 0; f < sizeof forms; f++) {
+		uint32_t sign = forms[f] == P25_OP_IDEN_UP ? 0x100u : 0x2000u;
+		uint32_t raw[] = { 0, sign, sign | 17u, 17u };
+		static const int16_t expected[] = { 0, 0, 17, -17 };
+
+		for (unsigned k = 0; k < sizeof raw / sizeof raw[0]; k++) {
+			uint8_t b[P25_TSBK_BYTES], made[P25_TSBK_BYTES];
+			p25_tsbk_t m;
+
+			blk_hand(b, forms[f], 0);
+			put(b, 16, 4, 2);
+			if (forms[f] == P25_OP_IDEN_UP) {
+				put(b, 20, 9, 100);
+				put(b, 29, 9, raw[k]);
+			} else {
+				put(b, 20, 4, forms[f] == P25_OP_IDEN_UP_VU ? 5 : 1);
+				put(b, 24, 14, raw[k]);
+			}
+			put(b, 38, 10, 100);
+			put(b, 48, 32, 433437500u / 5u);
+			p25_tsbk_seal(b);
+			CHECK(p25_tsbk_parse(b, &m) && m.u.iden.tx_off == expected[k] &&
+			      m.u.iden.no_tx_offset == (raw[k] == sign), "offset form %02x raw %x: off %d unavailable %u",
+			      forms[f], (unsigned)raw[k], m.u.iden.tx_off, m.u.iden.no_tx_offset);
+			p25_tsbk_make(&m, made);
+			CHECK(!memcmp(b, made, sizeof b), "offset form %02x raw %x made back", forms[f], (unsigned)raw[k]);
+		}
+	}
 }
 
 // ── Inbound signaling: the radio's blocks, and the answers to them ──
@@ -742,7 +778,7 @@ static void testFollowHand(void)
 
 		while (view(&f).state != P25_FOLLOW_CONTROL && now_ms - t0 < 40000) {
 			run_ms(&f, 100);
-			if (!f.tuning && f.view.cc_hz == HZ_CC1)
+			if (!f.view.tuning && f.view.cc_hz == HZ_CC1)
 				p25_follow_tsbk(&f, b, NAC, now_ms);
 		}
 		CHECK(view(&f).state == P25_FOLLOW_CONTROL && !view(&f).fallback, "found again after %u ms", now_ms - t0);
@@ -939,6 +975,10 @@ static void testAcceptBadCrc(void)
 		CHECK(!on || (v.state == P25_FOLLOW_CONTROL && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_OFF),
 		      "the control channel held on it, PTT off: %u", v.state);
 		if (on) {
+			uint8_t b[P25_TSBK_BYTES];
+			mk_net(b, WACN, SYSID);
+			p25_follow_tsbk(&f, b, NAC + 1, now_ms);
+			CHECK(view(&f).unverified, "a rejected NAC cannot verify the serving context");
 			run_ms(&f, 3000);
 			CHECK(nsends == 0, "unverified: nothing sent (%u)", nsends);
 			site_ident(&f, 3);
@@ -1195,15 +1235,27 @@ static void testAccess(void)
 	{
 		p25_tsbk_t im = { .kind = P25_TSBK_IDEN, .u.iden = { .id = 1, .form = P25_OP_IDEN_UP_VU, .base = 851006250u / 5,
 								    .spacing = 50, .tx_off = -7200, .bw_khz8 = 100 } };
+		uint32_t learned_at = now_ms;
+
 		answer(&f, &im);
+		cc_alive = true;
+		run_ms(&f, 500);
+		CHECK(nsends == 1 && sends[0].hz == HZ_CC1_IN && sends[0].at >= learned_at &&
+		      last_isp().opcode == P25_ISP_U_REG_REQ && view(&f).reg == P25_REG_WAIT,
+		      "offset learned while CC held: exactly one registration at %u", nsends ? sends[0].hz : 0);
+		cc_alive = false;
+		run_ms(&f, P25_FOLLOW_CC_LOST_MS + 50);
+		CHECK(nsends == 1 && view(&f).state == P25_FOLLOW_HUNT, "CC lost: no second registration before reacquisition");
+		retune(&f);
+		site_ident(&f, 3);
+		uint32_t rejoined_at = now_ms;
+
+		cc_alive = true;
+		run_ms(&f, 500);
+		CHECK(nsends == 2 && sends[1].hz == HZ_CC1_IN && sends[1].at >= rejoined_at && sends[1].at > sends[0].at &&
+		      last_isp().opcode == P25_ISP_U_REG_REQ, "CC reacquired: exactly one new registration at %u",
+		      nsends > 1 ? sends[1].hz : 0);
 	}
-	cc_alive = false;
-	run_ms(&f, P25_FOLLOW_CC_LOST_MS + 50);
-	retune(&f);
-	site_ident(&f, 3);
-	cc_alive = true;
-	run_ms(&f, 500);
-	CHECK(nsends == 1 && sends[0].hz == HZ_CC1_IN, "offset learned: registers at %u", nsends ? sends[0].hz : 0);
 	p25_follow_end(&f);
 	cc_alive = false;
 }
@@ -1537,7 +1589,7 @@ static void testWacnNeighbor(void)
 	run_ms(&f, P25_FOLLOW_CC_LOST_MS + 20);
 	for (uint32_t t0 = now_ms; view(&f).state != P25_FOLLOW_CONTROL && now_ms - t0 < 20000;) {
 		run_ms(&f, 100);
-		if (!f.tuning && f.view.cc_hz == hz_adj)
+		if (!f.view.tuning && f.view.cc_hz == hz_adj)
 			site_ident_w(&f, 0xBEE42, 4);
 	}
 	cc_wacn = 0xBEE42;
@@ -2046,7 +2098,7 @@ static void air_run(uint32_t end_ms, double cpk, double sigma)
 			rig.ecfg.rx_tgid = w->what == P25_FOLLOW_TUNE_GROUP ? (uint16_t)w->id : 0;
 			p25_engine_set(&rig.eng, &rig.ecfg);
 			p25_engine_retuned(&rig.eng);
-			p25_follow_retuned(&rig.fol, now_ms);
+			p25_follow_retuned(&rig.fol, now_ms, true);
 		}
 	}
 }
@@ -2067,7 +2119,7 @@ static void rig_begin(const p25_follow_cfg_t *cfg, uint16_t told)
 	tune_pending = false;
 	tuned_hz = tunes[0].hz;
 	p25_engine_retuned(&rig.eng);
-	p25_follow_retuned(&rig.fol, now_ms);
+	p25_follow_retuned(&rig.fol, now_ms, true);
 }
 
 static void rig_end(void)
@@ -2289,6 +2341,121 @@ static void testExplicitStatus(void)
 	CHECK(!p25_mbt_status(&u, norm), "inbound packet rejected");
 }
 
+#if CONFIG_P25_ROAM
+// Feed real CRC failures, valid blocks and elapsed gaps at the public follower
+// boundary. No test writes a quality score into the implementation's state.
+static void roam_feed(p25_follow_t *f, int16_t dbm, unsigned bad_every, uint32_t ms)
+{
+	uint8_t b[P25_TSBK_BYTES];
+	uint32_t start = now_ms;
+	unsigned sample = 0;
+	mk_net(b, WACN, SYSID);
+	while ((uint32_t)(now_ms - start) < ms && !f->view.tuning) {
+		now_ms += 50;
+		if (bad_every && ++sample % bad_every == 0)
+			cc_unit_bad(f);
+		else
+			p25_follow_tsbk(f, b, NAC, now_ms);
+		if (dbm)
+			p25_follow_signal(f, dbm, now_ms);
+		p25_follow_tick(f, now_ms);
+	}
+}
+
+static void roam_begin(p25_follow_t *f, p25_follow_cfg_t *cfg)
+{
+	uint8_t b[P25_TSBK_BYTES];
+	now_ms = 0; ntunes = nsends = 0;
+	p25_follow_begin(f, cfg, &fhooks, NULL, now_ms);
+	retune(f);
+	mk_net(b, WACN, SYSID);
+	p25_follow_tsbk(f, b, NAC, now_ms);
+}
+
+static void testRoam(void)
+{
+	p25_follow_t f;
+	// Synthetic fixture frequencies; no live deployment identifiers.
+	p25_follow_cc_t cc[] = {{ .hz = 430000000 }, { .hz = 431000000 }, { .hz = 432000000 }};
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC,
+		.ncc = 3, .cc = cc, .roam_dbm = -100 };
+	uint8_t b[P25_TSBK_BYTES];
+	mk_net(b, WACN, SYSID);
+
+	for (unsigned scenario = 0; scenario < 3; scenario++) {
+		roam_begin(&f, &cfg);
+		// Strong corrupt control must also trigger; a strong signal alone is
+		// insufficient. A weak clean control remains an RSSI trigger.
+		roam_feed(&f, scenario == 1 ? -60 : -110, scenario == 1 ? 2 : 0, 35000);
+		CHECK(f.roaming && f.view.cc == 1, "quality or RSSI starts a bounded survey (%u)", scenario);
+		CHECK(now_ms >= 30000, "initial cooldown respected");
+		retune(&f);
+		roam_feed(&f, scenario == 0 ? -60 : scenario == 1 ? -105 : -95,
+			  scenario == 0 ? 2 : 0, 1000);
+		CHECK(f.roaming && f.view.cc == 2, "first candidate never ends the survey");
+		retune(&f);
+		roam_feed(&f, scenario == 1 ? -65 : -85, scenario == 1 ? 5 : 0, 1000);
+		unsigned expected = scenario == 1 ? 1 : 2;
+		CHECK(!f.roaming && f.view.cc == expected && f.view.tuning,
+		      "cleaner weaker beats corrupt stronger; RSSI breaks clean ties (%u)", scenario);
+		retune(&f);p25_follow_tsbk(&f, b, NAC, now_ms);
+		CHECK(f.view.state == P25_FOLLOW_CONTROL && f.good == expected, "winner reacquired");
+		roam_feed(&f, -130, 0, 4000);
+		CHECK(!f.roaming, "cooldown prevents ping pong");
+		CHECK(f.view.reg_tx == 0 && f.view.aff_tx == 0 && f.view.req_tx == 0 && nsends == 0,
+		      "quality survey never registers, affiliates or transmits");
+	}
+
+	// Healthy control is not disrupted for an unnecessary strongest-site scan.
+	roam_begin(&f, &cfg);roam_feed(&f, -80, 0, 35000);
+	CHECK(!f.roaming && f.quality == 100, "good signal and continuous valid control stay");
+	roam_feed(&f, -120, 0, 2000);
+	CHECK(!f.roaming, "brief weakness stays");
+	roam_feed(&f, -80, 0, 500);roam_feed(&f, -120, 0, 3100);
+	CHECK(f.roaming, "sustained weakness restarts after recovery");
+	retune(&f);roam_feed(&f, 0, 0, 1000);
+	CHECK(f.roaming && f.best_cc == f.roam_origin, "missing fresh RSSI rejects even clean candidate");
+	retune(&f);
+	// Many valid blocks concentrated in one short burst are not a healthy
+	// one-second channel. The remaining 800 ms have no successful decode.
+	for (unsigned n = 0; n < 12; n++) p25_follow_tsbk(&f, b, NAC, now_ms + n);
+	now_ms += 1000;p25_follow_signal(&f, -60, now_ms);p25_follow_tick(&f, now_ms);
+	CHECK(!f.roaming && f.view.cc == f.roam_origin, "sparse bursts cannot win on perfect CRC alone");
+	retune(&f);p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.view.state == P25_FOLLOW_CONTROL, "no improvement reacquires origin without RSSI gate");
+
+	// A completed sample remains eligible when the survey's time limit is
+	// reached on a later silent candidate.
+	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);
+	retune(&f);roam_feed(&f, -85, 0, 1000);
+	CHECK(f.best_cc == 1 && f.roaming, "first clean improvement remembered");
+	retune(&f);now_ms = f.t_roam + 20000;p25_follow_tick(&f, now_ms);
+	CHECK(!f.roaming && f.view.cc == 1, "budget expiry chooses measured best, not untested candidate");
+
+	// Bad-CRC recovery can permit synchronization but must not count as a
+	// successfully decoded sample when ranking a site.
+	cfg.flags = P25_FOLLOW_BAD_CRC;
+	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);
+	retune(&f);roam_feed(&f, -60, 1, 1000);
+	CHECK(f.roaming && f.best_cc == f.roam_origin && f.view.crc_taken > 0,
+	      "repeated invalid CRCs never qualify as clean reception");
+
+	// Poor decoding with high RSSI, no valid traffic, TX-capable systems,
+	// disabled roaming, and voice ownership all exercise distinct gates.
+	cfg.flags = 0;roam_begin(&f, &cfg);roam_feed(&f, -60, 0, 30000);
+	for (unsigned n = 0; n < 4; n++) {
+		now_ms += 1000;p25_follow_signal(&f, -60, now_ms);
+	}
+	CHECK(f.roaming, "decode silence triggers despite strong RSSI");
+	cfg.flags = P25_FOLLOW_TX;roam_begin(&f, &cfg);roam_feed(&f, -130, 2, 35000);
+	CHECK(!f.roaming, "transmit-enabled systems excluded");
+	cfg.flags = 0;cfg.roam_dbm = 0;roam_begin(&f, &cfg);roam_feed(&f, -130, 2, 35000);
+	CHECK(!f.roaming, "zero threshold disables both quality and RSSI roaming");
+	cfg.roam_dbm = -100;roam_begin(&f, &cfg);f.view.state = P25_FOLLOW_VOICE;
+	p25_follow_signal(&f, -130, 30000);p25_follow_signal(&f, -130, 34000);
+	CHECK(!f.roaming && f.view.state == P25_FOLLOW_VOICE, "active voice is never interrupted to survey");
+}
+#endif
 // System ID $00A is blocked as the WACNs $BEE00..$BEEFF are, under any WACN: named by the network status broadcast in
 // either form, by the RFSS status broadcast of the control channel held, by voice channel link control (LCO 35, 36,
 // 41) or by the programming. An adjacent site's status naming it blocks nothing here
@@ -2406,11 +2573,150 @@ static void testSysidBlocked(void)
 	cc_alive = false;
 }
 
+static void testCandidateNac(void)
+{
+	static const p25_follow_cc_t cc[] = {
+		{ .hz = HZ_CC1, .tx_hz = HZ_CC1 - 45000000, .site = 9, .rfss = 7, .site_id = 44, .nac_set = true, .nac = 0 },
+		{ .hz = HZ_CC2, .tx_hz = HZ_CC2 - 45000000, .site = 10, .nac_set = true, .nac = 0x456 },
+	};
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250, .spacing_hz = 6250, .tx_off_hz = -45000000 },
+	};
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC,
+		.flags = P25_FOLLOW_TX | P25_FOLLOW_NO_REG, .unit_id = OUR_UNIT, .talk_group = 100,
+		.ncc = 2, .cc = cc, .iden_set = 1u << 1, .iden = iden };
+	p25_follow_t f;
+	uint8_t b[P25_TSBK_BYTES];
+	p25_follow_view_t v;
+	now_ms = 300000;
+	ntunes = nsends = 0;
+	cc_alive = false;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	CHECK(view(&f).expected_nac == 0 && !view(&f).sys_ok, "site000 expectation reaches candidate");
+	mk_net(b, WACN, SYSID);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	v = view(&f);
+	CHECK(v.state == P25_FOLLOW_HUNT && v.cc == 1 && v.expected_nac == 0x456 && !v.sys_ok,
+	      "candidate mismatch changes expectation without confirming");
+	// In-flight units from the old tune cannot confirm the next candidate or authorize a request.
+	p25_follow_tsbk(&f, b, 0x456, now_ms);
+	p25_follow_ptt(&f, true, now_ms);
+	CHECK(!view(&f).sys_ok && view(&f).req == P25_REQ_IDLE && nsends == 0, "stale tune is silent");
+	retune(&f);
+	p25_follow_tsbk(&f, b, 0x456, now_ms);
+	v = view(&f);
+	CHECK(v.sys_ok && v.nac == 0x456 && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_OK,
+	      "second site's NAC verified");
+	// A control-channel loss revokes the old NAC and authorization before a new candidate is acquired.
+	now_ms += P25_FOLLOW_CC_LOST_MS;
+	p25_follow_tick(&f, now_ms);
+	v = view(&f);
+	CHECK(!v.sys_ok && v.nac == P25_NAC_ANY && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_NO_CC,
+	      "old NAC confirmation invalidated");
+	retune(&f);
+	now_ms += P25_FOLLOW_DWELL_MS;
+	p25_follow_tick(&f, now_ms);
+	retune(&f);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	mk_rfss(b, P25_TSBK_RFSS, SYSID, 3, 0x1004);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	v = view(&f);
+	CHECK(v.cc == 0 && v.sys_ok && v.nac == 0 && v.rfss == 1 && v.site == 3,
+	      "fixed000 works; generic group and legacy metadata are not site locks");
+	p25_follow_ptt(&f, true, now_ms);
+	now_ms += 200;
+	p25_follow_tick(&f, now_ms);
+	CHECK(nsends == 1, "verified000 sends request");
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 100, OUR_UNIT);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	v = view(&f);
+	CHECK(v.state == P25_FOLLOW_VOICE && v.req == P25_REQ_TALK && v.nac == 0 && v.tuning,
+	      "grant retains000 across voice retune");
+	CHECK(p25_follow_can_talk(&v, cfg.flags) == P25_TALK_NO_CC, "incomplete retune not admitted");
+	retune(&f);
+	p25_follow_talk_end(&f, now_ms);
+	retune(&f);
+	v = view(&f);
+	CHECK(v.state == P25_FOLLOW_CONTROL && v.sys_ok && v.nac == 0, "return retains confirmed000");
+	// A failed control-channel return must revoke even a previously confirmed zero NAC.
+	mk_net(b, WACN, SYSID);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_ptt(&f, true, now_ms);
+	now_ms += 200;
+	p25_follow_tick(&f, now_ms);
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 100, OUR_UNIT);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	retune(&f);
+	p25_follow_talk_end(&f, now_ms);
+	p25_follow_retuned(&f, now_ms, false);
+	v = view(&f);
+	CHECK(v.tuning && !v.sys_ok && v.nac == P25_NAC_ANY && v.req == P25_REQ_IDLE,
+	      "failed control return revokes prior proof and TALK");
+	mk_net(b, WACN, SYSID);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	CHECK(!view(&f).sys_ok, "old-frequency NET cannot repair a failed tune");
+	p25_follow_tick(&f, now_ms);
+	retune(&f);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	CHECK(view(&f).sys_ok && view(&f).nac == 0, "successful control retune can confirm again");
+	p25_follow_end(&f);
+}
+
+static void h_failed_tune(uint32_t hz, uint8_t what, uint32_t id, void *ctx)
+{
+	h_tune(hz, what, id, ctx);
+	p25_follow_retuned(ctx, now_ms, false);
+}
+
+static void testFailedRetuneBackoff(void)
+{
+	static const p25_follow_cc_t cc[] = {
+		{ .hz = HZ_CC1, .tx_hz = HZ_CC1 - 45000000 },
+		{ .hz = HZ_CC2, .tx_hz = HZ_CC2 - 45000000 },
+	};
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC, .ncc = 2, .cc = cc,
+		.flags = P25_FOLLOW_TX | P25_FOLLOW_NO_REG, .unit_id = OUR_UNIT, .talk_group = 100, .fallback_ms = 1000 };
+	p25_follow_hooks_t hooks = { h_failed_tune, h_fallback, h_send };
+	p25_follow_t f;
+	uint8_t b[P25_TSBK_BYTES];
+	now_ms = 400000;
+	ntunes = nfallback = nsends = 0;
+	p25_follow_begin(&f, &cfg, &hooks, &f, now_ms);
+	mk_net(b, WACN, SYSID);
+	for (unsigned i = 0; i < 80; i++) {
+		now_ms += 100;
+		p25_follow_tsbk(&f, b, NAC, now_ms);
+		p25_follow_ptt(&f, true, now_ms);
+		p25_follow_tick(&f, now_ms);
+	}
+	CHECK(ntunes >= 4 && ntunes <= 10 && nfallback == 1 && f.t_nocc == 400000,
+	      "all failures retain dwell, backoff and fallback without recursive retries (%u tunes, %u fallback)", ntunes, nfallback);
+	CHECK(view(&f).tuning && !view(&f).sys_ok && nsends == 0, "all failed candidates remain inadmissible");
+	// A later successful completion leaves that wait normally and can acquire fresh network proof.
+	hooks.tune = h_tune;
+	now_ms += P25_FOLLOW_BACKOFF_MAX;
+	p25_follow_tick(&f, now_ms);
+	retune(&f);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_ptt(&f, true, now_ms);
+	now_ms += 200;
+	p25_follow_tick(&f, now_ms);
+	CHECK(view(&f).sys_ok && !view(&f).tuning && nsends == 1, "valid retune after repeated failures recovers");
+	p25_follow_end(&f);
+}
+
 int main(void)
 {
 	pulse_init();
 	testExplicitStatus();
+#if CONFIG_P25_ROAM
+	testRoam();
+#endif
 	testLayouts();
+	testIdentifierOffsets();
 	testInbound();
 	testBlocks();
 	testChannels();
@@ -2424,6 +2730,8 @@ int main(void)
 	testWacnLinkControl();
 	testWacnNeighbor();
 	testSysidBlocked();
+	testCandidateNac();
+	testFailedRetuneBackoff();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();

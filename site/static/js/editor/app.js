@@ -721,7 +721,7 @@ async function connect() {
 		const hash = location.hash;
 		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: hash === "#sim-foreign",
 			// #sim-modes: firmware that runs every channel mode the editor knows (modes.js)
-			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : hash.startsWith("#sim-modes") ? "FM,DMR,DMR_TRUNK,P25,P25_TRUNK,p25contacts,P25_SYSTEM_CONTACTS,NXDN" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
+			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : hash.startsWith("#sim-modes") ? "FM,DMR,DMR_TRUNK,P25,P25_TRUNK,P25_SITE_NAC,p25contacts,P25_SYSTEM_CONTACTS,NXDN" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
 			gitTime: Number(hash.match(/[#&]git_time=(\d+)/)?.[1]) || 0 });
 		stream = S.fake.stream();
 	} else {

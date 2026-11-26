@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 tylerwatt12 -->
 
 # P25 trunking
 
@@ -22,12 +23,13 @@ State:
 | Inbound requests and their answers (2.1) | yes | yes | the three requests decoded off air by `p25tool.py`; the bench's answers taken |
 | Registration, affiliation, voice request, transmit on the grant, return (5) | yes | yes (`radioCoreTestP25T`, a fake site) | `test_p25_trunk_tx` |
 | Bench control channel and inbound decode (`tools/bench/p25tool.py`, 8) | yes | `p25tool.py selftest` | yes |
-| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, roaming by signal level, TDMA (Phase 2) voice channels, other multi-block message bodies | no | | |
+| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, TDMA (Phase 2) voice channels, other multi-block message bodies | no | | |
 
 The radio runs are against a control channel `p25tool.py` writes from the same descriptions as the firmware, so they
 check the radio's timing, retunes and transmissions, not the layouts. Explicit network/RFSS status acquisition has
 also been checked by passive reception on a live system, without registration or affiliation.
-Every message layout of the transmit side comes from published descriptions, not a capture: 9 lists them.
+The affiliation request is checked against the TIA reference in 2.1. Other transmit-side layouts come from published
+descriptions, not a capture; 9 lists what remains unconfirmed.
 
 Sources: published descriptions of TIA-102.AABB (trunking control channel formats), TIA-102.AABC (trunking messages)
 and TIA-102.BAAA-A (the common air interface): test equipment application notes and public opcode references. Facts
@@ -48,9 +50,9 @@ block names the trunking formats.
 | Status symbols | as in every unit, one after each 70 information bits |
 
 The NID does not give a TSDU's length. The receiver (`p25_rx.c`, `rx_head`) decodes the first block as soon as its
-symbols are in and asks the framer for the next one until a block says it is the last, or the third is in. A block
-whose CRC fails still gives its best guess of the flag. For a packet, the header block gives the count of blocks that
-follow; a header whose CRC fails, or a packet longer than the unit buffer (eight blocks), is not taken.
+symbols are in and asks the framer for the next one until a CRC-valid block says it is the last, or the third is in.
+For a packet, the header block gives the count of blocks that follow; a header whose CRC fails, or a packet longer
+than the unit buffer (eight blocks), is not taken.
 
 TSDU and PDU are taken only on a trunked channel (`p25_engine_cfg_t.trunk`); a conventional channel refuses them as
 before. They go to the engine's `rx_unit` hook and never to the call layer.
@@ -101,6 +103,9 @@ Their receive fields enter the same identity checks as TSBK status; configured N
 Other multi-block bodies remain unsupported. The layouts follow figures 5 and 6 of Aeroflex's
 [Understanding Advanced P25 Control Channel Functions](https://www.viavisolutions.com/en-us/literature/understanding-advanced-p25-control-channel-functions-discontinued-application-notes-en.pdf).
 
+A TSDU ends on a CRC-valid last-block flag or the three-block maximum. A CRC-failed block's flag never ends
+framing early; later independent valid blocks remain available. A PDU with a bad header remains rejected as a unit.
+
 ### 2.1 Inbound requests
 
 A radio sends one block at a time, in a TSDU of one block (180 symbols), its status symbols "unknown"
@@ -117,6 +122,10 @@ The registration request carries the WACN and system ID the control channel name
 options are 0 (no emergency, clear, half duplex, priority 0). The affiliation request's reserved bits are 0; it
 carries no emergency flag. Its group and unit ID places were confirmed on a live control channel, which read them
 one octet early when they were packed at bits 16 and 32.
+
+The affiliation field positions follow TIA-102.AABC-E (2019), 6.1.9.1 / figure 6.1.9-1. The distinct simplex and
+unavailable offset values below are specified in 2.3.35, 2.3.36 and 2.3.41. TIA-102.AABB-B (2011), 5 / figure 5-2
+defines independent TSBKs, each with its own CRC; trusting only a valid block's LB is the bounded recovery rule here.
 
 ## 3. Channels to frequencies
 
@@ -144,7 +153,11 @@ offset. The `0x3D` form gives the offset in 250 kHz steps; the VHF/UHF (`0x34`) 
 channel spacings (9). A programmed identifier's offset (`tx_offset_hz`) is kept in 250 kHz steps where it divides,
 else in spacings; a programmed identifier with no offset takes the one the air gives. A control channel's inbound
 frequency is the configured `ctl[].tx_hz`, else its channel number (programmed, or from the network and RFSS status
-broadcasts) through the identifier table. A channel with no inbound frequency is not transmitted on.
+broadcasts) through the identifier table. Raw offset zero means simplex. Sign-only raw offset `0x100` in `0x3D`,
+or `0x2000` in `0x34`/`0x33`, means the implicit uplink is unavailable (`no_tx_offset`), not simplex. It cannot
+authorize transmit; an explicit control uplink or a later known offset is needed. A later unavailable offset
+revokes an earlier learned offset while preserving a genuinely programmed offset. A channel with no inbound
+frequency is not transmitted on.
 
 ## 4. The follower
 
@@ -157,7 +170,7 @@ one lock).
 | State | What it does | Leaves |
 |---|---|---|
 | HUNT | tunes the control channel candidates in turn: the programmed ones (`cfg.cc`, first the primary), then the ones learned off air (adjacent sites, secondary channels of this system), from the last one that answered | a candidate decodes and is the system: CONTROL |
-| CONTROL | reads every block; learns identifiers and control channels; follows grants it wants | a grant followed: VOICE. Nothing decoded for 1 s, or the network status names another system: HUNT |
+| CONTROL | reads every block; learns identifiers and control channels; follows grants it wants | a grant followed: VOICE. Nothing decoded for 1 s, or network/RFSS status conflicts with the selected identity: HUNT |
 | VOICE | the conventional call layer plays the call | a terminator, no voice for 1 s, the longest call, another call on the channel, an encrypted call skipped: CONTROL |
 
 Hunting:
@@ -172,7 +185,26 @@ Hunting:
 
 A candidate without a frequency (a channel number whose identifier is not known yet) is passed over. With WACN and
 system ID set to any, the first block decoded on a candidate of the right NAC holds it. RFSS status names the
-system but not the WACN: it settles a candidate only when the WACN is any.
+system but not the WACN: it settles a candidate only when the WACN is any. During HUNT, RFSS is checked against the
+configured system ID; the displayed identity retained from the previous system does not restrict a wildcard search.
+In CONTROL, a conflicting RFSS system also invalidates prior learned identity proof and stops grant/access admission.
+Reacquisition needs fresh network identity, including when the configured identity is wildcard; a grant cannot reuse
+stale proof after the conflict.
+
+The follower uses the existing `view.sys_ok` transmit gate. Every hunt candidate clears it; only a
+CRC-valid matching NET sets it. RFSS may settle a receive candidate but cannot confirm its WACN. A different RFSS
+system clears the retained WACN before updating the system ID. Remembered display identity, a configured identity,
+and an unrelated good block cannot authorize inbound requests or our voice grant without current NET confirmation.
+An accepted bad-CRC NET clears confirmation even when a later unrelated block passes its CRC. Normal returns from
+a voice channel retain confirmation; control-channel loss and a new hunt do not.
+
+The System's NAC is the default for configured candidates without a site override
+([p25-codeplug.md](p25-codeplug.md) 3.1). Each candidate can instead require a fixed NAC, including 000, or use
+automatic acquisition independently of that default. The generic site group links the records; programmed RFSS
+and Site ID remain legacy metadata, not strict site locks. The follower exposes the candidate's `expected_nac`
+separately from the received `nac` and `sys_ok` confirmation. A confirmed control channel accepts its current NAC
+only; changing candidates invalidates that NAC proof. Configured and learned identifiers retain their existing
+System owner; adding site NACs does not clear the identifier table on each site change.
 
 Following a grant (group: `talk_group`, the `groups` list, or every group with `P25_FOLLOW_ALL_GROUPS`; unit to unit:
 to or from `unit_id`, unless `P25_FOLLOW_NO_UNIT`):
@@ -199,7 +231,8 @@ voice lost 1 s (`cfg.voice_lost_ms`), longest call 120 s (`cfg.call_max_ms`).
 invalid CRC) it is taken when the same 12 octets failed among the last four failures (`core/fec/rx_seen.h`): a system
 whose control channel fails the check repeats its blocks, and a block damaged on the air rarely decodes the same twice.
 While the last block taken failed (`view.unverified`) the transmit side waits: nothing is sent, and
-`p25_follow_can_talk` says `P25_TALK_OFF`. The next block that passes ends that. A packet header is not taken that way.
+`p25_follow_can_talk` says `P25_TALK_OFF`. The next admitted block that passes ends that; a good block on a rejected
+NAC cannot clear it. Network confirmation still requires its own CRC-valid NET. A packet header is not taken that way.
 
 The view (`p25_follow_view`, a consistent copy for another task): state, the control channel tried or held, its NAC,
 WACN, system, RFSS, site, the call followed (group, source, target, encrypted), identifiers known, control channels
@@ -228,6 +261,11 @@ Registration (`view.reg`, `P25_REG_*`):
 | BLOCKED | the system's WACN is in BEE00..BEEFF (`p25_wacn_no_tx`) or its system ID is 00A (`p25_sysid_no_tx`), named by the network status broadcast, the RFSS status broadcast of the control channel held, voice channel link control (LCO 35, 36, 41) or the programming; an adjacent site's status blocks nothing: nothing is sent, a request in hand is dropped, answers are ignored, PTT says why | a follower restart only; the radio core then starts that system blocked until power off (7) |
 
 Losing the control channel and finding the same site again keeps the registration. Hunting resets the site to unknown.
+Transmission waits for a fresh matching NET even when the registration is retained. A changed WACN invalidates
+the old registration even if the system, RFSS and site numbers are the same. The existing registration model uses
+the observed local system identity; separate home-system identity and inter-system roaming are not implemented here.
+A BLOCKED follower remains blocked when a later NET names another network; verifying that identity cannot clear
+the block or change its PTT refusal reason.
 
 Sending (`acc_tick`): a block goes out only after a block of the control channel was heard since the tune, so its
 status symbols are known; while the last status symbol of the last unit said the inbound channel is busy, it waits
@@ -268,13 +306,15 @@ caller refused, and waits on a busy inbound channel.
 | `flags`: `TX` | the tag allows transmit, not `listen_only`, `unit_id` and `talk_group` set |
 | `flags`: `BAD_CRC` | the channel record's Accept invalid CRC ([open-firmware-cps.md](open-firmware-cps.md) 7.3.3) |
 | `unit_id`, `talk_group` | `unit_id` (the P25 settings' `unit_id` first, as on a conventional channel), `talk_group` |
-| `cc[]`: `hz`, `tx_hz`, `chan`, `site` | `ctl[]`: `rx_hz`, `tx_hz`, `chan`; `ctl_site[]` |
+| `cc[]`: `hz`, `tx_hz`, `chan`, `site` | `ctl[]`: `rx_hz`, `tx_hz`, `chan`; `ctl_site[]` (generic group) |
+| `cc[]`: `rfss`, `site_id`, `nac_set`, `nac` | `ctl_identity[]`: the linked Site record's metadata and optional NAC |
 | `iden_set`, `iden[]`: base, spacing, slots, TDMA, transmit offset | `iden_set`, `iden[]` (bandwidth is not used) |
 | `hold_ms` | `sys.hold_s` x 1000 (0: no hold) |
 | `fallback_ms` | none yet: 0, never (the fallback channel is read, not used) |
-| `groups[]`, `voice_lost_ms`, `call_max_ms`, `P25_FOLLOW_NO_UNIT` | none yet |
+| `groups[]`, `ngroups` | The eligible group slots of a flagged P25 RX list, qualified against this System |
+| `voice_lost_ms`, `call_max_ms`, `P25_FOLLOW_NO_UNIT` | none yet |
 
-Not used: `sys.roam_dbm`.
+`sys.roam_dbm`: negative values enable receive-only quality and signal site surveys with `CONFIG_P25_ROAM`; 0 disables both triggers.
 
 ## 7. The radio core
 
@@ -288,9 +328,9 @@ differences:
 | Begin | `radio_p25_begin` reads the system (`p25_trunk_load`) into the part of the P25 memory the voice path takes next, and makes the follower's configuration (6) and the engine's: `cfg.trunk` set, both NACs the control channel's (or any), our unit ID, the channel's talk group. Then the voice path, the follower (its first tune), the engine. A system that doesn't load: no engine (`p25.begin_fails`) |
 | Units | The engine's `rx_unit` and `rx_call` hooks hand every unit and every call's fields to the follower, in the provider's task |
 | Timers | The radio task ticks the follower at its own tick (10 ms), so its timers run whether the provider delivers or not (a provider that receives only at a sync delivers nothing on a dead channel) |
-| Retune | The `tune` hook only records the request. The radio task carries it out at its next tick: the receiver to the frequency (12.5 kHz, no tone), the engine's selective squelch (`rx_tgid`) to the group for a group call and 0 otherwise (`p25_engine_set`), `p25_engine_retuned`, then `p25_follow_retuned`. A frequency outside the board's receive bands, or in a listen-only band, is not tuned (`p25t.untuned`): the follower hears nothing there and goes back |
+| Retune | The `tune` hook records a request. Under the follower's task exclusion, the radio task checks its band policy and the receiver's `rx` result. Only acceptance commits the engine's NAC and selective squelch and resets its framer. `p25_follow_retuned(..., ok)` reports that result. A rejected frequency or HAL refusal counts `p25t.untuned`, revokes confirmation and keeps old-frequency units gated; the existing hunt dwell/backoff/fallback timers continue. Failed voice tunes cancel TALK, and failed returns require fresh control-channel proof |
 | PTT, transmit side off | Refused with "RX only" (`TXDENY_RX_ONLY`): the tag is receive only, the system listen only, or no unit ID or talk group |
-| PTT, transmit side on | `tx_check` as for any channel except the frequency checks, which wait for the grant. `radio_p25_trunk_ptt` asks the follower; while it waits, home says "Wait" or "Queued" and nothing keys. On the grant (`radio_p25_trunk_talk`: GO) the radio core checks the granted transmit frequency against the board's bands and listen-only bands, then keys as a conventional P25 call there (`p25_key`): the channel's power, the TX timer, the engine's call with our unit ID and talk group and the control channel's NAC (the one heard when the system's NAC is any). A refusal says why (`TXDENY_TRUNK`, the view's `p25.twhy`): no control channel, not registered, denied, no answer, voice channel unusable, system blocked |
+| PTT, transmit side on | `tx_check` as for any channel except the frequency checks, which wait for the grant. `radio_p25_trunk_ptt` asks the follower; while it waits, home says "Wait" or "Queued" and nothing keys. On the grant (`radio_p25_trunk_talk`: GO) the radio core checks the granted transmit frequency against the board's bands and listen-only bands, then keys as a conventional P25 call there (`p25_key`): the channel's power, the TX timer, the engine's call with our unit ID and talk group and the confirmed serving site's NAC, including 000. A refusal says why (`TXDENY_TRUNK`, the view's `p25.twhy`): no control channel, not registered, denied, no answer, voice channel unusable, system blocked |
 | Release | the terminator goes out (`AIR_TX_DONE`), then `radio_p25_trunk_talk_end` sends the follower back. Released before the grant: the request is dropped |
 | Inbound bursts | between calls, a block the follower asked to send is keyed alone on the inbound frequency (`p25t_burst`): the same checks as PTT (inhibit, battery, the band), lowest of nothing, the channel's power; `p25_engine_tx_burst` sends the one TSDU and the transmitter drops at its end. The view stays idle (no red LED, no TX timer). A refused burst counts `p25t.burst_refused` and the follower's `send_fail` |
 | Leave | Another channel, the scan, the bench or anything else that takes the modem ends the engine, then the follower |
@@ -300,6 +340,18 @@ One task at a time runs the follower, without a lock: each task sets its own fla
 that finds the other's flag set clears its own and leaves. On one core the task that runs second always sees the
 first one's flag, so the two are never inside together. The provider's task then drops that unit or call
 (`p25t.skips`; the control channel repeats itself), the radio task tries again at its next tick.
+
+The radio consumes the follower's current context for both RX and TX, rather than a diagnostic snapshot. Automatic
+acquisition narrows the engine to the confirmed NAC without needing a frequency change. A burst is tied to the tune
+request and NAC that queued it. Preparation and the final transmit start require the current confirmed context; a
+late rejection aborts the prepared session so the existing radio owner unkeys it. Returning from voice restores the
+serving site's configuration in both directions.
+
+An accepted HAL `rx` call means the board driver accepted that tune. It is not a universal measurement of synthesizer
+lock; individual drivers may only record some chip errors diagnostically. A failed call never supplies success proof.
+Neither that call nor `sys_ok` alone grants permission to transmit: existing registration, blocked-System, receive-only,
+band and transmit-admission checks still apply. Per-site NAC support does not add location registration, quality-based
+roaming or complete subscriber conformance.
 
 Memory: the follower, its configuration and its control channel and identifier tables sit beside the engine in the
 memory the board places for P25 (the vocoder's, where it lends it); the system read from the codeplug shares the voice
@@ -316,7 +368,7 @@ conventional RX-only channel does; a blocked system never reads "Registering". W
 PTT on a blocked system says "RX-only system: no TX". The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
-Not used yet: the fallback channel, the system's `roam_dbm`. The RX group list (`groups`) is followed only on a channel
+Not used yet: the fallback channel. The RX group list (`groups`) is followed only on a channel
 whose contacts are P25 contacts ([p25-codeplug.md](p25-codeplug.md) 2.4, 4); the groups are in the follower's memory
 (`p25_trunk_t`, 64 bytes, lent with it).
 
@@ -336,6 +388,14 @@ the bench and the radio transmit) against a control channel the bench plays (8);
 bench transmitters, the radio only receives on a listen-only system): the control channel grants another unit's call
 while a second transmitter plays that call on the voice channel. The last two have run on a radio; the first needs a
 live system.
+
+`test_p25_site_nac` adds an opt-in receive-only acquisition check for `P25_SITE_NAC`: one bench transmitter plays
+two configured control channels sequentially, first with explicit Auto and then fixed NAC 000. It checks expected
+and confirmed NAC, network/site identity, tune completion, engine RX/TX configuration, loss of prior confirmation
+and stable DUT transmit counters. It backs up, restores and verifies the codeplug. The second play can span the
+existing 30-second hunt backoff; the bench must permit a 33-second keying budget. It checks configuration and
+acquisition, not location registration, signal-quality roaming or actual transmitted NAC. This test has not been
+run on hardware for this change.
 
 ## 8. Bench tools
 
@@ -373,7 +433,7 @@ of a live control channel settles them.
 | The TDMA identifier's channel types: slots per carrier (types 0-2 one, 3 two, 4 four, others two) | only type 1 counts as FDMA; every other type is refused as TDMA |
 | The transmit offset's unit in the VHF/UHF and TDMA forms | taken as channel spacings; the `0x3D` form as 250 kHz. A programmed identifier's offset is used where given |
 | The sense of the transmit offset's sign bit (1: above) | as stated |
-| The inbound request layouts (2.1): field order and reserved bits of `0x2C`, `0x28`, `0x00` | as stated; a capture of another radio, or the site's answers, settles them |
+| The inbound request layouts (2.1): field order and reserved bits of `0x2C`, `0x00` | as stated; a capture of another radio, or the site's answers, settles them |
 | The answer layouts (2): registration, affiliation, deny and queued responses | as stated; an answer that doesn't name our unit is ignored, so a wrong guess shows as no answer (`timeouts`) |
 | A grant answering our request is `0x00` with our unit as the source | as stated; the explicit form or another source is not taken as ours |
 | When a subscriber may send on the inbound channel: after an idle status symbol, how long after it, and the random wait | after a block heard since the tune, not while the last status symbol says busy; waits as in 5 |
@@ -384,3 +444,44 @@ of a live control channel settles them.
 | The system service broadcast's layout | view only |
 | The four flag bits ahead of the system ID in RFSS and adjacent site status | kept as sent, not used |
 | The multi-block packet header: format in octet 0, SAP in octet 1, MFID in octet 2, blocks to follow in octet 6, opcode in octet 7 | recognized and counted; one-block explicit network/RFSS bodies also validated and decoded |
+
+### Receive-only quality and signal roaming
+
+`CONFIG_P25_ROAM` enables optional control-channel surveys. A negative system
+`roam_dbm` enables both decode-quality and signal triggers; 0 disables both.
+The transmit side must be disabled and at least two control channels programmed.
+
+Quality is measured over one second of control traffic. The score is the lower
+of the CRC-valid TSDU block percentage and the percentage of five 200 ms intervals
+containing a CRC-valid block. Fewer than eight valid blocks score zero. Repeated
+bad-CRC recovery does not count as valid reception. Samples reset on retuning;
+voice traffic never contributes. This is a control-channel reliability heuristic,
+not a measured RF bit error rate or a guarantee of voice-channel decoding quality.
+
+Three continuous seconds of RSSI below the configured threshold or quality below
+90 starts a survey, at least 30 seconds after startup or the last survey start.
+Voice calls are never interrupted to begin a survey. The old frequency is skipped.
+Each identity-matched candidate is sampled for one second and needs fresh RSSI.
+A candidate must score at least 80 and meet either condition:
+
+- Quality improves by at least 10 points and RSSI is no lower than 10 dB below
+  the configured threshold. This permits a cleaner, weaker site to win.
+- Quality is no more than five points worse, RSSI improves by at least 6 dB,
+  and RSSI is at or above the configured threshold.
+
+The survey keeps the best qualifying sample: quality differences greater than
+five points take precedence; within five points, stronger RSSI wins. It examines
+candidates until the list is exhausted or 20 seconds elapse, then reacquires the
+best measured candidate. With no qualifying improvement it reacquires the old
+control channel. Missing or incomplete measurements never count as improvement.
+
+This selects the best eligible candidate measured within the survey budget, not
+the best of every site at all times. A healthy current site is retained. A single
+receiver misses grants while surveying and cannot measure two sites simultaneously.
+Codeplug loading retains up to 32 programmed control channels per system with
+roaming compiled in, or 16 without it. RSSI reuses the radio task's status sample;
+the follower never reads the radio bus to measure signal. Host
+tests cover strong corrupt and weaker clean candidates, coverage gaps, ranking,
+stale RSSI, recovered bad CRCs, hysteresis, bounded return, disabled roaming,
+and no survey during voice or on a transmit-enabled system. Live road behavior
+and degraded-simulcast performance remain unverified.

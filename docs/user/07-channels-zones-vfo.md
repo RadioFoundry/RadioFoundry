@@ -359,6 +359,10 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 Control-channel acquisition accepts both ordinary status broadcasts and explicit multi-block network/site status.
 The configured system identity still has to match; receive-only operation never registers with the system.
 
+After losing a control channel, the radio can resume listening before it has confirmed the network's full identity.
+Registration and transmit requests wait for a valid Network Status Broadcast on the recovered channel, including
+when WACN or system ID is set to Any. This can briefly delay transmitting after reception returns.
+
 | Home says | What the radio is doing |
 |---|---|
 | Finding system | Trying the system's control channels in turn |
@@ -469,3 +473,20 @@ Either way you can type any frequency, 90.2 for example. In the air band **Auto*
 
 Channels outside the radio's bands don't transmit ("Outside ..."). Receive-only channels show "RX only" as the talk
 target.
+
+### Receive-only P25 site search
+
+A P25 system can hold multiple sites and up to 32 control-channel candidates.
+With receive-only quality and signal roaming built in, a negative **Change site
+below** value enables searches after three seconds of weak signal or unreliable
+control decoding. A clean but weaker site can beat a strong, poorly decoded one;
+signal strength breaks close quality comparisons. The radio measures candidates
+for a full second, checks their system identity, and requires a clear improvement.
+It waits at least 30 seconds between survey starts and searches for at most 20
+seconds before reacquiring the best candidate measured, or the old control channel
+when none improves reception. It never interrupts a voice call to start a search.
+Set the value to 0 to disable both quality and signal roaming.
+
+Healthy reception stays on its current site. Searches can miss new calls; this is
+not simultaneous reception of several sites. Control-channel quality is useful
+for site choice but cannot guarantee clear voice on every channel of that site.

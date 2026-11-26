@@ -363,6 +363,25 @@ static void test_trunk_load(void)
 	CHECK(cfg.iden_set == 0x0009 && cfg.iden[0].tx_offset_hz == -45000000 && cfg.iden[3].type == P25_IDEN_TDMA &&
 	      cfg.iden[3].slots == 2);
 	CHECK(cfg.follow_all && cfg.talk_group == P25_CP_TG_DEFAULT && cfg.fallback == 20);
+	// Independent extended Site records, including unknown suffixes. The generic group is not RFSS or Site ID.
+	static const uint8_t site0[] = { 1, 2, 0x23, 0x81, 0xDE, 0xAD };
+	static const uint8_t site1[] = { 3, 4, 0xBC, 0x8A, 0xBE, 0xEF };
+	sh[2] = 0;
+	put(CODEPLUG_KEY_SYS_CHAN, sh, 4, site0, sizeof site0);
+	sh[2] = 1;
+	put(CODEPLUG_KEY_SYS_CHAN + 1, sh, 4, site1, sizeof site1);
+	CHECK(p25_trunk_load(21, &c, &cfg));
+	CHECK(cfg.ctl_identity[0].nac_set && cfg.ctl_identity[0].nac == 0x123 &&
+	      cfg.ctl_identity[1].nac == 0x123 && cfg.ctl_identity[2].nac == 0xABC);
+	CHECK(cfg.ctl_site[2] == 1 && cfg.ctl_identity[2].rfss == 3 && cfg.ctl_identity[2].site == 4);
+	// Legacy Site bodies retain System inheritance; explicit Auto overrides a fixed System default.
+	sh[2] = 0;
+	put(CODEPLUG_KEY_SYS_CHAN, sh, 4, site0, 2);
+	static const uint8_t automatic[] = { 3, 4, 0, 0 };
+	sh[2] = 1;
+	put(CODEPLUG_KEY_SYS_CHAN + 1, sh, 4, automatic, sizeof automatic);
+	CHECK(p25_trunk_load(21, &c, &cfg) && !cfg.ctl_identity[0].nac_set &&
+	      cfg.ctl_identity[2].nac_set && cfg.ctl_identity[2].nac == P25_NAC_ANY);
 
 	// The channel's own "no fallback"; a fallback renamed under the system: none
 	t.flags = P25_TAG_NO_FALLBACK;
@@ -381,9 +400,35 @@ static void test_trunk_load(void)
 	put(CODEPLUG_KEY_SYSTEM + 2, hd, sizeof hd, blk, 0);
 	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.sys.wacn == 0 && cfg.sys.cc_nac == P25_NAC_ANY && !cfg.listen_only);
 	CHECK(cfg.unit_id == 1234567);
+	// More than the previous 16-channel ceiling: retain all 22 candidates and site groups.
+	for (uint8_t n = 0; n < 19; n++)
+		put_ctl((uint8_t)(30 + n), (uint8_t)(n % 6), 453000000u + n * 25000u);
+	const uint8_t expected = P25_CP_CTL_MAX < 22 ? P25_CP_CTL_MAX : 22;
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.ctl_count == expected);
+	CHECK(cfg.ctl[expected - 1].rx_hz == 453000000u + (expected - 4u) * 25000u &&
+	      cfg.ctl_site[expected - 1] == (expected - 4u) % 6u);
 	// No system: no set-up
 	CHECK(codeplug_kv_remove(CODEPLUG_KEY_SYSTEM + 2));
 	CHECK(!p25_trunk_load(21, &c, &cfg));
+}
+
+static void test_site_nac(void)
+{
+	static const struct { const char *body; bool set; uint16_t nac; } cases[] = {
+		{ "0102", false, P25_NAC_ANY }, { "0102AA", false, P25_NAC_ANY },
+		{ "01020000", true, P25_NAC_ANY }, { "01020080", true, 0 },
+		{ "01022381", true, 0x123 }, { "0102BC8A", true, 0xABC },
+		{ "0102FFFF", false, P25_NAC_ANY }, { "01020010", false, P25_NAC_ANY },
+		{ "01020100", false, P25_NAC_ANY }, { "01022381DEAD", true, 0x123 },
+		{ "01027E8F", true, P25_NAC_ANY }, { "01027F8F", false, P25_NAC_ANY },
+	};
+	for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		uint8_t b[8];
+		p25_site_t s;
+		int len = unhex(cases[i].body, b, sizeof b);
+		p25_site_decode(b, len, &s);
+		CHECK(s.rfss == 1 && s.site == 2 && s.nac_set == cases[i].set && s.nac == cases[i].nac);
+	}
 }
 #endif
 
@@ -705,6 +750,7 @@ int main(void)
 	test_trunk_load();
 	test_trunk_air();
 	test_wrong_system_contact();
+	test_site_nac();
 #endif
 	sim_flash_free();
 	if (failures) {

@@ -483,7 +483,7 @@ export function validateModes(m, err, warn, { features = null, baseNames } = {})
 		if (!(Number.isInteger(s.ownId) && s.ownId >= 0 && s.ownId <= ownIdMax))
 			err(S, s, "ownId", "range", { min: mod.ownIdMax == null ? 0 : 1, max: ownIdMax });
 		const problem = { err: (f, code, p = {}) => err(S, s, f, code, p), warn: (f, code, p = {}) => warn(S, s, f, code, p) };
-		mod.validate(s, s.fields, s.entries, problem);
+		mod.validate(s, s.fields, s.entries, problem, { features });
 		if (mod.classes.some((c) => c.control) && !s.entries.some((e) => e.cls === 0 && e.control)) warn(S, s, "entries", "mode_no_control");
 		if (s.needsKey && !s.secret) warn(S, s, "secret", "mode_no_secret");
 		if (s.secret && !s.secret.raw && mod.secret && !mod.secret.valid(s.secret)) err(S, s, "secret", "mode_secret_bad");

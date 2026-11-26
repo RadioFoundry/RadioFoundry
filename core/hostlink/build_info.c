@@ -35,6 +35,9 @@ static const char modes_both[] = P25_FEATURES "NXDN,";
 #endif
 
 static const char features[] =
+#if CONFIG_P25_TRUNK
+	"P25_SITE_NAC,"
+#endif
 #if CONFIG_NXDN_SCRAMBLER
 	"NXDN_SCRAMBLER,"
 #endif

@@ -96,7 +96,7 @@ typedef struct {
 	uint16_t cc_nac;	// P25_NAC_ANY: any
 	uint8_t options;
 	uint8_t hold_s;		// 0 = no hold
-	int8_t roam_dbm;	// 0 = the radio's
+	int8_t roam_dbm;	// negative = roaming threshold; 0 = off
 } p25_tsys_t;
 void p25_tsys_decode(const uint8_t *b, int len, p25_tsys_t *out);
 void p25_tsys_encode(const p25_tsys_t *s, uint8_t out[P25_CP_TSYS_LEN]);
@@ -105,6 +105,8 @@ void p25_tsys_encode(const p25_tsys_t *s, uint8_t out[P25_CP_TSYS_LEN]);
 #define P25_CP_UNKNOWN		0xFFu
 typedef struct {
 	uint8_t rfss, site;	// P25_CP_UNKNOWN: not known
+	bool nac_set;		// false: inherit the System's NAC; true: the optional site field
+	uint16_t nac;		// P25_NAC_ANY: automatic, including an explicit site override
 } p25_site_t;
 typedef struct {
 	uint16_t chan;		// identifier << 12 | channel, 0 = by frequency only
@@ -132,7 +134,11 @@ void p25_iden_encode(const p25_iden_t *i, uint8_t out[P25_CP_IDEN_LEN]);
 
 // What following a system needs: the system, its sites' control channels in hunt order, the plan; the channel's
 // talk group, whether it follows every group, the groups of its RX list (P25 contact slots only), the fallback
+#if CONFIG_P25_ROAM
+#define P25_CP_CTL_MAX		32u
+#else
 #define P25_CP_CTL_MAX		16u
+#endif
 #define P25_CP_IDEN_MAX		16u
 typedef struct {
 	p25_tsys_t sys;
@@ -140,6 +146,7 @@ typedef struct {
 	bool listen_only;		// the system's transmit side off (channel-modes.md 7.1)
 	uint8_t ctl_count;
 	uint8_t ctl_site[P25_CP_CTL_MAX];	// each control channel's site group
+	p25_site_t ctl_identity[P25_CP_CTL_MAX];	// that group's Site record, separate from its group number
 	p25_ctl_t ctl[P25_CP_CTL_MAX];
 	uint16_t iden_set;		// bit n: identifier n programmed
 	p25_iden_t iden[P25_CP_IDEN_MAX];

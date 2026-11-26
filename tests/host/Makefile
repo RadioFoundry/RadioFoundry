@@ -167,6 +167,12 @@ P25TRUNK := $(CORE)/p25/p25_tsbk.c $(CORE)/p25/p25_follow.c $(CORE)/p25/p25_engi
 p25TrunkTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25TrunkTest.c $(P25TRUNK) -lm
 
+TESTS   += p25FollowRegressionTest p25RxRegressionTest
+p25FollowRegressionTest: p25FollowRegressionTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25FollowRegressionTest.c $(P25TRUNK) -lm
+p25RxRegressionTest: p25RxRegressionTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25RxRegressionTest.c $(P25TRUNK) -lm
+
 # The P25 voice path: engine frames through the full-rate decoder to PCM blocks (core/p25/p25Voice.c)
 TESTS   += p25VoiceTest
 p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/miclimit.h
@@ -259,6 +265,8 @@ run: $(TESTS)
 	./nxdnTest | tail -1
 	./nxdnEngineTest | tail -1
 	./p25TrunkTest
+	./p25FollowRegressionTest
+	./p25RxRegressionTest
 	./p25VoiceTest
 	./hrc6000AirTest
 	./radioKeysTest
@@ -1581,7 +1589,7 @@ run-cpair: codeplugAirContactsTest
 
 # P25 in the codeplug (core/p25/p25_codeplug.c): the shared vectors, conventional and trunked set-ups; built with the
 # trunked part off as well
-TESTS   += p25CodeplugTest p25CodeplugConvTest
+TESTS   += p25CodeplugTest p25CodeplugConvTest p25CodeplugNoRoamTest
 P25CP   := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/codeplug_air_contacts.c $(CORE)/p25/p25_codeplug.c
 
 p25CodeplugTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
@@ -1591,10 +1599,14 @@ p25CodeplugConvTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h 
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=0 -o $@ p25CodeplugTest.c $(P25CP)
 
 run: run-p25cp
-run-p25cp: p25CodeplugTest p25CodeplugConvTest
+run-p25cp: p25CodeplugTest p25CodeplugConvTest p25CodeplugNoRoamTest
 	./p25CodeplugTest
 	./p25CodeplugConvTest
+	./p25CodeplugNoRoamTest
 .PHONY: run-p25cp
+
+p25CodeplugNoRoamTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_P25_ROAM=0 -o $@ p25CodeplugTest.c $(P25CP)
 
 # NXDN in the codeplug (core/nxdn/nxdn_codeplug.c): the shared vectors, a channel's set-up, a channel saved from the radio
 TESTS   += nxdnCodeplugTest

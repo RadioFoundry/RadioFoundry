@@ -262,6 +262,13 @@ void p25_site_decode(const uint8_t *b, int len, p25_site_t *out)
 {
 	out->rfss = len >= 1 ? b[0] : P25_CP_UNKNOWN;
 	out->site = len >= 2 ? b[1] : P25_CP_UNKNOWN;
+	uint16_t n = rd16(b, len, 2);
+	out->nac_set = len >= 4 && (n == 0 || ((n & 0xF000u) == P25_CP_NAC_SET));
+	out->nac = out->nac_set ? nac_field(n, P25_NAC_ANY) : P25_NAC_ANY;
+	if (out->nac == P25_NAC_REPEAT_ANY) {
+		out->nac_set = false;
+		out->nac = P25_NAC_ANY;
+	}
 }
 
 void p25_ctl_decode(const uint8_t *b, int len, p25_ctl_t *out)
@@ -316,6 +323,14 @@ bool p25_trunk_load(uint16_t number, const channel_t *ch, p25_trunk_cfg_t *out)
 			out->ctl_site[out->ctl_count] = e.group;
 			p25_ctl_decode(b, e.len, &out->ctl[out->ctl_count++]);
 		}
+	}
+	at = -1;
+	for (uint8_t i = 0; i < out->ctl_count; i++)
+		p25_site_decode(NULL, 0, &out->ctl_identity[i]);
+	while (codeplug_sys_entry_next(&at, ch->system, CODEPLUG_ENTRY_SITE, &e, b, 24) >= 0) {
+		for (uint8_t i = 0; i < out->ctl_count; i++)
+			if (out->ctl_site[i] == e.group)
+				p25_site_decode(b, e.len < 24 ? e.len : 24, &out->ctl_identity[i]);
 	}
 	at = -1;
 	while (codeplug_sys_entry_next(&at, ch->system, CODEPLUG_ENTRY_PLAN, &e, b, 24) >= 0) {

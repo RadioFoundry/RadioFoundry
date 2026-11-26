@@ -79,10 +79,16 @@ static struct {
 
 static void r_init(void) {}
 static radio_mode_t hw_mode;
+static uint32_t rx_refuse_hz;
+static unsigned rx_refused;
 // As on the DM-1701: the modem starts only with the board in DMR mode (dm1701_dmr_enter)
 static void r_set_mode(radio_mode_t m) { hw_mode = m; hw.set_mode_calls++; sim.refuse_start = m != RADIO_MODE_DMR; }
 static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 {
+	if (rx_refuse_hz != 0 && hz == rx_refuse_hz) {
+		rx_refused++;
+		return false;
+	}
 	hw.rx_hz = hz;
 	hw.rx_bw = bw;
 	hw.rx_tone = *t;
@@ -95,6 +101,7 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 // written to start from receive)
 static int rekeys;
 static bool tx_fail;			// the board refuses to key (synthesizer won't lock, PA fault)
+static void (*after_key)(void);		// a state change between prepare and go
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
 	if (tx_fail) {
@@ -110,6 +117,8 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 	hw.tx_tone = *t;
 	hw.tx_power = p;
 	hw.keyed = true;
+	if (after_key != NULL)
+		after_key();
 	return true;
 }
 static void r_tx_off(void) { hw.tx_off_calls++; hw.keyed = false; }
@@ -117,8 +126,10 @@ static void r_tx_off(void) { hw.tx_off_calls++; hw.keyed = false; }
 // (0: on every frequency, no carrier of its own)
 static uint32_t far_hz;
 static bool far_on_air(void);
+static unsigned status_reads;
 static void r_status(radio_status_t *st)
 {
+	status_reads++;
 	*st = hw.st;
 	if (far_hz != 0) {
 		bool here = hw.rx_hz == far_hz && far_on_air();
@@ -310,6 +321,8 @@ static void air_ev(fake_air_t *p, uint8_t kind, const air_chunk_t *c)
 static struct {
 	bool on;
 	uint32_t cc_hz, voice_hz;
+	bool nac_set;
+	uint16_t nac;
 	uint16_t grant_tg, grant_ch;	// a group voice grant sent, 0: none
 	bool grant_enc;
 	bool iden2;			// identifier 2 (out of the radio's bands) sent too
@@ -8105,6 +8118,7 @@ static void site_unit(void)
 {
 	uint8_t b[3][P25_TSBK_BYTES];
 	unsigned n = 0;
+	uint16_t nac = site.nac_set ? site.nac : TS_NAC;
 
 	site.units++;
 	if (site.lc_wacn != 0) {
@@ -8114,7 +8128,7 @@ static void site_unit(void)
 					      (uint8_t)((site.lc_wacn & 0x0F) << 4 | sysid >> 8), (uint8_t)sysid, 0x10, 0x01,
 					      0x70 };
 		site.unit_syms = P25_TDULC_SYMS;
-		p25_unit_begin(site.unit, site.unit_syms, TS_NAC, P25_DUID_TDULC, P25_SS_IDLE);
+		p25_unit_begin(site.unit, site.unit_syms, nac, P25_DUID_TDULC, P25_SS_IDLE);
 		p25_tdulc_put(site.unit, raw);
 		site.unit_at = 0;
 		return;
@@ -8180,7 +8194,7 @@ static void site_unit(void)
 		p25_tsbk_seal(b[k]);
 	}
 	site.unit_syms = p25_blocks_syms((uint8_t)n);
-	p25_unit_begin(site.unit, site.unit_syms, TS_NAC, P25_DUID_TSDU, P25_SS_IDLE);
+	p25_unit_begin(site.unit, site.unit_syms, nac, P25_DUID_TSDU, P25_SS_IDLE);
 	for (unsigned k = 0; k < n; k++) {
 		p25_block_put(site.unit, (uint8_t)k, b[k]);
 	}
@@ -8207,7 +8221,7 @@ static void site_inbound(const uint8_t *syms, uint16_t n, bool last)
 	uint16_t nac;
 	uint8_t duid;
 	p25_isp_t q;
-	if (got < 180 || p25_nid_get(site.in, &nac, &duid) < 0 || duid != P25_DUID_TSDU || nac != TS_NAC ||
+	if (got < 180 || p25_nid_get(site.in, &nac, &duid) < 0 || duid != P25_DUID_TSDU || nac != (site.nac_set ? site.nac : TS_NAC) ||
 	    p25_block_get(site.in, 0, blk) < 0 || !p25_isp_parse(blk, &q)) {
 		site.bad_rx++;
 		return;
@@ -8312,6 +8326,7 @@ static void test_p25_trunk(void)
 	p25_defaults();
 	aud.feed = true;
 	CHECK(strncmp(build_modes_now(), "P25,P25_TRUNK,", 14) == 0);
+	CHECK(strstr(build_features_now(), "P25_SITE_NAC,") != NULL);
 
 	// The channel runs P25, receive only; the follower finds the system on the primary
 	req(RREQ_ZONE_POS, 2);
@@ -8320,6 +8335,10 @@ static void test_p25_trunk(void)
 	CHECK(hw.rx_hz == TS_CC1 && hw.rx_bw == RADIO_BW_12K5);
 	run(1500);
 	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && hw.rx_hz == TS_CC1 && sm.view.state == RS_IDLE);
+	unsigned reads = status_reads;
+	radio_p25_view_t polled;
+	radio_p25_poll(&polled);
+	CHECK(status_reads == reads); // Polling the follower must not read the radio bus, even with roaming off.
 	p25t_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25t.built=1\np25t.on=1\np25t.state=2\np25t.cc=0\n") != NULL);
 	CHECK(strstr(buf, "p25t.nac=659\np25t.wacn=674849\np25t.sysid=755\np25t.rfss=1\np25t.site=7\n") != NULL);
@@ -8399,7 +8418,7 @@ static void test_p25_trunk(void)
 	site.grant_enc = false;
 	stored_trunk.sys.options = 0;
 
-	// A grant on a channel the radio can't receive: not tuned; with no voice there the follower comes back
+	// A grant on a channel the radio can't receive: the failed tune reacquires control without claiming voice RX.
 	site.iden2 = true;
 	site.grant_ch = 0x200A;
 	req(RREQ_ZONE_POS, 0);
@@ -8409,7 +8428,7 @@ static void test_p25_trunk(void)
 	radio_p25_stats(&st);
 	CHECK(st.trunk_untuned >= 1 && hw.rx_hz == TS_CC1);
 	p25t_view_text(buf, sizeof buf);
-	CHECK(strstr(buf, "p25t.voice_lost=0\n") == NULL);
+	CHECK(strstr(buf, "p25t.voice_lost=0\n") != NULL);
 	site.grant_tg = 0;
 	site.iden2 = false;
 	run(1500);
@@ -8546,6 +8565,99 @@ static void test_p25_system_names(void)
 	p25_defaults();
 }
 
+static void p25_expire_after_key(void)
+{
+	radio_p25_view_t v;
+
+	after_key = NULL;
+	now += P25_FOLLOW_CC_LOST_MS;
+	radio_p25_poll(&v);
+}
+
+static void p25_cancel_after_voice_key(void)
+{
+	if (hw.tx_hz == TS_VOICE + TS_OFFSET) {
+		radio_p25_view_t v;
+
+		after_key = NULL;
+		radio_p25_trunk_talk_end();
+		radio_p25_poll(&v);
+	}
+}
+
+static void test_p25_trunk_auto_nac(void)
+{
+	setup_codeplug_p25();
+	add(3, "P25T NAC", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.ctl_count = 2;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.ctl[1] = (p25_ctl_t){ .chan = 0x1002, .rx_hz = TS_CC2 };
+	stored_trunk.ctl_identity[0] = (p25_site_t){ .rfss = 1, .site = 7, .nac_set = true, .nac = P25_NAC_ANY };
+	stored_trunk.ctl_identity[1] = (p25_site_t){ .rfss = 1, .site = 8, .nac_set = true, .nac = 0x456 };
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .tx_offset_hz = TS_OFFSET };
+	stored_trunk.talk_group = 201;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.cc_in_hz = TS_CC1 + TS_OFFSET;
+	site.voice_hz = TS_VOICE;
+	site.nac_set = site.on = true;
+	site.nac = 0;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	run(3000);
+	radio_p25_settings_t in_force;
+	CHECK(radio_p25_in_force(&in_force) && in_force.rx_nac == 0 && in_force.tx_nac == 0);
+	CHECK(sm.view.p25.treg == P25_REG_READY && site.reg_rx != 0 && site.bad_rx == 0);
+	// Voice and the return to control retain the validated site's NAC in both directions.
+	far_begin(0, 1001, false, 201);
+	site.ans_req = SITE_ANS_ACCEPT;
+	req(RREQ_PTT, 1);
+	run(900);
+	CHECK(sm.view.state == RS_TX && hw.rx_hz == TS_VOICE);
+	CHECK(radio_p25_in_force(&in_force) && in_force.rx_nac == 0 && in_force.tx_nac == 0);
+	req(RREQ_PTT, 0);
+	run(900);
+	CHECK(hw.rx_hz == TS_CC1 && radio_p25_in_force(&in_force) && in_force.rx_nac == 0 && in_force.tx_nac == 0);
+	far_stop();
+	// The same System on another candidate uses another NAC, not the previously learned transmit NAC.
+	site.cc_hz = TS_CC2;
+	site.cc_in_hz = TS_CC2 + TS_OFFSET;
+	site.nac = 0x456;
+	site.unit_at = site.unit_syms;
+	run(4000);
+	CHECK(hw.rx_hz == TS_CC2 && sm.view.p25.trunk == RADIO_P25_TRUNK_CONTROL);
+	CHECK(radio_p25_in_force(&in_force) && in_force.rx_nac == 0x456 && in_force.tx_nac == 0x456);
+	CHECK(site.bad_rx == 0);
+	// The same late gate applies to a granted voice transmission whose context changes before go.
+	after_key = p25_cancel_after_voice_key;
+	req(RREQ_PTT, 1);
+	run(900);
+	CHECK(after_key == NULL && !hw.keyed && !sm.air_keyed && radio_p25_tx_state() != AIR_TX_PRIMING);
+	CHECK(fair[0].qn == 0 && hw.rx_hz == TS_CC2);
+	req(RREQ_PTT, 0);
+	run(500);
+	// Invalidate a prepared control burst after hardware keying but before the engine's go. The existing abort
+	// owner must complete the session and let the radio task switch RF off instead of leaving PRIMING keyed.
+	int keyed = hw.tx_calls;
+	uint16_t sent = site.req_rx;
+	after_key = p25_expire_after_key;
+	req(RREQ_PTT, 1);
+	run(500);
+	CHECK(after_key == NULL && hw.tx_calls == keyed + 1 && site.req_rx == sent);
+	CHECK(!hw.keyed && !sm.air_keyed && radio_p25_tx_state() != AIR_TX_PRIMING && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+	site.on = false;
+}
+
 static void test_p25_trunk_tx(void)
 {
 	static char buf[4096];
@@ -8678,6 +8790,69 @@ static void test_p25_trunk_tx(void)
 	stored_trunk.listen_only = false;
 	req(RREQ_ZONE_POS, 0);
 	far_stop();
+	site.on = false;
+}
+
+// A refused tune leaves the receiver hearing a valid old frequency. Its same-System/NAC broadcasts must not prove
+// that the requested candidate was reached; only the next successful physical tune may resume access.
+static void test_p25_trunk_failed_retune(void)
+{
+	setup_codeplug_p25();
+	add(3, "P25T tune", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.talk_group = 201;
+	stored_trunk.ctl_count = 3;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1002, .rx_hz = TS_CC2 };
+	stored_trunk.ctl[1] = (p25_ctl_t){ .rx_hz = TS_FAR_VOICE };
+	stored_trunk.ctl_identity[1] = (p25_site_t){ .nac_set = true, .nac = 0x456 };
+	stored_trunk.ctl[2] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .tx_offset_hz = TS_OFFSET };
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.cc_in_hz = TS_CC1 + TS_OFFSET;
+	site.voice_hz = TS_VOICE;
+	site.on = true;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	rx_refuse_hz = TS_CC2;
+	rx_refused = 0;
+	int keyed = hw.tx_calls;
+	req(RREQ_ZONE_POS, 2);
+	run(500);
+	radio_p25_trunk_view_t v;
+	radio_p25_trunk_view(&v);
+	CHECK(rx_refused == 1 && hw.rx_hz == TS_CC1 && v.v.cc == 0);
+	CHECK(v.v.state == P25_FOLLOW_HUNT && v.v.tuning && !v.v.sys_ok && v.v.nac == P25_NAC_ANY);
+	CHECK(hw.tx_calls == keyed && site.reg_rx == 0 && !hw.keyed && fair[0].qn == 0);
+	// The next candidate is rejected by the radio's band policy; it also cannot consume the old site's proof.
+	run(200);
+	radio_p25_trunk_view(&v);
+	CHECK(v.v.cc == 1 && v.v.tuning && !v.v.sys_ok && hw.rx_hz == TS_CC1 && hw.tx_calls == keyed);
+	CHECK(v.untuned >= 2);
+	radio_p25_settings_t in_force;
+	CHECK(radio_p25_in_force(&in_force) && in_force.rx_nac == TS_NAC && in_force.tx_nac == TS_NAC);
+	// The follower's ordinary dwell advances to a usable candidate without recursion or a stuck tune.
+	run(1600);
+	radio_p25_trunk_view(&v);
+	CHECK(v.v.cc == 2 && v.v.state == P25_FOLLOW_CONTROL && !v.v.tuning && v.v.sys_ok);
+	CHECK(v.v.reg == P25_REG_READY && site.reg_rx != 0 && site.bad_rx == 0);
+	// A granted voice tune that the HAL refuses revokes TALK before keying; the existing hunt can recover.
+	rx_refuse_hz = TS_VOICE;
+	site.ans_req = SITE_ANS_ACCEPT;
+	keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(1000);
+	CHECK(rx_refused == 2 && hw.tx_calls == keyed + 1 && hw.rx_hz == TS_CC1 && sm.view.state != RS_TX);
+	CHECK(!hw.keyed && !sm.air_keyed && radio_p25_tx_state() != AIR_TX_PRIMING && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	rx_refuse_hz = 0;
+	req(RREQ_ZONE_POS, 0);
 	site.on = false;
 }
 
@@ -8818,6 +8993,8 @@ static void test_p25(void)
 	test_p25_trunk();
 	test_p25_trunk_tx();
 	test_p25_system_names();
+	test_p25_trunk_auto_nac();
+	test_p25_trunk_failed_retune();
 	test_p25_trunk_wacn_nogo();
 	test_p25_conv_wacn_nogo();
 #endif

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 tylerwatt12
 // The P25 trunking follower (p25_follow.h, docs/spec/p25-trunking.md 4) and its transmit side (5).
 #include "../config.h"
 #if CONFIG_P25_TRUNK	// the whole file
@@ -8,17 +9,19 @@
 #include <string.h>
 
 // It sits in memory the caller places, with the engine; the tightest radio lends both from its vocoder
-_Static_assert(sizeof(p25_follow_t) <= 480, "the trunking follower grew past its budget");
+_Static_assert(sizeof(p25_follow_t) <= 480 + (CONFIG_P25_ROAM ? 48 : 0), "the trunking follower grew past its budget");
 
 #define IDEN_VALID	0x01
 #define IDEN_PROG	0x02	// programmed: never replaced off air
 #define IDEN_TDMA	0x04
 #define IDEN_OFF	0x08	// the transmit offset is known
 #define IDEN_OFF_STEP	0x10	// ... in channel spacings, else in 250 kHz units
+#define IDEN_OFF_PROG	0x20	// the offset itself is programmed, not learned for a programmed receive plan
 
 #define NO_OP		0xFF	// acc.pend: nothing waiting
 
-enum { PH_DWELL, PH_IDENT, PH_BACKOFF };
+enum { PH_DWELL, PH_IDENT, PH_BACKOFF, PH_SAMPLE };
+#define PH_FAILED	0x80u	// tune refused: keep units gated while the existing hunt timers advance
 // Why a voice channel is left
 enum { LEAVE_TERM, LEAVE_ENC, LEAVE_OTHER };
 
@@ -39,9 +42,63 @@ static void count8(uint8_t *c)
 		(*c)++;
 }
 
+#if CONFIG_P25_ROAM
+// A one-second control sample combines CRC integrity with coverage of five
+// 200 ms intervals. A high RSSI cannot hide long gaps without decoded blocks.
+// This is a control-channel reliability score, not a measured RF bit error rate.
+static uint8_t quality_score(const p25_follow_t *f)
+{
+	if (f->quality_good < 8)
+		return 0;
+	unsigned total = (unsigned)f->quality_good + f->quality_bad;
+	unsigned crc = (unsigned)f->quality_good * 100 / total;
+	unsigned bins = 0;
+	for (unsigned i = 0; i < 5; i++)
+		bins += (f->quality_bins >> i) & 1u;
+	unsigned coverage = bins * 20;
+	return (uint8_t)(crc < coverage ? crc : coverage);
+}
+
+static void quality_reset(p25_follow_t *f, uint32_t now)
+{
+	f->t_quality = now;
+	f->quality_good = f->quality_bad = f->quality_bins = 0;
+	f->quality_ready = false;
+}
+
+static void quality_update(p25_follow_t *f, uint32_t now)
+{
+	if (f->view.state == P25_FOLLOW_CONTROL && elapsed(now, f->t_quality, 1000)) {
+		f->quality = quality_score(f);
+		quality_reset(f, now);
+		f->quality_ready = true;
+	}
+}
+
+static void quality_block(p25_follow_t *f, bool good, uint32_t now)
+{
+	if (f->view.state != P25_FOLLOW_CONTROL && f->view.state != P25_FOLLOW_HUNT)
+		return;
+	quality_update(f, now);
+	if (good) {
+		count8(&f->quality_good);
+		unsigned bin = (uint32_t)(now - f->t_quality) / 200;
+		if (bin < 5)
+			f->quality_bins |= (uint8_t)(1u << bin);
+	} else {
+		count8(&f->quality_bad);
+	}
+}
+#endif
+
 static void tune(p25_follow_t *f, uint32_t hz, uint8_t what, uint32_t id)
 {
-	f->tuning = true;
+#if CONFIG_P25_ROAM
+	f->signal_valid = false;
+	f->weak = false;
+#endif
+	f->view.tuning = true;
+	f->phase &= (uint8_t)~PH_FAILED;
 	f->acc.heard = false;
 	if (f->hooks->tune)
 		f->hooks->tune(hz, what, id, f->ctx);
@@ -81,9 +138,11 @@ static void iden_learn(p25_follow_t *f, const p25_iden_air_t *a)
 		return;
 	if (i->flags & IDEN_PROG) {
 		// A programmed identifier without a transmit offset takes the one off air (only that)
-		if (!(i->flags & IDEN_OFF)) {
+		if (!(i->flags & IDEN_OFF_PROG)) {
 			i->tx_off = a->tx_off;
-			i->flags |= (uint8_t)(IDEN_OFF | (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP));
+			i->flags &= (uint8_t)~(IDEN_OFF | IDEN_OFF_STEP);
+			i->flags |= (uint8_t)((a->no_tx_offset ? 0 : IDEN_OFF) |
+					     (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP));
 		}
 		return;
 	}
@@ -96,7 +155,8 @@ static void iden_learn(p25_follow_t *f, const p25_iden_air_t *a)
 	// The transmit offset: the general form's unit is 250 kHz, the VHF/UHF and TDMA forms' the channel spacing
 	// (unconfirmed, docs/spec/p25-trunking.md 9)
 	i->tx_off = a->tx_off;
-	i->flags = (uint8_t)(IDEN_VALID | IDEN_OFF | (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP) |
+	i->flags = (uint8_t)(IDEN_VALID | (a->no_tx_offset ? 0 : IDEN_OFF) |
+			     (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP) |
 			     (a->tdma ? IDEN_TDMA : 0));
 	f->view.idens |= (uint16_t)(1u << (a->id & 15));
 }
@@ -152,7 +212,19 @@ static void cc_learn(p25_follow_t *f, uint16_t ch)
 }
 
 // ── Hunt ──
+static uint16_t cc_nac(const p25_follow_t *f);
 static void hunt_try(p25_follow_t *f, uint32_t now);
+
+#if CONFIG_P25_ROAM
+static void roam_finish(p25_follow_t *f, uint32_t now)
+{
+	// Reacquire the measured winner, or the original when no candidate improved.
+	f->roaming = false;
+	f->view.cc = f->best_cc;
+	f->tried = 0;
+	hunt_try(f, now);
+}
+#endif
 
 static void hunt_next(p25_follow_t *f, uint32_t now)
 {
@@ -172,26 +244,71 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 	uint8_t n = cc_count(f);
 
 	f->have_id = false;
+	f->view.sys_ok = false;
+	f->view.nac = P25_NAC_ANY;
+	f->view.rfss = f->view.site = 0xFF;
+	f->acc.site_heard = false;
+	f->acc.cc_chan = 0;
 	f->t_state = now;
 	while (f->tried < n) {
 		uint32_t hz = cc_hz(f, f->view.cc);
 
-		if (hz) {
+		if (hz
+#if CONFIG_P25_ROAM
+		    && (!f->roaming || hz != cc_hz(f, f->roam_origin))
+#endif
+		) {
 			f->phase = PH_DWELL;
 			f->view.cc_hz = hz;
+			f->view.expected_nac = cc_nac(f);
 			tune(f, hz, P25_FOLLOW_TUNE_CONTROL, 0);
 			return;
 		}
 		f->tried++;
 		f->view.cc = (uint8_t)(f->view.cc + 1 >= n ? 0 : f->view.cc + 1);
 	}
+#if CONFIG_P25_ROAM
+	if (f->roaming) {
+		roam_finish(f, now);
+		return;
+	}
+#endif
 	f->phase = PH_BACKOFF;
 	f->tried = 0;
 	f->view.cc = f->good < n ? f->good : 0;
 	f->view.cc_hz = n ? cc_hz(f, f->view.cc) : 0;
+	f->view.expected_nac = cc_nac(f);
 	if (f->view.cc_hz)
 		tune(f, f->view.cc_hz, P25_FOLLOW_TUNE_CONTROL, 0);
 }
+
+static uint16_t cc_nac(const p25_follow_t *f)
+{
+	uint8_t i = f->view.cc;
+
+	return i < f->cfg->ncc && f->cfg->cc[i].nac_set ? f->cfg->cc[i].nac : f->cfg->nac;
+}
+#if CONFIG_P25_ROAM
+static void roam_sample(p25_follow_t *f, uint32_t now)
+{
+	uint8_t score = quality_score(f);
+	bool fresh = f->signal_valid && !elapsed(now, f->t_signal, 500);
+	// A clearly cleaner site may be weaker. RSSI still supplies a floor; a
+	// stronger site with essentially equal decoding must clear a 6 dB margin.
+	bool cleaner = score >= 80 && score >= (unsigned)f->origin_quality + 10 &&
+		f->signal_dbm >= f->cfg->roam_dbm - 10;
+	bool stronger = score >= 80 && (unsigned)score + 5 >= f->origin_quality &&
+		f->signal_dbm >= f->cfg->roam_dbm && f->signal_dbm >= f->origin_dbm + 6;
+	if (fresh && (cleaner || stronger) &&
+	    (f->best_cc == f->roam_origin || score > (unsigned)f->best_quality + 5 ||
+	     ((unsigned)score + 5 >= f->best_quality && f->signal_dbm > f->best_dbm))) {
+		f->best_cc = f->view.cc;
+		f->best_quality = score;
+		f->best_dbm = f->signal_dbm;
+	}
+	hunt_next(f, now);
+}
+#endif
 
 static void acc_lost(p25_follow_t *f);
 
@@ -209,6 +326,10 @@ static void hunt_start(p25_follow_t *f, uint32_t now)
 
 static void accept(p25_follow_t *f, uint16_t nac, uint32_t now)
 {
+#if CONFIG_P25_ROAM
+	f->roaming = false;
+	f->weak = false;
+#endif
 	f->view.state = P25_FOLLOW_CONTROL;
 	f->view.nac = nac;
 	f->view.fallback = false;
@@ -509,10 +630,10 @@ static void acc_tick(p25_follow_t *f, uint32_t now)
 {
 	p25_follow_acc_t *a = &f->acc;
 
-	if (!tx_on(f) || f->acc.blocked)
+	if (!tx_on(f) || f->acc.blocked || !f->view.sys_ok)
 		return;
 	if (!(f->cfg->flags & P25_FOLLOW_NO_REG)) {
-		if (f->view.reg == P25_REG_IDLE && f->view.sys_ok && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
+		if (f->view.reg == P25_REG_IDLE && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
 			reg_start(f, now);
 		} else if (f->view.reg == P25_REG_RETRY && elapsed(now, a->t_sent, a->backoff)) {
 			a->backoff = a->backoff * 2 > P25_ACC_RETRY_MAX ? P25_ACC_RETRY_MAX : a->backoff * 2;
@@ -628,7 +749,8 @@ static bool acc_grant(p25_follow_t *f, uint8_t op, const p25_grant_t *g, uint32_
 	const p25_follow_cfg_t *c = f->cfg;
 	uint32_t rx, tx;
 
-	if ((f->view.req != P25_REQ_WAIT && f->view.req != P25_REQ_QUEUED) || op != P25_OP_GRP_V_GRANT ||
+	if (!tx_on(f) || !f->view.sys_ok ||
+	    (f->view.req != P25_REQ_WAIT && f->view.req != P25_REQ_QUEUED) || op != P25_OP_GRP_V_GRANT ||
 	    g->src != c->unit_id || g->tg != c->talk_group || !acc_asked(f, P25_ISP_GRP_V_REQ))
 		return false;
 	acc_drop(f);
@@ -655,7 +777,7 @@ static bool acc_grant(p25_follow_t *f, uint8_t op, const p25_grant_t *g, uint32_
 }
 
 // ── Blocks ──
-static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_t nac, uint32_t now)
+static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_t nac, bool verified, uint32_t now)
 {
 	const p25_follow_cfg_t *c = f->cfg;
 	uint8_t st = f->view.state;
@@ -664,20 +786,41 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 
 	if (st != P25_FOLLOW_HUNT && st != P25_FOLLOW_CONTROL)
 		return;
-	if (c->nac != P25_NAC_ANY && nac != c->nac) {
+	uint16_t expected = f->view.sys_ok ? f->view.nac : f->view.expected_nac;
+	if (expected != P25_NAC_ANY && nac != expected) {
 		// Another system on the frequency
 		count(&f->view.wrong_sys);
 		if (st == P25_FOLLOW_HUNT && f->phase != PH_BACKOFF)
 			hunt_next(f, now);
 		return;
 	}
+	f->view.unverified = !verified;
 	if (m.kind == P25_TSBK_MFR) {
 		count(&f->view.mfr);
 	} else if (f->view.op[m.opcode] != UINT8_MAX) {
 		f->view.op[m.opcode]++;
 	}
+	if (known && m.kind == P25_TSBK_RFSS &&
+	    ((!any_sysid(c) && m.u.site.sysid != c->sysid) ||
+	     (st == P25_FOLLOW_CONTROL && f->view.wacn != UINT32_MAX && m.u.site.sysid != f->view.sysid))) {
+		// A conflicting site advertisement invalidates prior proof, including wildcard selections. A grant
+		// cannot immediately reacquire this channel: wait for a fresh matching network identity first. In HUNT
+		// the view still holds the last system's identity, so only the configured one is compared there.
+		count(&f->view.wrong_sys);
+		if (p25_sysid_no_tx(m.u.site.sysid))
+			sys_block(f);
+		f->identity_conflict = true;
+		if (st == P25_FOLLOW_HUNT) {
+			if (f->phase != PH_BACKOFF)
+				hunt_next(f, now);
+		} else {
+			f->good = (uint8_t)(f->view.cc + 1 >= cc_count(f) ? 0 : f->view.cc + 1);
+			hunt_start(f, now);
+		}
+		return;
+	}
 	if (st == P25_FOLLOW_HUNT) {
-		bool need = !any_wacn(c) || !any_sysid(c);
+		bool need = !any_wacn(c) || !any_sysid(c) || f->identity_conflict;
 
 		// A system identity: it decides the candidate
 		if (known && (m.kind == P25_TSBK_NET || (m.kind == P25_TSBK_RFSS && any_wacn(c)))) {
@@ -690,7 +833,12 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 					hunt_next(f, now);
 				return;
 			}
-			f->have_id = true;
+			if (m.kind == P25_TSBK_NET) {
+				f->identity_conflict = false;
+				f->have_id = true;
+			} else if (!f->identity_conflict) {
+				f->have_id = true;
+			}
 		}
 		if (need && !f->have_id) {
 			if (f->phase == PH_DWELL) {
@@ -699,6 +847,14 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 			}
 			return;
 		}
+#if CONFIG_P25_ROAM
+		if (f->roaming) {
+			// Identity matched, but one good block is not enough to rank a site.
+			// Grants during the bounded survey are deliberately not followed.
+			f->phase = PH_SAMPLE;
+			return;
+		}
+#endif
 		accept(f, nac, now);
 	}
 	f->t_good = now;
@@ -708,6 +864,8 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	switch (m.kind) {
 	case P25_TSBK_IDEN:
 		iden_learn(f, &m.u.iden);
+		if (f->view.reg == P25_REG_NO_TX && cc_tx_hz(f, f->view.cc))
+			f->view.reg = c->flags & P25_FOLLOW_NO_REG ? P25_REG_OFF : P25_REG_IDLE;
 		break;
 	case P25_TSBK_NET:
 		if ((!any_wacn(c) && m.u.net.wacn != c->wacn) || (!any_sysid(c) && m.u.net.sysid != c->sysid)) {
@@ -719,8 +877,17 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		}
 		if (p25_wacn_no_tx(m.u.net.wacn) || p25_sysid_no_tx(m.u.net.sysid))
 			sys_block(f);
-		else if (!f->acc.blocked)
-			f->view.sys_ok = true;
+		if ((f->view.wacn <= 0xFFFFFu && f->view.wacn != m.u.net.wacn) ||
+		    (f->view.sysid <= 0xFFFu && f->view.sysid != m.u.net.sysid)) {
+			// A different network cannot reuse this registration, even if its site numbers match.
+			acc_lost(f);
+			if (!f->acc.blocked && f->view.reg != P25_REG_OFF && f->view.reg != P25_REG_NO_TX)
+				f->view.reg = P25_REG_IDLE;
+		}
+		if (!f->acc.blocked) {
+			f->view.nac = nac;
+			f->view.sys_ok = !f->view.unverified;
+		}
 		f->view.wacn = m.u.net.wacn;
 		f->view.sysid = m.u.net.sysid;
 		f->acc.cc_chan = m.u.net.ch;
@@ -728,6 +895,8 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	case P25_TSBK_RFSS:
 		if (p25_sysid_no_tx(m.u.site.sysid))
 			sys_block(f);
+		if (m.u.site.sysid != f->view.sysid)
+			f->view.wacn = UINT32_MAX;
 		f->view.sysid = m.u.site.sysid;
 		f->view.rfss = m.u.site.rfss;
 		f->view.site = m.u.site.site;
@@ -777,6 +946,9 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 	f->cfg = cfg;
 	f->hooks = hooks;
 	f->ctx = ctx;
+#if CONFIG_P25_ROAM
+	f->t_roam = now;
+#endif
 	f->good = 0xFF;
 	f->view.wacn = UINT32_MAX;
 	f->view.sysid = UINT16_MAX;
@@ -796,11 +968,11 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 		if (p->tx_off_hz && p->tx_off_hz % 250000 == 0 && p->tx_off_hz / 250000 <= INT16_MAX &&
 		    p->tx_off_hz / 250000 >= -INT16_MAX) {
 			i->tx_off = (int16_t)(p->tx_off_hz / 250000);
-			i->flags |= IDEN_OFF;
+			i->flags |= IDEN_OFF | IDEN_OFF_PROG;
 		} else if (p->tx_off_hz && p->tx_off_hz % (int32_t)p->spacing_hz == 0 &&
 			   p->tx_off_hz / (int32_t)p->spacing_hz <= INT16_MAX && p->tx_off_hz / (int32_t)p->spacing_hz >= -INT16_MAX) {
 			i->tx_off = (int16_t)(p->tx_off_hz / (int32_t)p->spacing_hz);
-			i->flags |= IDEN_OFF | IDEN_OFF_STEP;
+			i->flags |= IDEN_OFF | IDEN_OFF_STEP | IDEN_OFF_PROG;
 		}
 		f->view.idens |= (uint16_t)(1u << n);
 	}
@@ -827,10 +999,27 @@ void p25_follow_end(p25_follow_t *f)
 	view_end(f);
 }
 
-void p25_follow_retuned(p25_follow_t *f, uint32_t now)
+void p25_follow_retuned(p25_follow_t *f, uint32_t now, bool ok)
 {
 	view_begin(f);
-	f->tuning = false;
+#if CONFIG_P25_ROAM
+	quality_reset(f, now);
+#endif
+	if (!ok) {
+		// A refused tune can leave the receiver on the old frequency. Its units cannot confirm this candidate.
+		acc_lost(f);
+		f->have_id = false;
+		f->view.nac = P25_NAC_ANY;
+		f->view.tuning = true;
+		if (f->view.req == P25_REQ_TALK)
+			f->view.req = P25_REQ_IDLE;
+		f->phase |= PH_FAILED;
+		f->t_state = now;
+		view_end(f);
+		return;
+	}
+	f->phase &= (uint8_t)~PH_FAILED;
+	f->view.tuning = false;
 	// Timers run from the moment the receiver is there
 	f->t_state = now;
 	if (f->view.state == P25_FOLLOW_VOICE)
@@ -842,12 +1031,14 @@ void p25_follow_retuned(p25_follow_t *f, uint32_t now)
 
 void p25_follow_tsbk(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_t nac, uint32_t now)
 {
-	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
+	if (f->view.tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
 	f->view.blocks++;
-	f->view.unverified = false;	// a block that passed its CRC
-	on_block(f, blk, nac, now);
+#if CONFIG_P25_ROAM
+	quality_block(f, true, now);
+#endif
+	on_block(f, blk, nac, true, now);
 	view_end(f);
 }
 
@@ -855,7 +1046,7 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 {
 	uint8_t blk[P25_TSBK_BYTES];
 
-	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
+	if (f->view.tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
 	// A voice channel's link control may carry the network or RFSS status broadcast: a blocked system there blocks
@@ -871,16 +1062,19 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 		if (nss)
 			f->acc.busy = p25_status_get(u->air, (uint16_t)(nss - 1)) == P25_SS_BUSY;
 
-		for (uint8_t k = 0; k < n && !f->tuning; k++) {
+		for (uint8_t k = 0; k < n && !f->view.tuning; k++) {
 			bool good = p25_block_get(u->air, k, blk) >= 0;
+#if CONFIG_P25_ROAM
+			// Repeated bad-CRC recovery must never improve the quality score.
+			quality_block(f, good, now);
+#endif
 			if (!good && !((f->cfg->flags & P25_FOLLOW_BAD_CRC) && rx_seen(&f->seen, blk, P25_TSBK_BYTES))) {
 				f->view.crc_fail++;
 				continue;
 			}
 			f->view.crc_taken += !good;
-			f->view.unverified = !good;
 			f->view.blocks++;
-			on_block(f, blk, u->nac, now);
+			on_block(f, blk, u->nac, good, now);
 		}
 		break;
 	}
@@ -897,7 +1091,7 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 			f->view.mbt_op = h.opcode;
 			if (p25_mbt_status(u, blk)) {
 				f->view.blocks++;
-				on_block(f, blk, u->nac, now);
+				on_block(f, blk, u->nac, true, now);
 			}
 		} else {
 			count(&f->view.pdu_other);
@@ -924,14 +1118,14 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 
 void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now)
 {
-	if (f->tuning || f->view.state != P25_FOLLOW_VOICE || f->view.req == P25_REQ_TALK)
+	if (f->view.tuning || f->view.state != P25_FOLLOW_VOICE || f->view.req == P25_REQ_TALK)
 		return;
 	view_begin(f);
 	if (c->have_lc && c->lc.lcf == P25_LCF_GROUP && !f->view.unit_call && c->lc.tgid != f->view.tg) {
 		// Not the call granted (the channel was given to another one meanwhile)
 		count(&f->view.wrong_call);
 		leave(f, LEAVE_OTHER, now);
-	} else if (c->have_alg && c->algid != P25_ALGID_CLEAR) {
+	} else if ((c->have_alg && c->algid != P25_ALGID_CLEAR) || (c->have_lc && c->lc.encrypted)) {
 		f->view.enc = true;
 		if (f->cfg->flags & P25_FOLLOW_SKIP_ENC) {
 			count(&f->view.enc_skip);
@@ -944,25 +1138,88 @@ void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now)
 	view_end(f);
 }
 
+#if CONFIG_P25_ROAM
+void p25_follow_signal(p25_follow_t *f, int16_t dbm, uint32_t now)
+{
+	if (f->view.tuning || dbm >= 0 || dbm < -160)
+		return;
+	// The RF status can briefly still describe the previous frequency.
+	if (f->view.state == P25_FOLLOW_HUNT && !elapsed(now, f->t_state, 100))
+		return;
+	f->signal_dbm = dbm;
+	f->t_signal = now;
+	f->signal_valid = true;
+	quality_update(f, now);
+	bool poor = f->quality_ready && f->quality < 90;
+	if (f->view.state != P25_FOLLOW_CONTROL || f->cfg->roam_dbm >= 0 ||
+	    (f->cfg->flags & P25_FOLLOW_TX) || f->cfg->ncc < 2 || (dbm >= f->cfg->roam_dbm && !poor)) {
+		f->weak = false;
+		return;
+	}
+	if (!f->weak) {
+		f->weak = true;
+		f->t_weak = now;
+	}
+	if (!elapsed(now, f->t_weak, 3000) || !elapsed(now, f->t_roam, 30000))
+		return;
+	view_begin(f);
+	f->roam_origin = f->view.cc;
+	f->origin_dbm = f->best_dbm = dbm;
+	// No complete origin sample is not evidence of poor decoding.
+	f->origin_quality = f->best_quality = f->quality_ready ? f->quality : 100;
+	f->best_cc = f->roam_origin;
+	f->t_roam = now;
+	f->weak = false;
+	f->roaming = true;
+	acc_lost(f);
+	f->view.state = P25_FOLLOW_HUNT;
+	count(&f->view.hunts);
+	f->t_nocc = now;
+	f->tried = 0;
+	f->backoff = P25_FOLLOW_BACKOFF_MS;
+	f->view.cc = (uint8_t)((f->roam_origin + 1) % cc_count(f));
+	hunt_try(f, now);
+	view_end(f);
+}
+#endif
+
 void p25_follow_tick(p25_follow_t *f, uint32_t now)
 {
 	const p25_follow_cfg_t *c = f->cfg;
 
-	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
+	if ((f->view.tuning && !(f->phase & PH_FAILED)) || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
+	if ((f->phase & PH_FAILED) && f->view.state != P25_FOLLOW_HUNT) {
+		// A failed voice tune or control-channel return needs fresh control-channel proof. The next tune is
+		// requested from this tick, so even a caller completing it inside its hook cannot recurse through hunt.
+		hunt_start(f, now);
+		view_end(f);
+		return;
+	}
+	uint8_t phase = (uint8_t)(f->phase & ~PH_FAILED);
 	switch (f->view.state) {
 	case P25_FOLLOW_HUNT:
+#if CONFIG_P25_ROAM
+		if (f->roaming && elapsed(now, f->t_roam, 20000)) {
+			roam_finish(f, now);
+			break;
+		}
+		if (f->roaming && f->phase == PH_SAMPLE && elapsed(now, f->t_quality, 1000)) {
+			roam_sample(f, now);
+			break;
+		}
+#endif
 		if (c->fallback_ms && !f->view.fallback && elapsed(now, f->t_nocc, c->fallback_ms)) {
 			f->view.fallback = true;
 			if (f->hooks->fallback)
 				f->hooks->fallback(f->ctx);
 		}
-		if (f->phase == PH_DWELL && elapsed(now, f->t_state, P25_FOLLOW_DWELL_MS)) {
+		if (phase == PH_DWELL && elapsed(now, f->t_state, P25_FOLLOW_DWELL_MS)) {
 			hunt_next(f, now);
-		} else if (f->phase == PH_IDENT && elapsed(now, f->t_state, P25_FOLLOW_ID_MS)) {
+		} else if (phase == PH_IDENT && elapsed(now, f->t_state, P25_FOLLOW_ID_MS)) {
 			hunt_next(f, now);
-		} else if (f->phase == PH_BACKOFF && elapsed(now, f->t_state, f->backoff)) {
+		} else if (phase == PH_BACKOFF && elapsed(now, f->t_state, f->backoff)) {
 			f->backoff = f->backoff * 2 > P25_FOLLOW_BACKOFF_MAX ? P25_FOLLOW_BACKOFF_MAX : f->backoff * 2;
 			f->tried = 0;
 			hunt_try(f, now);
@@ -1012,7 +1269,7 @@ uint8_t p25_follow_can_talk(const p25_follow_view_t *v, uint8_t flags)
 		return P25_TALK_OFF;
 	if (v->reg == P25_REG_BLOCKED)
 		return P25_TALK_BLOCKED;
-	if ((v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE) || !v->sys_ok)
+	if ((v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE) || !v->sys_ok || v->tuning)
 		return P25_TALK_NO_CC;
 	if (!(flags & P25_FOLLOW_NO_REG) && v->reg != P25_REG_READY)
 		return P25_TALK_NOT_REG;

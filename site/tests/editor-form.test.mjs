@@ -212,6 +212,28 @@ test("Systems Talkgroups opens the existing catalog before personalities; incomp
 	assert.equal(m.channels.length, 0);
 });
 
+test("system form: a site's expected NAC distinguishes legacy default, Auto and fixed 000", () => {
+	const { m, s } = trunked();
+	s.fields.ccNac = 0x293;
+	s.entries.push({ cls: 1, group: 0, control: false, flags: 0, rfss: 1, site: 2, nacMode: "system", expectedNac: 0 });
+	for (const [choice, nacMode] of [["editor.p25.nac_auto", "auto"], ["editor.p25.nac_fixed", "fixed"], ["editor.p25.nac_system", "system"]]) {
+		const form = openSystem(m, s);
+		assert.ok(form.heads().includes("editor.p25.nac_mode"));
+		assert.ok(form.heads().includes("editor.p25.expected_nac"));
+		assert.ok(form.note().includes("editor.p25.sites_help"), "programmed expectations and older firmware are explained");
+		const select = form.dlg.find((e) => e.tagName === "SELECT" && e.getAttribute("aria-label") === "editor.p25.nac_mode");
+		assert.deepEqual(select.children.map((e) => e.textContent), ["editor.p25.nac_system", "editor.p25.nac_auto", "editor.p25.nac_fixed"]);
+		select.selectedIndex = select.children.findIndex((e) => e.textContent === choice);
+		select.dispatch("change");
+		form.typeCell("editor.p25.expected_nac", "000");
+		assert.notEqual(s.entries.find((e) => e.cls === 1).nacMode, nacMode, "editing is isolated until Save");
+		form.save();
+		const stored = decode(encode(m)).systems[0];
+		assert.deepEqual(stored.entries.filter((e) => e.cls === 1).map((e) => [e.nacMode, e.expectedNac]), [[nacMode, 0]]);
+		assert.equal(stored.fields.ccNac, 0x293);
+	}
+});
+
 test("system form: a blocked network ID, as it is typed, locks Transmit and hides what only a transmitter reads (#1062)", () => {
 	const { m, s } = trunked();
 	const form = openSystem(m, s);

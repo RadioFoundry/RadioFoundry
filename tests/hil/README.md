@@ -82,7 +82,8 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 | `--fm-mhz` | the FM test frequency (the radio's VFO) |
 | `--p25-mhz` | the P25 test frequency (the radio's VFO; `test_p25_tx_off_air`, `test_p25_stored_channel_tx`, and `test_p25_rx_from_bench`, where the bench transmits) |
 | `--p25-trunk-channel` | the name of a stored P25 trunked channel whose system's control channel is heard at the rig (`test_p25_trunk_follow`, receive only) |
-| `--p25-cc-mhz` | where the bench plays a P25 control channel (`test_p25_trunk_tx`; the bench transmits) |
+| `--p25-cc-mhz` | where the bench plays a P25 control channel (`test_p25_trunk_tx`, `test_p25_site_nac`; the bench transmits) |
+| `--p25-cc-alt-mhz` | the second control channel for `test_p25_site_nac`; one bench transmitter, DUT receive only |
 | `--p25-cc-in-mhz` | that control channel's inbound frequency, where the radio sends its requests (`test_p25_trunk_tx`) |
 | `--p25-voice-mhz` | where the radio transmits on the voice channel the bench's control channel grants (`test_p25_trunk_tx`) |
 | `--p25-voice-out-mhz` | where a second bench transmitter (`--bench-api-2`) plays the call the bench's control channel grants (`test_p25_trunk_rx`; the bench transmits) |
@@ -106,9 +107,17 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 | `--microphone` | an ALSA capture device (`arecord -D`) whose microphone is at the radio's speaker: the speaker tests ([Speaker tests](#speaker-tests)) |
 | `--mic-processed` | `1` when that microphone has processing of its own (a headset's noise suppression): the speaker tests check tone starts only ([Speaker tests](#speaker-tests)) |
 
+`test_p25_site_nac` uses one bench transmitter on `--p25-cc-mhz` and `--p25-cc-alt-mhz`, with
+`--allow-rf --allow-codeplug-write --bench-api HOST`. Both frequencies must fit one 6.25 kHz channel plan and be
+distinct. The DUT stays receive only; the harness blocks its transmitter. A verified codeplug backup/restore surrounds
+the test. It acquires explicit Auto on the first control channel, loses its signal, then acquires fixed NAC 000 on
+the second without restarting the follower. The bench must allow a 33-second keying budget to cover the existing
+hunt backoff; each play stops after acquisition. This checks NAC configuration and acquisition, not registered
+roaming, voice return or actual transmitted NAC. No hardware run is claimed for this addition.
+
 With `--allow-rf`, every transmit frequency the run is given (`--dmr-freq`, `--fm-mhz`, `--p25-mhz`, `--aprs-test-mhz`,
 `--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`,
-`--vhf-fm-mhz`, `--t3-tx-mhz`, `--t3-payload-tx-mhz`, `--p25-cc-mhz`, `--p25-cc-in-mhz`, `--p25-voice-mhz`,
+`--vhf-fm-mhz`, `--t3-tx-mhz`, `--t3-payload-tx-mhz`, `--p25-cc-mhz`, `--p25-cc-alt-mhz`, `--p25-cc-in-mhz`, `--p25-voice-mhz`,
 `--p25-voice-out-mhz`, `--nxdn-mhz`) must be in `tx_mhz`, or the run
 stops before the first test. The bench client refuses to key anywhere else. Example file (placeholder values: use
 your license's and your site's):

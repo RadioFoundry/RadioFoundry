@@ -99,6 +99,7 @@ __attribute__((noinline)) void debuglink_view_p25_trunk(dl_text_t *t)
 		f->state, f->cc, (unsigned)f->cc_hz, (unsigned)f->voice_hz);
 	dl_text(t, "p25t.nac=%u\np25t.wacn=%u\np25t.sysid=%u\np25t.rfss=%u\np25t.site=%u\n", f->nac,
 		(unsigned)f->wacn, f->sysid, f->rfss, f->site);
+	dl_text(t, "p25t.expected_nac=%u\np25t.sys_ok=%u\np25t.tuning=%u\n", f->expected_nac, f->sys_ok, f->tuning);
 	dl_text(t, "p25t.tg=%u\np25t.src=%u\np25t.dst=%u\np25t.unit_call=%u\np25t.enc=%u\n", f->tg,
 		(unsigned)f->src, (unsigned)f->dst, f->unit_call, f->enc);
 	dl_text(t, "p25t.idens=%u\np25t.learned=%u\np25t.refused=%u\np25t.refused_tg=%u\np25t.fallback=%u\n",
