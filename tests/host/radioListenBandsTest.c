@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The receive-only bands in the radio core (docs/spec/airband-and-broadcast.md): air band AM (3, CONFIG_AM_RX) and
 // broadcast FM (4, CONFIG_BCAST_FM). Which channels are received in AM or on the broadcast receiver, both are receive
 // only (PTT, split TX, DMR and the hotspot refused there), the squelch on the signal strength with no sub-audio, the
@@ -518,6 +517,22 @@ static void test_spectrum_am(void)
 	CHECK(hw.am && sm.view.am && hw.rx_hz == 136987500);
 	spectrum_cmd(SPECTRUM_TUNER, 1);
 	CHECK(!hw.am && !sm.view.am && hw.rx_hz == 137000000);
+	// A centered window may listen to an AM peak, then return to its FM center after the carrier ends.
+	spectrum_cmd(SPECTRUM_CENTER_TUNER, 1);
+	for (unsigned mode = SPECTRUM_AUTO_SWEEP; mode <= SPECTRUM_AUTO_IMMEDIATE; mode++) {
+		spectrum_cmd(SPECTRUM_CENTER, 137000000);
+		spectrum_cmd(SPECTRUM_AUTO_PEAK, (int32_t)mode);
+		hw.sig_hz = 136987500;
+		hw.sig_rssi = -60;
+		for (unsigned i = 0; !hw.audio && i < 200; i++) run(10);
+		CHECK(hw.audio && hw.am && sm.view.am && hw.rx_hz == hw.sig_hz);
+		CHECK(sm.view.spectrum.center_hz == 137000000);
+		hw.sig_hz = 0;
+		for (unsigned i = 0; sm.view.spectrum.tuner != sm.view.spectrum.bins / 2 && i < 40; i++) run(10);
+		CHECK(!hw.audio && !hw.am && !sm.view.am && hw.rx_hz == 137000000);
+		CHECK(sm.view.spectrum.tuner == sm.view.spectrum.bins / 2);
+	}
+	spectrum_cmd(SPECTRUM_CENTER_TUNER, 0);
 	// The lower edge takes AM precedence over the broadcast receiver's inclusive upper bound.
 	spectrum_cmd(SPECTRUM_CENTER, 108000000);
 	CHECK(hw.am && sm.view.am && spectrum_frequency(&sm.view.spectrum, 0) == 108000000);

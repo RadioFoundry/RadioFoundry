@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The UI host simulator (ui_sim.h). Everything core/ui needs from the firmware is simulated here: the board
 // descriptor, hal_millis, the radio core (radio_get_view / radio_req_*), the codeplug, the host link and the
 // services other packages own (ui_svc.h; the settings store is the weak one from ui_svc_stub.c).
@@ -1473,7 +1472,7 @@ static struct {
 	uint16_t dwell_ms;
 	int8_t scale_db;
 	uint8_t auto_peak;
-	bool narrow;
+	bool narrow, center_tuner;
 } spectrum_preferences;
 
 static void to_selected(void);
@@ -1511,8 +1510,9 @@ void ui_svc_spectrum(uint8_t cmd, int32_t value)
 		s->scale_db = spectrum_preferences.scale_db;
 		s->auto_peak = spectrum_preferences.auto_peak;
 		s->narrow = spectrum_preferences.narrow;
+		s->center_tuner = spectrum_preferences.center_tuner;
 		uint32_t first = spectrum_frequency(s, 0), tuner = spectrum_preferences.tuner;
-		if (tuner >= first && tuner <= spectrum_frequency(s, s->bins - 1))
+		if (!s->center_tuner && tuner >= first && tuner <= spectrum_frequency(s, s->bins - 1))
 			s->tuner = (uint8_t)((tuner - first + s->step_hz / 2) / s->step_hz);
 		for (unsigned i = 0; i < s->bins; i++) {
 			int d = (int)i - (s->bins / 2 + 8);
@@ -1527,16 +1527,19 @@ void ui_svc_spectrum(uint8_t cmd, int32_t value)
 	if (s->active)
 		view.am = radio_am_tx_refused(spectrum_receiver_hz(s));
 	if (adjusted) {
-		spectrum_preferences.center = s->center_hz;
-		spectrum_preferences.step = s->step_hz;
-		spectrum_preferences.bins = s->bins;
 		spectrum_preferences.squelch_dbm = s->squelch_dbm;
 		spectrum_preferences.dwell_ms = s->dwell_ms;
 		spectrum_preferences.scale_db = s->scale_db;
 		spectrum_preferences.auto_peak = s->auto_peak;
 		spectrum_preferences.narrow = s->narrow;
-		if (cmd == SPECTRUM_TUNER || cmd == SPECTRUM_CENTER || cmd == SPECTRUM_STEP || cmd == SPECTRUM_BANDWIDTH)
+		spectrum_preferences.center_tuner = s->center_tuner;
+		if (cmd == SPECTRUM_TUNER || cmd == SPECTRUM_CENTER || cmd == SPECTRUM_STEP || cmd == SPECTRUM_BANDWIDTH ||
+		    cmd == SPECTRUM_CENTER_TUNER) {
+			spectrum_preferences.center = s->center_hz;
+			spectrum_preferences.step = s->step_hz;
+			spectrum_preferences.bins = s->bins;
 			spectrum_preferences.tuner = spectrum_frequency(s, s->tuner);
+		}
 	}
 	changed();
 }
@@ -3165,6 +3168,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "spec_squelch") == 0) snprintf(got, sizeof got, "%d", (int)view.spectrum.squelch_dbm);
 	else if (strcmp(key, "spec_scale") == 0) snprintf(got, sizeof got, "%d", (int)view.spectrum.scale_db);
 	else if (strcmp(key, "spec_narrow") == 0) snprintf(got, sizeof got, "%u", view.spectrum.narrow);
+	else if (strcmp(key, "spec_center_tuner") == 0) snprintf(got, sizeof got, "%u", view.spectrum.center_tuner);
 #endif
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
 	else if (strcmp(key, "usbnet") == 0) snprintf(got, sizeof got, "%u", usb_net);

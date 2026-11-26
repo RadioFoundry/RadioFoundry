@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Copyright (c) 2026 Sandro Kalatozishvili
 # Copyright (c) 2026 Open25-DM32 Authors
 ## Host unit tests for the hardware independent parts of the firmware
 ##

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 #include "config.h"
 #if CONFIG_SPECTRUM
 #include <string.h>
@@ -41,7 +40,7 @@ static bool restart(spectrum_t *s, uint32_t center, uint32_t lo, uint32_t hi, ui
 	int16_t squelch_dbm = s->squelch_dbm;
 	uint16_t dwell_ms = s->dwell_ms;
 	uint8_t auto_peak = s->auto_peak;
-	bool narrow = s->narrow;
+	bool narrow = s->narrow, center_tuner = s->center_tuner;
 	int8_t scale_db = s->scale_db;
 	if (!spectrum_start(s, center, lo, hi, step, bins, now))
 		return false;
@@ -49,6 +48,7 @@ static bool restart(spectrum_t *s, uint32_t center, uint32_t lo, uint32_t hi, ui
 	s->dwell_ms = dwell_ms;
 	s->auto_peak = auto_peak;
 	s->narrow = narrow;
+	s->center_tuner = center_tuner;
 	s->scale_db = scale_db;
 	return true;
 }
@@ -71,6 +71,35 @@ uint32_t spectrum_receiver_hz(const spectrum_t *s)
 int16_t spectrum_threshold_dbm(const spectrum_t *s)
 {
 	return s->squelch_dbm;
+}
+
+static uint32_t clamp_center(const spectrum_t *s, int64_t hz)
+{
+	uint32_t half = s->step_hz * (s->bins / 2u);
+	return hz < s->lo_hz + half ? s->lo_hz + half : hz > s->hi_hz - half ? s->hi_hz - half : (uint32_t)hz;
+}
+
+static void move_window(spectrum_t *s, uint32_t center, uint8_t tuner)
+{
+	int64_t delta = (int64_t)center - s->center_hz;
+	int64_t bins = delta / s->step_hz;
+	unsigned moved = (unsigned)(bins < 0 ? -bins : bins);
+	// Keep each reading attached to its frequency; a newly exposed bin has no sample yet.
+	for (unsigned row = 0; row <= SPECTRUM_PEAK_BUCKETS; row++) {
+		uint8_t *levels = row == 0 ? s->level : s->peak[row - 1];
+		if (delta % s->step_hz || moved >= s->bins) {
+			memset(levels, SPECTRUM_EMPTY, s->bins);
+		} else if (bins > 0) {
+			memmove(levels, levels + moved, s->bins - moved);
+			memset(levels + s->bins - moved, SPECTRUM_EMPTY, moved);
+		} else if (bins < 0) {
+			memmove(levels + moved, levels, s->bins - moved);
+			memset(levels, SPECTRUM_EMPTY, moved);
+		}
+	}
+	s->center_hz = center;
+	s->tuner = tuner;
+	s->index = s->since_listen = 0;
 }
 
 static unsigned strongest_current(const spectrum_t *s)
@@ -112,7 +141,11 @@ bool spectrum_sample(spectrum_t *s, int16_t dbm, uint32_t now)
 		if (s->audio_open)
 			s->release_ms = now + SPECTRUM_RELEASE_MS;
 		else if ((int32_t)(now - s->release_ms) >= 0) {
-			s->listening = false;
+			// A captured peak borrows the tuner; check the fixed center before resuming the sweep.
+			if (s->center_tuner && s->tuner != s->bins / 2u)
+				s->tuner = s->bins / 2u;
+			else
+				s->listening = false;
 			s->since_listen = 0;
 		}
 	} else {
@@ -150,6 +183,17 @@ bool spectrum_adjust(spectrum_t *s, uint8_t cmd, int32_t value, uint32_t now)
 {
 	if (!s->active)
 		return false;
+	if (cmd == SPECTRUM_CENTER_TUNER) {
+		if (value != 0 && value != 1)
+			return false;
+		s->center_tuner = value != 0;
+		if (!s->center_tuner || s->tuner == s->bins / 2u)
+			return true;
+		uint32_t tuner = spectrum_frequency(s, s->tuner), center = clamp_center(s, tuner);
+		move_window(s, center, s->bins / 2u);
+		if (center == tuner && s->listening)
+			return true;
+	}
 	if (cmd == SPECTRUM_FILTER) {
 		if (value != 0 && value != 1)
 			return false;
@@ -180,10 +224,25 @@ bool spectrum_adjust(spectrum_t *s, uint8_t cmd, int32_t value, uint32_t now)
 		return true;
 	}
 	if (cmd == SPECTRUM_TUNER) {
-		int bin = s->tuner + (value < 0 ? -1 : 1);
-		if (bin < 0 || bin >= s->bins)
+		if (value == 0)
 			return false;
-		s->tuner = (uint8_t)bin;
+		if (s->center_tuner) {
+			uint32_t center = clamp_center(s, (int64_t)s->center_hz + (int64_t)value * s->step_hz);
+			if (center == s->center_hz && s->tuner == s->bins / 2u)
+				return false;
+			move_window(s, center, s->bins / 2u);
+		} else {
+			int dir = value < 0 ? -1 : 1;
+			int bin = s->tuner + dir;
+			if (bin < 0 || bin >= s->bins) {
+				uint32_t center = clamp_center(s, (int64_t)s->center_hz + (int64_t)dir * s->step_hz);
+				if (center == s->center_hz)
+					return false;
+				move_window(s, center, s->tuner);
+			} else {
+				s->tuner = (uint8_t)bin;
+			}
+		}
 	} else if (cmd == SPECTRUM_SQUELCH) {
 		if (value < -160 || value > 0)
 			return false;
@@ -197,12 +256,12 @@ bool spectrum_adjust(spectrum_t *s, uint8_t cmd, int32_t value, uint32_t now)
 		uint32_t tuner = spectrum_frequency(s, s->tuner);
 		if (!restart(s, center, s->lo_hz, s->hi_hz, step, bins, now))
 			return false;
-		if (cmd != SPECTRUM_CENTER) {
+		if (cmd != SPECTRUM_CENTER && !s->center_tuner) {
 			int64_t bin = ((int64_t)tuner - spectrum_frequency(s, 0) + step / 2) / step;
 			s->tuner = bin < 0 ? 0 : bin >= s->bins ? s->bins - 1 : (uint8_t)bin;
 		}
 		return true;
-	} else {
+	} else if (cmd != SPECTRUM_CENTER_TUNER) {
 		return false;
 	}
 	s->listening = true;

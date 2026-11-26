@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 #include "config.h"
 #if CONFIG_SPECTRUM
 #include <string.h>
@@ -9,7 +8,8 @@
 #include "radio/spectrum.h"
 #include "radio/radio_bands.h"
 
-enum { FIELD_CENTER, FIELD_SQUELCH, FIELD_STEP, FIELD_BANDWIDTH, FIELD_DWELL, FIELD_AUTO, FIELD_FILTER, FIELD_COUNT };
+enum { FIELD_CENTER, FIELD_SQUELCH, FIELD_STEP, FIELD_BANDWIDTH, FIELD_DWELL, FIELD_AUTO, FIELD_FILTER,
+	FIELD_CENTER_TUNER, FIELD_COUNT };
 static uint8_t selected, length;
 static bool editing, stepping;
 static int32_t stepped_value;
@@ -73,6 +73,8 @@ static void value_text(sbuf_t *b, unsigned field)
 			s->auto_peak == SPECTRUM_AUTO_SWEEP ? TR(SPECTRUM_VALUE_AFTER_SWEEP, "After sweep") : TR(VALUE_OFF, "Off"));
 	} else if (field == FIELD_FILTER) {
 		sb_str(b, s->narrow ? TR(SPECTRUM_VALUE_NARROW, "Narrow") : TR(SPECTRUM_VALUE_WIDE, "Wide"));
+	} else if (field == FIELD_CENTER_TUNER) {
+		sb_str(b, s->center_tuner ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
 	} else {
 		sb_i32(b, spin ? stepped_value : s->squelch_dbm);
 	}
@@ -331,6 +333,7 @@ static void settings_item(uint16_t i, ui_item_t *it)
 	static const tr_id_t labels[] = { TRN(SPECTRUM_ROW_SQUELCH, "Squelch"), TRN(SPECTRUM_VALUE_SWEEPING, "Sweeping"),
 		TRN(SPECTRUM_ROW_BANDWIDTH, "Bandwidth"), TRN(SPECTRUM_ROW_DWELL, "Dwell time"),
 		TRN(SPECTRUM_ROW_AUTO_PEAK, "Auto peak"), TRN(SPECTRUM_ROW_FILTER, "Filter"),
+		TRN(SPECTRUM_ROW_CENTER_TUNER, "Center tuner"),
 		TRN(SPECTRUM_ROW_CENTER, "Center") };
 	if (i >= settings_count()) return;
 	str_copy(it->label, sizeof it->label, tr(labels[i]));
@@ -361,6 +364,8 @@ static void settings_select(uint16_t i, bool hold)
 		ui_svc_spectrum(SPECTRUM_AUTO_PEAK, (s->auto_peak + 1u) % SPECTRUM_AUTO_COUNT);
 	} else if (field == FIELD_FILTER) {
 		ui_svc_spectrum(SPECTRUM_FILTER, !s->narrow);
+	} else if (field == FIELD_CENTER_TUNER) {
+		ui_svc_spectrum(SPECTRUM_CENTER_TUNER, !s->center_tuner);
 	} else {
 		begin_entry(field);
 	}

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio view as key=value text for GET_VIEW (docs/spec/debuglink.md 3.7). One key per line; keys are stable
 // (DL_VIEW_VERSION is bumped when one changes meaning or goes away); new keys may appear anywhere in a section.
 #include "config.h"
@@ -210,6 +209,7 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "spectrum.auto_peak_mode=%s\n", s->auto_peak == SPECTRUM_AUTO_IMMEDIATE ? "immediate" :
 		s->auto_peak == SPECTRUM_AUTO_SWEEP ? "after_sweep" : "off");
 	dl_text(t, "spectrum.filter=%s\n", s->narrow ? "narrow" : "wide");
+	dl_text(t, "spectrum.center_tuner=%u\n", s->center_tuner);
 	unsigned peak = spectrum_strongest(s);
 	uint8_t level = spectrum_peak_level(s, peak);
 	dl_text(t, "spectrum.peak_hz=%u\nspectrum.peak_dbm=%d\n",

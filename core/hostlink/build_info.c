@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // What this build is, for VERSION in either listener (see build_info.h)
 #include "config.h"
 #include "hostlink/build_info.h"

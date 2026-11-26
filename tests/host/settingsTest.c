@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // core/storage (the sector journal) and core/settings (the record ring) on a simulated NOR flash, with power cuts
 // at every point of a save and of a sector rewrite: after the next boot the old or the new content is there, whole,
 // never a mix; wear goes round the ring; old and new record sizes load.
@@ -660,6 +659,7 @@ static void test_settings_spectrum_upgrade(void)
 	      s.spectrum_squelch == 80 && s.spectrum_bins == 129);
 	CHECK(s.spectrum_dwell_ms == 10 && s.spectrum_no_peak == 0 && s.spectrum_scale_db == 0);
 	CHECK(s.spectrum_narrow == 0 && s.spectrum_squelch_dbm == INT16_MIN && s.spectrum_peak_immediate == 0);
+	CHECK(s.spectrum_center_tuner == 0);
 	settings_t *st = settings_begin();
 	st->spectrum_center_hz = 145062500;
 	st->spectrum_tuner_hz = 145068750;
@@ -670,6 +670,7 @@ static void test_settings_spectrum_upgrade(void)
 	st->spectrum_no_peak = 1;
 	st->spectrum_scale_db = -20;
 	st->spectrum_narrow = 1;
+	st->spectrum_center_tuner = 1;
 	st->spectrum_squelch_dbm = -120;
 	settings_end(1);
 	CHECK(settings_flush());
@@ -680,6 +681,7 @@ static void test_settings_spectrum_upgrade(void)
 	CHECK(s.spectrum_center_hz == 145062500 && s.spectrum_tuner_hz == 145068750 &&
 	      s.spectrum_step_hz == 6250 && s.spectrum_bins == 97 && s.spectrum_squelch == 42);
 	CHECK(s.spectrum_dwell_ms == 50 && s.spectrum_no_peak == 1 && s.spectrum_scale_db == -20 && s.spectrum_narrow == 1 && s.spectrum_squelch_dbm == -120);
+	CHECK(s.spectrum_center_tuner == 1);
 	st = settings_begin();
 	st->spectrum_no_peak = 0;
 	st->spectrum_peak_immediate = 1;
@@ -689,6 +691,7 @@ static void test_settings_spectrum_upgrade(void)
 	settings_read(&s);
 	CHECK(s.spectrum_no_peak == 0 && s.spectrum_peak_immediate == 1 && s.spectrum_squelch_dbm == -120);
 	// The first spectrum build's 428-byte record also upgrades without resetting its saved window.
+	s.spectrum_center_tuner = 0; // reserved12 was zero in records written before the option
 	put_record(&map, 1, 0, 20, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT), 428 - SETTINGS_PAGE_BYTES,
 		   (const uint8_t *)&s + SETTINGS_PAGE_BYTES, true, true);
 	put_record(&map, 1, 1, 21, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &s, true, true);
@@ -713,6 +716,7 @@ static void test_settings_spectrum_upgrade(void)
 	CHECK(stats.load == SETTINGS_UPGRADED && s.spectrum_center_hz == 145062500 && s.spectrum_squelch == 42);
 	CHECK(s.spectrum_dwell_ms == 50 && s.spectrum_no_peak == 1 && s.spectrum_scale_db == -20 && s.spectrum_narrow == 0 && s.spectrum_squelch_dbm == INT16_MIN);
 	CHECK(s.spectrum_peak_immediate == 0);
+	CHECK(s.spectrum_center_tuner == 0);
 }
 
 // Stored power levels count against the board's level count (power_levels): a record from before it (0), or from a
@@ -1044,7 +1048,8 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, spectrum_tuner_hz), 420 },
 		{ offsetof(settings_t, spectrum_bins), 424 },
 		{ offsetof(settings_t, spectrum_squelch), 425 },
-		{ offsetof(settings_t, reserved12), 426 },
+		{ offsetof(settings_t, spectrum_center_tuner), 426 },
+		{ offsetof(settings_t, reserved12), 427 },
 		{ offsetof(settings_t, spectrum_dwell_ms), 428 },
 		{ offsetof(settings_t, spectrum_no_peak), 430 },
 		{ offsetof(settings_t, spectrum_scale_db), 431 },

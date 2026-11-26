@@ -2422,5 +2422,7 @@
  "editor.sig.play": "Reproducir",
  "editor.sig.roll": "La cadena como tono a lo largo del tiempo, {ms} ms",
  "editor.sig.no_audio": "Sin audio aquí",
- "editor.sig.empty": "Sin pasos: el sonido estándar"
+ "editor.sig.empty": "Sin pasos: el sonido estándar",
+ "screen.spectrum_center_tuner": "Cursor del espectro centrado",
+ "screen.spectrum_panned": "Desplazamiento de la ventana del espectro"
 }

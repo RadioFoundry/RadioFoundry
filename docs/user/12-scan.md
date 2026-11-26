@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 Sandro Kalatozishvili -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Scan and Dual Watch
 
@@ -218,7 +218,9 @@ for example 145.06250 MHz. Narrow screens omit repeated MHz units; small screens
 Type a new center frequency directly on the keypad, then press **OK** to apply it: `438250` means 438.25000 MHz.
 Reception stays where it was until confirmation. Back deletes a digit, then cancels an empty entry. The tuner is
 read only in the top row: move it with **Left / Right** or the channel knob. Its white marker moves without
-changing the graph's frequency range.
+changing the graph's frequency range while it is inside the window. With **Center tuner** off, moving past
+either edge scrolls the whole window by one **Sweeping** step. The tuner stays at that edge and listens to the next
+frequency. Reverse direction to move it back inside the window; scrolling stops at the receiver band limits.
 
 Press **OK** outside frequency entry for **Spectrum Settings**. **Up / Down** choose a row:
 
@@ -230,6 +232,7 @@ Press **OK** outside frequency entry for **Spectrum Settings**. **Up / Down** ch
 | Dwell time | OK, type milliseconds per scanned frequency, OK. Range 10..1000 ms; default 10. Higher is slower. |
 | Auto peak | OK cycles **After sweep** (default) / **Immediate** / **Off**. |
 | Filter | OK switches **Wide (25 kHz)** / **Narrow (12.5 kHz)**. Wide by default. It applies to scanning and listening. |
+| Center tuner | OK switches **Off** (default) / **On**. On keeps the tuner centered and moves the window with Left / Right or the knob. |
 
 Back in an editor deletes, then cancels. Back in the menu returns to the running graph. The menu leaves reception
 and scanning running. Back on the graph closes the analyzer; long Back returns Home from either screen.
@@ -238,7 +241,18 @@ Without a keypad, OK opens a numeric editor at its current value. Use **Up / Dow
 then **OK** to save or **Back** to cancel. Squelch steps by 1 dB, Sweeping by 0.01 kHz and Dwell time by 1 ms.
 These radios also have **Center** (center frequency) at the end of Spectrum Settings. Its preview moves by the sweep
 spacing and skips gaps between available receiver bands. Reception changes only after OK. If a microphone provides
-digits, typing starts direct numeric entry instead. Keypad radios keep the six-row menu and digit entry above.
+digits, typing starts direct numeric entry instead. Keypad radios keep the seven-row menu and digit entry above.
+
+With **Center tuner** on, **Left / Right** and the knob move the whole window by the **Sweeping** step.
+The tuner normally stays in the middle and listens at the new center frequency. The graph's overlapping
+measurements slide with the window; the new edge fills as scanning continues. Movement stops before an endpoint
+leaves the receiver band. The option is remembered.
+
+Auto peak temporarily moves the tuner to the signal while the window stays in place. When the signal ends and
+the short hold expires, the tuner returns to the center before scanning resumes. If you press **Left / Right** or
+turn the knob during the signal, it stops listening to that peak, returns the tuner to the middle and moves the
+window from its original center by the selected step. A blocked move at a band edge still returns the tuner to
+the center. Turning the option off restores independent tuner movement.
 
 Key beeps and their audio cleanup continue during scanning and listening. The analyzer is unavailable during an
 active diagnostic detour; wait for it to return or end the detour before opening the analyzer.
@@ -259,7 +273,8 @@ signal plays, it stays there rather than interrupting it to search for another o
 after a short hold. The manually selected tuner is checked when starting, so a carrier there can also be heard.
 
 **Auto peak: Immediate** stops on the first frequency at or above squelch and plays it straight away. It does not
-finish the sweep first. When the signal ends, scanning resumes at the following frequency after the short hold.
+finish the sweep first. When the signal ends, scanning resumes at the following frequency after the short hold
+and, with Center tuner on, a check of the center frequency.
 Both enabled modes keep listening continuously while the signal lasts. Changing the mode preserves current audio.
 
 In the **air band (108 to below 137 MHz)**, scanning and listening automatically use **AM** on a radio with AM

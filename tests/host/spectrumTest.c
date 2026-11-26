@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 #include <stdio.h>
 #include <string.h>
 #include "radio/spectrum.h"
@@ -8,8 +7,140 @@
 static unsigned failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %d: %s\n", __LINE__, #c); } } while (0)
 
+static void test_edge_pan(void)
+{
+	static const unsigned counts[] = { 65, 97, 129 };
+	static const uint32_t steps[] = { 6250, 12500 };
+	for (unsigned n = 0; n < 3; n++) {
+		for (unsigned k = 0; k < 2; k++) {
+			for (int dir = -1; dir <= 1; dir += 2) {
+				spectrum_t s;
+				CHECK(spectrum_start(&s, 446000000, 400000000, 480000000, steps[k], counts[n], 0));
+				for (unsigned i = 0; i < s.bins / 2u; i++) CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, dir, 0));
+				uint8_t edge = dir < 0 ? 0 : s.bins - 1;
+				CHECK(s.tuner == edge && s.center_hz == 446000000);
+				uint32_t hz = spectrum_receiver_hz(&s);
+				CHECK(spectrum_sample(&s, -55, 10) && s.audio_open);
+				CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, dir, 20));
+				uint32_t center = (uint32_t)(446000000 + dir * (int32_t)s.step_hz);
+				CHECK(s.center_hz == center && s.tuner == edge && !s.center_tuner);
+				CHECK(spectrum_receiver_hz(&s) == (uint32_t)((int64_t)hz + dir * (int32_t)s.step_hz));
+				CHECK(s.listening && !s.audio_open && s.index == 0);
+				CHECK(s.level[edge] == SPECTRUM_EMPTY && spectrum_peak_level(&s, edge) == SPECTRUM_EMPTY);
+				CHECK(spectrum_level_dbm(s.level[edge - dir]) == -55);
+				CHECK(spectrum_level_dbm(spectrum_peak_level(&s, edge - dir)) == -55);
+				CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, -dir, 30));
+				CHECK(s.center_hz == center && s.tuner == edge - dir && spectrum_receiver_hz(&s) == hz);
+				spectrum_t before = s;
+				CHECK(!spectrum_adjust(&s, SPECTRUM_TUNER, 0, 40) && memcmp(&s, &before, sizeof s) == 0);
+				// A window at the receiver's band limit cannot scroll beyond it.
+				CHECK(spectrum_start(&s, dir < 0 ? 400000000 : 480000000, 400000000, 480000000,
+						     steps[k], counts[n], 0));
+				for (unsigned i = 0; i < s.bins / 2u; i++) CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, dir, 0));
+				before = s;
+				CHECK(!spectrum_adjust(&s, SPECTRUM_TUNER, dir, 10) && memcmp(&s, &before, sizeof s) == 0);
+			}
+		}
+	}
+}
+
+static void test_center_tuner(void)
+{
+	spectrum_t s;
+	CHECK(spectrum_start(&s, 446000000, 400000000, 480000000, 12500, 129, 0));
+	CHECK(!s.center_tuner);
+	CHECK(spectrum_sample(&s, -55, 10) && s.audio_open);
+	CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, 1, 20));
+	CHECK(spectrum_sample(&s, -60, 30) && s.audio_open);
+	CHECK(spectrum_adjust(&s, SPECTRUM_CENTER_TUNER, 1, 40));
+	CHECK(s.center_tuner && s.tuner == 64 && s.center_hz == 446012500 && s.audio_open);
+	CHECK(spectrum_level_dbm(s.level[63]) == -55 && spectrum_level_dbm(s.level[64]) == -60);
+	CHECK(spectrum_level_dbm(spectrum_peak_level(&s, 63)) == -55);
+	CHECK(s.level[128] == SPECTRUM_EMPTY && spectrum_peak_level(&s, 128) == SPECTRUM_EMPTY);
+	CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, -1, 50));
+	CHECK(s.tuner == 64 && s.center_hz == 446000000 && !s.audio_open && s.listening);
+	CHECK(spectrum_level_dbm(s.level[64]) == -55 && s.level[0] == SPECTRUM_EMPTY);
+	CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, 3, 60));
+	CHECK(s.center_hz == 446037500 && spectrum_receiver_hz(&s) == s.center_hz);
+	CHECK(spectrum_adjust(&s, SPECTRUM_STEP, 6250, 70));
+	CHECK(s.center_tuner && s.tuner == 64 && s.center_hz == 446037500);
+	CHECK(spectrum_adjust(&s, SPECTRUM_BANDWIDTH, 65, 80));
+	CHECK(s.center_tuner && s.tuner == 32);
+	CHECK(spectrum_adjust(&s, SPECTRUM_FILTER, 1, 90));
+	CHECK(s.center_tuner && s.tuner == 32 && s.narrow);
+	CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, INT32_MAX, 100));
+	CHECK(s.center_hz == 479800000 && spectrum_frequency(&s, 64) == 480000000 && s.tuner == 32);
+	spectrum_t before = s;
+	CHECK(!spectrum_adjust(&s, SPECTRUM_TUNER, 1, 110) && memcmp(&s, &before, sizeof s) == 0);
+	CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, INT32_MIN, 120));
+	CHECK(s.center_hz == 400200000 && spectrum_frequency(&s, 0) == 400000000 && s.tuner == 32);
+	before = s;
+	CHECK(!spectrum_adjust(&s, SPECTRUM_TUNER, -1, 130) && memcmp(&s, &before, sizeof s) == 0);
+	CHECK(!spectrum_adjust(&s, SPECTRUM_CENTER_TUNER, 2, 130) && memcmp(&s, &before, sizeof s) == 0);
+	CHECK(spectrum_adjust(&s, SPECTRUM_CENTER_TUNER, 0, 140) && !s.center_tuner);
+	CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, -1, 150));
+	CHECK(s.center_hz == 400200000 && s.tuner == 31 && spectrum_receiver_hz(&s) == 400193750);
+	CHECK(spectrum_adjust(&s, SPECTRUM_CENTER_TUNER, 1, 160));
+	CHECK(s.tuner == 32 && spectrum_receiver_hz(&s) == 400200000);
+
+	// Automatic capture borrows the tuner in a fixed window; manual movement always starts at its center.
+	for (unsigned mode = SPECTRUM_AUTO_SWEEP; mode <= SPECTRUM_AUTO_IMMEDIATE; mode++) {
+		for (unsigned action = 0; action < 4; action++) {
+			CHECK(spectrum_start(&s, 446000000, 400000000, 480000000, 12500, 65, 0));
+			CHECK(spectrum_adjust(&s, SPECTRUM_CENTER_TUNER, 1, 0));
+			CHECK(spectrum_adjust(&s, SPECTRUM_AUTO_PEAK, (int32_t)mode, 0));
+			CHECK(spectrum_sample(&s, -120, 10) && !s.listening);
+			uint32_t now = 20;
+			while (!s.listening && now < 1000) {
+				CHECK(spectrum_sample(&s, s.index == 3 ? -55 : -120, now));
+				now += 10;
+			}
+			unsigned resume = mode == SPECTRUM_AUTO_IMMEDIATE ? 4 : 0;
+			CHECK(s.center_hz == 446000000 && s.tuner == 3 && s.index == resume && s.listening);
+			CHECK(spectrum_receiver_hz(&s) == 445637500);
+			CHECK(spectrum_level_dbm(spectrum_peak_level(&s, 3)) == -55);
+			CHECK(s.audio_open == (mode == SPECTRUM_AUTO_IMMEDIATE));
+			CHECK(spectrum_sample(&s, -55, now) && s.audio_open);
+			if (action == 1 || action == 2) {
+				int move = action == 1 ? -1 : 1;
+				CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, move, now));
+				CHECK(s.center_hz == (uint32_t)(446000000 + move * 12500) && s.tuner == 32);
+				CHECK(spectrum_receiver_hz(&s) == s.center_hz && s.listening && !s.audio_open);
+				CHECK(s.index == 0 && spectrum_level_dbm(spectrum_peak_level(&s, 3 - move)) == -55);
+			} else {
+				// Turning Auto peak off while listening must still return to the center after carrier loss.
+				if (action == 3)
+					CHECK(spectrum_adjust(&s, SPECTRUM_AUTO_PEAK, SPECTRUM_AUTO_OFF, now) && s.audio_open);
+				CHECK(spectrum_sample(&s, -120, now + 10) && !s.audio_open && s.tuner == 3);
+				CHECK(spectrum_sample(&s, -120, now + SPECTRUM_RELEASE_MS - 10) && s.tuner == 3);
+				CHECK(spectrum_sample(&s, -120, now + SPECTRUM_RELEASE_MS) && s.tuner == 32 && s.listening);
+				CHECK(s.center_hz == 446000000 && spectrum_receiver_hz(&s) == 446000000);
+				CHECK(s.index == resume && !s.audio_open);
+				CHECK(spectrum_sample(&s, -120, now + SPECTRUM_RELEASE_MS + 10) && !s.listening);
+				CHECK(s.index == resume);
+			}
+		}
+	}
+	// A peak at the band edge is heard too. A blocked pan still cancels that peak and checks the center.
+	CHECK(spectrum_start(&s, 400000000, 400000000, 480000000, 12500, 65, 0));
+	CHECK(spectrum_adjust(&s, SPECTRUM_CENTER_TUNER, 1, 0));
+	CHECK(spectrum_sample(&s, -120, 10));
+	for (unsigned i = 0; i < 65; i++)
+		CHECK(spectrum_sample(&s, i == 0 ? -20 : i == 40 ? -60 : -120, 20 + 10 * i));
+	CHECK(s.center_hz == 400400000 && s.tuner == 0 && s.listening);
+	CHECK(spectrum_sample(&s, -20, 670) && s.audio_open);
+	CHECK(spectrum_adjust(&s, SPECTRUM_TUNER, -1, 680));
+	CHECK(s.center_hz == 400400000 && s.tuner == 32 && !s.audio_open && s.listening);
+	CHECK(spectrum_receiver_hz(&s) == s.center_hz && spectrum_level_dbm(spectrum_peak_level(&s, 0)) == -20);
+	before = s;
+	CHECK(!spectrum_adjust(&s, SPECTRUM_TUNER, -1, 690) && memcmp(&s, &before, sizeof s) == 0);
+	CHECK(spectrum_frequency(&s, 0) >= s.lo_hz && spectrum_frequency(&s, 64) <= s.hi_hz);
+}
+
 int main(void)
 {
+	test_edge_pan();
+	test_center_tuner();
 	_Static_assert(sizeof(spectrum_t) <= 824, "recent peaks must stay within their RAM budget");
 	CHECK(spectrum_level_dbm(SPECTRUM_EMPTY) == INT16_MIN);
 	CHECK(spectrum_level_dbm(0) == -160 && spectrum_level_dbm(160) == 0);
@@ -110,10 +241,10 @@ int main(void)
 	CHECK(s.center_hz == 447000000 && s.tuner == SPECTRUM_BINS / 2 && s.squelch_dbm == -100);
 	CHECK(spectrum_adjust(&s, SPECTRUM_SQUELCH, -160, 1340));
 	CHECK(spectrum_sample(&s, -160, 1350) && s.audio_open && s.listening);
-	for (unsigned i = 0; i < SPECTRUM_BINS; i++) spectrum_adjust(&s, SPECTRUM_TUNER, -1, 1360);
-	CHECK(s.tuner == 0 && !spectrum_adjust(&s, SPECTRUM_TUNER, -1, 1360));
-	for (unsigned i = 0; i < SPECTRUM_BINS; i++) spectrum_adjust(&s, SPECTRUM_TUNER, 1, 1360);
-	CHECK(s.tuner == SPECTRUM_BINS - 1 && !spectrum_adjust(&s, SPECTRUM_TUNER, 1, 1360));
+	while (s.tuner > 0) spectrum_adjust(&s, SPECTRUM_TUNER, -1, 1360);
+	CHECK(s.tuner == 0 && spectrum_adjust(&s, SPECTRUM_TUNER, -1, 1360));
+	while (s.tuner < SPECTRUM_BINS - 1) spectrum_adjust(&s, SPECTRUM_TUNER, 1, 1360);
+	CHECK(s.tuner == SPECTRUM_BINS - 1 && spectrum_adjust(&s, SPECTRUM_TUNER, 1, 1360));
 	spectrum_t before = s;
 	CHECK(!spectrum_adjust(&s, SPECTRUM_SQUELCH, 101, 1360));
 	CHECK(!spectrum_adjust(&s, SPECTRUM_STEP, 6251, 1360));

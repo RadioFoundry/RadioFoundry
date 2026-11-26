@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 #ifndef RFOUNDRY_SPECTRUM_H
 #define RFOUNDRY_SPECTRUM_H
 
@@ -17,14 +16,14 @@
 #define SPECTRUM_PEAK_BUCKET_MS 1000u
 
 enum { SPECTRUM_STOP, SPECTRUM_START, SPECTRUM_TUNER, SPECTRUM_CENTER, SPECTRUM_STEP, SPECTRUM_SQUELCH,
-	SPECTRUM_BANDWIDTH, SPECTRUM_DWELL, SPECTRUM_AUTO_PEAK, SPECTRUM_SCALE, SPECTRUM_FILTER };
+	SPECTRUM_BANDWIDTH, SPECTRUM_DWELL, SPECTRUM_AUTO_PEAK, SPECTRUM_SCALE, SPECTRUM_FILTER, SPECTRUM_CENTER_TUNER };
 enum { SPECTRUM_AUTO_OFF, SPECTRUM_AUTO_SWEEP, SPECTRUM_AUTO_IMMEDIATE, SPECTRUM_AUTO_COUNT };
 
 // One narrowband RSSI reading per bin, not an FFT. The radio task owns this; other tasks read its view copy.
 typedef struct {
 	bool active, listening, audio_open;
 	uint8_t auto_peak;	// SPECTRUM_AUTO_*
-	bool narrow;
+	bool narrow, center_tuner;
 	uint8_t index, tuner, since_listen, bins, peak_slot;
 	int8_t scale_db;
 	uint16_t dwell_ms;

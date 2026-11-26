@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio's own settings, kept across power cycles (docs/spec/settings-store.md): where the radio was (zone,
 // channel, VFO), the VFO's settings and the user's preferences. Stored as versioned records appended to a ring of
 // flash sectors (board.flash->map settings area): a record is valid only once its commit word is programmed, so a
@@ -265,7 +264,8 @@ typedef struct {
 	uint32_t spectrum_tuner_hz;	// 0 = center; otherwise the last manually selected frequency
 	uint8_t spectrum_bins;		// 65, 97 or 129
 	uint8_t spectrum_squelch;	// legacy level: threshold + 160, 0..100; imported if spectrum_squelch_dbm is unset
-	uint8_t reserved12[2];		// 0
+	uint8_t spectrum_center_tuner;	// reserved12[0]: 0 = move tuner, 1 = keep it centered and pan the window
+	uint8_t reserved12[1];		// 0
 	uint16_t spectrum_dwell_ms;	// scan reading delay, 10..1000 ms
 	uint8_t spectrum_no_peak;	// 0 = automatic peak tuning on (including older records), 1 = off
 	int8_t spectrum_scale_db;	// graph offset: -40..40 dB in 20 dB increments

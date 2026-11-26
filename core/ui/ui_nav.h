@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // Inside the UI: the navigation stack, the screen table and the helpers the screens share (ui_app.c, ui_menus.c,
 // ui_find.c). Not for other packages.
 #ifndef UI_NAV_H

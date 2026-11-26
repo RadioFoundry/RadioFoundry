@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The list screens and the screen table (information-architecture.md 4, 6, 8): the Hub with its six destinations,
 // actions on a station, Contacts, Messages, Recent, Channels, Tools, Settings grouped by intent, the talk target
 // picker, information pages and the one confirmation (factory reset, P7).

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The UI host simulator's command line (docs/spec/ui.md 7):
 //
 //   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F|P] [--scale N] [--out FILE.png]
@@ -51,10 +50,12 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "spectrum_settings", "ok 6 0 ok" },
 	{ "spectrum_settings_keys", "keypad:0 ok 6 0 ok ok up" },
 	{ "spectrum_center_keys", "keypad:0 ok 6 0 ok up ok enc+" },
-	{ "spectrum_immediate", "ok 6 0 ok up up ok" },
+	{ "spectrum_immediate", "ok 6 0 ok up up up ok" },
 	{ "spectrum_air", "am ok 6 0 1 1 8 1 0 0 ok" },
 	{ "spectrum_dual", "quick 7 ok 6 0" },
-	{ "spectrum_filter", "ok 6 0 ok up" },
+	{ "spectrum_center_tuner", "ok 6 0 ok up ok" },
+	{ "spectrum_panned", "ok 6 0 ok up ok back user4 user4" },
+	{ "spectrum_filter", "ok 6 0 ok up up" },
 	{ "spectrum_scale", "ok 6 0 down" },
 	{ "spectrum_precision", "dlvfo:145062500 ok 6 0" },
 	{ "spectrum_bandwidth", "ok 6 0 ok down down ok" },

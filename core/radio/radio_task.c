@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio core's task: a request queue in front of the state machine (radio_sm.c), a status poll every
 // RADIO_POLL_MS, the DMR call stack every RADIO_TICK_MS, and a snapshot of the view that other tasks copy under a
 // mutex. It also implements the hotspot's radio operations (hotspot_radio_ops_t): they post requests and never wait,

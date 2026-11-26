@@ -1032,6 +1032,18 @@
    "needs": [
     "UI_SETTINGS"
    ]
+  },
+  "spectrum_center_tuner": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_panned": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
   }
  }
 }

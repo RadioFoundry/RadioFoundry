@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio core's state machine: channel / zone / VFO selection, software squelch, PTT checks and the TX timer,
 // and the everyday features around them (docs/spec/radio-features.md): scan, busy channel lockout, roger beep and
 // 1750 Hz burst, VOX, beeps, the battery monitor and receiver battery saving.
@@ -391,7 +390,8 @@ static void apply_tot(radio_sm_t *sm)
 
 static uint8_t master_power = SETTINGS_UNSET8;	// the settings' power for "default" channels
 // The radio task's copy of the settings for the few places that read more than one field (data_init, cw_begin,
-// reload). Static: off the radio task's stack; one copy, since none of them calls another (RAM is tight on some radios)
+// reload). Startup also uses it before the radio task starts; data_init refreshes the same saved settings there.
+// Static: keep the full record off both task stacks (RAM is tight on some radios).
 static settings_t st_copy;
 
 static uint8_t default_power(void)
@@ -8503,16 +8503,16 @@ static bool dmr_mic_gate(void)
 
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
-	settings_t st;
-	settings_read(&st);	// a zone add or delete a power cut interrupted is settled first (radio_core_start)
+	settings_t *st = &st_copy;
+	settings_read(st);	// a zone add or delete a power cut interrupted is settled first (radio_core_start)
 #if CONFIG_POSITION
 	position_init();
-	position_load(&st);
+	position_load(st);
 #endif
 
 	memset(sm, 0, sizeof(*sm));
 #if CONFIG_DMR_AES
-	radio_aes_start(st.aes_mi_res);
+	radio_aes_start(st->aes_mi_res);
 #endif
 #if CONFIG_SFR
 	direct_sm = sm;
@@ -8546,9 +8546,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.volume_step = RADIO_VOLUME_DEFAULT;
 	sm->base_squelch = RADIO_SQUELCH_DEFAULT;
 	sm->view.squelch = RADIO_SQUELCH_DEFAULT;
-	settings_to_radio(&st, &sm->set);	// as saved (docs/spec/settings-store.md 3)
+	settings_to_radio(st, &sm->set);	// as saved (docs/spec/settings-store.md 3)
 #if CONFIG_DMR
-	sm->dmr_killed = (st.t3_kill & SETTINGS_T3_KILLED) != 0;	// a kill holds in a build without trunking too
+	sm->dmr_killed = (st->t3_kill & SETTINGS_T3_KILLED) != 0;	// a kill holds in a build without trunking too
 	sm->view.dmr.killed = sm->dmr_killed;
 #endif
 #if CONFIG_DMR_TRUNK
@@ -8558,7 +8558,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	roam_cfg_t rc;
 	roam_cfg_of(&sm->set, &rc);
 	roam_init(&sm->roam, &rc);
-	memcpy(sm->roam_zones, st.roam_zones, sizeof(sm->roam_zones));
+	memcpy(sm->roam_zones, st->roam_zones, sizeof(sm->roam_zones));
 	sm->roam_dirty = true;
 #endif
 	sm->view.tot_s = sm->set.tot_s;
@@ -8576,16 +8576,16 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 #if CONFIG_DUAL_WATCH
 	vfo_defaults(&sm->vfo_ch);	// the second VFO first, then moved to vfo_other
-	restore_vfo(sm, &st, 1);
+	restore_vfo(sm, st, 1);
 	sm->vfo_other = (radio_vfo_t){ sm->vfo_ch, sm->vfo_seeded, sm->vfo_talk_id, sm->vfo_talk_private };
 	sm->vfo_seeded = false;
 	sm->vfo_talk_id = 0;
 	sm->vfo_talk_private = false;
 #endif
 	vfo_defaults(&sm->vfo_ch);
-	restore_vfo(sm, &st, 0);
+	restore_vfo(sm, st, 0);
 #if CONFIG_DUAL_WATCH
-	vfo_use(sm, st.vfo_index);
+	vfo_use(sm, st->vfo_index);
 #endif
 
 	sm->board_mode = RADIO_MODE_FM;
@@ -8620,13 +8620,13 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
 	load_own_id(sm);
-	select_position(sm, st.zone_index, st.channel, st.zone_pos);
-	apply_prefs(sm, &st);
+	select_position(sm, st->zone_index, st->channel, st->zone_pos);
+	apply_prefs(sm, st);
 #if CONFIG_DMR
 	sm->hs_power = sm->view.hs_power = default_power();
 	sm->hs_rf_level = RADIO_HS_RF_OWN;
 #endif
-	if (!sm->have_channels || (st.vfo && VFO_AVAILABLE)) {
+	if (!sm->have_channels || (st->vfo && VFO_AVAILABLE)) {
 		if (VFO_AVAILABLE) {
 			enter_vfo(sm, now_ms);
 		} else {
@@ -9378,9 +9378,6 @@ static const band_t *spectrum_band(uint32_t hz)
 static void spectrum_persist(const spectrum_t *s, uint8_t cmd, uint32_t now_ms)
 {
 	settings_t *st = settings_begin();
-	st->spectrum_center_hz = s->center_hz;
-	st->spectrum_step_hz = s->step_hz;
-	st->spectrum_bins = s->bins;
 	st->spectrum_squelch_dbm = s->squelch_dbm;
 	// A downgrade gets the closest level its narrower legacy scale can represent.
 	unsigned legacy = (unsigned)(spectrum_threshold_dbm(s) + 160);
@@ -9390,9 +9387,15 @@ static void spectrum_persist(const spectrum_t *s, uint8_t cmd, uint32_t now_ms)
 	st->spectrum_peak_immediate = s->auto_peak == SPECTRUM_AUTO_IMMEDIATE;
 	st->spectrum_scale_db = s->scale_db;
 	st->spectrum_narrow = s->narrow;
+	st->spectrum_center_tuner = s->center_tuner;
 	// Automatic capture must not replace the owner's tuning preference or keep postponing the flash save.
-	if (cmd == SPECTRUM_TUNER || cmd == SPECTRUM_CENTER || cmd == SPECTRUM_STEP || cmd == SPECTRUM_BANDWIDTH)
+	if (cmd == SPECTRUM_TUNER || cmd == SPECTRUM_CENTER || cmd == SPECTRUM_STEP || cmd == SPECTRUM_BANDWIDTH ||
+	    cmd == SPECTRUM_CENTER_TUNER) {
+		st->spectrum_center_hz = s->center_hz;
+		st->spectrum_step_hz = s->step_hz;
+		st->spectrum_bins = s->bins;
 		st->spectrum_tuner_hz = spectrum_frequency(s, s->tuner);
+	}
 	settings_end(now_ms);
 }
 
@@ -9404,6 +9407,7 @@ static void spectrum_request(radio_sm_t *sm, const radio_req_t *req, uint32_t no
 		return;
 	}
 	if (req->arg != SPECTRUM_START) {
+		uint32_t before = spectrum_receiver_hz(s);
 		bool adjusted;
 		if (s->active && req->arg == SPECTRUM_CENTER) {
 			const band_t *band = spectrum_band(req->arg2);
@@ -9413,6 +9417,8 @@ static void spectrum_request(radio_sm_t *sm, const radio_req_t *req, uint32_t no
 		}
 		if (adjusted) {
 			bool tune_needed = req->arg != SPECTRUM_DWELL && req->arg != SPECTRUM_AUTO_PEAK && req->arg != SPECTRUM_SCALE;
+			if (req->arg == SPECTRUM_CENTER_TUNER)
+				tune_needed = before != spectrum_receiver_hz(s);
 			if (tune_needed && !spectrum_tune(sm)) spectrum_stop(sm, now_ms);
 			else spectrum_persist(s, (uint8_t)req->arg, now_ms);
 			changed(sm);
@@ -9493,9 +9499,10 @@ static void spectrum_request(radio_sm_t *sm, const radio_req_t *req, uint32_t no
 	int8_t scale_db = SETTINGS_FIELD(spectrum_scale_db);
 	s->scale_db = scale_db >= -40 && scale_db <= 40 && scale_db % 20 == 0 ? scale_db : 0;
 	s->narrow = SETTINGS_FIELD(spectrum_narrow) == 1;
+	s->center_tuner = SETTINGS_FIELD(spectrum_center_tuner) == 1;
 	uint32_t tuner = SETTINGS_FIELD(spectrum_tuner_hz);
 	uint32_t first = spectrum_frequency(s, 0), last = spectrum_frequency(s, s->bins - 1);
-	if (tuner >= first && tuner <= last)
+	if (!s->center_tuner && tuner >= first && tuner <= last)
 		s->tuner = (uint8_t)(((uint64_t)tuner - first + s->step_hz / 2) / s->step_hz);
 #if CONFIG_APRS_RX
 	aprs_rx_release();

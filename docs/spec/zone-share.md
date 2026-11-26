@@ -1,6 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
-<!-- Copyright (c) 2026 Sandro Kalatozishvili -->
 
 # Zone sharing over DMR data
 

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The UI's behavior (docs/ux/information-architecture.md, docs/spec/ui.md): the navigation stack, the keys with
 // one meaning everywhere (P3), Home, quick settings, banners and interruptions, key lock, Recent. No RTOS: ui.c
 // runs it in the UI task and the host simulator runs it on a PC.

@@ -969,7 +969,7 @@ msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "USB NMEA"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c core/ui/ui_spectrum.c
 msgctxt "VALUE_ON"
 msgid "On"
 msgstr "开"
@@ -5768,6 +5768,11 @@ msgstr "自动峰值"
 msgctxt "SPECTRUM_ROW_FILTER"
 msgid "Filter"
 msgstr "滤波器"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_CENTER_TUNER"
+msgid "Center tuner"
+msgstr "中心锁定"
 
 #: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_CENTER"

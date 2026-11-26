@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // Home, quick settings and the boot splash, laid out from the display size (docs/ux/information-architecture.md 3, 5;
 // docs/ux/wireframes). Regions top to bottom: status strip, place, talk target, activity, hint row.
 #include <string.h>

@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Copyright (c) 2026 Sandro Kalatozishvili
 """Receiver sweep checks; manual capture needs an external RF source and --allow-rf."""
 import time
 import pytest
@@ -50,6 +49,8 @@ def test_spectrum_tuner_edit_and_restore(radio):
         target = tuner - step if at_end else tuner + step
         moved = radio.wait_for(lambda v: int(v.get("spectrum.tuner_hz", "0")) == target,
                                sections=("channel",), what="independent listening tuner")
+        if active["spectrum.center_tuner"] == "1":
+            center = target
         assert int(moved["spectrum.center_hz"]) == center
         radio.press("ok")
         menu = radio.wait_for(lambda v: v.get("ui.screen") == "spectrum-settings",
@@ -124,7 +125,7 @@ def test_spectrum_numeric_controls_without_keypad(radio):
             radio.press(key)
         before = radio.wait_for(lambda v: v.get("ui.screen") == "spectrum-settings",
                                 sections=("link", "channel"), what="spectrum settings")
-        if before.get("ui.count") != "7":
+        if before.get("ui.count") != "8":
             skip("no_hw", "the board has an onboard keypad; numeric fallback is not used")
         original = int(before["spectrum.squelch"])
         key = "up" if original < 0 else "down"
@@ -143,7 +144,7 @@ def test_spectrum_numeric_controls_without_keypad(radio):
                        what="original squelch restored")
         radio.press("up")
         last = radio.view(["link"])
-        assert last["ui.focus"] == "6"  # Center is the last row only without a keypad.
+        assert last["ui.focus"] == "7"  # Center is the last row only without a keypad.
     finally:
         radio.press("back", LONG)
 
@@ -262,7 +263,8 @@ def test_spectrum_air_band_am_and_restore(radio):
 @pytest.mark.manual
 @pytest.mark.rf
 @pytest.mark.parametrize("mode", ("after_sweep", "immediate"))
-def test_spectrum_auto_capture_and_resume(radio, mode):
+@pytest.mark.parametrize("center_tuner", (False, True))
+def test_spectrum_auto_capture_and_resume(radio, mode, center_tuner):
     radio.ensure_awake()
     radio.unlock()
     radio.press("back", LONG)
@@ -289,6 +291,10 @@ def test_spectrum_auto_capture_and_resume(radio, mode):
         _numeric(radio, 10)
         radio.press("down")
         _auto_mode(radio, mode)
+        radio.press("down")
+        radio.press("down")
+        if (radio.view(["channel"])["spectrum.center_tuner"] == "1") != center_tuner:
+            radio.press("ok")
         radio.press("back")
         active = radio.view(["channel"])
         center = int(active["spectrum.center_hz"])
@@ -306,9 +312,12 @@ def test_spectrum_auto_capture_and_resume(radio, mode):
         assert held["spectrum.tuner_hz"] == caught["spectrum.tuner_hz"]
         assert held["spectrum.index"] == caught["spectrum.index"]
         print("\n>>> Stop the FM test carrier", flush=True)
-        radio.wait_for(lambda v: v.get("spectrum.audio") == "0" and
-                       v.get("spectrum.index") != held["spectrum.index"], timeout=30,
-                       sections=("channel",), what="sweep resuming after carrier loss")
+        resumed = radio.wait_for(lambda v: v.get("spectrum.audio") == "0" and
+                                 v.get("spectrum.index") != held["spectrum.index"], timeout=30,
+                                 sections=("channel",), what="sweep resuming after carrier loss")
+        assert int(resumed["spectrum.center_hz"]) == center
+        if center_tuner:
+            assert int(resumed["spectrum.tuner_hz"]) == center
     finally:
         radio.press("back", LONG)
     after = radio.view(["channel"])

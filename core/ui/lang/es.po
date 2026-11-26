@@ -967,7 +967,7 @@ msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "NMEA por USB"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c core/ui/ui_spectrum.c
 msgctxt "VALUE_ON"
 msgid "On"
 msgstr "Sí"
@@ -5766,6 +5766,11 @@ msgstr "Pico automático"
 msgctxt "SPECTRUM_ROW_FILTER"
 msgid "Filter"
 msgstr "Filtro"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_CENTER_TUNER"
+msgid "Center tuner"
+msgstr "Fijar al centro"
 
 #: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_CENTER"

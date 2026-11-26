@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio core's state machine (core/radio/radio_sm.c) against a fake board and a fake codeplug
 #include "input/input.h"
 #include "input/keyassign.h"
@@ -2323,6 +2322,79 @@ static void test_spectrum_persist(void)
 	spectrum_cmd(SPECTRUM_START, 0);
 	CHECK(sm.view.spectrum.squelch_dbm == -40 && spectrum_threshold_dbm(&sm.view.spectrum) == -40);
 	CHECK(sm.view.spectrum.auto_peak == SPECTRUM_AUTO_OFF); // a saved Off retains precedence
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
+
+static void test_spectrum_center_tuner(void)
+{
+	dmr_start(true);
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_t *s = &sm.view.spectrum;
+	CHECK(!s->center_tuner);
+	spectrum_cmd(SPECTRUM_CENTER, 446000000);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	uint32_t tuned = hw.rx_hz;
+	spectrum_cmd(SPECTRUM_CENTER_TUNER, 1);
+	CHECK(s->center_tuner && s->center_hz == tuned && s->tuner == s->bins / 2 && hw.rx_hz == tuned);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	uint32_t manual = tuned + s->step_hz;
+	CHECK(s->center_hz == manual && hw.rx_hz == manual);
+	CHECK(SETTINGS_FIELD(spectrum_center_tuner) == 1 && SETTINGS_FIELD(spectrum_center_hz) == manual &&
+	      SETTINGS_FIELD(spectrum_tuner_hz) == manual);
+	// Capture moves only the tuner; later non-tuning edits preserve the saved manual window.
+	hw.st.rssi_dbm = -160;
+	run(20);
+	hw.st.rssi_dbm = -60;
+	run(1500);
+	CHECK(s->audio_open && hw.audio && s->center_hz == manual && hw.rx_hz != manual);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == manual && SETTINGS_FIELD(spectrum_tuner_hz) == manual);
+	spectrum_cmd(SPECTRUM_DWELL, 20);
+	spectrum_cmd(SPECTRUM_SCALE, -20);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == manual && SETTINGS_FIELD(spectrum_tuner_hz) == manual);
+	hw.st.rssi_dbm = -160;
+	for (unsigned i = 0; s->tuner != s->bins / 2 && i < 40; i++) run(10);
+	CHECK(s->center_hz == manual && s->tuner == s->bins / 2 && hw.rx_hz == manual && !hw.audio);
+	// Moving during a new peak interrupts it and pans from the original center, not the peak's frequency.
+	run(20);
+	hw.st.rssi_dbm = -60;
+	for (unsigned i = 0; (s->tuner == s->bins / 2 || !s->audio_open) && i < 400; i++) run(10);
+	CHECK(s->audio_open && s->tuner != s->bins / 2 && s->center_hz == manual);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	manual += s->step_hz;
+	CHECK(s->center_hz == manual && s->tuner == s->bins / 2 && hw.rx_hz == manual && !hw.audio);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == manual && SETTINGS_FIELD(spectrum_tuner_hz) == manual);
+	boot();
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(s->center_tuner && s->center_hz == manual && s->tuner == s->bins / 2 && hw.rx_hz == manual);
+	CHECK(s->dwell_ms == 20 && s->scale_db == -20);
+	int calls = hw.rx_calls;
+	spectrum_cmd(SPECTRUM_CENTER_TUNER, 0);
+	CHECK(!s->center_tuner && hw.rx_calls == calls);
+	spectrum_cmd(SPECTRUM_TUNER, -1);
+	CHECK(s->center_hz == manual && hw.rx_hz == manual - s->step_hz);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
+
+static void test_spectrum_edge_pan(void)
+{
+	dmr_start(true);
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_cmd(SPECTRUM_CENTER, 446000000);
+	spectrum_t *s = &sm.view.spectrum;
+	CHECK(!s->center_tuner);
+	for (unsigned i = 0; i < s->bins / 2u; i++) spectrum_cmd(SPECTRUM_TUNER, -1);
+	CHECK(s->tuner == 0 && s->center_hz == 446000000 && hw.rx_hz == 445200000);
+	spectrum_cmd(SPECTRUM_TUNER, -1);
+	CHECK(s->tuner == 0 && s->center_hz == 445987500 && hw.rx_hz == 445187500);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == 445987500 && SETTINGS_FIELD(spectrum_tuner_hz) == 445187500);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(!s->center_tuner && s->tuner == 0 && s->center_hz == 445987500 && hw.rx_hz == 445187500);
+	for (unsigned i = 1; i < s->bins; i++) spectrum_cmd(SPECTRUM_TUNER, 1);
+	CHECK(s->tuner == s->bins - 1 && s->center_hz == 445987500 && hw.rx_hz == 446787500);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	CHECK(s->tuner == s->bins - 1 && s->center_hz == 446000000 && hw.rx_hz == 446800000);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == 446000000 && SETTINGS_FIELD(spectrum_tuner_hz) == 446800000);
 	spectrum_cmd(SPECTRUM_STOP, 0);
 }
 #endif
@@ -12395,6 +12467,8 @@ int main(void)
 #endif
 	test_spectrum_immediate();
 	test_spectrum_persist();
+	test_spectrum_center_tuner();
+	test_spectrum_edge_pan();
 #if CONFIG_SCAN && CONFIG_DUAL_WATCH
 	test_spectrum_dual_restore();
 #endif
