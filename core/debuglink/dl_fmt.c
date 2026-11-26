@@ -163,6 +163,12 @@ void dl_text(dl_text_t *t, const char *fmt, ...)
 	t->len += n;
 }
 
+void dl_text_rollback(dl_text_t *t, size_t mark)
+{
+	if (t->len < t->cap && mark <= t->len)
+		t->len = mark;
+}
+
 void dl_text_kv_str(dl_text_t *t, const char *key, const char *value)
 {
 	char v[40];
