@@ -70,8 +70,8 @@ static void init(void)
 #endif
 }
 
-// AT1846S 0x05 at the channels where the radio's own clocks put a spur on the receiver, on top of the family's 26 MHz
-// rule (hardware-mduv380.md 2): 0x8543 as at the reference harmonics, 0x8643 (the data sheet's 26 MHz word near
+// AT1846S 0x05 at the channels where the radio's own clocks put a spur on the receiver, on top of the 26 MHz
+// reference rule (hardware-mduv380.md 2): 0x8543 as at the reference harmonics, 0x8643 (the data sheet's 26 MHz word near
 // 445 MHz) at 405.4, 439.6 and beside 455 MHz, 0x8443 at 407.1 MHz. Exact channel frequencies; the same on the 5 W and
 // 10 W builds
 static const at1846s_spur_t rf_spurs[] = {
@@ -106,6 +106,7 @@ const uvf_variant_t uvf_variant = {
 	.frac = { { 350, 700, 340, 610 }, { 400, 700, 250, 550 } },
 	.cal_k = { { 630, 1000, 1000, 1100 }, { 720, 1000, 1050, 1250 } },
 #endif
+	.rf_spur_step_hz = 6500000u,	// 26 MHz reference / 4
 	.rf_spurs = rf_spurs,
 	.rf_spurs_n = sizeof rf_spurs / sizeof rf_spurs[0],
 	.init = init,

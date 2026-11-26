@@ -42,8 +42,10 @@ typedef struct {
 	// DMR key-up constants (radio/pa_keyup.h), [VHF, UHF], measured on the radio; NULL: the PA keyed at the step's
 	// drive 1 ms after the RF TX interrupt, as before the rule
 	const pa_keyup_cfg_t *keyup;
-	// AT1846S 0x05 words at the radio's own spur channels (at1846s.h), checked before the family's 26 MHz rule
-	// (hardware-dm1701.md 5.6), or NULL
+	// AT1846S 0x05 (at1846s.h, hardware-dm1701.md 5.6): the reference clock / 4 for the special word at its multiples
+	// (6.5 MHz for 26 MHz), or 0 to keep the normal word there; and the radio's own spur channels with their words,
+	// checked first, or NULL
+	uint32_t rf_spur_step_hz;
 	const at1846s_spur_t *rf_spurs;
 	uint8_t rf_spurs_n;
 	// The channel knob counts the other way: the same pins, the A and B phases swapped on the board (10.3)

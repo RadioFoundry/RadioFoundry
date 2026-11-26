@@ -794,7 +794,8 @@ static void init(void)
 	uint32_t pwd_ms = hal_millis();
 
 	at1846s_attach(&r.rf, &rf_bus);
-	static at1846s_spur_cfg_t spur = { .step_hz = 6500000u, .step_r05 = AT1846S_R05_26M };
+	static at1846s_spur_cfg_t spur = { .step_r05 = AT1846S_R05_26M };	// the family's 26 MHz reference
+	spur.step_hz = uvf_variant.rf_spur_step_hz;
 	spur.spurs = uvf_variant.rf_spurs;
 	spur.spurs_n = uvf_variant.rf_spurs_n;
 	at1846s_set_spurs(&r.rf, &spur);

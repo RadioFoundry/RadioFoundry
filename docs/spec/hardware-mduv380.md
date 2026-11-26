@@ -74,7 +74,7 @@ The AT1846S register tables of [hardware-dm1701.md](hardware-dm1701.md) apply, w
 - **Init.** The same registers and values, plus one write, 0x0F = 0x8A24 (the DM-1701's init step 27 lists it too).
   0x44 is 0x07FF at init (DMR 100 %) and 0x04FF in a second mode function, as on the DM-1701. The shared driver
   sets 0x44 = 0x07EF in DMR (1 dB under full, the DM-1701's receive level window, 5.5); open item 9 checks it here.
-- **Frequency set.** Reg 0x05 follows the family's 26 MHz rule (hardware-dm1701.md 5.6) plus 36 single channels of
+- **Frequency set.** Reg 0x05 follows the 26 MHz rule (hardware-dm1701.md 5.6) plus 36 single channels of
   this board: 0x8543 at 31 of them (408.1-468.3 MHz), 0x8643 at 405.4, 439.6, 454.9 and 455.1 MHz, 0x8443 at 407.1 MHz
   (`rf_spurs` in `boards/mduv380/board.c`), the same on the 5 W and 10 W builds. A frequency set ends with
   reg 0x30 = 0x4026 (RX on, band bits 00).
