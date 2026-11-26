@@ -1063,19 +1063,21 @@ static bool ipResponse(const dmrDataPacket_t *packet)
 
 // --- Our SMS ---
 
-static void smsFinish(uint8_t state)
+// event: what the UI is told (DMR_DATA_EV_SMS_*)
+static void smsEnd(uint8_t state, uint8_t event)
 {
 	sms.state = state;
 	sms.waiting = false;
-	if (state == DMR_REQ_OK)
-	{
-		post(DMR_DATA_EV_SMS_SENT, sms.dst);
-	}
-	else
+	if (state != DMR_REQ_OK)
 	{
 		stats.smsFailed++;
-		post(DMR_DATA_EV_SMS_FAILED, sms.dst);
 	}
+	post(event, sms.dst);
+}
+
+static void smsFinish(uint8_t state)
+{
+	smsEnd(state, (state == DMR_REQ_OK) ? DMR_DATA_EV_SMS_SENT : DMR_DATA_EV_SMS_FAILED);
 }
 
 // Our text as confirmed data: an individual ETSI IP text that wants delivery confirmed (sms.ack has the setting), and
@@ -1177,7 +1179,8 @@ static bool smsTransmit(void)
 	{
 		if (count > 0)
 		{
-			smsFinish(DMR_REQ_FAILED);// built, but the channel's privacy can't protect it: no try will go
+			// Built, but the channel's privacy can't protect it: no try will go, and the UI says why
+			smsEnd(DMR_REQ_FAILED, DMR_DATA_EV_SMS_BLOCKED);
 		}
 		return false;
 	}
@@ -1516,11 +1519,11 @@ static void emergencyTxDone(bool ok)
 
 // --- ARS ---
 
-// What a registration is for: the server, our ID and the channel. 0 when there is nothing to register (ARS off, or
-// a channel we can't send data on)
+// What a registration is for: the server, our ID and the channel. 0 when there is nothing to register (ARS off, a
+// channel we can't send data on, or one whose privacy holds packets back: each try there would be refused)
 static uint32_t arsContext(uint32_t server)
 {
-	if ((server == 0) || !canTransmit())
+	if ((server == 0) || !canTransmit() || (channel.privacy.mode == DMR_DATA_PRIVACY_BLOCK))
 	{
 		return 0;
 	}

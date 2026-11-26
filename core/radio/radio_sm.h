@@ -199,6 +199,9 @@ typedef enum {
 	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
 	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
 	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
+#if CONFIG_RADIO_DETOUR
+	RREQ_DETOUR,		// a detour: arg RADIO_DETOUR_MARK (arg2: backstop ms) or _RETURN
+#endif
 	// New request types go above
 
 	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)
@@ -248,8 +251,9 @@ typedef struct {
 } radio_vfo_t;
 #endif
 
-#if CONFIG_SCAN && CONFIG_DUAL_WATCH
-// A dual watch channel's changes for now (P7), kept while the receiver is on the other channel
+#if (CONFIG_SCAN && CONFIG_DUAL_WATCH) || CONFIG_RADIO_DETOUR
+// A channel's changes for now: a dual watch channel's (P7), kept while the receiver is on the other channel, and the
+// home channel's while a detour runs
 typedef struct {
 	bool valid;
 	bool temp_power, temp_squelch;
@@ -260,6 +264,30 @@ typedef struct {
 	uint8_t manual_ts;
 	uint32_t manual_id;
 } radio_dual_keep_t;
+#endif
+
+#if CONFIG_RADIO_DETOUR
+// The home state a detour returns to (RREQ_DETOUR). The position, the VFOs and radio_settings_t come back from the
+// settings, whose saves are held meanwhile; the rest is kept here
+typedef struct {
+	radio_dual_keep_t keep;		// the channel's changes for now and its talk target
+	bool monitor;
+	bool vfo;			// where it was: the VFO, or zone / position
+	uint16_t zone, pos;
+	uint32_t rx_hz, tx_hz;		// for the restored check
+#if CONFIG_SCAN
+	uint8_t scan_kind;		// the scan or dual watch running (scan_kind_t), started again on the return
+	uint8_t dual_sel;
+	uint32_t scan_lo_hz, scan_hi_hz;	// SCAN_VFO: its range
+	radio_dual_ref_t dual[2];	// SCAN_DUAL: its pair
+#endif
+#if CONFIG_P25
+	radio_p25_settings_t p25;
+#endif
+#if CONFIG_NXDN
+	radio_nxdn_settings_t nxdn;
+#endif
+} radio_detour_home_t;
 #endif
 
 typedef struct {
@@ -431,6 +459,14 @@ typedef struct {
 	uint32_t zone_shifts;		// zone_edit_shifts() when the zone indexes below were last followed (zone_edit.h)
 #endif
 	bool reload_pending;		// RREQ_RELOAD came while busy
+#if CONFIG_RADIO_DETOUR
+	radio_detour_home_t detour;	// the home state a detour returns to (RREQ_DETOUR)
+	uint32_t detour_ms;		// when it was marked, and the backstop
+	uint32_t detour_backstop_ms;
+	uint32_t detour_poll_ms;	// the last poll's time, for the summary's durations
+	uint8_t detour_state;		// view.state at that poll
+	uint8_t detour_why;		// the return asked: RADIO_DETOUR_WHY_*
+#endif
 	bool power_off_req;		// RREQ_POWER_OFF seen
 	bool power_off_busy;		// still sending what has to go out before the supply drops
 #if CONFIG_DMR

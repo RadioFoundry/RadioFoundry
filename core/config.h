@@ -151,6 +151,15 @@
 #ifndef CONFIG_TASK_STACKS
 #define CONFIG_TASK_STACKS		CONFIG_DEBUGLINK
 #endif
+// The debug link over the air (docs/spec/debuglink.md 7): a bench diagnostic, off by default. RADIO_DETOUR, derived
+// from it, is the radio core's and the settings store's part (temporary settings a deadline reverts), which host tests
+// build on its own
+#ifndef CONFIG_DEBUGLINK_DMRIP
+#define CONFIG_DEBUGLINK_DMRIP		0
+#endif
+#ifndef CONFIG_RADIO_DETOUR
+#define CONFIG_RADIO_DETOUR		CONFIG_DEBUGLINK_DMRIP
+#endif
 #ifndef CONFIG_CPS_OPENFW
 #define CONFIG_CPS_OPENFW		CONFIG_HOSTLINK
 #endif
@@ -532,6 +541,9 @@
 #endif
 #if CONFIG_SNMP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_SNMP needs CONFIG_DMR_IP_GATEWAY"
+#endif
+#if CONFIG_DEBUGLINK_DMRIP && !(CONFIG_DEBUGLINK && CONFIG_DMR_IP_GATEWAY)
+#error "CONFIG_DEBUGLINK_DMRIP needs CONFIG_DEBUGLINK and CONFIG_DMR_IP_GATEWAY"
 #endif
 #if CONFIG_USB_SERIAL_REQUEST && !CONFIG_USB_NETWORK
 #error "CONFIG_USB_SERIAL_REQUEST needs CONFIG_USB_NETWORK"

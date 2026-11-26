@@ -356,14 +356,15 @@ radioCoreTestNxdn: $(RCNXDN) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
 		-DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCNXDN) -lm
 
-# P25 and NXDN together, no lending vocoder: one engine at a time, NXDN in the memory P25 keeps for itself
+# P25 and NXDN together, no lending vocoder: one engine at a time, NXDN in the memory P25 keeps for itself. With the
+# detour (CONFIG_RADIO_DETOUR, docs/spec/debuglink.md 7.4), whose return covers the P25 and NXDN settings too
 RCP25NX := $(RCNXDN) $(CORE)/radio/radio_p25.c $(CORE)/p25/p25_engine.c $(P25) $(CORE)/p25/p25Voice.c $(MBE) \
            $(CORE)/debuglink/debuglink_view_p25.c
 radioCoreTestP25Nxdn: $(RCP25NX) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                       $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) \
                       $(wildcard $(CORE)/dmr/ambe/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
-		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCP25NX) -lm
+		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -DCONFIG_RADIO_DETOUR=1 -o $@ $(RCP25NX) -lm
 
 # The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
 TESTS   += radioCoreTestAprs
@@ -1072,9 +1073,18 @@ debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h) $(ROOT)/platform/stm32
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -o $@ $(DLINK)
 
 run: run-debuglink
-run-debuglink: debuglinkTest
+run-debuglink: debuglinkTest dlDmripTest
 	./debuglinkTest
+	./dlDmripTest
 .PHONY: run-debuglink
+
+# The debug link over the air, its pure parts: SipHash, the datagram and addressing, replay, the air policy, the
+# detour's items and runner (core/debuglink/dl_dmrip.c), GET_VIEW's page (dl_fmt.c)
+TESTS   += dlDmripTest
+dlDmripTest: dlDmripTest.c $(CORE)/debuglink/dl_dmrip.c $(CORE)/debuglink/dl_dmrip.h $(CORE)/debuglink/dl_frame.c \
+		$(CORE)/debuglink/dl_fmt.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dlDmripTest.c $(CORE)/debuglink/dl_dmrip.c $(CORE)/debuglink/dl_frame.c \
+		$(CORE)/debuglink/dl_fmt.c
 
 # The runtime RAM-monitor loader's portable state machine (core/stubentry/stub_load.c, CONFIG_STUB_ENTRY)
 TESTS   += stubEntryTest
@@ -1444,7 +1454,7 @@ STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c
 TESTS   += settingsTest
 
 settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_RADIO_DETOUR=1 -o $@ settingsTest.c $(STORE)
 
 run: run-settings
 run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
@@ -1591,7 +1601,7 @@ ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/co
 TESTS   += zoneEditTest
 
 zoneEditTest: zoneEditTest.c $(ZEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ zoneEditTest.c $(ZEDIT)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_RADIO_DETOUR=1 -o $@ zoneEditTest.c $(ZEDIT)
 
 run: run-zedit
 run-zedit: zoneEditTest

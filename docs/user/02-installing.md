@@ -221,7 +221,7 @@ there.
 
 | The installer offers it | Where |
 |---|---|
-| The browser has no WebUSB or Web Serial (Safari, Firefox) | The start page says so. The step that needs the radio shows the kit instead, with a picker for the stock firmware file |
+| The browser has no WebUSB or Web Serial (Safari), or no WebUSB (Firefox) | The start page says so. The step that needs the radio shows the kit instead, with a picker for the stock firmware file. Without WebUSB alone, radios that update over a programming cable still install in the browser |
 | The bootloader connect or the write fails | A line under the error |
 | The radio doesn't answer the cable within three minutes, or preparing it fails | A line under the error |
 

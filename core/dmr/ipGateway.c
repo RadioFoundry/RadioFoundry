@@ -6,7 +6,7 @@
  * Ethernet, ARP (on a fixed link for the radio's address, else for every address but the host's), ICMP echo to the
  * radio's address, a DHCP server with a single lease, ICMP, UDP and SCTP between the host and DMR IDs / talkgroups (addressing in
  * ipGateway.h), raw DMR data on IPGW_RAW_PORT, and the radio's own services (core/net): TCP to the radio's address
- * (ipGatewaySetTCP) and a port table for its UDP services (ipGatewayUdpBind; SNMP also from the air,
+ * (ipGatewaySetTCP) and a port table for its UDP services (ipGatewayUdpBind; SNMP and the debug link also from the air,
  * ipGatewayUdpFromAir), all sending to the link through ipGatewaySendLocal. No other protocols, no fragments: a host
  * packet too long for one transmission is dropped, with an ICMP "fragmentation needed" back when it has DF set.
  */
@@ -996,17 +996,27 @@ bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpHandler handler)
 	return bindPort(port, handler, true);
 }
 
-bool ipGatewayUdpFromAir(uint32_t srcId, uint16_t srcPort, uint16_t dstPort, const uint8_t *data, int length)
+static uint32_t airSrcIp;					// the IPv4 source of the air datagram being handled (radio task)
+
+bool ipGatewayUdpFromAir(uint32_t srcId, uint32_t srcIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *data,
+						 int length)
 {
 	for (int i = 0; i < IPGW_UDP_PORTS; i++)
 	{
 		if ((udpPorts[i].handler != NULL) && udpPorts[i].air && (udpPorts[i].port == dstPort))
 		{
+			airSrcIp = srcIp;
 			udpPorts[i].handler(true, srcId, srcPort, ADDRESS(INDIVIDUAL, ipGatewayRadioId()), dstPort, data, length);
+			airSrcIp = 0;
 			return true;
 		}
 	}
 	return false;
+}
+
+uint32_t ipGatewayUdpAirSource(void)
+{
+	return airSrcIp;
 }
 
 // The radio's own services, from any source on the link (a host without its lease yet uses another address; replies
