@@ -173,13 +173,20 @@ static uint8_t tuned_pane(const radio_view_t *v)
 }
 
 // The mode a channel runs in: a stored channel of a kind keeps DMR in its record (channel-modes.md 2), its kind's mode
-// is the one shown. A Tier III channel runs on its record's DMR
+// is the one shown. Tier III and AES channels run on their record's DMR (#1066: an AES channel showed P25)
 static uint8_t shown_mode(const channel_t *c)
 {
-	if (!codeplug_kind_built(c->kind) || c->kind == CODEPLUG_KIND_DMR_TRUNK)
+	if (!codeplug_kind_built(c->kind))
 		return c->mode;
-	// The other kinds a build runs: P25 (trunked too) and NXDN
-	return c->kind == CODEPLUG_KIND_NXDN ? RADIO_MODE_NXDN : RADIO_MODE_P25;
+	switch (c->kind) {
+	case CODEPLUG_KIND_P25:
+	case CODEPLUG_KIND_P25_TRUNK:
+		return RADIO_MODE_P25;
+	case CODEPLUG_KIND_NXDN:
+		return RADIO_MODE_NXDN;
+	default:
+		return c->mode;
+	}
 }
 
 static void pane_fill(uint8_t i)
@@ -216,6 +223,7 @@ static void pane_fill(uint8_t i)
 	if (radio_listen_band(ch.rx_hz))
 		ch.mode = RADIO_MODE_FM;	// the radio core receives FM (or AM) there, whatever the record says
 	p->mode = shown_mode(&ch);
+	p->kind = p->mode == RADIO_MODE_FM ? CODEPLUG_KIND_NONE : ch.kind;	// the mode word names it, as Home does
 	p->am = p->mode == RADIO_MODE_FM && radio_am_channel(&ch);	// as the receiver hears it (Home's mode word)
 	p->rx_hz = ch.rx_hz;
 	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN)

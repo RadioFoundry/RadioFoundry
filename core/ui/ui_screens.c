@@ -312,6 +312,8 @@ static const char *mode_word(const radio_view_t *v)
 // The same for a dual watch pane, from the channel picked for it (the receiver may be on the other one)
 static const char *dual_mode_word(const ui_dual_pane_t *p)
 {
+	if (p->kind != CODEPLUG_KIND_NONE)
+		return codeplug_kind_name(p->kind);	// AES, P25, T3: Home's word for the channel out of dual watch
 	return p->am ? "AM" : ui_mode_name(p->mode);
 }
 #endif
