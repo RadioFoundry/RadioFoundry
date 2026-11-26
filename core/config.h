@@ -230,7 +230,7 @@
 #endif
 
 // Stored scan lists (core/codeplug/scan_list.c, docs/spec/scan-list.md). Needs CONFIG_SCAN (features.mk checks). Off by
-// default: a board lists its scan list area in hal_flash_map_t first
+// default; every board has the codeplug settings area the lists live in
 #ifndef CONFIG_SCAN_LIST
 #define CONFIG_SCAN_LIST		0
 #endif

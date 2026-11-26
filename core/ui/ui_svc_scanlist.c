@@ -11,7 +11,7 @@
 
 uint16_t ui_svc_scanlist_slots(void)
 {
-	return scan_list_state() == SCAN_LIST_OURS ? scan_list_slots() : 0u;
+	return scan_list_slots();
 }
 
 uint32_t ui_svc_scanlist_generation(void)
@@ -55,8 +55,7 @@ static bool post(void)
 
 bool ui_svc_scanlist_put(int slot, const scan_list_t *l)
 {
-	uint8_t rec[SCAN_LIST_RECORD];
-	if (op.busy || !scan_list_encode(l, rec))
+	if (op.busy || !scan_list_valid(l))
 		return false;	// a list that can't be stored is refused here, not by the job
 	op.del = false;
 	op.slot = slot;

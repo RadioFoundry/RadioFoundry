@@ -92,5 +92,3 @@ endif
 ifneq ($(RT10_DMR_MIC_DB),)
 MCU_DEFS += -DRT10_DMR_MIC_DB=$(RT10_DMR_MIC_DB)u
 endif
-
-BOARD_NOT_WRITTEN += SCAN_LIST	# no scan list area in this radio's flash map yet (docs/spec/scan-list.md)

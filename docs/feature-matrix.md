@@ -168,7 +168,7 @@ is `tools/bringup.py list --radio <id>`.
 | `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `air_raw` | off | off | off | off | off | off | off | off |
 | `audio_probe` | not written | off | not written | not written | not written | off | off | not written |
-| `scan_list` | off | not written | not written | not written | not written | not written | not written | not written |
+| `scan_list` | off | off | off | off | off | off | off | off |
 <!-- end generated -->
 
 What the records don't hold yet: limits and known problems from the bring-up pages.
@@ -298,7 +298,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● | ✕ |
 | `SATELLITE_TLE` | ● | ● | ● | ● | ● | ● | ● | ● |
-| `SCAN_LIST` | ○ | … | … | … | … | … | … | … |
+| `SCAN_LIST` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● | ● | ✕ |
@@ -356,7 +356,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,120 | 2,188 | Up to 9 keys. Measured 2026-10-24 |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 |  |
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
-| Stored scan lists: named lists of channels from any zone, in a flash area of their own | `SCAN_LIST` | — | — | Needs `SCAN`. Not measured yet. Off by default; a board needs a scan list area in its flash map (`scan_size`). A board whose area shares the satellite TLE range excludes `SATELLITE_TLE` ([scan-list](spec/scan-list.md)) |
+| Stored scan lists: named lists of channels from any zone, kept in the codeplug settings area | `SCAN_LIST` | — | — | Needs `SCAN` and `CHANNEL_EDIT`. Not measured yet. Off by default; every board has the area ([scan-list](spec/scan-list.md)) |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
 | Signaling tone chains (Settings > Signaling tones) | `SIG_TONES` | — | — | Needs `BEEP`. Not measured yet: no C-SKY or ARM compiler in the session that wrote it |
 | Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |

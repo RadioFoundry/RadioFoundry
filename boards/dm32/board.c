@@ -236,11 +236,6 @@ void board_early_init(void)
 // and the sector journal after it, optional satellite snapshots at 0x71B000..0x71DFFF, the stub write-test sectors at
 // 0x71E000..0x71FFFF, the 1 MB open-firmware "flash" image at 0x720000 with room above it for the DMR ID database, the
 // native codeplug in the last 1 MB. The factory calibration is read only, so the open-firmware CPS gets no calibration window
-// Stored scan lists (CONFIG_SCAN_LIST, `scan_addr`) take the first sector of the satellite TLE snapshots' range, so the two
-// exclude each other on this board
-#if CONFIG_SCAN_LIST && CONFIG_SATELLITE_TLE
-#error "Stored scan lists (0x71B000) are in the satellite TLE snapshots' range (0x71B000..0x71DFFF): CONFIG_SCAN_LIST and CONFIG_SATELLITE_TLE=y exclude each other on this board"
-#endif
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x711000u,
 	.settings_size = 0x008000u,	// 8 sectors
@@ -254,8 +249,6 @@ static const hal_flash_map_t flash_map = {
 	.calibration_size = 0,
 	.native_addr = 0xF00000u,
 	.native_size = 0x100000u,
-	.scan_addr = CONFIG_SCAN_LIST ? 0x71B000u : 0u,		// 16 scan lists (docs/spec/scan-list.md)
-	.scan_size = CONFIG_SCAN_LIST ? 0x001000u : 0u,
 };
 static const hrc_flash_cfg_t flash_cfg = {
 	.cs_pin = PIN_FLASH_CS,

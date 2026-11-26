@@ -210,8 +210,8 @@ CONFIG_SCAN ?= y
 # the dual watch screens: two channels on Home, which one PTT uses and which one a call came in on; the radio core's
 # dual watch across zones and with the VFO, PTT on the selected channel (needs SCAN; docs/ux/dual-watch.md)
 CONFIG_DUAL_WATCH ?= $(CONFIG_SCAN)
-# stored scan lists: named lists of channels from any zone, kept in the board's scan list area (core/codeplug/scan_list.c,
-# docs/spec/scan-list.md). Needs SCAN. Off by default; a board with no scan list area (hal_flash_map_t.scan_size) has none
+# stored scan lists: named lists of channels from any zone, kept as records of the codeplug settings area
+# (core/codeplug/scan_list.c, docs/spec/scan-list.md). Needs SCAN and CHANNEL_EDIT. Off by default
 CONFIG_SCAN_LIST ?= n
 # key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's programmable keys do
 # (core/input/keyassign.c, docs/spec/ui.md 3.1)

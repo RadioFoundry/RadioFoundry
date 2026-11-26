@@ -1443,16 +1443,18 @@ endif
 .PHONY: run-net
 
 # The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write
-STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c $(CORE)/codeplug/scan_list.c sim/sim_flash.c
+STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c
 TESTS   += settingsTest
 
 settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
-# Stored scan lists (core/codeplug/scan_list.c) on the simulated flash, with power cuts
+# Stored scan lists (core/codeplug/scan_list.c) as records of the codeplug settings area on the simulated flash, with
+# power cuts
 TESTS   += scanListTest
-SCANLIST := scanListTest.c $(CORE)/codeplug/scan_list.c $(CORE)/storage/storage.c sim/sim_flash.c
-scanListTest: $(SCANLIST) $(CORE)/codeplug/scan_list.h $(wildcard $(CORE)/storage/*.h) sim/sim_flash.h
+SCANLIST := scanListTest.c $(CORE)/codeplug/scan_list.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c \
+            $(CORE)/storage/storage.c sim/sim_flash.c
+scanListTest: $(SCANLIST) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h) sim/sim_flash.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SCAN_LIST=1 -o $@ $(SCANLIST)
 run: run-scanList
 run-scanList: scanListTest

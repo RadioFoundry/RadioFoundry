@@ -16,7 +16,6 @@
 #include <string.h>
 #include "config.h"
 #include "storage/storage.h"
-#include "codeplug/scan_list.h"	// the scan list record's frame, which the claim keeps (scan-list.md 3)
 
 #define J_MAGIC		0x4C4E4A4Fu	// "OJNL"
 #define J_HDR_LEN	16u		// magic, target, data CRC, header CRC
@@ -423,41 +422,6 @@ bool storage_claim_pending(void)
 	return claim_pending;
 }
 
-// Whether a scan list slot holds one of our records (scan-list.md 3: magic, layout and CRC right)
-static bool scan_record(const uint8_t *r)
-{
-	return get32(r) == SCAN_LIST_MAGIC && r[4] == SCAN_LIST_LAYOUT &&
-	       get32(r + SCAN_LIST_RECORD - 4u) == storage_crc32(0, r, SCAN_LIST_RECORD - 4u);
-}
-
-// Clear another firmware's bytes from a sector of the scan list area and keep our records: a sector whose slots are all
-// free or ours is not touched, so a claim never costs the user a stored list
-static bool claim_scan_sector(uint32_t a)
-{
-	uint8_t *b = storage_buffer_acquire();
-	bool ok = b != NULL && rd(a, b, STORAGE_SECTOR), other = false, kept = false;
-
-	for (uint32_t off = 0; ok && off < STORAGE_SECTOR; off += SCAN_LIST_RECORD) {
-		bool empty = true;
-		for (uint32_t i = 0; i < SCAN_LIST_RECORD; i++) {
-			empty = empty && b[off + i] == 0xFF;
-		}
-		if (scan_record(b + off)) {
-			kept = true;
-		} else if (!empty) {
-			memset(b + off, 0xFF, SCAN_LIST_RECORD);
-			other = true;
-		}
-	}
-	if (ok && other) {
-		ok = er(a) && (kept ? wr(a, b, STORAGE_SECTOR) && same(a, b, STORAGE_SECTOR) : blank(a, STORAGE_SECTOR));
-	}
-	if (b != NULL) {
-		storage_buffer_release();
-	}
-	return ok;
-}
-
 bool storage_claim(void)
 {
 	const hal_flash_map_t *m = storage_map();
@@ -474,11 +438,6 @@ bool storage_claim(void)
 	}
 	for (uint32_t a = m->journal_addr; ok && a < m->journal_addr + 2u * STORAGE_SECTOR; a += STORAGE_SECTOR) {
 		ok = er(a) && blank(a, STORAGE_SECTOR);
-	}
-	// And the scan list area: our lists stay, whatever else is there goes
-	for (uint32_t a = m->scan_addr; ok && m->scan_size % STORAGE_SECTOR == 0 && a < m->scan_addr + m->scan_size;
-	     a += STORAGE_SECTOR) {
-		ok = target_ok(m, a) && claim_scan_sector(a);
 	}
 	if (ok) {
 		region = STORAGE_REGION_OURS;
@@ -502,8 +461,7 @@ bool storage_debug_read_allowed(uint32_t addr, uint32_t len)
 	}
 	return inside(addr, len, m->settings_addr, m->settings_size) ||
 	       inside(addr, len, m->journal_addr, 2u * STORAGE_SECTOR) ||
-	       inside(addr, len, m->calibration_addr, m->calibration_size) ||
-	       inside(addr, len, m->scan_addr, m->scan_size);	// a claim erases it too: backed up first
+	       inside(addr, len, m->calibration_addr, m->calibration_size);
 }
 
 // A write refused because the region is foreign (counted), or because there is no flash

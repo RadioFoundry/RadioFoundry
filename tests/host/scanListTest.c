@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Stored scan lists (core/codeplug/scan_list.c, docs/spec/scan-list.md) on a simulated NOR flash: records in and out
-// unchanged, refused lists, replace, delete and the free slot it leaves, full, someone else's bytes in the area, bad
-// maps, the shared buffer taken, and a power cut at every unit of a write: after the next boot the old list or the
-// new one, never a mix
+// Stored scan lists (core/codeplug/scan_list.c, docs/spec/scan-list.md) as records of the codeplug settings area on a
+// simulated NOR flash: records in and out unchanged, refused lists, replace, delete and the free slot it leaves, full,
+// keys of other settings kept beside the lists, a later firmware's area, the shared buffer taken, and a power cut at
+// every unit of a write: after the next boot the old list or the new one, never a mix
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "storage/storage.h"
+#include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
 #include "codeplug/scan_list.h"
+#include "storage/storage.h"
 #include "sim/sim_flash.h"
 
 static int failures;
@@ -17,20 +19,21 @@ static int failures;
 
 void storage_lock(void) {}
 void storage_unlock(void) {}
-void storage_quick_lock(void) {}
-void storage_quick_unlock(void) {}
 
-#define FLASH_SIZE	0x40000u
-#define SCAN_ADDR	0x1C000u
+#define FLASH_SIZE	0x200000u
+#define EE		0x000000u
+#define FL		0x020000u
+#define AREA		(EE + CODEPLUG_KV_ADDR)
 
 static hal_flash_map_t map = {
 	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
-	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = FLASH_SIZE,
-	.satellite_addr = 0x1B000u, .satellite_size = 0x1000u,
-	.scan_addr = SCAN_ADDR, .scan_size = 0x2000u,
+	.openfw_eeprom = EE, .openfw_flash = FL, .openfw_end = FLASH_SIZE,
+	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
 };
 
-const board_t board = { .name = "test", .flash = &sim_flash };
+static band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
+
+const board_t board = { .name = "test", .bands = bands, .band_count = 2, .power_count = 9, .flash = &sim_flash };
 
 // A list named name with the channels first, first + 1, ... (n of them)
 static scan_list_t make(const char *name, uint16_t first, uint16_t n)
@@ -55,63 +58,59 @@ static void boot(void)
 {
 	sim_flash_power_on();
 	CHECK(storage_init());
+	codeplug_init();
+}
+
+static void fresh(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	codeplug_init();
 }
 
 static void test_codec(void)
 {
-	uint8_t b[SCAN_LIST_RECORD];
-	scan_list_t a = make("SATS", 10, 5), d;
-	CHECK(scan_list_encode(&a, b));
-	CHECK(b[0] == 0x4F && b[1] == 0x53 && b[2] == 0x43 && b[3] == 0x4C && b[4] == SCAN_LIST_LAYOUT);
-	CHECK(b[6] == 5 && b[7] == 0 && b[24] == 10 && b[25] == 0 && b[26] == 11);
-	CHECK(scan_list_decode(b, &d) && same(&a, &d));
-	for (unsigned i = 184; i < SCAN_LIST_RECORD - 4u; i++)
-		CHECK(b[i] == 0);			// the reserved bytes are zero
-	// Any changed byte fails the CRC; another layout is refused
-	for (unsigned i = 0; i < SCAN_LIST_RECORD; i += 11) {
-		b[i] ^= 0x10;
-		CHECK(!scan_list_decode(b, &d));
-		b[i] ^= 0x10;
-	}
-	b[4] = SCAN_LIST_LAYOUT + 1;
-	CHECK(!scan_list_decode(b, &d));
-
-	// The most a list holds, and a name of every byte of its field (no terminator in the record; non-ASCII bytes kept)
-	scan_list_t full = make("0123456789ABCDEF", 1, SCAN_LIST_MAX);
-	full.name[3] = (char)0xE9;
-	CHECK(scan_list_encode(&full, b) && scan_list_decode(b, &d) && same(&full, &d) && strlen(d.name) == 16);
-	// An empty list is a list
+	scan_list_t a = make("SATS", 1, 4), d;
+	uint8_t b[SCAN_LIST_REC_MAX];
+	unsigned n = scan_list_encode(&a, b);
+	CHECK(n == SCAN_LIST_HEAD + 8u && scan_list_decode(b, n, &d) && same(&a, &d));
+	// The layout the spec gives: flags, count, the name NUL padded, the channels little endian
+	CHECK(b[0] == 0 && b[1] == 4 && memcmp(b + 2, "SATS", 5) == 0 && b[17] == 0 && b[18] == 1 && b[19] == 0 && b[24] == 4);
+	// Fields a later layout appends are ignored
+	uint8_t longer[SCAN_LIST_REC_MAX + 8];
+	memcpy(longer, b, n);
+	memset(longer + n, 0x5A, 8);
+	CHECK(scan_list_decode(longer, n + 8u, &d) && same(&a, &d));
+	// A record that is cut short, or names more channels than it holds, is not a list
+	CHECK(!scan_list_decode(b, n - 1u, &d) && !scan_list_decode(b, SCAN_LIST_HEAD - 1u, &d) && !scan_list_decode(b, 0, &d));
+	b[1] = SCAN_LIST_MAX + 1u;
+	CHECK(!scan_list_decode(b, sizeof b, &d));
+	// The widest list: 80 channels, a name that fills the field with no terminator in the record
+	scan_list_t full = make("ABCDEFGHIJKLMNOP", 1000, SCAN_LIST_MAX);
+	n = scan_list_encode(&full, b);
+	CHECK(n == SCAN_LIST_REC_MAX && scan_list_decode(b, n, &d) && same(&full, &d) && strlen(d.name) == 16);
 	scan_list_t none = make("EMPTY", 0, 0);
-	CHECK(scan_list_encode(&none, b) && scan_list_decode(b, &d) && d.count == 0);
-
-	// Refused: no name, too many channels, channel 0, a channel twice
-	scan_list_t bad = make("", 1, 3);
-	CHECK(!scan_list_encode(&bad, b));
-	bad = make("X", 1, SCAN_LIST_MAX);
-	bad.count = SCAN_LIST_MAX + 1;
-	CHECK(!scan_list_encode(&bad, b));
-	bad = make("X", 1, 3);
-	bad.channels[1] = 0;
-	CHECK(!scan_list_encode(&bad, b));
-	bad = make("X", 1, 3);
-	bad.channels[2] = 1;
-	CHECK(!scan_list_encode(&bad, b));
-	// A stored record that is valid only by its CRC (a count past the limit) is not a list
-	CHECK(scan_list_encode(&a, b));
-	b[6] = SCAN_LIST_MAX + 1;
-	uint32_t crc = storage_crc32(0, b, SCAN_LIST_RECORD - 4u);
-	for (unsigned k = 0; k < 4; k++)
-		b[SCAN_LIST_RECORD - 4u + k] = (uint8_t)(crc >> (8 * k));
-	CHECK(!scan_list_decode(b, &d));
+	n = scan_list_encode(&none, b);
+	CHECK(n == SCAN_LIST_HEAD && scan_list_decode(b, n, &d) && d.count == 0);
+	// Lists the store refuses: no name, a channel 0, a channel twice
+	scan_list_t bad = make("", 1, 1);
+	CHECK(scan_list_encode(&bad, b) == 0 && !scan_list_valid(&bad));
+	bad = make("ZERO", 0, 3);
+	CHECK(scan_list_encode(&bad, b) == 0);
+	bad = make("TWICE", 5, 3);
+	bad.channels[2] = 5;
+	CHECK(scan_list_encode(&bad, b) == 0);
+	bad = make("TOOMANY", 1, 3);
+	bad.count = SCAN_LIST_MAX + 1u;
+	CHECK(scan_list_encode(&bad, b) == 0);
 }
 
 static void test_store(void)
 {
 	scan_list_t r;
-	sim_flash_create(FLASH_SIZE, &map);
-	boot();
-	CHECK(scan_list_slots() == 32 && scan_list_state() == SCAN_LIST_OURS && scan_list_count() == 0);
-	CHECK(!scan_list_read(0, &r) && !scan_list_delete(0) && !scan_list_read(32, &r));
+	fresh();
+	CHECK(scan_list_usable() && scan_list_slots() == SCAN_LIST_SLOTS && scan_list_count() == 0);
+	CHECK(!scan_list_read(0, &r) && !scan_list_delete(0) && !scan_list_read(SCAN_LIST_SLOTS, &r));
 
 	scan_list_t a = make("SATS", 1, 4), b = make("REPEATERS", 20, 12), c = make("SIMPLEX", 100, 3);
 	CHECK(scan_list_add(&a) == 0 && scan_list_add(&b) == 1 && scan_list_add(&c) == 2);
@@ -129,21 +128,25 @@ static void test_store(void)
 	// Refused lists and slots change nothing
 	scan_list_t bad = make("", 1, 1);
 	uint32_t gen = scan_list_generation();
-	CHECK(!scan_list_write(3, &bad) && scan_list_add(&bad) == -1 && !scan_list_write(32, &a));
+	CHECK(!scan_list_write(3, &bad) && scan_list_add(&bad) == -1 && !scan_list_write(SCAN_LIST_SLOTS, &a));
 	CHECK(scan_list_generation() == gen && scan_list_count() == 4);
+	// A change moves the generation, and so does a change of the area that isn't ours
+	CHECK(scan_list_write(3, &e) && scan_list_generation() != gen);
+	gen = scan_list_generation();
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 12345) && scan_list_generation() != gen);
 
-	// Fill both sectors; one more doesn't fit, a replacement still does
-	for (unsigned i = 0; scan_list_count() < 32; i++) {
-		scan_list_t f = make("FILL", (uint16_t)(200 + i), 1);
-		CHECK(scan_list_add(&f) >= 0);
-	}
-	CHECK(scan_list_count() == 32 && scan_list_add(&a) == -1);
-	CHECK(scan_list_write(31, &a) && scan_list_read(31, &r) && same(&r, &a));
+	// Fill every slot with the widest list: one more doesn't fit, a replacement still does
+	scan_list_t wide = make("WIDE", 1, SCAN_LIST_MAX);
+	for (uint16_t i = 0; i < SCAN_LIST_SLOTS; i++)
+		CHECK(scan_list_write(i, &wide));
+	CHECK(scan_list_count() == SCAN_LIST_SLOTS && scan_list_add(&a) == -1);
+	CHECK(scan_list_write(15, &a) && scan_list_read(15, &r) && same(&r, &a));
+	CHECK(scan_list_write(2, &c) && scan_list_write(10, &d));
 	CHECK(sim_flash_violations() == 0);
 
 	// Survives a reboot
 	boot();
-	CHECK(scan_list_count() == 32 && scan_list_read(2, &r) && same(&r, &c) && scan_list_read(10, &r) && same(&r, &d));
+	CHECK(scan_list_count() == SCAN_LIST_SLOTS && scan_list_read(2, &r) && same(&r, &c) && scan_list_read(10, &r) && same(&r, &d));
 
 	// The shared sector buffer taken (a codeplug write): refused, nothing changed
 	uint8_t *buf = storage_buffer_acquire();
@@ -152,35 +155,51 @@ static void test_store(void)
 	sim_flash_free();
 }
 
-static void test_foreign(void)
+// The lists share the area with the other keyed settings: neither disturbs the other, and a full area refuses a list
+// without losing what is there
+static void test_shared_area(void)
 {
-	scan_list_t r, a = make("SATS", 1, 4);
-	sim_flash_create(FLASH_SIZE, &map);
-	boot();
-	CHECK(scan_list_add(&a) == 0);
-	// Someone else's bytes in a slot: read only from then on
-	sim_flash_data[SCAN_ADDR + 5u * SCAN_LIST_RECORD + 7u] = 0x12;
-	CHECK(scan_list_state() == SCAN_LIST_FOREIGN);
-	CHECK(scan_list_read(0, &r) && same(&r, &a));
-	CHECK(!scan_list_write(0, &a) && scan_list_add(&a) == -1 && !scan_list_delete(0) && scan_list_count() == 1);
-	// Cleared: ours again, empty, and writable
-	CHECK(scan_list_clear() && scan_list_state() == SCAN_LIST_OURS && scan_list_count() == 0 && scan_list_add(&a) == 0);
+	scan_list_t r, a = make("SATS", 1, 4), b = make("REPEATERS", 20, 12);
+	fresh();
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 4711) && codeplug_kv_set_u32(CODEPLUG_KEY_IP_GATEWAY, 99));
+	CHECK(scan_list_add(&a) == 0 && scan_list_add(&b) == 1);
+	uint8_t v[4];
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_ARS_SERVER, v, sizeof v) == 4 && v[0] == (4711 & 0xFF) && v[1] == (4711 >> 8));
+	CHECK(scan_list_delete(0) && codeplug_kv_get(CODEPLUG_KEY_IP_GATEWAY, v, sizeof v) == 4 && v[0] == 99);
+	CHECK(scan_list_read(1, &r) && same(&r, &b));
+	// Another setting's key between the lists' range and past it doesn't count as a list
+	CHECK(codeplug_kv_set_u32((uint16_t)(CODEPLUG_KEY_SCAN_LIST + SCAN_LIST_SLOTS), 1) && scan_list_count() == 1);
+	// A key of ours holding something that is not a record: the slot reads as free and add takes it
+	static const uint8_t junk[3] = { 1, 2, 3 };
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SCAN_LIST + 0, junk, sizeof junk) && !scan_list_read(0, &r) && scan_list_count() == 1);
+	CHECK(scan_list_add(&a) == 0 && scan_list_read(0, &r) && same(&r, &a));
+	// A full area: another setting takes the room, a list that doesn't fit is refused, what was stored stays
+	static uint8_t big[3900];
+	memset(big, 0x77, sizeof big);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_TARGET, big, sizeof big));
+	scan_list_t wide = make("WIDE", 1, SCAN_LIST_MAX);
+	CHECK(scan_list_add(&wide) == -1 && !scan_list_write(5, &wide));
+	CHECK(scan_list_count() == 2 && scan_list_read(0, &r) && same(&r, &a) && scan_list_read(1, &r) && same(&r, &b));
 	CHECK(sim_flash_violations() == 0);
 	sim_flash_free();
+}
 
-	// Maps that give no area: none, unaligned, past the flash, over the settings ring, over the satellite area
-	const struct { uint32_t addr, size; } bad[] = { { 0, 0 }, { SCAN_ADDR + 0x100u, 0x1000u }, { SCAN_ADDR, 0x1800u },
-		{ FLASH_SIZE - 0x1000u, 0x2000u }, { 0x12000u, 0x1000u }, { 0x1B000u, 0x1000u }, { 0x1A000u, 0x2000u } };
-	for (unsigned i = 0; i < sizeof bad / sizeof bad[0]; i++) {
-		map.scan_addr = bad[i].addr;
-		map.scan_size = bad[i].size;
-		sim_flash_create(FLASH_SIZE, &map);
-		boot();
-		CHECK(scan_list_slots() == 0 && scan_list_state() == SCAN_LIST_NONE && scan_list_add(&a) == -1);
-		sim_flash_free();
-	}
-	map.scan_addr = SCAN_ADDR;
-	map.scan_size = 0x2000u;
+static void test_unusable(void)
+{
+	scan_list_t a = make("SATS", 1, 4), r;
+	// A later firmware's area is never written: the lists are not usable
+	fresh();
+	CHECK(scan_list_add(&a) == 0);
+	uint8_t *s = &sim_flash_data[AREA];
+	s[4] = 2;							// version 2: ours, but newer than this reader
+	CHECK(!scan_list_usable() && scan_list_slots() == 0 && scan_list_count() == 0);
+	CHECK(!scan_list_read(0, &r) && scan_list_add(&a) == -1 && !scan_list_write(0, &a) && !scan_list_delete(0));
+	sim_flash_free();
+
+	// A board with no flash map gets no lists
+	sim_flash_create(FLASH_SIZE, NULL);
+	CHECK(!scan_list_usable() && scan_list_slots() == 0 && scan_list_add(&a) == -1);
+	sim_flash_free();
 }
 
 // A power cut at every unit of replacing a list: after the boot (the journal's replay) the store holds the old list
@@ -188,8 +207,7 @@ static void test_foreign(void)
 static void test_power_cut(void)
 {
 	scan_list_t r, a = make("SATS", 1, 4), b = make("REPEATERS", 20, 12), a2 = make("SATS", 1, 9);
-	sim_flash_create(FLASH_SIZE, &map);
-	boot();
+	fresh();
 	CHECK(scan_list_add(&a) == 0 && scan_list_add(&b) == 1);
 	uint32_t before = sim_flash_units();
 	CHECK(scan_list_write(0, &a2));
@@ -201,7 +219,7 @@ static void test_power_cut(void)
 		scan_list_write(0, &a2);
 		sim_flash_cut_after(0);
 		boot();
-		CHECK(scan_list_state() == SCAN_LIST_OURS && scan_list_count() == 2);
+		CHECK(scan_list_count() == 2);
 		CHECK(scan_list_read(1, &r) && same(&r, &b));
 		CHECK(scan_list_read(0, &r));
 		if (same(&r, &a))
@@ -222,7 +240,8 @@ int main(void)
 {
 	test_codec();
 	test_store();
-	test_foreign();
+	test_shared_area();
+	test_unusable();
 	test_power_cut();
 	printf("scanListTest: %s\n", failures ? "FAILED" : "passed");
 	return failures != 0;
