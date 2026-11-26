@@ -118,7 +118,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x24` | AIR | operation u8 + arguments (3.28); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.28) |
 | `0x25` | SUPPORT | operation u8 (3.29); `CONFIG_SUPPORT_INFO` builds, else status 4 | key=value text (3.29) |
 | `0x26` | SATELLITE | operation u8 + arguments (3.30); `CONFIG_SATELLITE_TLE` builds only | capability, inventory, or transaction result (3.30) |
-| `0x27` | RTC | operation u8 (0 GET; 1 SET + unix u32) (3.31) | GET: valid u8, unix u32; SET: none (3.31) |
+| `0x27` | RTC | operation u8 (0 GET; 1 SET + unix u32) (3.31); `CONFIG_RTC` builds, else status 1 | GET: valid u8, unix u32; SET: none (3.31) |
 
 ### 3.1 VERSION
 
@@ -1083,7 +1083,8 @@ capacity and atomic commit behavior are specified in [satellite.md](satellite.md
 
 `DL_CMD_RTC` (`0x27`) reads or sets the board's hardware clock (`board.rtc`, `hal/hal_rtc.h`; `CONFIG_RTC`). The time
 is UTC seconds since 1970-01-01, a `u32` (little endian). The reply to an unknown operation or a wrong length is
-`DL_ST_BAD_ARG`; a board with no clock driver, or a build without `CONFIG_RTC`, answers `DL_ST_UNAVAILABLE`.
+`DL_ST_BAD_ARG`; a board with no clock driver answers `DL_ST_UNAVAILABLE`, and a build without `CONFIG_RTC` does not
+know the command (`DL_ST_UNKNOWN_CMD`).
 
 | Operation | Request | Reply |
 |---|---|---|

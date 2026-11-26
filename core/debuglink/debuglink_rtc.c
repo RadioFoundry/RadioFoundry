@@ -2,6 +2,9 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DL_CMD_RTC (docs/spec/debuglink.md 3.31): read or set the board's hardware clock (board.rtc, hal_rtc.h). This task
 // is the only caller of the clock's bus, so a read or a write never meets another.
+#include "config.h"
+
+#if CONFIG_RTC
 #include "board.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -47,3 +50,5 @@ size_t debuglink_cmd_rtc(const uint8_t *req, uint16_t len, uint8_t *out, size_t 
 	}
 	return status_only(out, DL_ST_BAD_ARG);
 }
+
+#endif

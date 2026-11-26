@@ -1155,7 +1155,7 @@ RTCDL := debuglinkRtcTest.c $(CORE)/debuglink/debuglink_rtc.c
 TESTS += debuglinkRtcTest
 debuglinkRtcTest: $(RTCDL) $(ROOT)/hal/board.h $(ROOT)/hal/hal_rtc.h $(CORE)/debuglink/debuglink.h \
 		$(CORE)/debuglink/debuglink_proto.h
-	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(RTCDL)
+	$(CC) $(CFLAGS) -DCONFIG_RTC=1 -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(RTCDL)
 
 run: run-debuglinkRtc
 run-debuglinkRtc: debuglinkRtcTest

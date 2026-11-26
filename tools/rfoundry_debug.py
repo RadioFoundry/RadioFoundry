@@ -191,7 +191,7 @@ REBOOT_REASONS = {1: "wrong confirmation token (not the chip UID's low word)",
 # STM32F405 sectors: (start, size)
 F4_SECTORS = [(0x08000000 + i * 0x4000, 0x4000) for i in range(4)] + [(0x08010000, 0x10000)] + \
     [(0x08020000 + i * 0x20000, 0x20000) for i in range(7)]
-ST_OK, ST_BAD_ARG, ST_BUSY, ST_UNAVAILABLE = 0, 2, 3, 4
+ST_OK, ST_UNKNOWN_CMD, ST_BAD_ARG, ST_BUSY, ST_UNAVAILABLE = 0, 1, 2, 3, 4
 SHOT_LZ4 = 3            # SCREENSHOT's packed form (debuglink.md 3.3)
 SHOT_HDR = 28           # its reply bytes before the palette, status included
 
@@ -2396,8 +2396,9 @@ def cmd_rtc(link, a):
             return 0
         valid, unix = link.rtc_get()
     except DebugLinkError as e:
-        if e.status == ST_UNAVAILABLE:
-            print("rfoundry_debug: this radio has no hardware clock driver", file=sys.stderr)
+        if e.status in (ST_UNAVAILABLE, ST_UNKNOWN_CMD):
+            print("rfoundry_debug: this radio has no hardware clock driver, or this firmware is built without CONFIG_RTC",
+                  file=sys.stderr)
         elif e.status == ST_REFUSED:
             print("rfoundry_debug: the clock refused that time (out of its range, or its bus did not answer)", file=sys.stderr)
         else:
