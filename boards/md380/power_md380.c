@@ -185,12 +185,14 @@ static uint8_t battery_pct(void)
 //   user turning the knob.
 // - Switching the radio off with the knob also removes power from the potentiometer, so its reading falls. The battery
 //   reading falls at the same instant, and while it is low the last position is kept.
-// - Never returns 0: the speaker is still faintly audible with the knob at the bottom.
+// - Returns 0 in the bottom zone (8 counts over the bottom reading), and the amplifier then stays off: the knob alone
+//   leaves the speaker faintly audible there, and the bottom of the knob means silent.
 static int8_t volume(void)
 {
-	static const volume_pot_cal_t cal = { 2, 327, 1970, VOLUME_POT_NO_MUTE };
+	static const volume_pot_cal_t cal = { 2, 327, 1970, 8 };
 	if (settled() && battery_now_mv() >= PWRSW_OFF_MV) {
 		vol_pct = volume_pot_percent(&vol_pot, &cal, adc_read(CH_VOLUME));
+		md380_speaker_knob_mute(vol_pct == 0);
 	}
 	return vol_pct;
 }

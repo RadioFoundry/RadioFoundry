@@ -63,9 +63,10 @@ typedef struct {
 	// path would ignore it, so the core caps each beep at the volume percent (radio_beep_level)
 	bool volume_pcm;
 	// Optional, with volume_pcm: the gain volume(percent) gives the PCM path at the speaker, in tenths of a dB from
-	// any fixed point (percent 1..100). The core plays a beep softer above volume step RADIO_BEEP_VOLUME_STEP by the
-	// gain added over that step's, so beeps stop getting louder there while voice still does (radio_beep_pcm_level).
-	// NULL: beeps follow the volume to the top
+	// any fixed point (percent 1..100). Without volume, on a radio whose analog knob the MCU reads
+	// (hal_power_t.volume): the gain the knob gives the PCM path at that position. The core plays a beep softer above
+	// volume step RADIO_BEEP_VOLUME_STEP by the gain added over that step's, so beeps stop getting louder there while
+	// voice still does (radio_beep_pcm_level). NULL: beeps follow the volume to the top
 	int16_t (*volume_db10)(uint8_t percent);
 	// Optional: during FM TX, send a single audio tone of hz instead of the microphone (1750 Hz burst, roger beep);
 	// 0 = the microphone again. False when the board can't (not in FM TX)

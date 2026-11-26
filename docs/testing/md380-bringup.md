@@ -134,7 +134,7 @@ Open Diagnostics (Menu > Settings > Diagnostics, or `rfoundry_debug.py diag`). T
 | "ch x" changes by one per detent across all 16 positions, the channel steps the right way | Settled: the Gray code table in `input_md380.c` (hardware-md380.md 9.2) |
 | PTT (and the accessory PTT) key the PTT bit | PE11 / PE12 pulls in `input_md380.c` |
 | "vol" follows the knob (two models examined: 2 to 1970, or 2 to 2019); the red LED lights on TX later | PA0 / PE1 (the sources disagree). Unknown 5 |
-| The volume bar follows the knob: step 8 near mid-rotation ("vol" about 327 there), 16 at the top, the lowest step is 1 (the bottom stop is not silent), nothing at power-up or switch-off | `volume()` in `power_md380.c` (the midpoint 327) |
+| The volume bar follows the knob: step 8 near mid-rotation ("vol" about 327 there), 16 at the top, nothing at power-up or switch-off; the bottom stop reads 0 and the speaker is silent there (the knob alone leaves faint audio) | `volume()` in `power_md380.c` (the midpoint 327) |
 | "bat raw R NNNNmV" matches a meter within 2 % | `MD380_BATT_COUNTS_X10` in `power_md380.c`. Unknown 6 |
 | Switching off with the knob: the radio dies at once | if it stays on, the switch is sensed, not direct: `switch_on()` in `power_md380.c`. Unknown 7 |
 | "flash EF4018 16384K" (W25Q128) or a 1 MB part | `flash_md380.c` accepts any JEDEC type 0x40. Unknown 8 |

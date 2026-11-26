@@ -454,7 +454,9 @@ step, each beep's samples are played softer by the gain over step 7's (`radio_be
 level, never below 1), so the beep sounds as at step 7. The speaker volume itself never changes for a beep, so voice
 playing at the same time (a DMR call with a beep mixed in) keeps its level. Steps 1-7 play `beep_level` unchanged. The
 curve comes from the board: on an HR_C6000 board the curve is measured at the speaker (about 0.77 dB per RX gain step, 26.9 dB
-from step 7 to the top). A `volume_pcm` board without the hook has beeps follow the volume to the top. This holds for
+from step 7 to the top). A radio with an analog knob the MCU only reads (`hal_power_t.volume`, no
+`hal_radio_t.volume`) gives the knob's gain at each position the same way, and the core softens each beep by the gain the
+knob adds over 44 % (step 7's percent). A `volume_pcm` board without the hook has beeps follow the volume to the top. This holds for
 FM and DMR beeps alike. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`). A DMR call
 leaves that stream running until the radio leaves DMR, so most beeps on a DMR channel are mixed. A mixed beep the

@@ -836,8 +836,9 @@ there (0x9C to 0x8A: 6.4 dB at full volume, 8.3 dB at 3/4).
 
 The volume knob sets the level in the analog path; the MCU only sees its position on PA0. `hal_power_t.volume()` reports
 that position for the volume bar (`radio-features.md` 4.2), on a scale from raw 2 through 327 at mid-rotation (50 %) to
-1970 (100 %) (measured: units top out between about 1970 and 2019). No mute zone is applied: with the knob against the
-bottom stop a very faint audio is still heard (tested). It answers -1 until the ADC readings settle, and holds the last
+1970 (100 %) (measured: units top out between about 1970 and 2019). With the knob against the bottom stop the speaker
+still plays a very faint audio, so the bottom 8 counts (raw 10 and below, back above 15) read 0 and the amplifier then
+stays off for every sound (`md380_speaker_knob_mute`). It answers -1 until the ADC readings settle, and holds the last
 position while the battery line reads off (10.1). The board has no `CAP_VOLUME_POT`, and there is no
 `hal_radio_t.volume`: the MCU has no way to set the speaker level (the HR_C5000's feed-through gain isn't used for it,
 and the knob acts after it), so the debug link's volume operation (RADIO op 30) answers "unavailable"

@@ -637,6 +637,7 @@ static void dmr_enter(void)
 // input.
 static bool audio_wanted;
 static bool pcm_wanted;
+static volatile bool knob_muted;
 static SemaphoreHandle_t speaker_lock;
 #if CONFIG_BEEP && CONFIG_DMR
 static uint8_t aux_state;	// SPK_AUX_*: the PC8 PWM path's (spkaux_md380.c) hold on the amplifier
@@ -650,8 +651,11 @@ static void speaker_apply(void)
 	}
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
+	if (knob_muted) {
+		fm = pcm = false;
+	}
 #if CONFIG_BEEP && CONFIG_DMR
-	if (aux_state != SPK_AUX_OFF) {
+	if (aux_state != SPK_AUX_OFF && !knob_muted) {
 		// The PWM path while DMR is on air: the amplifier up, the speaker open only while it plays
 		PIN_WRITE(PIN_FM_MUTE, false);
 		PIN_WRITE(PIN_AMP_EN, true);
@@ -669,6 +673,14 @@ static void speaker_apply(void)
 	}
 	if (locked) {
 		xSemaphoreGive(speaker_lock);
+	}
+}
+
+void md380_speaker_knob_mute(bool mute)
+{
+	if (mute != knob_muted) {
+		knob_muted = mute;
+		speaker_apply();
 	}
 }
 
@@ -1105,6 +1117,26 @@ static void rx_sleep(bool sleep)
 	}
 }
 
+#if CONFIG_BEEP
+// The gain the volume knob gives the speaker at each 5 % of its position (hal_radio_t.volume_db10), in tenths of a dB
+// from the top. PA0 reads the wiper of the potentiometer that sets the level; at the speaker the knob gives about 0.79
+// of the wiper's dB (the reading over the top reading, from the position's two lines in power_md380.c volume()),
+// measured with a 1 kHz beep between a quarter turn, mid-rotation and the top (hardware-md380.md 6.1)
+static const int16_t knob_db10[21] = {
+	-474, -279, -233, -206, -187, -172, -159, -149, -140, -132, -125,
+	-96, -76, -61, -48, -37, -28, -20, -13, -6, 0,
+};
+
+static int16_t volume_db10(uint8_t percent)
+{
+	if (percent >= 100) {
+		return 0;
+	}
+	unsigned i = percent / 5u, f = percent % 5u;
+	return (int16_t)(knob_db10[i] + (knob_db10[i + 1] - knob_db10[i]) * (int)f / 5);
+}
+#endif
+
 // The debug link's CHIP_REG (board.chip_reg): chip 1 is the HR_C5000, pages 1 and 4 (2 and 3 are the data and
 // vocoder FIFOs, which a read would drain). Straight on the bus, each access one transaction; the driver's next
 // set-up overwrites a write
@@ -1122,6 +1154,9 @@ bool md380_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool
 
 const hal_radio_t md380_radio = {
 	.init = init,
+#if CONFIG_BEEP
+	.volume_db10 = volume_db10,	// the knob is only read: beeps stop getting louder past the cap step
+#endif
 	.set_mode = set_mode,
 	.rx = rx,
 	.tx = tx,
