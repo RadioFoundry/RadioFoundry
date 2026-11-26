@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The DM-32UV's real-time clock (hardware-dm32.md 3.3): the SoC's RTC on its internal I2C2 (address 0x70), run by a
-// 32.768 kHz crystal and kept through power-off by a coin cell (measured: it held the time for about three hours with
-// the main battery out, docs/spec/hardware-dm32.md 3.3). It gives hal_rtc_t its UTC Unix time as a day count (days
-// since 1970-01-01) and hours, minutes and seconds, all in binary. Nothing else in the firmware uses I2C2, and a caller
-// must be the only one at a time (today the debug link task alone). Every wait is bounded, so a missing answer is a
-// false return and never a hang.
+// The HR_C7000's real-time clock (hardware-dm32.md 3.3): the SoC's RTC on its internal I2C2 (address 0x70), run by a
+// 32.768 kHz crystal; a radio with a backup cell keeps the time through power-off (hardware-dm32.md 3.3 has what was
+// measured and on which radio). It gives hal_rtc_t its UTC Unix time as a day count (days since 1970-01-01) and
+// hours, minutes and seconds, all in binary. Nothing else in the firmware uses I2C2, and a caller must be the only one
+// at a time (today the debug link task alone). Every wait is bounded, so a missing answer is a false return and never
+// a hang.
 #include "config.h"
 
 #if CONFIG_RTC
 #include <stdbool.h>
 #include <stdint.h>
-#include "dm32.h"
 #include "platform.h"
 
 #define I2C2_BASE	0x14080000u
@@ -46,6 +45,7 @@
 #define R_CCR		0x11u		// bit 0 interrupt enable, bit 1 run, bit 2 load (clears itself)
 #define R_VSTAT		0x12u		// bit 0: the loaded time is valid
 #define CCR_RUN		0x02u
+#define CCR_LOAD	0x04u
 
 static bool wait_status(uint32_t mask, uint32_t want)
 {
@@ -155,8 +155,8 @@ static bool rtc_read(int64_t *unix_s)
 	return true;
 }
 
-// The load order of the hardware notes: valid 0, the time into the load registers, CCR (interrupt enable, run, load),
-// valid 1. The soft reset the datasheet lists for a first power-up is left out: it was not needed on the radio
+// The load order of the hardware notes: valid 0, the time into the load registers, CCR (run, load), valid 1. The
+// interrupt enable bit stays clear: nothing handles the RTC interrupt. The soft reset the datasheet lists for a first power-up is left out: it was not needed on the radio
 static bool rtc_set(int64_t unix_s)
 {
 	if (unix_s < 0 || unix_s / 86400 > 0xFFFF) {
@@ -167,10 +167,10 @@ static bool rtc_set(int64_t unix_s)
 	return reg_write(R_VSTAT, 0) && reg_write(R_LOAD_SEC, (uint8_t)(rem % 60)) &&
 	       reg_write(R_LOAD_MIN, (uint8_t)(rem / 60 % 60)) && reg_write(R_LOAD_HOUR, (uint8_t)(rem / 3600)) &&
 	       reg_write(R_LOAD_DAY_L, (uint8_t)(day & 0xFFu)) && reg_write(R_LOAD_DAY_H, (uint8_t)(day >> 8)) &&
-	       reg_write(R_CCR, 0x07u) && reg_write(R_VSTAT, 1);
+	       reg_write(R_CCR, CCR_RUN | CCR_LOAD) && reg_write(R_VSTAT, 1);
 }
 
-const hal_rtc_t dm32_rtc = {
+const hal_rtc_t hrc_rtc = {
 	.read = rtc_read,
 	.set = rtc_set,
 };

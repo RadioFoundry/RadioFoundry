@@ -227,7 +227,7 @@ spec = "docs/spec/radio-features.md"
 switch = "RTC"
 hardware = "a real-time clock with a backup cell"
 spec = "docs/spec/radio-features.md"
-source = ["hal/hal_rtc.h", "core/debuglink/debuglink_rtc.c", "boards/dm32/rtc_dm32.c"]
+source = ["hal/hal_rtc.h", "core/debuglink/debuglink_rtc.c", "platform/hrc7000/rtc_hrc.c"]
 
 [feature.gps]
 switch = "GPS"

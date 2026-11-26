@@ -12,6 +12,7 @@
 #include "hal_flash.h"
 #include "hal_input.h"
 #include "hal_gps.h"
+#include "hal_rtc.h"
 
 #define REG32(a)		(*(volatile uint32_t *)(uintptr_t)(a))
 
@@ -404,5 +405,6 @@ typedef struct {
 } hrc_gps_cfg_t;
 void hrc_gps_init(const hrc_gps_cfg_t *cfg);
 extern const hal_gps_t hrc_gps;	// board_t.gps: once heard, the module's power follows the setting
+extern const hal_rtc_t hrc_rtc;	// board_t.rtc: the SoC RTC on I2C2 (rtc_hrc.c; hardware-dm32.md 3.3), for a radio with a backup cell
 
 #endif

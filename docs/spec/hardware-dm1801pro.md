@@ -617,7 +617,7 @@ board inspection, 2026-10-22).
 | 0x11 | control: bit 1 set at start-up, bit 2 set after a load |
 | 0x12 bit 0 | read at start-up; with it clear or a day count of 0 the clock is reset (0x17 = 0, wait, 0x17 = 1) and set to 2016-09-02 16:45:20 |
 
-RadioFoundry doesn't use the clock yet.
+RadioFoundry's driver (`platform/hrc7000/rtc_hrc.c`, `CONFIG_RTC`) is the one the DM-32UV uses. It is untested on this radio.
 
 ### 8.3 SD card (SPI1)
 

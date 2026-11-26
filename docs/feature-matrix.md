@@ -84,7 +84,7 @@ is `tools/bringup.py list --radio <id>`.
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | partial, needs re-run |
 | `signaling_tones` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
-| `rtc` | not recorded | not written | not written | not written | not written | not written | not written | ✕ |
+| `rtc` | not recorded | not written | not recorded | not written | not written | not written | not written | ✕ |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `satellite_tle` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `gps_icon` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | ✕ |
@@ -300,7 +300,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● | ✕ |
 | `SATELLITE_TLE` | ● | ● | ● | ● | ● | ● | ● | ● |
-| `RTC` | ● | … | … | … | … | … | … | ✕ |
+| `RTC` | ● | … | ● | … | … | … | … | ✕ |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● | ● | ✕ |
@@ -432,7 +432,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 |---|---|---:|---:|---|
 | Settings menu on the radio | `UI_SETTINGS` | 13,984 | 11,000 |  |
 | Diagnostics page | `DIAG` | 4,216 | 4,556 |  |
-| Hardware real-time clock: read and set through the debug link (`rfoundry_debug.py rtc`) | `RTC` | — | — | Needs `DEBUGLINK`. Written for the DM-32UV only (the other radios have no driver yet): +756 B of flash and a few bytes of RAM there, measured 2026-11-25 on the default build |
+| Hardware real-time clock (`rfoundry_debug.py rtc` reads and sets it with `DEBUGLINK`) | `RTC` | — | — | Written for the radios on the HR_C7000 with a backup cell, one driver in `platform/hrc7000/` (the DM-32UV, checked on the radio; the DM-1801 Pro, untested). Default build, switch on against off: +968 B of flash on the DM-32UV, +964 B on the DM-1801 Pro; with `DEBUGLINK=n` the driver is still linked and nothing reads it: +1620 B on the DM-32UV |
 | Satellite TLE catalog, pass prediction and Doppler compensation | `SATELLITE_TLE` | 28,184 | 27,724 | Needs `DEBUGLINK`. RAM: 1,280 B on DM-1701 (656 B linked, 624 B from the existing heap), 1,272 B on MD-380 (648 B linked, 624 B heap), and 1,264 B on DM-32UV (656 B linked, 608 B heap). Heap figures include allocation overhead and are already reserved in linked RAM. The DM-1701 and MD-UV380 maximal builds keep it on; the MD-9600 maximal build leaves it off to fit app flash. Default builds keep it on ([satellite.md](spec/satellite.md)). |
 | Support info on About and the debug link (build source, chips, image hash) | `SUPPORT_INFO` | 3,016 | 2,572 | About 515 bytes of RAM, most of it About's longer text. Read only when About opens or a host asks ([support-info.md](spec/support-info.md)) |
 | Backlight test pages | `BACKLIGHT_TEST` | 1,320* | 1,196* | Off by default; bench work ([backlight-curve.md](testing/backlight-curve.md)) |

@@ -34,7 +34,7 @@ A feature that needs a part only some radios have (a vibration motor, a GPS rece
 `tools/boards.py check` enforces that.
 The accelerometer is the next one: today its driver (`drivers/sensor/lis3dh`) only feeds a board's
 diagnostics page under `CONFIG_DIAG`, so it has no switch. The first feature that uses motion brings a hardware
-switch with it. A real-time clock driver is the same: none exists yet, and it arrives as `CONFIG_RTC`, a hardware
+switch with it. A real-time clock driver is the same: it is `CONFIG_RTC`, a hardware
 switch ([radio-features.md](spec/radio-features.md) 5.6).
 
 ### Unsupported, not written, unconfirmed
@@ -103,7 +103,7 @@ below are for an STM32F4 radio.
 | `CONFIG_APRS_AFSK` | = APRS and FM | APRS on FM: position, status and message packets as AX.25 / Bell 202 AFSK through `board.afsk`, a KISS TNC on the host port. Off, APRS goes over DMR only and nothing of AX.25 is built |
 | `CONFIG_APRS_DMR` | = APRS and DMR | APRS over DMR: positions as LRRP or UDT reports to a gateway ID. It builds the DMR data core. Off, APRS is FM only |
 | `CONFIG_APRS_RX` | = APRS_AFSK (n where no receive audio is written) | APRS receive: the AFSK demodulator on the board's received audio, station list, messages to us with acks, the digipeater. Useful only where the board can sample received audio: its own AFSK receive path, or FM receive audio on the PCM stream (`docs/spec/aprs.md` 5.3). About 6 KB RAM more |
-| `CONFIG_RTC` | = DEBUGLINK (n where no driver is written or no clock keeps time while off) | the hardware real-time clock: `hal/hal_rtc.h`, `core/debuglink/debuglink_rtc.c` (`docs/spec/radio-features.md` 5.6, `docs/spec/debuglink.md` 3.31). The debug link reads and sets it. Needs DEBUGLINK; built only for a board that has a driver ([feature-matrix.md](feature-matrix.md)) |
+| `CONFIG_RTC` | y (n where no driver is written or no clock keeps time while off) | the hardware real-time clock: `hal/hal_rtc.h`, `core/debuglink/debuglink_rtc.c` (`docs/spec/radio-features.md` 5.6, `docs/spec/debuglink.md` 3.31). With DEBUGLINK the debug link reads and sets it (`DL_CMD_RTC`). Built only for a board that has a driver ([feature-matrix.md](feature-matrix.md)) |
 | `CONFIG_GPS_SKY` | = GPS | the GPS screen under Tools > Position: satellites on a sky plot and signal bars, fix quality, grid locator (`core/position/nmea_sky.c`, `core/ui/ui_gps.c`; `docs/spec/ui.md` 2.3). Off, that page is text |
 | `CONFIG_SATELLITE_TLE` | y when `DEBUGLINK=y` (full and amateur; n in commercial or when `DEBUGLINK=n`; a board may default it off for flash limits) | satellite TLE inventory transfer and tracking support (`docs/spec/satellite.md`); radios with a dedicated data-flash range store up to 10 records, using 12 KB from update staging. The board must also have enough program flash for the feature |
 | `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK (n where flash is short) | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |

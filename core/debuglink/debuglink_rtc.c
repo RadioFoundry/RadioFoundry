@@ -4,7 +4,7 @@
 // is the only caller of the clock's bus, so a read or a write never meets another.
 #include "config.h"
 
-#if CONFIG_RTC
+#if CONFIG_RTC && CONFIG_DEBUGLINK
 #include "board.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"

@@ -135,6 +135,9 @@ const board_t board = {
 #if CONFIG_NET_PPP
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
+#if CONFIG_RTC
+	.rtc = &hrc_rtc,	// the SoC RTC with its backup cell (platform/hrc7000/rtc_hrc.c); untested on this radio
+#endif
 	.system = &hrc_system,
 	.hw_line = hw_line,
 #if CONFIG_BCAST_FM

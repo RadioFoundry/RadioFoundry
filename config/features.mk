@@ -352,10 +352,10 @@ CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 # update staging
 CONFIG_SATELLITE_TLE ?= $(if $(filter y,$(CONFIG_DEBUGLINK)),y,n)
 
-# The hardware real-time clock (hal/hal_rtc.h, docs/spec/radio-features.md 5.6): read and set through the debug link
-# (docs/spec/debuglink.md 3.31). Needs DEBUGLINK; off on a board with no driver for it (BOARD_NOT_WRITTEN) or no clock
-# that keeps time while off (BOARD_UNSUPPORTED)
-CONFIG_RTC ?= $(if $(filter y,$(CONFIG_DEBUGLINK)),y,n)
+# The hardware real-time clock (hal/hal_rtc.h, docs/spec/radio-features.md 5.6). With DEBUGLINK it can be read and set
+# there (docs/spec/debuglink.md 3.31). Off on a board with no driver for it (BOARD_NOT_WRITTEN) or no clock that keeps
+# time while off (BOARD_UNSUPPORTED)
+CONFIG_RTC ?= y
 
 
 FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_AES DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RADIO_UDP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
@@ -438,11 +438,6 @@ endif
 ifneq ($(call feature_on,SATELLITE_TLE),)
   ifeq ($(call feature_on,DEBUGLINK),)
     $(error CONFIG_SATELLITE_TLE=y needs CONFIG_DEBUGLINK=y)
-  endif
-endif
-ifneq ($(call feature_on,RTC),)
-  ifeq ($(call feature_on,DEBUGLINK),)
-    $(error CONFIG_RTC=y needs CONFIG_DEBUGLINK=y)
   endif
 endif
 ifneq ($(call feature_on,TASK_STACKS),)

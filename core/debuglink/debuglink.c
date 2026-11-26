@@ -888,7 +888,7 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_hwopt(req, len, out, cap);
 	case DL_CMD_SATELLITE:
 		return debuglink_cmd_satellite(req, len, out, cap);
-#if CONFIG_RTC
+#if CONFIG_RTC && CONFIG_DEBUGLINK
 	case DL_CMD_RTC:
 		return debuglink_cmd_rtc(req, len, out, cap);
 #endif

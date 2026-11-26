@@ -1094,7 +1094,7 @@ capacity and atomic commit behavior are specified in [satellite.md](satellite.md
 
 ### 3.31 RTC
 
-`DL_CMD_RTC` (`0x29`) reads or sets the board's hardware clock (`board.rtc`, `hal/hal_rtc.h`; `CONFIG_RTC`). The time
+`DL_CMD_RTC` (`0x29`) reads or sets the board's hardware clock (`board.rtc`, `hal/hal_rtc.h`; `CONFIG_RTC` with `CONFIG_DEBUGLINK`). The time
 is UTC seconds since 1970-01-01, a `u32` (little endian). The reply to an unknown operation or a wrong length is
 `DL_ST_BAD_ARG`; a board with no clock driver answers `DL_ST_UNAVAILABLE`, and a build without `CONFIG_RTC` does not
 know the command (`DL_ST_UNKNOWN_CMD`).

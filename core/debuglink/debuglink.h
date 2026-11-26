@@ -137,7 +137,7 @@ void debuglink_dmr_data_reset(void);
 size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 // Satellite TLE transaction protocol (debuglink_satellite.c); unavailable without CONFIG_SATELLITE_TLE
 size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
-#if CONFIG_RTC
+#if CONFIG_RTC && CONFIG_DEBUGLINK
 size_t debuglink_cmd_rtc(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 #endif
 // The dmr_ext section (debuglink_view_ext.c): emergency state, alert and settings, the ETSI data counters, CW ID

@@ -36,4 +36,3 @@ BOARD_NOT_WRITTEN += NET_USRP	# USRP's 8 kHz PCM both ways needs more than the h
 BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
 
-BOARD_NOT_WRITTEN += RTC	# no hal_rtc_t driver for its RTC yet (docs/spec/radio-features.md 5.6)
