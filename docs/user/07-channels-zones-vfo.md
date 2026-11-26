@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Channels, Zones and the VFO
 
@@ -353,22 +354,25 @@ On a radio that runs P25 trunking, a channel can belong to a P25 trunked system 
 (its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written
 on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A new system is listen only. The channel's settings show "P25T" as the mode.
 
+Control-channel acquisition accepts both ordinary status broadcasts and explicit multi-block network/site status.
+The configured system identity still has to match; receive-only operation never registers with the system.
+
 | Home says | What the radio is doing |
 |---|---|
 | Finding system | Trying the system's control channels in turn |
-| Control channel | On the control channel, waiting for a call to the channel's talkgroup |
+| RX only | On the control channel of a system the radio can't transmit on (set to listen only, or a blocked network ID), waiting for a call to the channel's talkgroup |
 | Following TG 201 | On the voice channel of a call. It goes back to the control channel when the call ends |
+| Control channel | Transmit is on, but this control channel has no inbound frequency: the radio waits for a call |
 | Registering | Transmit is on: registering with the system and joining the talkgroup |
 | TG 201 | Registered. PTT asks the system for a voice channel |
 | Wait, Queued | PTT is held and the request is with the system. Talk when home shows the transmission |
 | Denied, Reg. denied | The system refused the request or the registration |
-| Blocked system | The system's network ID is blocked: the radio never transmits on it |
 
 - A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
   says "RX only".
 - A system whose network ID (WACN) is BEE00 through BEEFF, or whose system ID is 00A, never gets a transmission: PTT
-  says "Blocked system: no TX" until the radio is switched off. A P25 conventional channel that announces one of them
-  says "This mode: receive only".
+  says "RX-only system: no TX" until the radio is switched off. The radio still receives the system and follows its
+  calls; home says "RX only" between them. A P25 conventional channel that announces one of them says "This mode: receive only".
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
 - A system whose control messages fail their checksum is heard with the channel's **Accept Invalid CRC** on
   ([Accept invalid CRC](09-dmr.md#accept-invalid-crc)).
@@ -376,7 +380,12 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 - Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' RF transceiver components
   can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
-- This has run against a test control channel only, not yet on a working system.
+- Explicit network/site status acquisition has also been checked on a live system in receive-only mode.
+- The editor treats a system with a blocked network ID as listen only as soon as its WACN or system ID is typed. A
+  notice under the identity fields names the WACN or system ID that matched, and **Transmit** locks to "Never (listen
+  only)". The radio ID, the control channels' TX column and the plan's TX offset column are hidden, and saving writes
+  the system's transmit flag off. The radio ID, TX frequencies and TX offsets you entered stay in the file and come
+  back if you change the ID. **Transmit** stays off until you set it again.
 
 For a ham P25 trunked system, RadioFoundry recommends one identity: WACN 0x32350, any system ID, and NAC 0x293 on the
 control channel. **Add Recommended Ham System** on the editor's **Systems** tab fills a P25 trunked system in with
@@ -462,16 +471,16 @@ target.
 ### Receive-only P25 site search
 
 A P25 system can hold multiple sites and up to 32 control-channel candidates.
-With receive-only quality and signal roaming built in, a negative **Change site
-below** value enables searches after three seconds of weak signal or unreliable
-control decoding. A clean but weaker site can beat a strong, poorly decoded one;
-signal strength breaks close quality comparisons. The radio measures candidates
-for a full second, checks their system identity, and requires a clear improvement.
-It waits at least 30 seconds between survey starts and searches for at most 20
-seconds before reacquiring the best candidate measured, or the old control channel
-when none improves reception. It never interrupts a voice call to start a search.
-Set the value to 0 to disable both quality and signal roaming.
+Receive-only site roaming uses the zone's roaming flag and the radio's shared
+roaming threshold and hysteresis. The system editor no longer has a separate
+**Change site below** setting. Old codeplugs retain that value for compatibility,
+but the radio does not use it.
 
-Healthy reception stays on its current site. Searches can miss new calls; this is
-not simultaneous reception of several sites. Control-channel quality is useful
-for site choice but cannot guarantee clear voice on every channel of that site.
+The radio searches when reception remains weak or decoding stays poor. It compares
+up to 16 distinct control-channel frequencies, including learned neighboring sites,
+and returns to the current site when none improves reception. It never starts a
+search during a voice call or sends a registration, affiliation or wake probe for
+roaming. Turn roaming off for the zone to disable these searches.
+
+A single receiver can miss new calls while checking other sites. Hardware testing
+is still needed to confirm this revision's behavior on multi-site systems.

@@ -58,7 +58,9 @@ typedef enum {
 // key in band: HWOPT while a hardware option still needs a person's answer (board_hwopt_pending, hal_hwopt.h),
 // otherwise REFUSED. BENCH: the debug link's air interface bench holds the modem (CONFIG_AIR_RAW). TRUNK: a trunked
 // channel gave no voice channel (RADIO_TRUNK_WHY_* in radio_p25_view_t.twhy or radio_t3_brief_t.why says why). AIR_NO_TX: the board's air interface receives this
-// mode's profile but can't transmit it (NXDN at a rate the provider only receives)
+// mode's profile but can't transmit it (NXDN at a rate the provider only receives). Data only (radio_view_t data_deny,
+// packet_deny), never PTT: NOT_DMR the channel isn't DMR, DATA_ENCRYPTED the channel's encryption has no form for
+// packet data (text, positions), so none is sent; signaling still goes
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
@@ -66,6 +68,7 @@ typedef enum {
 	TXDENY_CEASED,	// the system stopped the over (DMR reverse channel)
 	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX, TXDENY_AES_KEY,
 	TXDENY_AES_WAIT,	// AES: the MI reservation is not saved yet (dmrAesSeq_t)
+	TXDENY_NOT_DMR, TXDENY_DATA_ENCRYPTED,
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -428,12 +431,41 @@ typedef struct {
 } radio_t3_view_t;
 #endif
 
+#if CONFIG_RADIO_DETOUR
+// A detour (docs/spec/debuglink.md 7.4): temporary settings the radio reverts by itself at a deadline. armed while one
+// runs; the rest is the last detour's summary, taken at its return
+typedef struct {
+	bool armed;		// the home state is kept, settings saves are held, the backstop runs
+	bool returning;		// the return waits for a transmission to end
+	bool restored;		// the last return found the home position, frequencies and settings back
+	uint8_t why;		// RADIO_DETOUR_WHY_*: what ended the last detour
+	uint16_t count;		// detours ended since start
+	uint8_t mode;		// radio_mode_t in force just before the last return
+	uint32_t rx_hz;		// ... and the receive frequency
+	uint32_t ms;		// the last detour's length
+	uint32_t rx_ms;		// ... its time receiving (RS_RX), and the receptions
+	uint16_t rx_count;
+	uint16_t tx_count;	// ... transmissions (RS_TX), refused ones (RS_TX_DENIED)
+	uint16_t tx_denied;
+	uint32_t tx_ms;
+	int16_t rssi_max;	// ... the strongest RSSI while receiving, dBm (0 = none)
+} radio_detour_view_t;
+
+#define RADIO_DETOUR_WHY_ASKED		1	// the debug link's deadline or its RETURN
+#define RADIO_DETOUR_WHY_BACKSTOP	2	// the radio core's own deadline: the debug link didn't end it in time
+#endif
+
 #define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
 #define RADIO_LED_RED		0x02u
 
 typedef struct {
 	radio_state_t state;
 	uint8_t tx_deny;	// tx_deny_t, while RS_TX_DENIED
+	// Why the channel can't send DMR data now (tx_deny_t, TXDENY_NONE: it can), asked before a send so the user sees
+	// the reason instead of a send that never went: data_deny for signaling (radio check, call alert), packet_deny for
+	// packet data (text, positions), which the channel's encryption can also hold back
+	uint8_t data_deny;
+	uint8_t packet_deny;
 	uint8_t leds;		// RADIO_LED_* bits: what the radio core drives its LEDs to (board.power->led)
 	bool vfo;		// tuning a frequency by hand rather than a channel
 	uint8_t vfo_index;	// which VFO: 0, or 1 the second (dual watch gives each channel its own)
@@ -467,6 +499,7 @@ typedef struct {
 				// mode instead); 0 none. Set at power-up only
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off
+	uint8_t hs_power;	// the board power level the hotspot keys, while hotspot
 	// Scan (CONFIG_SCAN; all 0 otherwise)
 	uint8_t scan;		// scan_kind_t: 0 off, 1 zone, 2 VFO, 3 dual watch
 	uint8_t scan_phase;	// scan_phase_t: listen, probe, hold, resume, paused
@@ -527,6 +560,9 @@ typedef struct {
 #if CONFIG_DMR_TRUNK
 	radio_t3_brief_t t3;
 #endif
+#if CONFIG_RADIO_DETOUR
+	radio_detour_view_t detour;
+#endif
 } radio_view_t;
 
 // view.temp bits
@@ -574,6 +610,19 @@ uint32_t radio_view_serial(void);
 
 // Requests taken by the radio task, and lost to a full queue, since start-up
 void radio_req_stats(uint32_t *handled, uint32_t *dropped);
+#if CONFIG_RADIO_DETOUR
+// A detour (docs/spec/debuglink.md 7.4). Mark: keep the home state (position, temporaries, talk target, the P25 and
+// NXDN settings), hold the settings saves and arm the backstop backstop_ms from now (a detour already armed: only the
+// backstop moves). Refused, so view.detour.armed stays false, while settings wait for their save or in hotspot mode.
+// Return: everything back as marked, the held settings changes dropped; while transmitting, at the transmission's end
+// (the PTT is released first). Both posted with a wait: a dropped return would leave the deadline to the backstop
+#define RADIO_DETOUR_MARK	1
+#define RADIO_DETOUR_RETURN	2
+bool radio_req_detour(uint8_t op, uint32_t backstop_ms);
+// The published view.detour.armed, without copying the view
+bool radio_detour_armed(void);
+void radio_get_detour(radio_detour_view_t *d);	// just the view's detour, for a caller short of stack
+#endif
 
 // Requests (queued, handled by the radio task)
 void radio_req_channel_step(int8_t dir);	// next / previous channel in the zone, wraps

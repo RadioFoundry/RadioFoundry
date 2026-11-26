@@ -94,7 +94,16 @@ them.
 Read by the trunking follower ([p25-trunking.md](p25-trunking.md) 6).
 
 The generic header ([channel-modes.md](channel-modes.md) 7.1), with identity length 5 and flag bit 1 (transmit side)
-clear by default: a system without it is listen only, and the radio never registers or transmits on it. The own ID is the radio's unit ID on the system, 0 = the radio-wide one (1). The type's block:
+clear by default: a system without it is listen only, and the radio never registers or transmits on it. The own ID is the radio's unit ID on the system, 0 = the radio-wide one (1).
+
+The radio never registers, affiliates or transmits on a system whose WACN is 0xBEE00 through 0xBEEFF (`WACN & 0xFFF00
+== 0xBEE00`) or whose system ID is 0x00A, whatever flag bit 1 says. The values are `P25_WACN_NO_TX`,
+`P25_WACN_NO_TX_MASK` and `P25_SYSID_NO_TX` in `core/p25/p25.h`. The editor shows such a system as listen only: its
+form locks Transmit, hides the own ID, the control channels' TX frequency and the plan's TX offset, and the saved
+record has flag bit 1 clear. Nothing else is erased: the own ID, the TX frequencies, the TX offsets and the
+no-registration bit stay as entered. A test compares the editor's constants with `core/p25/p25.h`.
+
+The type's block:
 
 | Offset | Size | Field |
 |---|---|---|
@@ -103,7 +112,7 @@ clear by default: a system without it is listen only, and the radio never regist
 | 5 | 2 | Control channel NAC: bit 15 set = bits 11-0 hold it; clear = any |
 | 7 | 1 | Options: bit 0 skip encrypted calls; bit 1 use only the programmed channel plan (don't learn it from the control channel); bit 2 don't register or affiliate (PTT asks for a voice channel at once). Bits 3-7: 0 |
 | 8 | 1 | Hold time on the voice channel after a call in seconds, 0 = none (back to the control channel at once) |
-| 9 | 1 | Receive-only roaming RSSI threshold (signed); negative enables quality and signal surveys with `CONFIG_P25_ROAM`, 0 disables them |
+| 9 | 1 | Legacy signed roaming threshold, preserved on import/export but not used; roaming uses the radio's zone flag and shared settings |
 
 Authentication and traffic keys are appended later; keys use the traffic key family
 ([channel-modes.md](channel-modes.md) 5.4).

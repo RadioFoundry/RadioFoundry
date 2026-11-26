@@ -2246,6 +2246,8 @@ static void roam_begin(p25_follow_t *f, p25_follow_cfg_t *cfg)
 {
 	uint8_t b[P25_TSBK_BYTES];
 	now_ms = 0; ntunes = nsends = 0;
+	roam_cfg_t rc = { .rssi_dbm = -100, .hyst_db = 6, .quality = true };
+	roam_init(cfg->roam, &rc);
 	p25_follow_begin(f, cfg, &fhooks, NULL, now_ms);
 	retune(f);
 	mk_net(b, WACN, SYSID);
@@ -2255,10 +2257,11 @@ static void roam_begin(p25_follow_t *f, p25_follow_cfg_t *cfg)
 static void testRoam(void)
 {
 	p25_follow_t f;
+	roam_t r;
 	// Synthetic fixture frequencies; no live deployment identifiers.
 	p25_follow_cc_t cc[] = {{ .hz = 430000000 }, { .hz = 431000000 }, { .hz = 432000000 }};
 	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC,
-		.ncc = 3, .cc = cc, .roam_dbm = -100 };
+		.ncc = 3, .cc = cc, .roam = &r, .roam_enabled = true };
 	uint8_t b[P25_TSBK_BYTES];
 	mk_net(b, WACN, SYSID);
 
@@ -2271,10 +2274,10 @@ static void testRoam(void)
 		CHECK(now_ms >= 30000, "initial cooldown respected");
 		retune(&f);
 		roam_feed(&f, scenario == 0 ? -60 : scenario == 1 ? -105 : -95,
-			  scenario == 0 ? 2 : 0, 1000);
+			  scenario == 0 ? 2 : 0, 2000);
 		CHECK(f.roaming && f.view.cc == 2, "first candidate never ends the survey");
 		retune(&f);
-		roam_feed(&f, scenario == 1 ? -65 : -85, scenario == 1 ? 5 : 0, 1000);
+		roam_feed(&f, scenario == 1 ? -65 : -85, scenario == 1 ? 5 : 0, 2000);
 		unsigned expected = scenario == 1 ? 1 : 2;
 		CHECK(!f.roaming && f.view.cc == expected && f.tuning,
 		      "cleaner weaker beats corrupt stronger; RSSI breaks clean ties (%u)", scenario);
@@ -2291,51 +2294,137 @@ static void testRoam(void)
 	CHECK(!f.roaming && f.quality == 100, "good signal and continuous valid control stay");
 	roam_feed(&f, -120, 0, 2000);
 	CHECK(!f.roaming, "brief weakness stays");
-	roam_feed(&f, -80, 0, 500);roam_feed(&f, -120, 0, 3100);
+	roam_feed(&f, -80, 0, 500);roam_feed(&f, -120, 0, 7000);
 	CHECK(f.roaming, "sustained weakness restarts after recovery");
-	retune(&f);roam_feed(&f, 0, 0, 1000);
-	CHECK(f.roaming && f.best_cc == f.roam_origin, "missing fresh RSSI rejects even clean candidate");
+	retune(&f);roam_feed(&f, 0, 0, 2000);
+	CHECK(f.roaming && r.best == 0, "missing fresh RSSI rejects even clean candidate");
 	retune(&f);
 	// Many valid blocks concentrated in one short burst are not a healthy
 	// one-second channel. The remaining 800 ms have no successful decode.
 	for (unsigned n = 0; n < 12; n++) p25_follow_tsbk(&f, b, NAC, now_ms + n);
-	now_ms += 1000;p25_follow_signal(&f, -60, now_ms);p25_follow_tick(&f, now_ms);
-	CHECK(!f.roaming && f.view.cc == f.roam_origin, "sparse bursts cannot win on perfect CRC alone");
+	now_ms += 2000;p25_follow_signal(&f, -60, now_ms);p25_follow_tick(&f, now_ms);
+	CHECK(!f.roaming && f.view.cc == 0, "sparse bursts cannot win on perfect CRC alone");
 	retune(&f);p25_follow_tsbk(&f, b, NAC, now_ms);
 	CHECK(f.view.state == P25_FOLLOW_CONTROL, "no improvement reacquires origin without RSSI gate");
 
-	// A completed sample remains eligible when the survey's time limit is
-	// reached on a later silent candidate.
+	// A silent later candidate ends under the shared per-site timeout.
 	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);
-	retune(&f);roam_feed(&f, -85, 0, 1000);
-	CHECK(f.best_cc == 1 && f.roaming, "first clean improvement remembered");
-	retune(&f);now_ms = f.t_roam + 20000;p25_follow_tick(&f, now_ms);
-	CHECK(!f.roaming && f.view.cc == 1, "budget expiry chooses measured best, not untested candidate");
+	retune(&f);roam_feed(&f, -85, 0, 2000);
+	CHECK(f.roaming && f.view.cc == 2, "first clean improvement remembered");
+	retune(&f);now_ms += 2000;p25_follow_tick(&f, now_ms);
+	CHECK(!f.roaming && f.view.cc == 1, "silent candidate returns to measured winner");
 
 	// Bad-CRC recovery can permit synchronization but must not count as a
 	// successfully decoded sample when ranking a site.
 	cfg.flags = P25_FOLLOW_BAD_CRC;
 	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);
-	retune(&f);roam_feed(&f, -60, 1, 1000);
-	CHECK(f.roaming && f.best_cc == f.roam_origin && f.view.crc_taken > 0,
+	retune(&f);roam_feed(&f, -60, 1, 2000);
+	CHECK(f.roaming && r.best == 0 && f.view.crc_taken > 0,
 	      "repeated invalid CRCs never qualify as clean reception");
 
 	// Poor decoding with high RSSI, no valid traffic, TX-capable systems,
 	// disabled roaming, and voice ownership all exercise distinct gates.
 	cfg.flags = 0;roam_begin(&f, &cfg);roam_feed(&f, -60, 0, 30000);
-	for (unsigned n = 0; n < 4; n++) {
-		now_ms += 1000;p25_follow_signal(&f, -60, now_ms);
-	}
-	CHECK(f.roaming, "decode silence triggers despite strong RSSI");
+	now_ms += P25_FOLLOW_CC_LOST_MS;
+	p25_follow_signal(&f, -60, now_ms);p25_follow_tick(&f, now_ms);
+	CHECK(f.view.state == P25_FOLLOW_HUNT, "control loss keeps the normal acquisition path");
 	cfg.flags = P25_FOLLOW_TX;roam_begin(&f, &cfg);roam_feed(&f, -130, 2, 35000);
 	CHECK(!f.roaming, "transmit-enabled systems excluded");
-	cfg.flags = 0;cfg.roam_dbm = 0;roam_begin(&f, &cfg);roam_feed(&f, -130, 2, 35000);
-	CHECK(!f.roaming, "zero threshold disables both quality and RSSI roaming");
-	cfg.roam_dbm = -100;roam_begin(&f, &cfg);f.view.state = P25_FOLLOW_VOICE;
-	p25_follow_signal(&f, -130, 30000);p25_follow_signal(&f, -130, 34000);
+	cfg.flags = 0;cfg.roam_enabled = false;roam_begin(&f, &cfg);roam_feed(&f, -130, 2, 35000);
+	CHECK(!f.roaming, "zone roaming off disables quality and RSSI roaming");
+	cfg.roam_enabled = true;roam_begin(&f, &cfg);f.view.state = P25_FOLLOW_VOICE;p25_follow_retuned(&f, now_ms);f.t_good = f.t_call = 30000;
+	p25_follow_signal(&f, -130, 30000);p25_follow_tick(&f, 30000);
 	CHECK(!f.roaming && f.view.state == P25_FOLLOW_VOICE, "active voice is never interrupted to survey");
+
+	// Turning the zone off during a visit returns to its origin.
+	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);retune(&f);
+	cfg.roam_enabled = false;p25_follow_tick(&f, now_ms + 25);
+	CHECK(!f.roaming && f.view.cc == 0 && f.tuning, "zone off aborts to the origin");
+	cfg.roam_enabled = true;
+
+	// A foreign NAC cannot advance the follower independently of the shared engine.
+	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);retune(&f);
+	p25_follow_tsbk(&f, b, NAC ^ 1, now_ms + 50);
+	CHECK(f.roaming && f.view.cc == 1 && !f.tuning, "foreign NAC does not desynchronize site selection");
+	now_ms += 2000;p25_follow_tick(&f, now_ms);
+	CHECK(f.roaming && f.view.cc == 2 && f.tuning, "shared timeout advances a foreign candidate");
+
+	roam_cfg_t passive = { .rssi_dbm = -100, .hyst_db = 6, .quality = true,
+		.probe = ROAM_PROBE_WAKE, .beacon_s = 60, .check_s = 30, .survey = ROAM_SURVEY_SYNC };
+	roam_set_cfg(&r, &passive);
+	CHECK(r.cfg.probe == ROAM_PROBE_PASSIVE && r.cfg.beacon_s == 0 && r.cfg.check_s == 0 &&
+	      r.cfg.survey == ROAM_SURVEY_OFF, "continuous quality callers cannot enable wake or beacon behavior");
+
 }
 #endif
+static void testExplicitStatus(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1 } };
+	static p25_follow_t f;
+	p25_follow_cfg_t cfg = { .wacn = 0xABCDE, .sysid = 0x234, .nac = 0x123, .ncc = 1, .cc = cc, .unit_id = 0 };
+	uint8_t unit[512], norm[12];
+	uint8_t hdr[12] = { 0x37, 0x3D, 0, 7, 0x02, 0x34, 0x81, 0x3B, 0, 0, 0, 0 };
+	// Synthetic payloads with precomputed, complemented MSB-first CRC-32 (seed zero).
+	uint8_t data[12] = { 0xAB, 0xCD, 0xE0, 0x12, 0x34, 0x56, 0x78, 0x90, 0x81, 0x14, 0x04, 0xEB };
+	uint8_t site[12] = { 0x02, 0x09, 0x12, 0x34, 0x56, 0x78, 0x90, 0, 0x7E, 0xC4, 0x8E, 0xB2 };
+	p25_tsbk_t m;
+	p25_rx_unit_t u = { .duid = P25_DUID_PDU, .nac = 0x123, .nsyms = p25_blocks_syms(2), .air = unit };
+
+	p25_tsbk_seal(hdr);
+	p25_unit_begin(unit, u.nsyms, u.nac, u.duid, P25_SS_UNKNOWN);
+	p25_block_put(unit, 0, hdr);
+	p25_block_put(unit, 1, data);
+	CHECK(p25_mbt_status(&u, norm) && p25_tsbk_parse(norm, &m), "explicit network status");
+	CHECK(m.kind == P25_TSBK_NET && m.u.net.wacn == 0xABCDE && m.u.net.sysid == 0x234 &&
+	      m.u.net.ch == 0x1234 && m.u.net.ssc == 0x90, "explicit network fields");
+	now_ms = 1000;
+	ntunes = nsends = 0;
+	p25_follow_begin(&f, &cfg, &fhooks, NULL, now_ms);
+	retune(&f);
+	p25_follow_unit(&f, &u, now_ms);
+	CHECK(view(&f).state == P25_FOLLOW_CONTROL && view(&f).wacn == 0xABCDE && view(&f).sysid == 0x234,
+	      "explicit identity acquires control with configured WACN");
+	CHECK(nsends == 0 && view(&f).reg_tx == 0 && view(&f).aff_tx == 0,
+	      "explicit identity remains receive only with ID zero");
+
+	u.nsyms--;
+	CHECK(!p25_mbt_status(&u, norm), "truncated explicit packet");
+	u.nsyms++;
+	data[0] ^= 1;
+	p25_block_put(unit, 1, data);
+	CHECK(!p25_mbt_status(&u, norm), "bad packet CRC rejected");
+	data[0] ^= 1;
+	p25_block_put(unit, 1, data);
+	hdr[10] ^= 1;
+	p25_block_put(unit, 0, hdr);
+	CHECK(!p25_mbt_status(&u, norm), "bad header CRC rejected");
+
+	hdr[7] = 0x3A;
+	p25_tsbk_seal(hdr);
+	p25_block_put(unit, 0, hdr);
+	p25_block_put(unit, 1, site);
+	CHECK(p25_mbt_status(&u, norm) && p25_tsbk_parse(norm, &m), "explicit RFSS status");
+	CHECK(m.kind == P25_TSBK_RFSS && m.u.site.rfss == 2 && m.u.site.site == 9 && m.u.site.sysid == 0x234 &&
+	      m.u.site.ch == 0x1234 && m.u.site.ssc == 0x90, "explicit site fields");
+	p25_follow_unit(&f, &u, now_ms);
+	CHECK(view(&f).rfss == 2 && view(&f).site == 9, "explicit site reaches follower");
+
+	hdr[2] = 0x90;
+	p25_tsbk_seal(hdr);
+	p25_block_put(unit, 0, hdr);
+	CHECK(!p25_mbt_status(&u, norm), "vendor packet not interpreted as standard");
+	hdr[2] = 0;
+	hdr[6] = 0x82;
+	p25_tsbk_seal(hdr);
+	p25_block_put(unit, 0, hdr);
+	CHECK(!p25_mbt_status(&u, norm), "unsupported block count rejected");
+	hdr[6] = 0x81;
+	hdr[0] &= (uint8_t)~0x20;
+	p25_tsbk_seal(hdr);
+	p25_block_put(unit, 0, hdr);
+	CHECK(!p25_mbt_status(&u, norm), "inbound packet rejected");
+}
+
 // System ID $00A is blocked as the WACNs $BEE00..$BEEFF are, under any WACN: named by the network status broadcast in
 // either form, by the RFSS status broadcast of the control channel held, by voice channel link control (LCO 35, 36,
 // 41) or by the programming. An adjacent site's status naming it blocks nothing here
@@ -2459,6 +2548,7 @@ int main(void)
 #if CONFIG_P25_ROAM
 	testRoam();
 #endif
+	testExplicitStatus();
 	testLayouts();
 	testInbound();
 	testBlocks();

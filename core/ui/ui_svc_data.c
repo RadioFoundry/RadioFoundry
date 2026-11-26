@@ -137,6 +137,10 @@ void ui_svc_poll(void)
 		ev.ok = d.kind == DMR_DATA_EV_SMS_SENT;
 		ev.index = (ev.ok && !sms_send_confirmed()) ? 1 : 0;	// on air, but nothing confirms delivery
 		break;
+	case DMR_DATA_EV_SMS_BLOCKED:
+		ev.kind = UI_EV_MESSAGE_SENT;
+		ev.index = 2;	// never on air: not "no answer"
+		break;
 	case DMR_DATA_EV_CALL_ALERT:
 		ev.kind = UI_EV_CALL_ALERT;
 		break;

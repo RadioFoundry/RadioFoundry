@@ -19,11 +19,15 @@ BOARD_UNSUPPORTED += FONT_BIG	# the 9x18 font is drawn only on panels 220 px and
 BOARD_UNSUPPORTED += UI_COLOR	# the 128x64 panel is monochrome: no colors to set
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR: 4 KB erase (docs/spec/hardware-dm1801pro.md 6.1)
 CONFIG_GPS ?= n
+# USRP voice over UDP: received audio alone is 352 B every 20 ms (about 17.6 KB/s before PPP, IP and UDP headers),
+# more than the programming cable's 115200 baud PPP link carries (about 11.5 KB/s each way)
+CONFIG_NET_USRP ?= n
 BOARD_UNSUPPORTED += GPS	# no GPS receiver, and no room inside for one (owner, 2026-10-22)
 BOARD_UNSUPPORTED += GPS_SKY	# needs the GPS receiver (above)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
 # maximal configuration too
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio
+BOARD_NOT_WRITTEN += NET_USRP	# USRP's 8 kHz PCM both ways needs more than the host link's 115200 baud
 
 # Chinese needs a hand-tuned CJK bitmap face shorter than 16 px and a layout that gives its lines that glyph's
 # height: the generated 16x16 face is clipped by the 5x8 words here (core/ui/gfx.c, docs/spec/ui.md 2.5,

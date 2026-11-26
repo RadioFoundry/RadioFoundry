@@ -15,17 +15,18 @@ State:
 
 | Part | Written | Host tested | Run on a radio |
 |---|---|---|---|
-| Trunking signaling units (TSDU) and the header of a multi-block trunking packet: receive, FEC, CRC | yes | yes | the bench's control channel (8): 152 blocks with 1 CRC failure while only listening; one or two blocks lost around each of its own bursts |
+| Trunking signaling units (TSDU) and explicit multi-block network/RFSS status: receive, FEC, CRC | yes | yes | the bench's control channel (8): 152 blocks with 1 CRC failure while only listening; one or two blocks lost around each of its own bursts |
 | Outbound messages a listener needs (2) | yes | yes | the bench's: network and RFSS status, the identifier, grants |
 | The follower: hunt, hold, follow, return (4) | yes | yes, also through the soft modem with noise | `test_p25_trunk_rx`: a grant to another unit's call followed to a second bench transmitter, its voice received and played, back on the control channel after the terminator |
 | The radio core: a trunked channel, its retunes, the UI (7) | yes | yes | yes, a channel written over CPS |
 | Inbound requests and their answers (2.1) | yes | yes | the three requests decoded off air by `p25tool.py`; the bench's answers taken |
 | Registration, affiliation, voice request, transmit on the grant, return (5) | yes | yes (`radioCoreTestP25T`, a fake site) | `test_p25_trunk_tx` |
 | Bench control channel and inbound decode (`tools/bench/p25tool.py`, 8) | yes | `p25tool.py selftest` | yes |
-| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, TDMA (Phase 2) voice channels, multi-block message bodies | no | | |
+| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, TDMA (Phase 2) voice channels, other multi-block message bodies | no | | |
 
 The radio runs are against a control channel `p25tool.py` writes from the same descriptions as the firmware, so they
-check the radio's timing, retunes and transmissions, not the layouts: no live system has been heard or answered.
+check the radio's timing, retunes and transmissions, not the layouts. Explicit network/RFSS status acquisition has
+also been checked by passive reception on a live system, without registration or affiliation.
 Every message layout of the transmit side comes from published descriptions, not a capture: 9 lists them.
 
 Sources: published descriptions of TIA-102.AABB (trunking control channel formats), TIA-102.AABC (trunking messages)
@@ -94,7 +95,11 @@ opcode of the request it answers.
 Not decoded, counted by opcode in the view and skipped: every other opcode of the standard table; any block with a
 MFID other than `0x00` or `0x01` (a manufacturer's own message, whatever its opcode); any protected block (its
 arguments are encrypted). A multi-block trunking packet's header is recognized (format `0x15` or `0x17`, service
-access point 61 or 63) and its opcode kept in the view; its data blocks are not decoded.
+access point 61 or 63) and its opcode kept in the view. One-block outbound AMBTC (`0x17`) network status (`0x3B`)
+and RFSS status (`0x3A`) bodies are decoded for standard MFIDs. Header CRC-16 and body CRC-32 must both pass.
+Their receive fields enter the same identity checks as TSBK status; configured NAC, system ID and WACN still apply.
+Other multi-block bodies remain unsupported. The layouts follow figures 5 and 6 of Aeroflex's
+[Understanding Advanced P25 Control Channel Functions](https://www.viavisolutions.com/en-us/literature/understanding-advanced-p25-control-channel-functions-discontinued-application-notes-en.pdf).
 
 ### 2.1 Inbound requests
 
@@ -302,11 +307,13 @@ path's part, which it needs only until the voice path starts. The radio task kee
 other tasks (about 150 bytes).
 
 What the user sees: `p25.trunk` in the radio view (`RADIO_P25_TRUNK_*`: finding the system, on the control channel,
-following a call). Home's talk line says "Finding system", "Control channel" or "Following TG 201" (the grant's group
-until the call's own fields are in) instead of what PTT calls. With the transmit side on it says "Registering" until
-registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits, "Denied" or "Reg. denied" after a
-refusal. On the control channel of a blocked system (5, BLOCKED) it says "Blocked system", with the transmit side on
-or off. The debug link's `p25_trunk` section has the follower's
+following a call). Home's talk line says "Finding system" or "Following TG 201" (the grant's group until the call's
+own fields are in) instead of what PTT calls. Idle on the control channel, a system that can't transmit (the transmit
+side off, or a blocked system, 5 BLOCKED, whatever the flag says) says "RX only" in the warning color, as a
+conventional RX-only channel does; a blocked system never reads "Registering". With the transmit side on it says
+"Registering" until registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits, "Denied" or
+"Reg. denied" after a refusal, and "Control channel" when the control channel held has no inbound frequency (NO_TX).
+PTT on a blocked system says "RX-only system: no TX". The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
 Not used yet: the fallback channel and an RX group list (`groups`).
@@ -374,45 +381,40 @@ of a live control channel settles them.
 | The explicit secondary control channel form's layout | only its channel (T) is read |
 | The system service broadcast's layout | view only |
 | The four flag bits ahead of the system ID in RFSS and adjacent site status | kept as sent, not used |
-| The multi-block packet header: format in octet 0, SAP in octet 1, MFID in octet 2, blocks to follow in octet 6, opcode in octet 7 | used to recognize the header and count it only |
+| The multi-block packet header: format in octet 0, SAP in octet 1, MFID in octet 2, blocks to follow in octet 6, opcode in octet 7 | recognized and counted; one-block explicit network/RFSS bodies also validated and decoded |
 
 ### Receive-only quality and signal roaming
 
-`CONFIG_P25_ROAM` enables optional control-channel surveys. A negative system
-`roam_dbm` enables both decode-quality and signal triggers; 0 disables both.
-The transmit side must be disabled and at least two control channels programmed.
+`CONFIG_P25_ROAM` uses `core/radio/roam.c`, the same selection engine as
+[DMR roaming](dmr-roaming.md). The radio's zone roaming flag enables it; the
+shared RSSI threshold and hysteresis apply. The old system byte 9 is preserved
+in the codeplug but does not control roaming. Transmit-enabled systems are excluded.
+P25 callers force passive operation: no wake probes or beacon scheduling.
 
-Quality is measured over one second of control traffic. The score is the lower
-of the CRC-valid TSDU block percentage and the percentage of five 200 ms intervals
-containing a CRC-valid block. Fewer than eight valid blocks score zero. Repeated
-bad-CRC recovery does not count as valid reception. Samples reset on retuning;
-voice traffic never contributes. This is a control-channel reliability heuristic,
-not a measured RF bit error rate or a guarantee of voice-channel decoding quality.
+The follower supplies programmed and learned control channels, identity-qualified
+decoding and the RSSI already read by the radio task. It performs the retunes the
+shared engine requests. The active list holds up to 16 distinct frequencies,
+including the current site, learned adjacent channels first, then programmed
+alternatives. Acquisition still retains up to 32 programmed channels when roaming
+is compiled in, and 16 without it.
 
-Three continuous seconds of RSSI below the configured threshold or quality below
-90 starts a survey, at least 30 seconds after startup or the last survey start.
-Voice calls are never interrupted to begin a survey. The old frequency is skipped.
-Each identity-matched candidate is sampled for one second and needs fresh RSSI.
-A candidate must score at least 80 and meet either condition:
+The shared engine owns the five-second weak trigger, 30-second dwell, retry
+back-off and search sequence. Each candidate gets the shared 400 ms settle and
+1.5-second listening period. A search returns to the original site if none improves
+reception. It never starts during a voice call. A single receiver can miss grants
+while visiting other sites.
 
-- Quality improves by at least 10 points and RSSI is no lower than 10 dB below
-  the configured threshold. This permits a cleaner, weaker site to win.
-- Quality is no more than five points worse, RSSI improves by at least 6 dB,
-  and RSSI is at or above the configured threshold.
+P25 contributes a 0..100 decoder-quality score: the lower of valid-block percentage
+and coverage of five 200 ms intervals, requiring at least eight valid blocks in a
+one-second sample. Recovered invalid CRCs do not count as good blocks. This is a
+control-channel reliability measure, not RF bit error rate.
 
-The survey keeps the best qualifying sample: quality differences greater than
-five points take precedence; within five points, stronger RSSI wins. It examines
-candidates until the list is exhausted or 20 seconds elapse, then reacquires the
-best measured candidate. With no qualifying improvement it reacquires the old
-control channel. Missing or incomplete measurements never count as improvement.
+The shared engine's optional quality input treats scores below 90 as weak. A
+candidate needs at least 80, plus either a ten-point quality improvement with RSSI
+no more than 10 dB below threshold, or comparable quality and an RSSI improvement
+meeting the shared hysteresis. Quality differences over five points rank first;
+otherwise stronger RSSI wins. An incomplete measurement cannot win. DMR callers
+leave quality mode off and keep their existing RSSI/beacon behavior.
 
-This selects the best eligible candidate measured within the survey budget, not
-the best of every site at all times. A healthy current site is retained. A single
-receiver misses grants while surveying and cannot measure two sites simultaneously.
-Codeplug loading retains up to 32 programmed control channels per system with
-roaming compiled in, or 16 without it. RSSI reuses the radio task's status sample;
-the follower never reads the radio bus to measure signal. Host
-tests cover strong corrupt and weaker clean candidates, coverage gaps, ranking,
-stale RSSI, recovered bad CRCs, hysteresis, bounded return, disabled roaming,
-and no survey during voice or on a transmit-enabled system. Live road behavior
-and degraded-simulcast performance remain unverified.
+Live two-site behavior and degraded-simulcast performance still require hardware
+validation. Host and build results for this revision are recorded with its review.

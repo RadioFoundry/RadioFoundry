@@ -22,11 +22,14 @@ export const aesKind = {
 		v.set([p.id == null ? 0 : AES_ALG, p.id ?? 0]);
 		return v;
 	},
-	fields: () => [{ key: "id", label: "editor.aes.id", type: "select", options: (r) => {
+	// the keys are the system's, picked in the same form: the list follows it (dynamic)
+	fields: () => [{ key: "id", label: "editor.aes.id", type: "select", dynamic: true, options: (r) => {
 		const ids = new Set((r?.system?.trafficKeys ?? []).map((k) => k.id));
 		if (r?.params?.id != null) ids.add(r.params.id);
 		return [[null, "editor.none"], ...[...ids].sort((a, b) => a - b).map((id) => [id, String(id)])];
 	} }],
+	// a key picked: the channel transmits encrypted (None: no AES at all)
+	encryptsTx: (c, p) => p?.id != null,
 	validate(c, p, problem) {
 		if (!c.system?.trafficKeys?.some((k) => k.id === p.id)) problem.warn("system", "mode_no_secret");
 	},

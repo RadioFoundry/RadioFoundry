@@ -158,7 +158,7 @@ typedef enum {
 	RREQ_DMR_PRIVACY,	// DMR: arg = type << 16 | key
 	RREQ_HS_ENTER,		// hotspot: arg = RX Hz (0 = stay)
 	RREQ_HS_FREQ,		// hotspot: arg = RX Hz, arg2 = TX Hz
-	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-255
+	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-254, RADIO_HS_RF_OWN = the radio's own power
 	RREQ_HS_LEAVE,		// hotspot: back to the channel
 	RREQ_SCAN,		// arg: radio_scan_cmd_t, arg2: dual watch position
 	RREQ_SCAN_VFO,		// arg: low Hz, arg2: high Hz (both 0: the VFO's band)
@@ -199,6 +199,9 @@ typedef enum {
 	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
 	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
 	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
+#if CONFIG_RADIO_DETOUR
+	RREQ_DETOUR,		// a detour: arg RADIO_DETOUR_MARK (arg2: backstop ms) or _RETURN
+#endif
 	// New request types go above
 
 	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)
@@ -248,8 +251,9 @@ typedef struct {
 } radio_vfo_t;
 #endif
 
-#if CONFIG_SCAN && CONFIG_DUAL_WATCH
-// A dual watch channel's changes for now (P7), kept while the receiver is on the other channel
+#if (CONFIG_SCAN && CONFIG_DUAL_WATCH) || CONFIG_RADIO_DETOUR
+// A channel's changes for now: a dual watch channel's (P7), kept while the receiver is on the other channel, and the
+// home channel's while a detour runs
 typedef struct {
 	bool valid;
 	bool temp_power, temp_squelch;
@@ -260,6 +264,30 @@ typedef struct {
 	uint8_t manual_ts;
 	uint32_t manual_id;
 } radio_dual_keep_t;
+#endif
+
+#if CONFIG_RADIO_DETOUR
+// The home state a detour returns to (RREQ_DETOUR). The position, the VFOs and radio_settings_t come back from the
+// settings, whose saves are held meanwhile; the rest is kept here
+typedef struct {
+	radio_dual_keep_t keep;		// the channel's changes for now and its talk target
+	bool monitor;
+	bool vfo;			// where it was: the VFO, or zone / position
+	uint16_t zone, pos;
+	uint32_t rx_hz, tx_hz;		// for the restored check
+#if CONFIG_SCAN
+	uint8_t scan_kind;		// the scan or dual watch running (scan_kind_t), started again on the return
+	uint8_t dual_sel;
+	uint32_t scan_lo_hz, scan_hi_hz;	// SCAN_VFO: its range
+	radio_dual_ref_t dual[2];	// SCAN_DUAL: its pair
+#endif
+#if CONFIG_P25
+	radio_p25_settings_t p25;
+#endif
+#if CONFIG_NXDN
+	radio_nxdn_settings_t nxdn;
+#endif
+} radio_detour_home_t;
 #endif
 
 typedef struct {
@@ -431,6 +459,14 @@ typedef struct {
 	uint32_t zone_shifts;		// zone_edit_shifts() when the zone indexes below were last followed (zone_edit.h)
 #endif
 	bool reload_pending;		// RREQ_RELOAD came while busy
+#if CONFIG_RADIO_DETOUR
+	radio_detour_home_t detour;	// the home state a detour returns to (RREQ_DETOUR)
+	uint32_t detour_ms;		// when it was marked, and the backstop
+	uint32_t detour_backstop_ms;
+	uint32_t detour_poll_ms;	// the last poll's time, for the summary's durations
+	uint8_t detour_state;		// view.state at that poll
+	uint8_t detour_why;		// the return asked: RADIO_DETOUR_WHY_*
+#endif
 	bool power_off_req;		// RREQ_POWER_OFF seen
 	bool power_off_busy;		// still sending what has to go out before the supply drops
 #if CONFIG_DMR
@@ -488,6 +524,7 @@ typedef struct {
 	uint16_t group_hang_ms, private_hang_ms;	// codeplug hang times, 0 = the stack's default reply window
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
+	uint8_t hs_rf_level;		// hotspot: the host's RF level, RADIO_HS_RF_OWN = the radio's own power
 	bool hs_power_due;		// hotspot: hs_power came while the modem transmitted; keyed again at its end
 	bool hs_carrier;		// hotspot: the receiver hears a carrier
 #if RADIO_SM_CW
@@ -544,9 +581,11 @@ typedef struct {
 	uint8_t t3_send_burst[1 + T3_UDT_BLOCKS_MAX][T3_CSBK_BYTES];
 	uint32_t t3_now;		// the clock at the last t3_tick (for the data service's start, which has none)
 #endif
+#if CONFIG_DMR_ROAMING || CONFIG_P25_ROAM
+	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// shared per-zone enable flags
+#endif
 #if CONFIG_DMR_ROAMING
 	roam_t roam;
-	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// the roaming zones (settings_t.roam_zones)
 	bool roam_dirty;		// the site list needs building again
 	uint16_t roam_zone;		// zone and channel the site list was built for
 	uint16_t roam_channel;
@@ -615,8 +654,10 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms);
 // Hotspot frequencies the board can use: RX in a band, TX in a band that allows transmit (the amateur band plan does
 // not apply, docs/spec/gotchas.md 8.7)
 bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz);
-// MMDVM RF level 0-255 -> board power level
-uint8_t radio_sm_hotspot_power(uint8_t rf_level);
+// MMDVM RF level 0-254 -> board power level; RADIO_HS_RF_OWN (the host's default, never set by the user) -> own,
+// the radio's own power (docs/spec/mmdvm-protocol.md)
+#define RADIO_HS_RF_OWN	255u
+uint8_t radio_sm_hotspot_power(uint8_t rf_level, uint8_t own);
 
 // Settings in effect from now on (radio_task.c calls it for RREQ_SETTINGS; the tests call it directly)
 void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms);

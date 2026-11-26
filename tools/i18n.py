@@ -12,8 +12,13 @@ language in core/ui/lang/<code>.po, an entry per key (its msgctxt).
                                     fuzzy, or a translation can't be drawn (tools/ci.sh); --allow-pending: not the
                                     untranslated and fuzzy ones (work in progress, never in a pull request)
     tools/i18n.py --stats           how much of each catalog is translated
-    tools/i18n.py --gen OUT.h       the C tables core/ui/i18n.c includes, and tr_keys.h beside it (run by make; a file
-                                    is rewritten only when its content changes, and "changed" is printed for OUT.h)
+    tools/i18n.py --keys OUT_DIR    tr_keys.h in OUT_DIR, the keys' numbers i18n.h includes (run by make before it
+                                    compiles; rewritten only when a number changed)
+    tools/i18n.py --gen OUT.h [--used FILE...]
+                                    the C tables core/ui/i18n.c includes, and tr_keys.h beside it (a file is rewritten
+                                    only when its content changes, and "changed" is printed for OUT.h). --used: the
+                                    TR_<KEY> names the build's preprocessed sources hold, one a line in each FILE (make
+                                    writes one per source): every other key's text is left out of the tables
     tools/i18n.py --new CODE NAME   start a catalog: CODE an ISO 639-1 code, NAME the language's own name ("Español")
     tools/i18n.py --rewrite [FILE]  give each old-form mark TR("English") / TRN("English") a key made from its English
                                     (the same English keeps one key); by default in the whole source
@@ -265,13 +270,21 @@ def scan(rel, src, old_ok=False):
     return out
 
 
+# The file that includes the tables: the Makefile never scans it for the keys a build uses
+TABLES_READER = "core/ui/i18n.c"
+
+
 def marks(old_ok=False, files=None):
     out = []
     for rel in files if files is not None else source_files():
         with open(os.path.join(ROOT, rel), encoding="utf-8", errors="replace") as f:
             src = f.read()
         if "TR" in src:
-            out += scan(rel, src, old_ok)
+            found = scan(rel, src, old_ok)
+            if found and rel == TABLES_READER:
+                raise I18nError("%s: no marks in the tables' reader: make leaves it out of the scan of the keys a "
+                                "build uses (it includes the tables)" % found[0].where())
+            out += found
     return out
 
 
@@ -737,21 +750,29 @@ def string_table(strings):
     return bytes(blob), offs
 
 
-def tables(found=None):
-    """What core/ui/i18n.c reads. Every key has a number: 0 none, then the keys the catalogs translate (TR, TRN), by
-    name, then the TRX ones, by name. The English table has every key's text; each language the translated keys', ""
-    where it has none (or the English itself). Flash per string: the text and its NUL per language, plus 2 bytes per
-    LANG_STRIDE strings. Returns (ids {key: number}, translated (the first TRX number), english (text, offsets),
+def key_numbers(source, trx):
+    """{key: number} and the first TRX number. Every key has a number: 0 none, then the keys the catalogs translate
+    (TR, TRN), by name, then the TRX ones, by name. The numbers come from the whole source, never from one build's
+    switches: they are the same in every build"""
+    order = [None] + sorted(k for k, _, _ in source) + sorted(k for k, _ in trx)
+    if len(order) > 0xFFFF:
+        raise I18nError("more than 65535 keys: a tr_id_t is 16 bits")
+    return {k: i for i, k in enumerate(order) if k is not None}, len(source) + 1
+
+
+def tables(found=None, used=None):
+    """What core/ui/i18n.c reads. The English table has each key's text; each language the translated keys', ""
+    where it has none (or the English itself). used: the keys the build compiles (None: all); any other key's text is
+    "" in every table, so a switch that is off leaves its strings out. Flash per string: the text and its NUL per
+    language, plus 2 bytes per LANG_STRIDE strings; a key not used costs its NUL in each table. Returns
+    (ids {key: number}, translated (the first TRX number), english (text, offsets),
     [(code, name, name in this build, latin name, switch, {number: translation}, text, offsets, wide)])"""
     source, trx = extract(found)
     english = {k: t for k, t, _ in source}
     english.update(trx)
-    order = [None] + sorted(k for k, _, _ in source) + sorted(k for k, _ in trx)
-    if len(order) > 0xFFFF:
-        raise I18nError("more than 65535 keys: a tr_id_t is 16 bits")
-    ids = {k: i for i, k in enumerate(order) if k is not None}
-    translated = len(source) + 1
-    en_bytes = [b""] + [text_to_bytes(english[k], k) for k in order[1:]]
+    ids, translated = key_numbers(source, trx)
+    order = sorted(ids, key=ids.get)
+    en_bytes = [b""] + [text_to_bytes(english[k], k) if used is None or k in used else b"" for k in order]
     en_blob, en_offs = string_table(en_bytes)
     if len(en_blob) > 0xFFFF:
         raise I18nError("more than 64 KB of English text")
@@ -774,6 +795,8 @@ def tables(found=None):
             where = "%s: %s %r" % (os.path.relpath(path, ROOT), key, msgid)
             if key not in ids or ids[key] >= translated or not msgstr or fz:
                 continue
+            if used is not None and key not in used:
+                continue    # not in this build
             if english[key] != msgid:
                 continue    # the catalog is not synced with this English (--check fails); the build shows the English
             if check_translation(msgid, msgstr, where, wide):
@@ -840,9 +863,8 @@ def write_if_changed(path, text):
 KEYS_HEADER = "tr_keys.h"
 
 
-def generate(out_path, found=None):
-    """OUT.h: the tables core/ui/i18n.c includes; tr_keys.h beside it: the keys' numbers, which i18n.h includes"""
-    ids, translated, english, built = tables(found)
+def write_keys(out_dir, ids, translated):
+    """tr_keys.h in out_dir: the keys' numbers, which i18n.h includes"""
     keys = ["// Generated by tools/i18n.py from the marks in core/; do not edit",
             "// A key's number (i18n.h): the ones the catalogs translate, then the TRX ones",
             "#ifndef TR_KEYS_H", "#define TR_KEYS_H", "", "enum {"]
@@ -850,13 +872,32 @@ def generate(out_path, found=None):
         keys.append("\tTR_%s = %d," % (k, i))
     keys += ["};", "#define TR_TRANSLATED\t%d\t// the first TRX key" % translated,
              "#define TR_KEYS\t\t%d" % (len(ids) + 1), "", "#endif"]
-    write_if_changed(os.path.join(os.path.dirname(os.path.abspath(out_path)), KEYS_HEADER), "\n".join(keys) + "\n")
+    write_if_changed(os.path.join(out_dir, KEYS_HEADER), "\n".join(keys) + "\n")
+
+
+def read_used(paths):
+    """The keys named in make's scan files: a TR_<NAME> a line; names that are no key are ignored"""
+    used = set()
+    for path in paths:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            used.update(line.strip()[3:] for line in f if line.startswith("TR_"))
+    return used
+
+
+def generate(out_path, found=None, used=None):
+    """OUT.h: the tables core/ui/i18n.c includes; tr_keys.h beside it. used: the keys the build compiles (None: all)"""
+    ids, translated, english, built = tables(found, used)
+    write_keys(os.path.dirname(os.path.abspath(out_path)), ids, translated)
 
     lines = ["// Generated by tools/i18n.py from the marks in core/ and core/ui/lang/*.po; do not edit", ""]
     langs = [(code, name, wide_name, sw) for code, name, wide_name, _, sw, _, _, _, _ in built]
     lines.append("#define LANG_STRIDE\t%d" % LANG_STRIDE)
     lines.append("#if CONFIG_LANG_ANY")
-    lines.append("// English: %d keys, %d bytes of text" % (len(ids), len(english[0])))
+    if used is None:
+        lines.append("// English: %d keys, %d bytes of text" % (len(ids), len(english[0])))
+    else:
+        lines.append("// English: %d keys, %d in this build, %d bytes of text" % (
+            len(ids), len(used & set(ids)), len(english[0])))
     emit_table(lines, "en", english[0], english[1])
     lines.append("#endif")
     lines.append("")
@@ -911,8 +952,12 @@ def generate(out_path, found=None):
 def main():
     args = sys.argv[1:]
     try:
-        if args[:1] == ["--gen"] and len(args) == 2:
-            generate(args[1])
+        if args[:1] == ["--keys"] and len(args) == 2:
+            source, trx = extract()
+            write_keys(args[1], *key_numbers(source, trx))
+            return 0
+        if args[:1] == ["--gen"] and (len(args) == 2 or (len(args) >= 3 and args[2] == "--used")):
+            generate(args[1], used=read_used(args[3:]) if len(args) >= 3 else None)
             return 0
         if args[:1] == ["--new"] and len(args) in (3, 4):
             code, name = args[1], args[2]

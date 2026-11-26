@@ -28,7 +28,7 @@ static int checks;
 static int iabs_t(int v) { return v < 0 ? -v : v; }
 static uint32_t phase_of(uint32_t t) { return t % 60000u; }
 
-static const roam_cfg_t cfg_default = { ROAM_RSSI_DEFAULT, ROAM_HYST_DEFAULT, ROAM_PROBE_PASSIVE, 0, 0, 0, ROAM_SURVEY_OFF };
+static const roam_cfg_t cfg_default = { ROAM_RSSI_DEFAULT, ROAM_HYST_DEFAULT, ROAM_PROBE_PASSIVE, 0, 0, 0, ROAM_SURVEY_OFF, false };
 
 static void sites_n(roam_t *r, uint8_t n, int cur, uint32_t t)
 {
@@ -320,7 +320,7 @@ static uint32_t drive(roam_t *r, uint32_t t, uint32_t ms, uint8_t blocked)
 	return t;
 }
 
-static const roam_cfg_t cfg_sync = { ROAM_RSSI_DEFAULT, ROAM_HYST_DEFAULT, ROAM_PROBE_PASSIVE, 0, 60, 4, ROAM_SURVEY_SYNC };
+static const roam_cfg_t cfg_sync = { ROAM_RSSI_DEFAULT, ROAM_HYST_DEFAULT, ROAM_PROBE_PASSIVE, 0, 60, 4, ROAM_SURVEY_SYNC, false };
 
 // n sites beaconing together every 60 s for 4 s from phase, at the levels given (0: none)
 static void bs_window(uint8_t n, uint32_t phase, const int16_t *dbm, int jitter)

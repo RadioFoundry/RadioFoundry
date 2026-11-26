@@ -65,7 +65,7 @@ static void quality_reset(p25_follow_t *f, uint32_t now)
 
 static void quality_update(p25_follow_t *f, uint32_t now)
 {
-	if (f->view.state == P25_FOLLOW_CONTROL && elapsed(now, f->t_quality, 1000)) {
+	if ((f->view.state == P25_FOLLOW_CONTROL || f->roaming) && elapsed(now, f->t_quality, 1000)) {
 		f->quality = quality_score(f);
 		quality_reset(f, now);
 		f->quality_ready = true;
@@ -92,7 +92,6 @@ static void tune(p25_follow_t *f, uint32_t hz, uint8_t what, uint32_t id)
 {
 #if CONFIG_P25_ROAM
 	f->signal_valid = false;
-	f->weak = false;
 #endif
 	f->tuning = true;
 	f->acc.heard = false;
@@ -207,17 +206,6 @@ static void cc_learn(p25_follow_t *f, uint16_t ch)
 // ── Hunt ──
 static void hunt_try(p25_follow_t *f, uint32_t now);
 
-#if CONFIG_P25_ROAM
-static void roam_finish(p25_follow_t *f, uint32_t now)
-{
-	// Reacquire the measured winner, or the original when no candidate improved.
-	f->roaming = false;
-	f->view.cc = f->best_cc;
-	f->tried = 0;
-	hunt_try(f, now);
-}
-#endif
-
 static void hunt_next(p25_follow_t *f, uint32_t now)
 {
 	uint8_t n = cc_count(f);
@@ -240,11 +228,7 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 	while (f->tried < n) {
 		uint32_t hz = cc_hz(f, f->view.cc);
 
-		if (hz
-#if CONFIG_P25_ROAM
-		    && (!f->roaming || hz != cc_hz(f, f->roam_origin))
-#endif
-		) {
+		if (hz) {
 			f->phase = PH_DWELL;
 			f->view.cc_hz = hz;
 			tune(f, hz, P25_FOLLOW_TUNE_CONTROL, 0);
@@ -253,12 +237,6 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 		f->tried++;
 		f->view.cc = (uint8_t)(f->view.cc + 1 >= n ? 0 : f->view.cc + 1);
 	}
-#if CONFIG_P25_ROAM
-	if (f->roaming) {
-		roam_finish(f, now);
-		return;
-	}
-#endif
 	f->phase = PH_BACKOFF;
 	f->tried = 0;
 	f->view.cc = f->good < n ? f->good : 0;
@@ -266,28 +244,6 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 	if (f->view.cc_hz)
 		tune(f, f->view.cc_hz, P25_FOLLOW_TUNE_CONTROL, 0);
 }
-
-#if CONFIG_P25_ROAM
-static void roam_sample(p25_follow_t *f, uint32_t now)
-{
-	uint8_t score = quality_score(f);
-	bool fresh = f->signal_valid && !elapsed(now, f->t_signal, 500);
-	// A clearly cleaner site may be weaker. RSSI still supplies a floor; a
-	// stronger site with essentially equal decoding must clear a 6 dB margin.
-	bool cleaner = score >= 80 && score >= (unsigned)f->origin_quality + 10 &&
-		f->signal_dbm >= f->cfg->roam_dbm - 10;
-	bool stronger = score >= 80 && (unsigned)score + 5 >= f->origin_quality &&
-		f->signal_dbm >= f->cfg->roam_dbm && f->signal_dbm >= f->origin_dbm + 6;
-	if (fresh && (cleaner || stronger) &&
-	    (f->best_cc == f->roam_origin || score > (unsigned)f->best_quality + 5 ||
-	     ((unsigned)score + 5 >= f->best_quality && f->signal_dbm > f->best_dbm))) {
-		f->best_cc = f->view.cc;
-		f->best_quality = score;
-		f->best_dbm = f->signal_dbm;
-	}
-	hunt_next(f, now);
-}
-#endif
 
 static void acc_lost(p25_follow_t *f);
 
@@ -307,7 +263,6 @@ static void accept(p25_follow_t *f, uint16_t nac, uint32_t now)
 {
 #if CONFIG_P25_ROAM
 	f->roaming = false;
-	f->weak = false;
 #endif
 	f->view.state = P25_FOLLOW_CONTROL;
 	f->view.nac = nac;
@@ -767,6 +722,14 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	if (c->nac != P25_NAC_ANY && nac != c->nac) {
 		// Another system on the frequency
 		count(&f->view.wrong_sys);
+#if CONFIG_P25_ROAM
+		if (f->roaming) {
+			f->have_id = false;
+			f->phase = PH_IDENT;
+			quality_reset(f, now);
+			return;
+		}
+#endif
 		if (st == P25_FOLLOW_HUNT && f->phase != PH_BACKOFF)
 			hunt_next(f, now);
 		return;
@@ -786,6 +749,14 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 
 			if (!ok) {
 				count(&f->view.wrong_sys);
+#if CONFIG_P25_ROAM
+				if (f->roaming) {
+					f->have_id = false;
+					f->phase = PH_IDENT;
+					quality_reset(f, now);
+					return;
+				}
+#endif
 				if (f->phase != PH_BACKOFF)
 					hunt_next(f, now);
 				return;
@@ -804,6 +775,7 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 			// Identity matched, but one good block is not enough to rank a site.
 			// Grants during the bounded survey are deliberately not followed.
 			f->phase = PH_SAMPLE;
+			f->t_good = now;
 			return;
 		}
 #endif
@@ -885,9 +857,6 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 	f->cfg = cfg;
 	f->hooks = hooks;
 	f->ctx = ctx;
-#if CONFIG_P25_ROAM
-	f->t_roam = now;
-#endif
 	f->good = 0xFF;
 	f->view.wacn = UINT32_MAX;
 	f->view.sysid = UINT16_MAX;
@@ -943,6 +912,7 @@ void p25_follow_retuned(p25_follow_t *f, uint32_t now)
 	view_begin(f);
 #if CONFIG_P25_ROAM
 	quality_reset(f, now);
+	if (f->roaming && f->cfg->roam) roam_tuned(f->cfg->roam, now);
 #endif
 	f->tuning = false;
 	// Timers run from the moment the receiver is there
@@ -1013,16 +983,10 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 		if (p25_block_get(u->air, 0, blk) < 0) {
 			f->view.crc_fail++;
 		} else if (p25_mbt_parse(blk, &h)) {
-			uint8_t data[P25_TSBK_BYTES];
-			p25_tsbk_t m;
-
+			// Explicit status is validated before entering the common identity path.
 			count(&f->view.mbt);
 			f->view.mbt_op = h.opcode;
-			// The extended network status broadcast is the system's identity as the abbreviated one is: taken as
-			// that block. Other packets are counted only
-			if (u->nsyms >= p25_blocks_syms(2) && p25_block_decode(u->air, 1, data) >= 0 &&
-			    p25_mbt_net_parse(blk, data, &m)) {
-				p25_tsbk_make(&m, blk);
+			if (p25_mbt_status(u, blk)) {
 				f->view.blocks++;
 				on_block(f, blk, u->nac, now);
 			}
@@ -1072,47 +1036,82 @@ void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now)
 }
 
 #if CONFIG_P25_ROAM
-void p25_follow_signal(p25_follow_t *f, int16_t dbm, uint32_t now)
+// The shared engine owns the search order, weak timer, dwell, hysteresis and back-off.
+// This adapter only supplies identity-qualified measurements and performs its retunes.
+static void follow_roam_tune(p25_follow_t *f, uint8_t cc, uint32_t now)
 {
-	if (f->tuning || dbm >= 0 || dbm < -160)
-		return;
-	// The RF status can briefly still describe the previous frequency.
-	if (f->view.state == P25_FOLLOW_HUNT && !elapsed(now, f->t_state, 100))
-		return;
-	f->signal_dbm = dbm;
-	f->t_signal = now;
-	f->signal_valid = true;
-	quality_update(f, now);
-	bool poor = f->quality_ready && f->quality < 90;
-	if (f->view.state != P25_FOLLOW_CONTROL || f->cfg->roam_dbm >= 0 ||
-	    (f->cfg->flags & P25_FOLLOW_TX) || f->cfg->ncc < 2 || (dbm >= f->cfg->roam_dbm && !poor)) {
-		f->weak = false;
-		return;
-	}
-	if (!f->weak) {
-		f->weak = true;
-		f->t_weak = now;
-	}
-	if (!elapsed(now, f->t_weak, 3000) || !elapsed(now, f->t_roam, 30000))
-		return;
-	view_begin(f);
-	f->roam_origin = f->view.cc;
-	f->origin_dbm = f->best_dbm = dbm;
-	// No complete origin sample is not evidence of poor decoding.
-	f->origin_quality = f->best_quality = f->quality_ready ? f->quality : 100;
-	f->best_cc = f->roam_origin;
-	f->t_roam = now;
-	f->weak = false;
-	f->roaming = true;
 	acc_lost(f);
 	f->view.state = P25_FOLLOW_HUNT;
-	count(&f->view.hunts);
-	f->t_nocc = now;
+	f->view.cc = cc;
 	f->tried = 0;
-	f->backoff = P25_FOLLOW_BACKOFF_MS;
-	f->view.cc = (uint8_t)((f->roam_origin + 1) % cc_count(f));
+	f->have_id = false;
+	f->t_nocc = now;
 	hunt_try(f, now);
+}
+
+void p25_follow_roam_cancel(p25_follow_t *f, uint32_t now)
+{
+	roam_t *r = f->cfg->roam;
+	if (!r || !f->roaming) return;
+	view_begin(f);
+	roam_abort(r, now);
+	f->roaming = false;
+	follow_roam_tune(f, (uint8_t)(r->site[r->cur].number - 1u), now);
 	view_end(f);
+}
+
+void p25_follow_signal(p25_follow_t *f, int16_t dbm, uint32_t now)
+{
+	if (!f->tuning && dbm < 0 && dbm >= -160) {
+		f->signal_dbm = dbm;
+		f->t_signal = now;
+		f->signal_valid = true;
+	}
+}
+
+// Keep the candidate-list scratch frame separate from radio retuning and its driver calls.
+static void __attribute__((noinline)) follow_roam_poll(p25_follow_t *f, uint32_t now)
+{
+	roam_t *r = f->cfg->roam;
+	if (!r) return;
+	if (!f->cfg->roam_enabled || (f->cfg->flags & P25_FOLLOW_TX)) {
+		if (f->roaming) {
+			roam_abort(r, now);
+			f->roaming = false;
+			follow_roam_tune(f, (uint8_t)(r->site[r->cur].number - 1u), now);
+		}
+		roam_set_sites_fresh(r, r->site, 0, -1, -1, now);
+		return;
+	}
+	if (f->view.state != P25_FOLLOW_CONTROL && !f->roaming)
+		return;
+	if (!f->roaming && (r->state == ROAM_OFF || f->roam_channels != cc_count(f) ||
+	    r->site[r->cur].number != f->view.cc + 1u)) {
+		roam_site_t sites[ROAM_SITES_MAX] = {0};
+		uint8_t n = 1;
+		sites[0].number = f->view.cc + 1u;
+		sites[0].quality = 255;
+		// Adjacent sites learned on air first, then the programmed alternatives.
+		for (unsigned k = 0; k < cc_count(f) && n < ROAM_SITES_MAX; k++) {
+			uint8_t i = (uint8_t)((k + f->cfg->ncc) % cc_count(f));
+			if (i == f->view.cc || !cc_hz(f, i) || cc_hz(f, i) == cc_hz(f, f->view.cc)) continue;
+			bool duplicate = false;
+			for (unsigned j = 0; j < n; j++)
+				if (cc_hz(f, (uint8_t)(sites[j].number - 1u)) == cc_hz(f, i)) duplicate = true;
+			if (!duplicate) sites[n++] = (roam_site_t){ .number = i + 1u, .quality = 255 };
+		}
+		roam_set_sites_fresh(r, sites, n, 0, -1, now);
+		f->roam_channels = cc_count(f);
+	}
+	quality_update(f, now);
+	roam_quality(r, f->quality_ready && (!f->roaming || f->phase == PH_SAMPLE) ? f->quality : 255);
+	bool heard = !f->roaming || (f->phase == PH_SAMPLE && !elapsed(now, f->t_good, 500));
+	roam_sample(r, now, heard && f->signal_valid && !elapsed(now, f->t_signal, 500), f->signal_dbm, false);
+	roam_act_t act = roam_poll(r, now, 0, false);
+	if (act != ROAM_ACT_TUNE && act != ROAM_ACT_DONE) return;
+	f->roaming = act == ROAM_ACT_TUNE;
+	if (f->roaming) count(&f->view.hunts);
+	follow_roam_tune(f, (uint8_t)(r->site[f->roaming ? r->visit : r->cur].number - 1u), now);
 }
 #endif
 
@@ -1123,17 +1122,14 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
+#if CONFIG_P25_ROAM
+	follow_roam_poll(f, now);
+	if (f->tuning) { view_end(f); return; }
+#endif
 	switch (f->view.state) {
 	case P25_FOLLOW_HUNT:
 #if CONFIG_P25_ROAM
-		if (f->roaming && elapsed(now, f->t_roam, 20000)) {
-			roam_finish(f, now);
-			break;
-		}
-		if (f->roaming && f->phase == PH_SAMPLE && elapsed(now, f->t_quality, 1000)) {
-			roam_sample(f, now);
-			break;
-		}
+		if (f->roaming) break;
 #endif
 		if (c->fallback_ms && !f->view.fallback && elapsed(now, f->t_nocc, c->fallback_ms)) {
 			f->view.fallback = true;

@@ -653,6 +653,12 @@ static void handle_event(const ui_event_t *ev)
 				TR(MSG_BANNER_DELIVERED_TO, "Delivered to "));
 			station(&b, ev);
 			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
+		} else if (ev->index == 2) {
+			char why[UI_BANNER_TEXT];
+			sb_str(&b, TR(SHARE_BANNER_NOT_SENT_TO, "Not sent to "));
+			station(&b, ev);
+			banner(UI_BANNER_RESULT, true, ev->id, title,
+				ui_deny_text(view, TXDENY_DATA_ENCRYPTED, why, sizeof why));
 		} else {
 			sb_str(&b, TR(BANNER_NO_ANSWER_FROM, "No answer from "));
 			station(&b, ev);
@@ -1414,6 +1420,32 @@ static void quick_unavailable(uint8_t kind)
 	}
 }
 
+// Quick tile 5's action, on its own so a side key set to Monitor toggle runs the very same code: FM latches the
+// squelch open (or closes it again), DMR turns digital monitor on or off. kind is QT_MONITOR or QT_HEAR_ALL
+static void quick_monitor(uint8_t kind)
+{
+#if CONFIG_DMR
+	if (kind == QT_HEAR_ALL) {
+		if (ui_svc_hear_all(!ui_st.hear_all)) {
+			ui_st.hear_all = !ui_st.hear_all;
+			ui_toast(dmon_text(ui_st.hear_all));
+		} else {
+			quick_unavailable(kind);
+		}
+		return;
+	}
+#endif
+	if (!ui_svc_monitor(!view->monitor))
+		quick_unavailable(kind);
+}
+
+// A side key set to Monitor toggle: tile 5 of the quick settings, kept to the channel's mode (also in the VFO, where
+// the tile is TX freq and the monitor stays on its key)
+void ui_monitor_toggle(void)
+{
+	quick_monitor(view->ch.mode == RADIO_MODE_DMR ? QT_HEAR_ALL : QT_MONITOR);
+}
+
 static void quick_activate(int tile)
 {
 	char label[20], value[12];
@@ -1474,8 +1506,7 @@ static void quick_activate(int tile)
 		break;
 	}
 	case QT_MONITOR:
-		if (!ui_svc_monitor(!view->monitor))
-			quick_unavailable(kind);
+		quick_monitor(kind);
 		break;
 	case QT_VOX:
 		if (ui_svc_vox(!view->vox_on))
@@ -1508,12 +1539,7 @@ static void quick_activate(int tile)
 		ui_st.quick_edit = true;
 		break;
 	case QT_HEAR_ALL:
-		if (ui_svc_hear_all(!ui_st.hear_all)) {
-			ui_st.hear_all = !ui_st.hear_all;
-			ui_toast(dmon_text(ui_st.hear_all));
-		} else {
-			quick_unavailable(kind);
-		}
+		quick_monitor(kind);
 		break;
 	case QT_PRIVACY:
 		if (ui_svc_privacy(!ui_st.privacy)) {
@@ -2234,6 +2260,9 @@ void ui_app_key(const input_event_t *ev)
 			return;
 		case ACT_SCAN_SKIP:
 			ui_scan_skip();
+			return;
+		case ACT_MONITOR_TOGGLE:
+			ui_monitor_toggle();
 			return;
 #if CONFIG_DUAL_WATCH
 		case ACT_DUAL_WATCH:

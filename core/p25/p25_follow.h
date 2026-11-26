@@ -12,8 +12,12 @@
 #ifndef RFOUNDRY_P25_FOLLOW_H
 #define RFOUNDRY_P25_FOLLOW_H
 
+#include "../config.h"
 #include <stdbool.h>
 #include <stdint.h>
+#if CONFIG_P25_ROAM
+#include "radio/roam.h"
+#endif
 
 #include "p25_tsbk.h"
 #include "fec/rx_seen.h"
@@ -82,7 +86,10 @@ typedef struct {
 	uint16_t talk_group;	// 0 none
 	uint8_t ngroups;	// more talk groups followed
 	const uint16_t *groups;
-	int8_t roam_dbm;	// negative: receive-only quality/signal survey; 0 disables
+	#if CONFIG_P25_ROAM
+	roam_t *roam;	// shared policy, caller-owned; NULL disables
+	bool roam_enabled;	// the radio's per-zone roaming flag
+#endif
 	uint8_t ncc;		// control channels in hunt order, the first the primary
 	const p25_follow_cc_t *cc;
 	uint16_t iden_set;	// bit n: iden[n] is programmed
@@ -217,11 +224,11 @@ typedef struct {
 	uint32_t t_left;	// left a call on its terminator
 	uint32_t backoff;	// ms
 #if CONFIG_P25_ROAM
-	uint32_t t_signal, t_weak, t_roam, t_quality;
-	int16_t signal_dbm, origin_dbm, best_dbm;
-	uint8_t roam_origin, best_cc, origin_quality, best_quality;
+	uint32_t t_signal, t_quality;
+	int16_t signal_dbm;
+	uint8_t roam_channels;
 	uint8_t quality_good, quality_bad, quality_bins, quality;
-	bool signal_valid, weak, roaming, quality_ready;
+	bool signal_valid, roaming, quality_ready;
 #endif
 	uint16_t hold_tg, left_tg, left_ch;
 	uint16_t learn[P25_FOLLOW_LEARN];
@@ -252,6 +259,10 @@ void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now);
 void p25_follow_tsbk(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_t nac, uint32_t now);
 // Timers: call at least every 100 ms
 void p25_follow_tick(p25_follow_t *f, uint32_t now);
+#if CONFIG_P25_ROAM
+// User action: cancel a visit and return to its origin, under the follower lock.
+void p25_follow_roam_cancel(p25_follow_t *f, uint32_t now);
+#endif
 // Feed current receive signal under the same lock as tick. Never initiates transmit.
 #if CONFIG_P25_ROAM
 void p25_follow_signal(p25_follow_t *f, int16_t dbm, uint32_t now);
