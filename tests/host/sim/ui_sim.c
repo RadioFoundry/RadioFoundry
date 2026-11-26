@@ -30,7 +30,8 @@
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
-//   chkind:<n>,p25|nxdn|aes[,<name>]  a stored P25, NXDN or AES channel, with an optional name (_ = space)
+//   chkind:<n>,p25|nxdn|dmr_aes[,<name>]  a stored P25 channel, NXDN channel or DMR channel with AES-256, with an
+//                                         optional name (_ = space)
 //   p25t:<state>[,<tg>[,<reg>[,<tx>[,<why>]]]]  the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds),
 //                       its follower in state 1 finding the system, 2 on the control channel, 3 following talk group
 //                       tg; reg the registration state (p25_reg_t, 8 blocked); tx 1 turns the transmit side on; why
@@ -3469,7 +3470,7 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 #if CONFIG_P25 || CONFIG_NXDN || CONFIG_DMR_AES
-	if (strcmp(t, "chkind") == 0) {		// stored channel n is a P25, NXDN or AES channel: its tag, over a stand-in record
+	if (strcmp(t, "chkind") == 0) {		// stored channel n is a P25, NXDN or DMR+AES-256 channel: its tag, over a stand-in record
 		unsigned n = 0;
 		char k[8] = "";
 		channel_t c;
@@ -3487,7 +3488,7 @@ static bool run_token(char *t, char *err, size_t len)
 		}
 		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : CODEPLUG_KIND_P25;
 #if CONFIG_DMR_AES
-		if (strcmp(k, "aes") == 0) {	// system 3, key ID 0 (aeskeys has the system's keys)
+		if (strcmp(k, "dmr_aes") == 0) {	// system 3, key ID 0 (aeskeys has the system's keys)
 			c.kind = CODEPLUG_KIND_DMR_AES;
 			c.system = 2;
 			c.aes_ref = 1;

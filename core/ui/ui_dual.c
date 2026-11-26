@@ -173,7 +173,8 @@ static uint8_t tuned_pane(const radio_view_t *v)
 }
 
 // The mode a channel runs in: a stored channel of a kind keeps DMR in its record (channel-modes.md 2), its kind's mode
-// is the one shown. Tier III and AES channels run on their record's DMR (#1066: an AES channel showed P25)
+// is the one shown. Tier III channels and DMR channels with AES-256 run on their record's DMR (#1066: a DMR channel
+// with AES-256 showed P25)
 static uint8_t shown_mode(const channel_t *c)
 {
 	if (!codeplug_kind_built(c->kind))
