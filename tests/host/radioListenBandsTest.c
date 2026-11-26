@@ -537,11 +537,14 @@ static void test_bcast_channel(void)
 	run(100);
 	CHECK(sm.view.state == RS_RX && bc.audio && !hw.audio && sm.view.rssi_dbm == 35 + RADIO_BCAST_DBUV_DBM);
 
-	// Receive only, whatever the codeplug says
+	// Receive only, whatever the codeplug says. The refusal silences the station while PTT is held, as it silences an
+	// open squelch on a receive-only FM channel (#1130), and the station plays again after
 	ptt(true);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BCAST && hw.tx_calls == 0);
+	CHECK(!bc.audio && !hw.audio);
 	ptt(false);
-	CHECK(!hw.audio);
+	run(100);
+	CHECK(sm.view.state == RS_RX && bc.audio && !hw.audio);
 
 	// A 2 m channel: the receiver is switched off and the channel receiver tuned again
 	req(RREQ_ZONE_POS, 2);
