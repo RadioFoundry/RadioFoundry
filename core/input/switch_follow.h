@@ -8,7 +8,7 @@
 // keeps refusing while it could take one (a channel it can't read) is given up after SWITCH_FOLLOW_ASKS asks, since
 // every ask stops a scan and an APRS transmission and resets the battery saver. Then it leaves the radio alone until
 // the knob moves or the zone changes (another zone, or the same one with another size after a codeplug write), so a
-// scan stands. A host that picks the zone and position (core/net/radio_udp.c) holds it: the radio is left on the
+// scan stands. A host that picks the zone and position (core/net/radio_ctl.c) holds it: the radio is left on the
 // host's choice, in that zone too, until the knob moves (switch_follow_hold). Pure, for the host test.
 #ifndef INPUT_SWITCH_FOLLOW_H
 #define INPUT_SWITCH_FOLLOW_H

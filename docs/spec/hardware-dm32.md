@@ -739,7 +739,7 @@ like an AGC/gain table).
 | Order | mute (0x30 = 0000), band select (0x1A and 0x40), 0x38, 0x39, bandwidth (0x43), state (0x30) |
 | State register 0x30 | 0x0000 idle; 0xBFF1 RX on; 0xC1FE TX on. Always go through idle between RX and TX |
 | Bandwidth 0x43 | 0x3028 = 25 kHz FM; 0x4008 = 12.5 kHz FM; **0x4048 = DMR** (12.5 kHz with bit 6 set) |
-| FM TX extra writes | 0x3F = 0000, 0x40 = 34EA, 0x37 = 1D0F before switching to TX (analog only) |
+| FM TX extra writes | 0x3F = 0000, 0x40 = 34EA, 0x37 = 1D0F before switching to TX (analog only); then 0x24 = 0000 (its receive value back at the next switch to RX) and, with a valid calibration, 0x40 = 0x3400 \| the band's TX deviation byte (calibration +0x1C UHF / +0xAB VHF, the `BF_ROW_REG40` row). 0x50 = 3B18 after the switch to TX, BB18 when the transmission ends |
 
 Band select by frequency (f in 10 Hz units; first matching row wins):
 
@@ -1159,7 +1159,7 @@ at low power and an SDR on the frequency:
 | Codec | the program flash's code window matched the `DM32.NRFB.01.050 program flash` profile's SHA-256 (`8d7f57eb...`, `codec-dm32.md`): a second radio with this build carries the same code there |
 
 Not checked on this radio: CTCSS or DCS on transmit or receive, battery save (the receiver sleep row), registers 0x3D
-and 0x0C read back by hand, and air band AM (which set-up B doesn't have yet, below).
+and 0x0C read back by hand, and air band AM.
 
 | | Classic section (set-up A, 8.2-8.8) | Newer section (set-up B) |
 |---|---|---|
@@ -1168,8 +1168,13 @@ and 0x0C read back by hand, and air band AM (which set-up B doesn't have yet, be
 | 0x30 into RX / TX | idle, then 0xBFF1 / 0xC1FE | idle, 0x0200, then 0xBFF1 / 0xC1FE |
 | 0x1A, 0x40 | band words (8.3) | 0x1A not written; 0x40 = 0x34F0, on FM transmit 0x3480 + the calibration byte |
 | DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user); 0x6943 / 0xB2FD works both ways (user, 2) |
-| 0x50 around each switch to TX | not written | FM: 0xBB20 before, 0x3B20 after (user: after only); DMR burst: 0x3B18 after (user: 0x3B20) |
-| 0x2E / 0x2F at each receive tune | not written | 0x8608 / 0x1890 with CTCSS, 0x9608 / 0x9890 with DCS or none |
+| 0x50 around TX | 0x3B18 after each switch to TX (FM, and each DMR burst), 0xBB18 when the transmission ends (b15 = TX audio mute, b9:0 the limit) | same |
+| 0x40 on FM transmit | 0x3400 \| the calibration byte | 0x3480 + the calibration byte |
+| 0x24 (tone decoder input selects) | 0 on FM transmit, the value before it back at the next switch to RX | same |
+| 0x7D | 0xE35E (receive digital gain b12:8 = 3; the low byte the analog mic step) | 0xE92C (receive digital gain 9; the same mic step, from a 1F 22 26 29 2C table where set-up A's is 16 18 1A 1C 1E) |
+| FD6818 GPIO 5 | not set | function 1: 0x33 b9 and b1 clear, 0x34 b7:4 = 1 |
+| 0x28 | not written | 0x0A40, 0x0B40 while the FM squelch is open (b8 is documented read-only) |
+| 0x2E / 0x2F at each receive tune | not written | 0x9608 / 0x9890 with DCS, 0x8608 / 0x1890 with CTCSS or none |
 | HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable). Clear: DMR decodes (user, 2) |
 | Receiver sleep (8.8) | 0x37 = 0x1D11 / 0x1D00, wake 0x1F1F, 0x1F0F | 0x37 = 0x9D17 (FM) / 0x9D00 (DMR), wake 0x9D1F (user: idle only) |
 | 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user; user, 2: the start-up check chose B) |
@@ -1184,9 +1189,10 @@ for 0x0C bit 9 to read set three times in a row, 1 ms apart (the bit can read se
 settles). No lock: set-up B the same way. Set-up B locks on both sections, so A goes first, and when B locks A is tried
 once more with 60 ms, so a slow lock on the classic section isn't taken for the newer one. Neither locking leaves
 set-up A and refuses every transmission. The diagnostics line `flash ... cal ... rf X` names the result: `A`, `B`, or `-` for
-neither. Set-up B has no AM receive yet (8.7 is set-up A's).
+neither. Air band AM uses the 8.7 writes on both sections; set-up B's FM words for 0x13 and 0x4A (0x03DF, 0x5430) go
+back when AM ends.
 
-With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also the power-on 0x2F.
+With no receive tone RadioFoundry writes the CTCSS 0x2E / 0x2F pair.
 
 ## 9. Audio path
 
