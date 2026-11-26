@@ -3968,14 +3968,9 @@ msgid "Hint row"
 msgstr "Ligne d'aide"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_LABEL_LED_SCAN_PULSE"
-msgid "Scan pulse"
-msgstr "Impulsion balayage"
-
-#: core/ui/ui_menus.c
-msgctxt "SET_LABEL_LED_HEARTBEAT"
-msgid "Heartbeat"
-msgstr "Battement"
+msgctxt "SET_LABEL_LED_FLASH"
+msgid "LED flash"
+msgstr "Clignotement LED"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_LANGUAGE"

@@ -281,8 +281,7 @@ static bool set_one(radio_settings_t *s, uint8_t id, uint16_t v)
 	case 27: if (v > 2) return false; s->roam_survey = (uint8_t)v; break;
 	case 28: s->rpt_beacon = v != 0; break;
 	case 30: if (v > RADIO_DUAL_DELAY_MAX_MS) return false; s->dual_delay_ms = v; break;
-	case 38: if (v > RADIO_LED_PERIOD_MAX_S) return false; s->led_scan_pulse = (uint8_t)v; break;
-	case 39: if (v > RADIO_LED_PERIOD_MAX_S) return false; s->led_heartbeat = (uint8_t)v; break;
+	case 38: if (v > RADIO_LED_PERIOD_MAX_S) return false; s->led_flash = (uint8_t)v; break;
 	case 33: if (v >= RADIO_CWID_CODES || !CONFIG_SFR_CWID) return false; s->sfr_cwid = (uint8_t)v; break;
 	case 34: if (v > 2 || (v == 2 && !CONFIG_SFR_DUALPATH_RX)) return false; s->sfr_rx = (uint8_t)v; break;
 	default: return false;

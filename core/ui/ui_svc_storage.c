@@ -196,12 +196,9 @@ static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
 		radio_get_settings(&rs);
 		return rs.bcast_step == RADIO_BCAST_STEP_100 ? 100 : 200;
 #endif
-	case UI_SET_LED_SCAN_PULSE:
+	case UI_SET_LED_FLASH:
 		radio_get_settings(&rs);
-		return rs.led_scan_pulse;
-	case UI_SET_LED_HEARTBEAT:
-		radio_get_settings(&rs);
-		return rs.led_heartbeat;
+		return rs.led_flash;
 	case UI_SET_TALK_PERMIT:
 	case UI_SET_SCAN_TONE:
 		radio_get_settings(&rs);
@@ -441,8 +438,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
 	case UI_SET_TOT_S:
-	case UI_SET_LED_SCAN_PULSE:
-	case UI_SET_LED_HEARTBEAT:
+	case UI_SET_LED_FLASH:
 	case UI_SET_BACKLIGHT_S:
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:

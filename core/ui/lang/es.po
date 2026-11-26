@@ -3968,14 +3968,9 @@ msgid "Hint row"
 msgstr "Ayuda de comandos"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_LABEL_LED_SCAN_PULSE"
-msgid "Scan pulse"
-msgstr "Pulso de escaneo"
-
-#: core/ui/ui_menus.c
-msgctxt "SET_LABEL_LED_HEARTBEAT"
-msgid "Heartbeat"
-msgstr "Latido"
+msgctxt "SET_LABEL_LED_FLASH"
+msgid "LED flash"
+msgstr "Destello del LED"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_LANGUAGE"

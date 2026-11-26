@@ -928,8 +928,8 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, reserved10), 399 },
 		{ offsetof(settings_t, sig_dmr), 400 },
 		{ offsetof(settings_t, sig_fm), 403 },
-		{ offsetof(settings_t, led_scan_pulse), 406 },
-		{ offsetof(settings_t, led_heartbeat), 407 },
+		{ offsetof(settings_t, led_flash), 406 },
+		{ offsetof(settings_t, reserved11), 407 },
 		{ offsetof(settings_t, aes_mi_res), 408 },
 	};
 	CHECK(sizeof(settings_t) == 412);

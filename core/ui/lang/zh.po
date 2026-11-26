@@ -3970,14 +3970,9 @@ msgid "Hint row"
 msgstr "提示行"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_LABEL_LED_SCAN_PULSE"
-msgid "Scan pulse"
-msgstr "扫描提示"
-
-#: core/ui/ui_menus.c
-msgctxt "SET_LABEL_LED_HEARTBEAT"
-msgid "Heartbeat"
-msgstr "待机提示"
+msgctxt "SET_LABEL_LED_FLASH"
+msgid "LED flash"
+msgstr "LED 提示"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_LANGUAGE"

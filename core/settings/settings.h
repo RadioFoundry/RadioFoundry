@@ -253,8 +253,8 @@ typedef struct {
 	// copy 60 bytes
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
-	uint8_t led_scan_pulse;		// radio_settings_t.led_scan_pulse (was reserved11[0]: an older record reads 0 = off)
-	uint8_t led_heartbeat;		// radio_settings_t.led_heartbeat (was reserved11[1]: an older record reads 0 = off)
+	uint8_t led_flash;		// radio_settings_t.led_flash (was reserved11[0]: an older record reads 0 = off)
+	uint8_t reserved11;		// 0
 	// DMR AES: the end of the MI positions reserved for our overs (dmrAesSeq_t, dmr-voice.md 5.1; appended: an older
 	// record reads 0, no position yet). A restart starts here, past every position sent
 	uint32_t aes_mi_res;
