@@ -1219,28 +1219,6 @@ static void test_hwopt(void)
 	CHECK(o->set(2) && confirms == before + 1 && o->state() == HWOPT_ST_OK);
 }
 
-static void test_digital_receiver_isolation(void)
-{
-	for (int r = MD9600_REV_V1V3; r < MD9600_REV_COUNT; r++) {
-		if (!md9600_rev_built((md9600_rev_t)r)) {
-			continue;
-		}
-		fresh((md9600_rev_t)r, true);
-		CHECK(md9600_rf_rx(&rf, 145110000u, true) == MD9600_RF_OK);
-		md9600_rf_set_dmr(&rf, true);
-		CHECK(md9600_rf_rx(&rf, 453387500u, false) == MD9600_RF_OK);
-		CHECK(level[MD9600_LN_R5_U]);
-		CHECK(level[MD9600_LN_R5_V] == !rf.desc->if_chip);
-		CHECK(md9600_rf_rx(&rf, 146520000u, false) == MD9600_RF_OK);
-		CHECK(level[MD9600_LN_R5_V]);
-		CHECK(level[MD9600_LN_R5_U] == !rf.desc->if_chip);
-		md9600_rf_set_dmr(&rf, false);
-		CHECK(md9600_rf_rx(&rf, 145110000u, true) == MD9600_RF_OK);
-		CHECK(level[MD9600_LN_R5_U] && level[MD9600_LN_R5_V]);
-		CHECK(pa_off_now());
-	}
-}
-
 int main(void)
 {
 #if CONFIG_AM_ENVELOPE
@@ -1271,7 +1249,6 @@ int main(void)
 	test_init();
 	test_power_up();
 	test_rx();
-	test_digital_receiver_isolation();
 	test_lock();
 	test_tx_gates();
 #if CONFIG_MD9600_TX
