@@ -91,7 +91,7 @@ If the firmware was built without privacy, the Privacy row is dimmed and OK on i
 | Key type | Off, 8-bit (1-255), 16-bit (0-65535) | Off | The kind of basic privacy key ([DMR](09-dmr.md#privacy)). Off removes the key | Works |
 | Key | 8-bit 1 to 255, 16-bit 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
 | Key check | Six hex digits, read only | | The key's check value ([DMR](09-dmr.md#checking-that-two-radios-have-the-same-key)). Two radios with the same key show the same digits. Dimmed until a type is chosen | Untested on a radio |
-| Stored keys | A list | | Every key the radio holds, with its check value: the privacy key slots, then the traffic keys of the codeplug's systems (NXDN scrambler keys, and others where the build has them). Missing from builds with neither | Untested on a radio |
+| Stored keys | A list | | Every key the radio holds, with its check value: the privacy key slots, then the traffic keys of the codeplug's systems (NXDN scrambler keys, and others where the build has them). Missing from builds with neither | Works |
 | Wipe code | Set, Off | Off | The 4 digits that, with **#**, wipe the radio ([Emergency wipe](#emergency-wipe)). **OK** opens it: type the code twice. When a code is set, Clear code removes it. Dimmed on radios without number keys | Works |
 | Wipe what | Keys+codeplug, Keys only | Keys+codeplug | What the wipe erases. Keys+codeplug also puts every setting back to its default, as a factory reset, the wipe code included | Untested on a radio |
 | Wipe confirm | On, Off | On | On: after the code, **OK** wipes and any other key goes back. Off: the wipe starts at **#** | Untested on a radio |
