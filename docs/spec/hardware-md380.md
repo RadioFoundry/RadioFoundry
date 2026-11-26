@@ -65,7 +65,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 
 | Pin | Function | Notes |
 |---|---|---|
-| PA0 | ADC1 IN0: volume knob position | Follows the knob: "vol" in the diagnostics reads 2 to 2012 (measured) |
+| PA0 | ADC1 IN0: volume knob position | Follows the knob: "vol" in the diagnostics reads 2 to 1970, or 2 to 2019 (measured on two models) |
 | PA1 | ADC1 IN1: battery voltage | (unverified) |
 | PA2 | ADC1 IN2: QT_DQT_IN, sub-audio tone input | (unverified); RadioFoundry decodes CTCSS / DCS in software, sampling it with `CONFIG_SUBTONE` (section 6.4) |
 | PA3 | ADC1 IN3: VOX, mic level | (unverified) |
@@ -810,11 +810,12 @@ FM_MUTE low; DMR voice through it doesn't work yet (4.10).
 
 The volume knob sets the level in the analog path; the MCU only sees its position on PA0. `hal_power_t.volume()` reports
 that position for the volume bar (`radio-features.md` 4.2), on a scale from raw 2 through 327 at mid-rotation (50 %) to
-2012 (100 %) (measured). No mute zone is applied: with the knob against the bottom stop a very faint audio is still
-heard (tested). It answers -1 until the ADC readings settle, and holds the last position while the battery line reads
-off (10.1). The board has no `CAP_VOLUME_POT`, and there is no `hal_radio_t.volume`: the MCU has no way to set the
-speaker level (the HR_C5000's feed-through gain isn't used for it, and the knob acts after it), so the debug link's
-volume operation (RADIO op 30) answers "unavailable" (`radio-features.md` 4.2).
+1970 (100 %) (measured: units top out between about 1970 and 2019). No mute zone is applied: with the knob against the
+bottom stop a very faint audio is still heard (tested). It answers -1 until the ADC readings settle, and holds the last
+position while the battery line reads off (10.1). The board has no `CAP_VOLUME_POT`, and there is no
+`hal_radio_t.volume`: the MCU has no way to set the speaker level (the HR_C5000's feed-through gain isn't used for it,
+and the knob acts after it), so the debug link's volume operation (RADIO op 30) answers "unavailable"
+(`radio-features.md` 4.2).
 
 ### 6.2 I2S PCM
 

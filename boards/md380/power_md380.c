@@ -188,7 +188,7 @@ static uint8_t battery_pct(void)
 // - Never returns 0: the speaker is still faintly audible with the knob at the bottom.
 static int8_t volume(void)
 {
-	static const volume_pot_cal_t cal = { 2, 327, 2012, VOLUME_POT_NO_MUTE };
+	static const volume_pot_cal_t cal = { 2, 327, 1970, VOLUME_POT_NO_MUTE };
 	if (settled() && battery_now_mv() >= PWRSW_OFF_MV) {
 		vol_pct = volume_pot_percent(&vol_pot, &cal, adc_read(CH_VOLUME));
 	}
