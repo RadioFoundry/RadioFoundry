@@ -34,7 +34,10 @@ framer and call layer, built for the host) decodes it. Pass criteria:
 - every unit's NID decoded with at most MAX_NID_ERRS bit errors; no voice frame bad, the corrected bits at most
   MAX_CORRECTED of the voice bits; no link control or encryption sync failure;
 - the outer deviation the soft modem measures at its syncs (median) within DEV_PCT of 1800 Hz;
-- on the radio: p25.tx_calls one more, no p25.tx_underruns.
+- on the radio: p25.tx_calls one more, no p25.tx_underruns;
+- the talk permit tone (#803, as DMR's): beep.played one more over the over when Settings > Sound > Talk permit tone
+  is on (beep.talk_permit) and the tone volume isn't 0, none when it is off. Not judged on firmware without
+  beep.talk_permit or without beeps (beep.built).
 The carrier offset the soft modem measures is printed, not judged: it includes the bench board's own error.
 
 test_p25_rx_from_bench (opt-in: --allow-rf --allow-service-stop --p25-mhz MHz; the bench transmits, the radio only
@@ -331,8 +334,25 @@ def test_p25_tx_off_air(radio, sdr_bench, pytestconfig):
         if src == 0:        # no P25 unit ID set: the radio's DMR ID
             src = as_int(radio.view(["dmr"]).get("dmr.own_id")) or 0
         group = v.get("p25.unit_call") != "1"
+        tones = radio.view(["features"])
+        permit = radio.view(["audio"]).get("beep.talk_permit")
         job, grew = key_over(radio, sdr_bench, mhz, v)
+        played = (as_int(radio.view(["features"]).get("beep.played")) or 0) - (as_int(tones.get("beep.played")) or 0)
     check_over(p25_decode(job), nac, tg, src, group, grew)
+    check_permit(tones, permit, played)
+
+
+def check_permit(tones, permit, played):
+    """The talk permit over one over: played once when the switch (permit, beep.talk_permit) is on and the tone volume
+    isn't 0, else not at all. Judged after the decode, so an over that failed on air says that first"""
+    if tones.get("beep.built") != "1" or permit is None:
+        print("talk permit: not judged (firmware without beeps or without beep.talk_permit)")
+        return
+    want = 1 if permit == "1" and as_int(tones.get("set.beep_level")) else 0
+    print(f"talk permit: switch {permit}, tone volume {tones.get('set.beep_level')}, beep.played +{played}")
+    assert played == want, (f"beep.played +{played} over the over, expected {want}: the talk permit "
+                            f"{'should play once' if want else 'should not play'} (a custom DMR start tone "
+                            f"set to Off or On air plays none on the speaker)")
 
 
 def key_over(radio, sdr_bench, mhz, v0):

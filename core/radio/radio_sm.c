@@ -286,11 +286,12 @@ static void beep(radio_sm_t *sm, uint8_t b)
 _Static_assert(SIG_EV_COUNT == 3, "radio_settings_t.sig_* hold three events");
 _Static_assert(SIG_STEPS == 10, "radio_settings_t.sig_hz / sig_ms hold ten steps");
 
-// Where the event's tone goes on this channel's mode (sig_out_t)
+// Where the event's tone goes on this channel's mode (sig_out_t). The air modes (P25, NXDN) take DMR's row: theirs is
+// a digital voice's talk permit, as DMR's is, where FM's start is a tone on the carrier (#803)
 static uint8_t sig_out(const radio_sm_t *sm, sig_event_t ev)
 {
 #if CONFIG_SIG_TONES
-	return sm->view.ch.mode == RADIO_MODE_DMR ? sm->set.sig_dmr[ev] : sm->set.sig_fm[ev];
+	return sm->view.ch.mode != RADIO_MODE_FM ? sm->set.sig_dmr[ev] : sm->set.sig_fm[ev];
 #else
 	(void)sm;
 	(void)ev;
@@ -1770,12 +1771,16 @@ static uint8_t hang_s(uint16_t ms, uint8_t dflt)
 	return (uint8_t)(s > 30u ? 30u : s);
 }
 
+// Longest our DMR end tone waits for the audio path to open after the transmission (the engine's last burst)
+#define DMR_END_WAIT_MS		400u
+#endif
+
+// The talk permit, DMR's and the air modes' (P25, NXDN: air_talk)
+#if CONFIG_DMR || CONFIG_AIR
 // The talk permit before keying (CAP_BEEP_NOT_ON_AIR): the hold's minimum covers the beep's start (beep_busy is true
 // from beep_play on); the hold lasts while the beep plays or its audio is still in the board's buffers, so none of it
 // is left to reach the modulator
 #define PERMIT_HOLD_MIN_MS	40u
-// Longest our DMR end tone waits for the audio path to open after the transmission (the engine's last burst)
-#define DMR_END_WAIT_MS		400u
 
 static bool permit_busy(void)
 {
@@ -1787,7 +1792,7 @@ static bool permit_busy(void)
 #endif
 }
 
-// Whether the DMR talk permit sounds on the speaker: the radio's own tone when the setting is the default (and the
+// Whether the talk permit sounds on the speaker: the radio's own tone when the setting is the default (and the
 // talk permit is on), else the start of transmission tone's sequence when it is set to sound there
 static bool permit_local(const radio_sm_t *sm)
 {
@@ -1811,6 +1816,9 @@ static bool permit_before_key(const radio_sm_t *sm)
 {
 	return CONFIG_BEEP && (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && permit_local(sm) && !sm->view.ch.no_beep;
 }
+#endif
+
+#if CONFIG_DMR
 
 // Digital monitor on now: latched on this channel, or carried by a zone or VFO scan started with it on, so every
 // stop hears every talkgroup and a call on any of them holds the scan (#595)
@@ -6684,6 +6692,7 @@ static void air_stop(radio_sm_t *sm)
 		board.radio->tx_off();
 	}
 	sm->air_tx = false;
+	sm->air_permit_ms = 0;
 #if CONFIG_P25_TRUNK
 	sm->p25_req = sm->p25_talk = false;
 #endif
@@ -6738,8 +6747,61 @@ static void air_key(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
 		deny(sm, TXDENY_REFUSED);	// AIR_TX_DONE already: the tick switches off
 		return;
 	}
+	if ((board.caps & CAP_BEEP_NOT_ON_AIR) == 0) {
+		permit_play(sm, BEEP_TX_PERMIT);	// the voice goes on air now (else it played before keying: air_talk)
+	}
 	air_poll(sm);			// the engine's transmit state in the view now, not at the next tick
 	changed(sm);
+}
+
+// Longest the key-up waits for the talk permit before keying: the longest start tone (SIG_MAX_MS) and the board's
+// audio still queued after it. The DMR stack's hold is the same idea (DMR_CALL_PERMIT_MAX_MS)
+#define AIR_PERMIT_MAX_MS	(SIG_MAX_MS + 300u)
+
+// A key-up that didn't start a transmission (refused, or PTT let go during the talk permit): on a trunked voice
+// channel granted to us nothing will reach AIR_TX_DONE to give the grant back, so it is given back here
+static void air_unkeyed(radio_sm_t *sm)
+{
+#if CONFIG_P25_TRUNK
+	if (sm->p25_talk && !sm->air_tx) {
+		sm->p25_talk = false;
+		radio_p25_trunk_talk_end();	// back to the control channel
+	}
+#else
+	(void)sm;
+#endif
+}
+
+// PTT on an air mode's channel, tx_check passed, or a trunked request's grant: the talk permit, then the key-up on
+// hz. A board whose beeps can't sound on air (CAP_BEEP_NOT_ON_AIR: its modem takes the audio path while it
+// transmits, as in DMR) plays it first and keys once it is over (air_permit_tick); a refusal the key-up would make
+// comes first, so a permit is never followed by a deny (#803). The grant goes through here too, so a trunked channel
+// sounds the permit on every board, not only where air_key plays it as it keys
+static void air_talk(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
+{
+	const radio_air_ops_t *o = air_ops(sm);
+	if (permit_before_key(sm) && o->running() && !(o->no_tx != NULL && o->no_tx())) {
+		permit_play(sm, BEEP_TX_PERMIT_SHORT);
+		sm->air_permit_ms = now_ms != 0 ? now_ms : 1;
+		sm->air_permit_hz = hz;
+		return;
+	}
+	air_key(sm, now_ms, hz);
+	air_unkeyed(sm);
+}
+
+// The talk permit before keying is over (or took too long): key, if PTT is still held
+static void air_permit_tick(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint32_t held = now_ms - sm->air_permit_ms;
+	if (held < AIR_PERMIT_MAX_MS && (held < PERMIT_HOLD_MIN_MS || permit_busy())) {
+		return;
+	}
+	sm->air_permit_ms = 0;
+	if (sm->ptt && sm->view.state != RS_TX_DENIED) {
+		air_key(sm, now_ms, sm->air_permit_hz);
+	}
+	air_unkeyed(sm);
 }
 
 // The settings sent while it transmitted (RREQ_P25_SET, RREQ_NXDN_SET): the engine takes them now
@@ -6823,11 +6885,7 @@ static void __attribute__((noinline)) p25t_tick(radio_sm_t *sm, uint32_t now_ms)
 				deny(sm, TXDENY_BAND);
 			} else {
 				sm->p25_talk = true;
-				air_key(sm, now_ms, hz);
-				if (!sm->air_tx) {
-					sm->p25_talk = false;	// refused before the engine began: no AIR_TX_DONE to end it
-					radio_p25_trunk_talk_end();
-				}
+				air_talk(sm, now_ms, hz);	// the permit, then the key-up (air_unkeyed if refused)
 			}
 			changed(sm);
 		} else if (r == RADIO_P25T_FAIL) {
@@ -6840,7 +6898,7 @@ static void __attribute__((noinline)) p25t_tick(radio_sm_t *sm, uint32_t now_ms)
 			changed(sm);
 		}
 	}
-	if (!sm->air_tx && sm->view.state != RS_TX) {
+	if (!sm->air_tx && sm->view.state != RS_TX && sm->air_permit_ms == 0) {	// not over a grant's permit
 		uint32_t hz = radio_p25_trunk_burst_hz();
 		if (hz != 0) {
 			p25t_burst(sm, hz);
@@ -6857,6 +6915,9 @@ static void air_tick(radio_sm_t *sm, uint32_t now_ms)
 
 	if (air_poll(sm)) {
 		changed(sm);
+	}
+	if (sm->air_permit_ms != 0) {
+		air_permit_tick(sm, now_ms);
 	}
 	if (sm->air_tx && o->tx_state() == AIR_TX_DONE) {
 		if (sm->air_keyed) {
@@ -7015,8 +7076,8 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 			return;
 		}
 #endif
-		if (!sm->air_tx) {
-			air_key(sm, now_ms, sm->view.ch.tx_hz);
+		if (!sm->air_tx && sm->air_permit_ms == 0) {
+			air_talk(sm, now_ms, sm->view.ch.tx_hz);
 		}		// else the last transmission is still ending: air_tick keys again once it is done
 		return;
 	}
@@ -7109,6 +7170,10 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 	}
 #endif
 #if CONFIG_AIR
+	if (sm->air_permit_ms != 0) {
+		sm->air_permit_ms = 0;	// let go during the talk permit before keying: it never keys
+		air_unkeyed(sm);	// and a trunked grant goes back
+	}
 	if (sm->air_tx && sm->view.state == RS_TX) {
 		const radio_air_ops_t *o = air_ops(sm);
 		o->tx_stop();	// the frame on air is finished and the end sent; air_tick ends it at done

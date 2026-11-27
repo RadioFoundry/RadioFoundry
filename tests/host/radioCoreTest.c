@@ -484,7 +484,12 @@ static void air_step(void);	// with the far radio's engine, below
 static bool far_on_air(void) { return false; }
 #endif
 
-const board_t board = {
+// Writable under the symbol the core reads as const (board.h): the caps change at run time here (a board whose beeps
+// can't sound on air). The alias names the assembler symbol, so it carries the platform's label prefix: Mach-O puts
+// "_" before every C name, and a bare "board" left macOS with an undefined "_board" while Linux (no prefix) linked
+#define RW_STR2(x) #x
+#define RW_STR(x) RW_STR2(x)
+board_t board_rw __asm__(RW_STR(__USER_LABEL_PREFIX__) "board") = {
 	.name = "fake",
 	.hwopts = fake_hwopts,
 	.hwopt_count = 1,
@@ -7327,6 +7332,133 @@ static void test_p25_tx(void)
 	far_stop();
 }
 
+// The talk permit on P25 (#803), as DMR's: Settings > Sound's switch, the channel's "no beep", the DMR row's start
+// tone. Played as the transmitter keys; on a board whose beeps can't sound on air, first, and the key-up waits for it
+static void test_p25_permit(void)
+{
+	beep_stats_t b0, b1;
+	radio_settings_t sr;
+
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	aud.feed = true;	// the beeps play out on the PCM stream, so the hold before keying ends as on the radio
+	req(RREQ_ZONE_POS, 2);
+	run(100);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+
+	// Beeps that sound on air: the permit as it keys
+	beep_get_stats(&b0);
+	int calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_calls == calls + 1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// The switch off, then a no-beep channel: none. The debug link's audio section says which (beep.talk_permit), so
+	// a bench test can tell "off" from "didn't play"
+	static char dl[1024];
+	dl_text_t t;
+	dl_text_init(&t, dl, sizeof dl);
+	debuglink_view_audio(&t);
+	CHECK(strstr(dl, "beep.talk_permit=1\n") != NULL);
+	ui_svc_apply(UI_SET_TALK_PERMIT, 0);
+	run(20);
+	dl_text_init(&t, dl, sizeof dl);
+	debuglink_view_audio(&t);
+	CHECK(strstr(dl, "beep.talk_permit=0\n") != NULL);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.view.state == RS_IDLE);
+	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
+	chans[3].no_beep = true;
+	req(RREQ_RELOAD, 0);
+	run(100);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.view.state == RS_IDLE);
+	chans[3].no_beep = false;
+	req(RREQ_RELOAD, 0);
+	run(100);
+
+	// The DMR row's start tone on the speaker replaces it: a digital voice's talk permit (the FM row's is not asked)
+	radio_get_settings(&sr);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_LOCAL;
+	sr.sig_hz[SIG_EV_BEGIN][0] = 910;
+	sr.sig_ms[SIG_EV_BEGIN][0] = 10;
+	radio_set_settings(&sr);
+	run(20);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1 && b1.last == BEEP_CUSTOM);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_DEFAULT;
+	sr.sig_hz[SIG_EV_BEGIN][0] = 0;
+	sr.sig_ms[SIG_EV_BEGIN][0] = 0;
+	radio_set_settings(&sr);
+	run(20);
+
+	// Beeps that can't sound on air: the short permit first, the key-up once it is over
+	uint32_t caps = board_rw.caps;
+	board_rw.caps |= CAP_BEEP_NOT_ON_AIR;
+	beep_get_stats(&b0);
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(!hw.keyed && hw.tx_calls == calls && sm.view.state != RS_TX);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT_SHORT && beep_busy());
+	int waited = 0;
+	while (!hw.keyed && waited < 2000) {
+		run(10);
+		waited += 10;
+	}
+	// Keyed as the beep ends (about 80 ms here), not at the hold's limit
+	CHECK(hw.keyed && sm.view.state == RS_TX && hw.tx_calls == calls + 1 && waited >= 40 && waited < 400);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);	// once: none again as it keys
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// Let go during the permit: it never keys
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(10);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(hw.tx_calls == calls && !hw.keyed && sm.view.state == RS_IDLE);
+
+	// The switch off: keyed at once, no beep
+	ui_svc_apply(UI_SET_TALK_PERMIT, 0);
+	run(20);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(hw.keyed && sm.view.state == RS_TX && b1.played == b0.played);
+	req(RREQ_PTT, 0);
+	run(600);
+	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
+	run(20);
+	board_rw.caps = caps;
+	aud.feed = false;
+}
+
 static void test_p25_denied(void)
 {
 	radio_p25_stats_t st;
@@ -8377,31 +8509,86 @@ static void test_p25_trunk_tx(void)
 	radio_p25_stats(&st);
 	CHECK(st.trunk_bursts == site.reg_rx + site.aff_rx && st.trunk_burst_refused == 0 && st.tx_calls == 0);
 
-	// PTT: the request, the grant, the call on the voice channel's transmit frequency, then back
+	// PTT: the request, the grant, the call on the voice channel's transmit frequency, then back. The talk permit
+	// sounds once, at the grant (air_key on the voice channel), not at the request: a beep at PTT would promise a
+	// channel the site may still queue or deny
+	beep_stats_t b0, b1;
 	site.ans_req = SITE_ANS_ACCEPT;
+	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_IDLE && sm.p25_req);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
 	run(600);
 	CHECK(site.req_rx == 1 && site.last.opcode == P25_ISP_GRP_V_REQ && site.last.tg == 201 && site.last.src == 4321);
 	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_hz == TS_VOICE + TS_OFFSET && hw.rx_hz == TS_VOICE);
 	CHECK(v->trunk == RADIO_P25_TRUNK_VOICE && v->treq == P25_REQ_TALK);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT);
 	run(1500);
 	CHECK(sm.view.state == RS_TX && far_heard.starts == 1 && far_heard.call.lc.tgid == 201 && far_heard.call.lc.src == 4321);
 	req(RREQ_PTT, 0);
 	run(600);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);	// once for the over: none again on the voice channel or the way back
 	CHECK(!hw.keyed && sm.view.state != RS_TX && far_heard.ends == 1 && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
 	CHECK(v->treq == P25_REQ_IDLE && fair[0].keyed_violations == 0);
 	radio_p25_stats(&st);
 	CHECK(st.tx_calls == 1);
 	run(1500);
 
+	// A board whose beeps would go on air (CAP_BEEP_NOT_ON_AIR): the grant plays the short permit while the radio still
+	// receives on the voice channel, and keys there once it is over, as a conventional channel's PTT does
+	uint32_t caps = board_rw.caps;
+	board_rw.caps |= CAP_BEEP_NOT_ON_AIR;
+	int reqs = site.req_rx;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	int waited = 0;
+	while (sm.p25_req && waited < 2000) {
+		run(10);
+		waited += 10;
+	}
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT_SHORT && !hw.keyed && hw.rx_hz == TS_VOICE);
+	waited = 0;
+	while (!hw.keyed && waited < 2000) {
+		run(10);
+		waited += 10;
+	}
+	CHECK(hw.keyed && sm.view.state == RS_TX && hw.tx_hz == TS_VOICE + TS_OFFSET && waited < 400);
+	CHECK(site.req_rx == reqs + 1);
+	run(1000);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1 && far_heard.starts == 2);	// once: none again as it keys
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(!hw.keyed && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL && v->treq == P25_REQ_IDLE);
+	run(1500);
+	// Let go during that permit: it never keys on the voice channel, and the grant is given back (the control channel)
+	int heard = far_heard.starts;
+	req(RREQ_PTT, 1);
+	waited = 0;
+	while (sm.p25_req && waited < 2000) {
+		run(1);
+		waited += 1;
+	}
+	CHECK(!hw.keyed && beep_busy());
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(!hw.keyed && far_heard.starts == heard && sm.view.state != RS_TX && hw.rx_hz == TS_CC1);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treq == P25_REQ_IDLE && fair[0].keyed_violations == 0);
+	board_rw.caps = caps;
+	run(1500);
+
 	// Queued, then granted
+	reqs = site.req_rx;
 	site.ans_req = SITE_ANS_QUEUE;
 	req(RREQ_PTT, 1);
 	run(800);
 	CHECK(v->treq == P25_REQ_QUEUED && sm.view.state == RS_IDLE && !hw.keyed);
 	run(2500);
-	CHECK(sm.view.state == RS_TX && hw.tx_hz == TS_VOICE + TS_OFFSET && site.req_rx == 2);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == TS_VOICE + TS_OFFSET && site.req_rx == reqs + 1);
 	req(RREQ_PTT, 0);
 	run(1500);
 	CHECK(!hw.keyed && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
@@ -8604,6 +8791,7 @@ static void test_p25(void)
 #endif
 #endif
 	test_p25_tx();
+	test_p25_permit();
 	test_p25_denied();
 	test_p25_leave();
 	test_p25_vfo();
@@ -8974,6 +9162,102 @@ static void test_nxdn_tx(void)
 	run(100);
 	CHECK(sm.view.state == RS_IDLE && v->tx == AIR_TX_IDLE && fair[0].keyed_violations == 0);
 	nfar_stop();
+}
+
+// The talk permit on NXDN: the same path as P25's (air_talk, air_key), checked here so a change that breaks it for
+// one mode and not the other is caught. Settings > Sound's switch, the DMR row's start tone, and the hold before keying
+// on a board whose beeps can't sound on air
+static void test_nxdn_permit(void)
+{
+	beep_stats_t b0, b1;
+	radio_settings_t sr;
+
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	aud.feed = true;	// the beeps play out on the PCM stream, so the hold before keying ends as on the radio
+	req(RREQ_ZONE_POS, 2);
+	run(100);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running());
+
+	// Beeps that sound on air: the permit as it keys
+	beep_get_stats(&b0);
+	int calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_calls == calls + 1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// The switch off: keyed, none
+	ui_svc_apply(UI_SET_TALK_PERMIT, 0);
+	run(20);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.keyed && b1.played == b0.played);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.view.state == RS_IDLE);
+	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
+	run(20);
+
+	// The DMR row's start tone on the speaker replaces it
+	radio_get_settings(&sr);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_LOCAL;
+	sr.sig_hz[SIG_EV_BEGIN][0] = 910;
+	sr.sig_ms[SIG_EV_BEGIN][0] = 10;
+	radio_set_settings(&sr);
+	run(20);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1 && b1.last == BEEP_CUSTOM);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_DEFAULT;
+	sr.sig_hz[SIG_EV_BEGIN][0] = 0;
+	sr.sig_ms[SIG_EV_BEGIN][0] = 0;
+	radio_set_settings(&sr);
+	run(20);
+
+	// Beeps that can't sound on air: the short permit first, the key-up once it is over, not at the hold's limit
+	uint32_t caps = board_rw.caps;
+	board_rw.caps |= CAP_BEEP_NOT_ON_AIR;
+	beep_get_stats(&b0);
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(!hw.keyed && hw.tx_calls == calls && sm.view.state != RS_TX);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT_SHORT && beep_busy());
+	int waited = 0;
+	while (!hw.keyed && waited < 2000) {
+		run(10);
+		waited += 10;
+	}
+	CHECK(hw.keyed && sm.view.state == RS_TX && hw.tx_calls == calls + 1 && waited >= 40 && waited < 400);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);	// once: none again as it keys
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// Let go during the permit: it never keys
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(10);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(hw.tx_calls == calls && !hw.keyed && sm.view.state == RS_IDLE);
+	board_rw.caps = caps;
+	aud.feed = false;
 }
 
 static void test_nxdn_mode(void)
@@ -9563,6 +9847,7 @@ static void test_nxdn(void)
 {
 	test_nxdn_rx();
 	test_nxdn_tx();
+	test_nxdn_permit();
 #if CONFIG_NXDN_SCRAMBLER
 	test_nxdn_system();
 #endif
