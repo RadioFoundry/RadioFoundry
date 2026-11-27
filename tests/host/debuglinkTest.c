@@ -137,6 +137,33 @@ static void test_fmt(void)
 	CHECK(t.len == 7 && memcmp(tb, "n=a?b?\n", 7) == 0, "text kv: control characters replaced");
 }
 
+// dl_deg: the text the four printers it replaced gave (APRS, position, the DMR view's GPS keys, the UDP fix)
+static void test_deg(void)
+{
+	char d[DL_DEG_LEN], old[32];
+	static const int32_t edge[] = { 0, 1, -1, 9999999, 10000000, -10000000, 337490000, -843880000, 900000000,
+					-900000000, 1800000000, -1800000000, INT32_MAX, INT32_MIN };
+	CHECK(strcmp(dl_deg(d, -843880000), "-84.3880000") == 0 && strcmp(dl_deg(d, -1), "-0.0000001") == 0 &&
+	      strcmp(dl_deg(d, 0), "0.0000000") == 0 && strcmp(dl_deg(d, INT32_MIN), "-214.7483648") == 0, "deg: values");
+	uint32_t x = 12345u;
+	for (int i = 0; i < 20000; i++) {
+		int32_t v = i < (int)(sizeof(edge) / sizeof(edge[0])) ? edge[i] : (int32_t)(x = x * 1103515245u + 12345u);
+		int64_t a = v < 0 ? -(int64_t)v : v;	// the old printers' arithmetic
+		snprintf(old, sizeof(old), "%s%u.%07u", v < 0 ? "-" : "", (unsigned)(a / 10000000), (unsigned)(a % 10000000));
+		if (strcmp(dl_deg(d, v), old) != 0) {
+			CHECK(0, "deg: %ld gives %s, the old printers %s", (long)v, d, old);
+			break;
+		}
+	}
+	// a line with a degree in it stays one piece: a reply that fills drops it whole, never cut after the key
+	dl_text_t t;
+	char tb[24];
+	dl_text_init(&t, tb, sizeof(tb));
+	dl_text(&t, "k=%u\n", 1u);
+	dl_text(&t, "aprs.lat=%s\n", dl_deg(d, -843880000));
+	CHECK(t.full && t.len == 4 && memcmp(tb, "k=1\n", 4) == 0, "deg: a line that doesn't fit is dropped whole");
+}
+
 static void test_crc(void)
 {
 	CHECK(dl_crc16(DL_CRC_INIT, (const uint8_t *)"123456789", 9) == 0x29B1, "CRC-16/CCITT-FALSE check value");
@@ -468,6 +495,7 @@ static void test_chip(void)
 int main(void)
 {
 	test_fmt();
+	test_deg();
 	test_crc();
 	test_parser();
 	test_dlog();

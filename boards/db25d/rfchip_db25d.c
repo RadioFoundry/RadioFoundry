@@ -9,6 +9,7 @@
 #include "hal_time.h"
 #include "rf/rfbus/rfbus.h"
 #include "rf/bk4819/bk4819.h"
+#include "rf/fd6818/fd6818.h"
 #include "rf/fd6818/fd6818sh.h"
 #include "rf/at1141/at1141.h"
 #include "rf/superhet/superhet.h"
@@ -139,6 +140,7 @@ bool db25d_rf_init(void)
 	case CHIP_AT1141:
 		at1141_attach(&at_lo, &bus_lo.bus);
 		at1141_init(&at_lo);
+		at1141_level(&at_lo, 0);	// 0x26 = 0x7F40 on this radio's LO, not the driver's level 2 (hardware-db25d.md 4.8)
 		at1141_disable(&at_lo);
 		sh_lo = (superhet_lo_t){ &at1141_superhet_lo, &at_lo };
 		break;
@@ -247,6 +249,36 @@ void db25d_main_status(uint16_t *r67, uint16_t *r65, uint16_t *r0c)
 	*r67 = rfbus_read(&bus_main.bus, BK4819_REG_RSSI);
 	*r65 = rfbus_read(&bus_main.bus, BK4819_REG_NOISE);
 	*r0c = rfbus_read(&bus_main.bus, BK4819_REG_CSS_STATUS);
+}
+
+bool db25d_main_is_fd6818(void)
+{
+	return main_chip == CHIP_FD6818 || main_chip == CHIP_7813;
+}
+
+// Page 0 only: an FD6818-family page select and the access would be two frames, and the radio task's frames could
+// fall between them. Each frame is atomic (rfbus.h), so a single read or write is safe next to the radio task. Straight
+// on the bus: no driver follows a write, and its next set-up overwrites it
+bool db25d_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	chip_t k = chip == 0 ? main_chip : chip == 1 ? lo_chip : CHIP_NONE;
+	if (k == CHIP_NONE || page != 0 || reg > 0x7Fu || (write && *val > 0xFFFFu)) {
+		return false;	// CHIP_NONE also before db25d_rf_init identified the chips
+	}
+	if (write && reg == REG_PAGE && (k == CHIP_FD6818 || k == CHIP_7813)) {
+		return false;	// a page select would leave the radio task's page 0 accesses on another page
+	}
+	rfbus_t *bus = chip == 0 ? &bus_main.bus : &bus_lo.bus;
+	if (write) {
+		rfbus_write(bus, reg, (uint16_t)*val);
+	}
+	*val = rfbus_read(bus, reg);
+	return true;
+}
+
+uint16_t db25d_main_glitch(void)
+{
+	return rfbus_read(&bus_main.bus, FD6818_REG_GLITCH);
 }
 
 void db25d_main_tx_prepare(uint8_t type, uint16_t value, uint32_t hz, radio_bw_t bw)

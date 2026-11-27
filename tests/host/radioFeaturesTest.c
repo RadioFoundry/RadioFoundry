@@ -970,6 +970,13 @@ static void test_beep_module(void)
 		CHECK(beep_mix(blk));
 	}
 	CHECK(!beep_mix(blk));
+	// The mic hears it: from the block after the first until BEEP_ECHO_BLOCKS after the last (the eighth was the first
+	// of them)
+	for (int i = 1; i < BEEP_ECHO_BLOCKS; i++) {
+		CHECK(beep_mic_echo());
+		CHECK(!beep_mix(blk));
+	}
+	CHECK(!beep_mic_echo());
 	// Saturation
 	beep_play(BEEP_ERROR, 100, true);
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
@@ -2818,6 +2825,45 @@ static void test_beep_volume_cap(void)
 	board.power = &fake_power;
 }
 
+// An analog knob the MCU only reads (no volume hook, hal_power_t.volume gives its position) with the knob's gain
+// curve (volume_db10): the knob scales the beep in the speaker path, so the core softens the beep past the cap step's
+// position by the gain the knob adds there; up to the cap, beep_level as it is
+static int8_t knob_pos = -1;
+static int8_t p_knob(void) { return knob_pos; }
+
+static void test_beep_knob_cap(void)
+{
+	hal_radio_t knob_radio = fake_radio;
+	hal_power_t knob_power = fake_power;
+	knob_radio.volume_db10 = r_volume_db10;
+	knob_power.volume = p_knob;
+	board.radio = &knob_radio;
+	board.power = &knob_power;
+	audio_mux_reset();
+	start();
+	req(RREQ_ZONE_POS, 6);
+	settings(set_beep_80);
+	knob_pos = -1;			// not read yet: beep_level
+	run(100);
+	int pk = beep_peak();
+	CHECK(pk > 11500 && pk <= 12900);
+	knob_pos = 30;			// under the cap step's 44 %
+	run(100);
+	pk = beep_peak();
+	CHECK(pk > 11500 && pk <= 12900);
+	knob_pos = 100;
+	run(100);
+	int lv = beep_level_expected(80, 100);
+	pk = beep_peak();
+	CHECK(pk > lv * 160 * 9 / 10 && pk <= lv * 160 + 20);
+	knob_radio.volume_db10 = NULL;	// no curve: beep_level at any position
+	pk = beep_peak();
+	CHECK(pk > 11500 && pk <= 12900);
+	knob_pos = -1;
+	board.radio = &fake_radio;
+	board.power = &fake_power;
+}
+
 // rx_open (hal_radio_t): receive audio from a signal, which a board's backlight follows (#544). A beep alone, with no
 // carrier, never sets it; an open FM squelch and a DMR call do, and it clears when they end
 static int rx_open_calls;
@@ -3727,13 +3773,37 @@ static void test_dmr_beeps(void)
 	beep_get_stats(&b0);
 	CHECK(b0.played >= 1);
 	int starts = aud.starts;
-	// PTT: talk permit once on air
+	// PTT: talk permit once on air. The mic hears the speaker (issue 532): the blocks the permit plays in and its
+	// echo after it go to the encoder as silence, the voice around them as it is
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		mic[i] = (int16_t)(i & 1 ? 1000 : -1000);
+	}
+	v_enc_blocks = v_enc_tone = v_enc_first = v_enc_last = 0;
 	req(RREQ_PTT, 1);
 	run(600);
 	beep_get_stats(&b1);
 	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played + 1 && aud.starts == starts);
+	ambe_voice_stats_t vs;
+	ambeVoiceGetStats(&vs);
+	// The permit is 7 blocks (BEEP_TX_PERMIT, 140 ms): muted from the block after the first to BEEP_ECHO_BLOCKS
+	// after the last
+	CHECK(vs.tx_mic_muted == 6 + BEEP_ECHO_BLOCKS);
+	CHECK(v_enc_blocks - v_enc_tone == vs.tx_mic_muted && v_enc_blocks > vs.tx_mic_muted + 10);
+	CHECK(v_enc_first == 1 && v_enc_last == v_enc_blocks);
 	req(RREQ_PTT, 0);
 	run(1000);
+	// A host audio session's samples in place of the mic never hear the speaker: nothing is muted
+	audio_mux_host_tx(true, true);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(600);
+	beep_get_stats(&b1);
+	ambeVoiceGetStats(&vs);
+	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played + 1 && vs.tx_mic_muted == 0);
+	req(RREQ_PTT, 0);
+	run(1000);
+	audio_mux_host_tx(false, false);
+	memset(mic, 0, sizeof mic);
 	// No-beep channel
 	chans[6].no_beep = true;
 	req(RREQ_ZONE_POS, 0);
@@ -4295,6 +4365,36 @@ static void test_sig_dmr_end_gate(void)
 	board.audio = saved;
 }
 
+// The DMR mic gate holds a beep's echo off the air unless the board's audio path drops the speaker audio while DMR is
+// on air (speaker_blocked). CAP_BEEP_NOT_ON_AIR alone doesn't lift it: that board's speaker may only be quiet in TX
+static void test_dmr_mic_gate_board(void)
+{
+	static const hal_audio_t gated = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm, .speaker_blocked = a_blocked };
+	const hal_audio_t *saved = board.audio;
+	uint32_t caps = board.caps;
+	start();
+	ambe_voice_mic_gate_t gate = ambeVoiceMicGate();
+	CHECK(gate != NULL);
+	if (gate == NULL) {
+		return;
+	}
+	int16_t blk[AUDIO_BLOCK_SAMPLES] = { 0 };
+	beep_play(BEEP_KEY, 50, true);
+	CHECK(beep_mix(blk));
+	CHECK(beep_mix(blk));
+	CHECK(beep_mic_echo());		// the beep's echo: muted
+	CHECK(gate());
+	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	CHECK(gate());			// a speaker only quiet in DMR TX: still muted
+	board.audio = &gated;
+	CHECK(!gate());			// the speaker audio is dropped on air: nothing to hear
+	board.audio = saved;
+	board.caps = caps;
+	for (int i = 0; i < 50 && (beep_mix(blk) || beep_mic_echo()); i++) {
+	}
+	CHECK(!beep_mic_echo());
+}
+
 // Signaling tones on air in DMR: the start tone is the first voice of the transmission, the end tone goes after the last
 // and holds the over open until the call stack has it all (the mic in this test is silent: a block that isn't is a tone)
 static void set_sig_dmr_begin_air_blip(radio_settings_t *s)
@@ -4797,6 +4897,7 @@ int main(void)
 	test_tot_and_beeps();
 	test_beep_follows_volume();
 	test_beep_volume_cap();
+	test_beep_knob_cap();
 	test_bcl_inhibit();
 	test_dmr_busy_quiet();
 	test_rx_open();
@@ -4824,6 +4925,7 @@ int main(void)
 	test_sig_fm();
 	test_sig_dmr();
 	test_sig_dmr_end_gate();
+	test_dmr_mic_gate_board();
 	test_sig_dmr_air();
 	test_tone_keys();
 	test_dmr_short_press_wake();

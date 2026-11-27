@@ -6,6 +6,7 @@
 #include "board.h"
 #include "codeplug/codeplug_records.h"
 #include "dmr/dmrAes.h"
+#include "dmr/dmrData.h"
 #include "dmr/dmrPrivacy.h"
 #include "radio/radio.h"
 #include "radio/radio_aes.h"
@@ -68,6 +69,15 @@ bool radio_aes_configure(const channel_t *ch, dmr_call_config_t *cfg)
 	cfg->crypt_mi = dmrAesNewMi;
 	cfg->tx_fid = DMR_PRIVACY_FID;
 	cfg->tx_svc |= DMR_PRIVACY_SERVICE_OPTION;
+	return true;
+}
+
+bool radio_aes_data_config(const channel_t *ch, dmrDataPrivacy_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_DMR_AES)
+		return false;
+	memset(out, 0, sizeof(*out));
+	out->mode = DMR_DATA_PRIVACY_BLOCK;
 	return true;
 }
 

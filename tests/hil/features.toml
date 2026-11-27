@@ -442,10 +442,6 @@ switch = "NET_WEBCTL"
 spec = "docs/spec/tcp-services.md"
 planned_tests = ["tests/hil/test_webctl.py::test_webctl_keys_ptt_audio"]
 
-[feature.net_radio_udp]
-switch = "NET_RADIO_UDP"
-spec = "docs/spec/tcp-services.md"
-
 [feature.net_rigctl]
 switch = "NET_RIGCTL"
 spec = "docs/spec/tcp-services.md"
@@ -598,6 +594,12 @@ source = ["tools/rfoundry/rfoundry"]
 switch = "AIR_RAW"
 spec = "docs/spec/debuglink.md"
 source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
+
+[feature.debuglink_dmrip]
+switch = "DEBUGLINK_DMRIP"
+spec = "docs/spec/debuglink.md"
+source = ["core/debuglink/debuglink_dmrip.c", "core/debuglink/dl_dmrip.c", "core/debuglink/dl_dmrip.h",
+          "tools/rfoundry/rfoundry/dmrip.py"]
 
 [feature.audio_probe]
 switch = "AUDIO_PROBE"

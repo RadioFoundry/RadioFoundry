@@ -77,6 +77,7 @@ typedef struct {
 	uint32_t tx_dropped;	// encoded frames dropped, queue full (the engine took none in time)
 	uint32_t tx_silent;	// of tx_encoded, the frames the encoder made silence frames (no signal at all)
 	uint32_t tx_mic_peak;	// largest mic sample (absolute, after the gain and its limiter) in the latest transmission
+	uint32_t tx_mic_muted;	// blocks of it sent as silence: the mic gate was on (a beep, p25VoiceSetMicGate)
 	// The mic gain's limiter in the latest transmission (core/dsp/miclimit.h): the lowest gain it used, Q8 (the set
 	// gain when it never cut; 256 at unity, which skips it)
 	uint32_t tx_mic_low_q8;
@@ -103,6 +104,10 @@ bool p25VoiceStreaming(void);
 // Something else to hear while the stream runs (beeps), as ambeVoiceSetMixer
 typedef bool (*p25_voice_mixer_t)(int16_t *spk);
 void p25VoiceSetMixer(p25_voice_mixer_t mixer);
+// While transmitting, asked before each mic block is encoded: true sends the block as silence (a beep on the speaker
+// is in the mic too), as ambeVoiceSetMicGate. NULL = none
+typedef bool (*p25_voice_mic_gate_t)(void);
+void p25VoiceSetMicGate(p25_voice_mic_gate_t gate);
 // The engine's hooks into this module (ctx unused)
 const p25_engine_hooks_t *p25VoiceHooks(void);
 void p25VoiceGetStats(p25_voice_stats_t *out);

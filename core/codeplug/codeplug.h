@@ -171,7 +171,7 @@ bool codeplug_set_quick_keys(const uint16_t in[CODEPLUG_QUICK_KEYS]);
 
 #if CONFIG_APRS_AFSK
 // An open-firmware codeplug APRS configuration (open-firmware-cps.md 7.3.8; qdmr writes them): what the APRS engine
-// takes from it. Not read: the fixed position and the frequency (their encodings aren't in the interop spec yet)
+// takes from it. Not read: the fixed position (its encoding isn't in the interop spec yet)
 #define CODEPLUG_APRS_CONFIGS	8
 #define CODEPLUG_APRS_COMMENT	23
 typedef struct {
@@ -181,6 +181,7 @@ typedef struct {
 	char sym_code;
 	char comment[CODEPLUG_APRS_COMMENT + 1];
 	uint8_t ambiguity;	// 0-4
+	uint32_t tx_hz;		// the APRS frequency, 0 = none
 } codeplug_aprs_t;
 // Configuration n (1..CODEPLUG_APRS_CONFIGS); false when empty, unknown or no open-firmware codeplug
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out);
@@ -189,6 +190,8 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out);
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2);
 // Rewrite configuration n's SSID (0-15), the same way
 bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid);
+// Rewrite configuration n's frequency, the same way
+bool codeplug_set_aprs_freq(uint8_t n, uint32_t hz);
 #endif
 
 // Re-read everything after the image was written underneath (the CPS); bumps the serial

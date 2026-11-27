@@ -1133,13 +1133,13 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		   v->p25.trunk != RADIO_P25_TRUNK_OFF) {
 		// What the follower does, and with the transmit side on, how far it is from talking: registering, the
 		// talk group once PTT can ask for it, a request's state
-		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0;
+		// A blocked system is listen only whatever the flag says: it reads as one, never as "Registering". Idle on
+		// the control channel, a system that can't transmit (blocked, or set to listen only) says "RX only", as a
+		// conventional RX-only channel does; a call still reads "Following TG n"
+		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0 && v->p25.treg != P25_REG_BLOCKED;
 		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
 			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
 			c = ui_col.dim;
-		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && v->p25.treg == P25_REG_BLOCKED) {
-			sb_str(&b, TR(HOME_STATE_P25T_BLOCKED, "Blocked system"));
-			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_WAIT) {
 			sb_str(&b, TR(HOME_STATE_P25T_WAIT, "Wait"));
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_QUEUED) {
@@ -1157,7 +1157,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg != P25_REG_NO_TX) {
 			sb_str(&b, "TG ");
 			sb_u32(&b, v->p25.talk, 1);
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && !txs) {
+			sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
+			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL) {
+			// the transmit side is on but this control channel has no inbound frequency
 			sb_str(&b, TR(HOME_STATE_P25T_CONTROL, "Control channel"));
 		} else if (v->p25.treq == P25_REQ_TALK) {
 			sb_str(&b, "TG ");
@@ -1382,11 +1386,11 @@ static uint8_t trunk_why(const radio_view_t *v)
 }
 #endif
 
-static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
+const char *ui_deny_text(const radio_view_t *v, uint8_t why, char *buf, size_t len)
 {
 	sbuf_t b;
 	sb_init(&b, buf, len);
-	switch (v->tx_deny) {
+	switch (why) {
 	case TXDENY_RX_ONLY: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
 	case TXDENY_BAND: {
 		char bands[32];
@@ -1415,6 +1419,10 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_REFUSED: sb_str(&b, TR(DENY_WHY_RADIO_REFUSED, "Radio refused to send")); break;
 	case TXDENY_BENCH: sb_str(&b, TR(DENY_WHY_AIR_BENCH, "Air bench: PTT off")); break;
 	case TXDENY_AIR_NO_TX: sb_str(&b, TR(DENY_WHY_AIR_NO_TX, "This mode: receive only")); break;
+	case TXDENY_NOT_DMR: sb_str(&b, TR(SHARE_BANNER_TRY_ON_DMR, "Try again on a DMR channel")); break;
+	case TXDENY_DATA_ENCRYPTED:
+		sb_str(&b, TR(DENY_WHY_DATA_ENCRYPTED, "Encrypted channels can't send text"));
+		break;
 #if CONFIG_P25_TRUNK || CONFIG_DMR_TRUNK
 	case TXDENY_TRUNK:
 		switch (trunk_why(v)) {
@@ -1423,7 +1431,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_TRUNK_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
 		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
-		case RADIO_TRUNK_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "Blocked system: no TX")); break;
+		case RADIO_TRUNK_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "RX-only system: no TX")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
 		case RADIO_TRUNK_WHY_OTHER_KIND: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_KIND, "Incompatible system")); break;
 		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
@@ -1470,8 +1478,8 @@ static const char *deny_action(const radio_view_t *v)
 			return TR(DENY_FIX_CHECK_SYSTEM, "Check system settings");
 		if (trunk_why(v) == RADIO_TRUNK_WHY_REG_REFUSED)
 			return TR(DENY_FIX_ASK_TO_ADD_ID, "Ask to add your ID");	// the system doesn't know it
-		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND)
-			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps
+		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND || trunk_why(v) == RADIO_TRUNK_WHY_BLOCKED)
+			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps, nor a retry
 		return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 #endif
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
@@ -2287,7 +2295,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 	}
 	case RS_TX_DENIED:
 		// One line only: the pill already says NO TX, so the line gives the reason
-		gfx_text_fit(sm, deny_reason(v, buf, sizeof buf), w, fit, sizeof fit);
+		gfx_text_fit(sm, ui_deny_text(v, v->tx_deny, buf, sizeof buf), w, fit, sizeof fit);
 		if (two) {
 			gfx_text(big, 0, y, TR(ACTIVITY_STATE_CANT_TRANSMIT, "Can't transmit"), ui_col.warn);
 			gfx_text(sm, 0, y2, fit, ui_col.fg);

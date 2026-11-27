@@ -5,6 +5,10 @@
 sequence of tones and silences and checks the recording with audio_check.check_tones: every tone as long as asked
 (nothing lost at its start or end), its level flat, each silence silent, and no pop or noise burst around it.
 
+test_speaker_beeps_on_air (radio_tx): a DMR over with the talk permit and three beeps in it, all from one detour, so
+it runs over the debug link over DMR IP with the cable out (rfoundry_hil.DetourPlan): each beep heard whole at the
+speaker, and on a board with a second speaker output (audio.spk_aux) that output used.
+
 test_speaker_beeps: every beep the debug link can ask for, one recording each, patterns read from core/radio/beep.c.
 The first beep finds the amplifier as the radio left it; on a radio that keeps it warm (speaker_hang_s), the next
 ones find it warm.
@@ -106,7 +110,8 @@ def _beep_ready(radio):
         skip("not_built", "built without CONFIG_BEEP")
     if int(f.get("set.beep_level") or 0) == 0:
         skip("state", "beep level 0")
-    radio.go_home()
+    if not getattr(radio.link, "air", False):     # over the air keys are refused: the radio stays where it is
+        radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
 
@@ -217,6 +222,83 @@ def test_speaker_sweep(radio, microphone):
     if r.quiet:
         _quiet("the sweep")
     assert not r.problems, "\n".join(r.problems)
+
+
+# Beeps played during a DMR over (test_speaker_beeps_on_air): their order and the pause before each (ms)
+ON_AIR_BEEPS = [("tot_warn", 1500), ("battery_low", 1200), ("call_end", 1200)]
+ON_AIR_TAIL_MS = 1500
+
+
+# The run's reply reaches the host up to this long after the radio starts the items (over the air: the reply's data
+# burst, the gateway, the radio's wait for it to leave), so the recording starts before the run and the beeps are
+# timed from the permit the microphone hears at the key-up
+ON_AIR_REPLY_S = 15.0
+
+
+@pytest.mark.feature("beep")
+@pytest.mark.radio_tx
+def test_speaker_beeps_on_air(radio, microphone):
+    """The talk permit and other beeps while the radio is on air in DMR, heard at the speaker: on a board whose
+    stream can't reach the speaker then, through its second output (audio.spk_aux). Over the debug link over DMR IP
+    (--radio-port dmrip:ID, debuglink.md 7) on a radio whose cable mutes the speaker; the whole over is one detour
+    (rfoundry_hil.DetourPlan), so the link makes three round trips for it, none while keyed. Whether a beep reaches the
+    air is not checked here: the mic gate's host test (test_dmr_mic_gate_board) and a decoded copy of the over"""
+    _beep_ready(radio)
+    core = radio.core()
+    if core.get("mode") != "dmr":
+        skip("state", "the radio isn't on a DMR channel")
+    a0 = radio.view(["audio"])
+    pats = A.beep_patterns()
+    plan = rfoundry_hil.DetourPlan()
+    plan.mark("key")
+    length_ms = sum(ms for _, ms in ON_AIR_BEEPS) + ON_AIR_TAIL_MS
+    plan.ptt(True, min(length_ms + 2000, 10000))
+    for name, before in ON_AIR_BEEPS:
+        plan.wait(before)
+        plan.mark(name)
+        plan.beep(name)
+    plan.wait(ON_AIR_TAIL_MS)
+    plan.ptt(False, 0)
+    rfoundry_hil.tx_freqs(radio.link, "channel")     # the guard's read now, not inside the recording
+    p, path = microphone.start(plan.ms / 1000 + ON_AIR_REPLY_S + 4.0)
+    t_rec = time.monotonic()
+    t0, st = rfoundry_hil.run_detour(radio.link, plan)
+    microphone.finish(p, path)
+    assert st["failed_item"] == 0 and st["result"] == 0, f"the detour stopped: {st}"
+    last = st.get("last") or {}
+    assert last.get("tx_count", 1) and not last.get("tx_denied"), f"the radio didn't transmit: {st}"
+    x, fs = A.load_wav(path)
+    end_s = min(t0 - t_rec + 1.0, len(x) / fs)
+    problems, heard = [], 0
+    # The permit: the long one as the voice goes on air, or the short one before the key-up (CAP_BEEP_NOT_ON_AIR),
+    # between the run's request and its reply
+    best = None
+    for name in ("tx_permit", "tx_permit_short"):
+        r = A.check_tones(x, fs, pats[name], search=(0.0, end_s))
+        if not r.quiet and all(t.start_s is not None for t in r.tones):
+            best = (name, r)
+            break
+    if best is None:
+        problems.append("the talk permit wasn't heard")
+    else:
+        print(f"{best[0]} ({path}):\n{best[1].report()}")
+        problems += [f"{best[0]}: {q}" for q in best[1].problems]
+        heard += 1
+        key_s = best[1].tones[0].start_s
+        for name, _ in ON_AIR_BEEPS:
+            at = key_s + plan.marks[name]
+            r = A.check_tones(x, fs, pats[name], search=(at - 0.3, min(at + 1.2, len(x) / fs)))
+            problems += _check(r, f"{name} on air", path)
+            heard += not r.quiet
+    a1 = radio.view(["audio"])
+    if a1.get("audio.spk_aux") == "1":
+        n = int(a1["audio.spk_aux_sounds"]) - int(a0.get("audio.spk_aux_sounds") or 0)
+        print(f"second output: {n} sound(s) in the over")
+        if n < 1:
+            problems.append("the second output played nothing (audio.spk_aux_sounds)")
+    if not heard:
+        _quiet("every beep on air")
+    assert not problems, "\n".join(problems)
 
 
 # the bench's FM program: a carrier first (the squelch opens on it), then pulses of exact lengths

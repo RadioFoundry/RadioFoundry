@@ -158,7 +158,7 @@ static void test_init(void)
 	// Frequency: idle, 0x05, words, thresholds, all forced
 	CHECK(at1846s_set_bandwidth(&dev, AT1846S_BW_12K5));
 	log_reset();
-	CHECK(at1846s_set_freq(&dev, 409750000));
+	CHECK(at1846s_set_freq(&dev, 409750000, 409750000));
 	CHECK(n_wr == 5);
 	CHECK(log_wr[0].reg == 0x30 && log_wr[0].val == 0x6006);
 	CHECK(log_wr[1].reg == 0x05 && log_wr[1].val == 0x8763);
@@ -166,7 +166,7 @@ static void test_init(void)
 	CHECK(log_wr[3].reg == 0x2A && log_wr[3].val == 0x0960);
 	CHECK(log_wr[4].reg == 0x49 && log_wr[4].val == 0x0C15);
 	log_reset();
-	CHECK(at1846s_set_freq(&dev, 409750000));
+	CHECK(at1846s_set_freq(&dev, 409750000, 409750000));
 	CHECK(n_wr == 4);			// 0x49 cached, the rest always written
 	CHECK(at1846s_set_state(&dev, AT1846S_STATE_FM_TX));
 	CHECK(last_write(0x30) == 0x6046);
@@ -272,7 +272,7 @@ static void test_bw_sequence(void)
 	CHECK(at1846s_set_state(&dev, AT1846S_STATE_RX) && last_write(0x30) == 0x7026);
 	CHECK(at1846s_set_state(&dev, AT1846S_STATE_FM_TX) && last_write(0x30) == 0x7046);
 	log_reset();
-	CHECK(at1846s_set_freq(&dev, 461862500));
+	CHECK(at1846s_set_freq(&dev, 461862500, 461862500));
 	CHECK(log_wr[0].reg == 0x30 && log_wr[0].val == 0x7006);	// idle keeps the 25 kHz bits
 	CHECK(at1846s_freq_word(461862500) == 7389800);
 
@@ -288,6 +288,35 @@ static void test_bw_sequence(void)
 	CHECK(n_wr > 0 && last_write(0x58) == 0xBC85);
 }
 
+// Reg 0x05: the board's frequencies first, then the reference harmonics, else normal; chosen by the channel, not the
+// synthesizer frequency (offsets)
+static void test_spurs(void)
+{
+	static const at1846s_spur_t spurs[] = { { 455100000u, 0x8643u }, { 455000000u, 0x8443u } };
+	at1846s_spur_cfg_t cfg = { .step_hz = 6500000u, .step_r05 = AT1846S_R05_26M, .spurs = spurs, .spurs_n = 2 };
+	CHECK(at1846s_r05(NULL, 136500000u) == AT1846S_R05_NORMAL);
+	CHECK(at1846s_r05(&cfg, 136500000u) == AT1846S_R05_26M);
+	CHECK(at1846s_r05(&cfg, 409500000u) == AT1846S_R05_26M);
+	CHECK(at1846s_r05(&cfg, 409502500u) == AT1846S_R05_NORMAL);	// exact only
+	CHECK(at1846s_r05(&cfg, 455100000u) == 0x8643u);
+	CHECK(at1846s_r05(&cfg, 455000000u) == 0x8443u);		// the table wins over the rule
+	CHECK(at1846s_r05(&cfg, 461862500u) == AT1846S_R05_NORMAL);
+	cfg.step_hz = 0u;
+	CHECK(at1846s_r05(&cfg, 136500000u) == AT1846S_R05_NORMAL);
+	cfg.step_hz = 6500000u;
+
+	at1846s_t dev;
+	at1846s_attach(&dev, &bus);
+	at1846s_set_spurs(&dev, &cfg);
+	CHECK(at1846s_init(&dev) && at1846s_init_finish(&dev));
+	log_reset();
+	CHECK(at1846s_set_freq(&dev, 136503000u, 136500000u));	// TX word offset, channel on the harmonic
+	CHECK(log_wr[1].reg == 0x05 && log_wr[1].val == AT1846S_R05_26M);
+	log_reset();
+	CHECK(at1846s_set_freq(&dev, 461865500u, 461862500u));	// back to normal on the next channel
+	CHECK(log_wr[1].reg == 0x05 && log_wr[1].val == AT1846S_R05_NORMAL);
+}
+
 int main(void)
 {
 	test_pure();
@@ -296,6 +325,7 @@ int main(void)
 	test_dcs();
 	test_ctcss();
 	test_bw_sequence();
+	test_spurs();
 	if (failures) {
 		printf("# FAILED %d\n", failures);
 		return 1;

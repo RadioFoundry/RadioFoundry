@@ -8,20 +8,22 @@
 #   SRC=rfoundry/csky-gcc14:20261011b tools/docker/csky-toolchain/push.sh REPO [TAG...]
 #
 # Tags SRC (default rfoundry/csky-gcc14:latest, build.sh's local tag) as REPO:<its dated tag> and REPO:latest (or the TAGs given), pushes
-# them and prints the digest. Log in first and out afterwards (docs/dev/ci-runners.md "Publishing it to GitHub Packages"): the
+# them and prints the digest. An arm64 image (SRC ending in -arm64, as build.sh tags one) goes up as REPO:latest-arm64
+# instead. Log in first and out afterwards (docs/dev/ci-runners.md "Publishing it to GitHub Packages"): the
 # script never handles a password or token, so none ends up in its arguments, its output or a file it writes.
 set -eu
-[ $# -ge 1 ] || { sed -n '5,12p' "$0"; exit 2; }
+[ $# -ge 1 ] || { sed -n '5,13p' "$0"; exit 2; }
 REPO=$1; shift
 SRC=${SRC:-rfoundry/csky-gcc14:latest}
 docker image inspect "$SRC" > /dev/null 2>&1 || { echo "push: no image $SRC here" >&2; exit 1; }
 
 if [ $# -eq 0 ]; then
+	case ${SRC##*:} in *-arm64) latest="latest-arm64" ;; *) latest="latest" ;; esac
 	# the dated tag build.sh gave the same image (rfoundry/csky-gcc14:20261011b next to :latest), if there is one
 	id=$(docker image inspect -f '{{.Id}}' "$SRC")
 	dated=$(docker image ls --no-trunc --format '{{.Tag}} {{.ID}}' "${SRC%:*}" |
-		awk -v id="$id" '$2 == id && $1 != "latest" && $1 != "<none>" {print $1; exit}')
-	set -- ${dated:+"$dated"} latest
+		awk -v id="$id" -v l="$latest" '$2 == id && $1 != l && $1 != "<none>" {print $1; exit}')
+	set -- ${dated:+"$dated"} "$latest"
 fi
 for t in "$@"; do
 	docker tag "$SRC" "$REPO:$t"

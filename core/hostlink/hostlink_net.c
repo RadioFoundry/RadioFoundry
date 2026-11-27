@@ -77,12 +77,12 @@ static bool local_udp(const dmrDataPacket_t *p)
 		if ((n < 8) || (n > ip.length)) {
 			return false;
 		}
-		return ipGatewayUdpFromAir(p->src, (uint16_t)((u[0] << 8) | u[1]), (uint16_t)((u[2] << 8) | u[3]),
-					 u + 8, n - 8);
+		return ipGatewayUdpFromAir(p->src, ip.srcIp, (uint16_t)((u[0] << 8) | u[1]), (uint16_t)((u[2] << 8) | u[3]),
+				u + 8, n - 8);
 	}
 	// The compressed header's DAID may name our peripheral network (13.<our ID>, the host): only our own address counts
 	if ((p->sap == DMR_SAP_UDPIP_COMPRESSION) && dmrDataGetUDP(p, &udp) && dmrDataIpIsId(udp.dstIp, false, own)) {
-		return ipGatewayUdpFromAir(p->src, udp.srcPort, udp.dstPort, udp.payload, udp.length);
+		return ipGatewayUdpFromAir(p->src, udp.srcIp, udp.srcPort, udp.dstPort, udp.payload, udp.length);
 	}
 	return false;
 }

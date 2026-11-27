@@ -8,7 +8,7 @@ image is built for the host's own architecture, so an Apple silicon Mac runs it 
 | Image (ghcr.io/radiofoundry/) | Toolchain | Script |
 |---|---|---|
 | `rfoundry-arm-gcc15` | Arm GNU Toolchain 15.2.rel1, Arm's prebuilt release | `build-arm-gcc.sh` |
-| `rfoundry-csky-gcc15` | csky-elf GCC 15.2.0, built by `tools/build-csky-toolchain.sh` | `build-csky-gcc.sh` |
+| `rfoundry-csky-gcc15` | csky-elf GCC 15.2.0, built by `tools/build-csky-toolchain.sh` (`build-csky-gcc.sh 15.2.0`) | `build-csky-gcc.sh` |
 | `rfoundry-arm-ci` | The Arm toolchain CI pins, as `tools/install-arm-toolchain.sh` installs it (x86_64 only, no shell): CI copies it out instead of downloading Arm's archive | `build-arm-ci.sh` |
 
 Tags: `<version>-<yyyymmdd>` and `latest` for amd64; the same with `-arm64` for arm64 (`latest-arm64`). The images
@@ -35,6 +35,21 @@ tools/docker/toolchains/run.sh ghcr.io/radiofoundry/rfoundry-csky-gcc15:latest-a
 organization for now: log in first (`gh auth token | container registry login ghcr.io -u <github-user>
 --password-stdin`). Apple's `container` gives each container a VM; `run.sh` gives it every CPU and 6 GB of memory
 (`RFOUNDRY_MEM`).
+
+### The C-SKY compiler CI uses, natively
+
+CI's csky-elf image (`platform/hrc7000/platform.toml` `[toolchain] image`) is x86_64 only, so on Apple silicon
+`tools/docker/csky-toolchain/run.sh` runs it emulated. `build-csky-gcc.sh` with no version builds the GCC that
+`[toolchain] version` pins, for the Mac's own architecture. It makes the same code as CI's image, so
+`tools/ci.sh` runs as in CI but natively:
+
+```
+tools/docker/toolchains/build-csky-gcc.sh                     # rfoundry/csky-gcc<major>:<version>-<date>-arm64
+RFOUNDRY_CSKY_IMAGE=rfoundry/csky-gcc<major>:<version>-<date>-arm64 \
+	tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --toolchain csky
+```
+
+Build it again when `[toolchain] version` changes.
 
 ## Making and publishing an image
 

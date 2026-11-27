@@ -7,7 +7,7 @@
 
 import { flow, Raw } from "./yaml.js";
 import { KINDS, SYSTEM_TYPES, kindRow, typeRow } from "./modes.js";
-import { newSystem, identityKey, SHARE } from "./channelmodes.js";
+import { newSystem, identityKey, systemTx, SHARE } from "./channelmodes.js";
 import { sameValue } from "./modebytes.js";
 
 const SHARING = Object.fromEntries(Object.entries(SHARE).map(([k, v]) => [v, k]));
@@ -83,7 +83,7 @@ export function exportModes(m, chRef, note, frequencyText) {
 	const out = systems.map((s) => {
 		const mod = typeRow(s.type).module;
 		return {
-			id: sysId.get(s), type: typeRow(s.type).short, name: s.name, transmit: s.tx, ownId: s.ownId || 0,
+			id: sysId.get(s), type: typeRow(s.type).short, name: s.name, transmit: systemTx(s), ownId: s.ownId || 0,
 			authenticates: s.needsKey, sharing: SHARING[s.sharing] ?? s.sharing, fallback: ref(s.fallback),
 			settings: fieldsOut(s.fields, mod.newFields(), mod.fields, frequencyText),
 			entries: s.entries.flatMap((e) => {
