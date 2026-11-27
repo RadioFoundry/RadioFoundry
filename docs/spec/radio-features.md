@@ -611,8 +611,9 @@ three superframes (1080 ms) the over is held for.
 On the speaker the start tone follows the board: a board with `CAP_BEEP_NOT_ON_AIR` plays a DMR start tone before keying,
 in the talk permit's hold (`permit_before_key`), and a P25 or NXDN one too: PTT on a conventional channel plays it and
 the key-up waits until it and the board's queued audio are over (at least 40 ms, at most `SIG_MAX_MS` + 300 ms;
-`air_talk`), and letting go meanwhile keys nothing. On a trunked P25 channel the grant keys at once: the permit plays
-as it keys where beeps sound on air, and not yet on such a board. Every board plays the FM start tone on the speaker as
+`air_talk`), and letting go meanwhile keys nothing. On a trunked P25 channel the same happens at the grant, on the
+voice channel: the permit plays as it keys where beeps sound on air, and on such a board first, the key-up waiting for
+it, and a key-up cancelled there gives the grant back ([p25.md](p25.md)). Every board plays the FM start tone on the speaker as
 it keys (the FM transmitter leaves the audio path open). A board with `hal_radio_t.tx_tone_side` (the modem's sidetone) hears an FM start tone set to speaker + air from the tone sent on air: the core turns the sidetone on with the tone and off when it ends, and plays no separate beep. The end
 tone plays once the transmitter is off, and on a board whose audio path is closed while the DMR engine sends its last burst
 (`hal_audio_t.speaker_blocked`) a little after that: audio queued while the path is closed is dropped when it opens, so the
