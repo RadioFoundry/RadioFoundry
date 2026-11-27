@@ -18,6 +18,7 @@ extern hal_flash_t hrc_flash_spi0;
 #define dm32_flash hrc_flash_spi0
 
 // Ops each board file provides
+extern const hal_flash_map_t board_flash_map;
 extern const hal_display_t dm32_display;
 extern const hal_input_t dm32_input;
 // Key scans with the PTT pin low that were ignored as host serial data (hardware-dm32.md 6.2)
@@ -26,7 +27,7 @@ bool dm32_radio_transmitting(void);	// the radio is keyed (the shared PTT line's
 extern const hal_radio_t dm32_radio;
 // The debug link's CHIP_REG for the FD6818 (board.chip_reg)
 bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
-extern const hal_power_t dm32_power;
+extern const hal_power_t board_power;
 
 // Physical key bits returned by dm32_input.scan() (matrix in docs/spec/hardware-dm32.md 6.1, 6.2)
 enum {
@@ -45,8 +46,6 @@ void dm32_lcdbus_unlock(void);
 #include "config.h"
 #include "modem/hrc7000/hrc7000.h"
 
-// DMR PCM to the speaker instead of the FM path (radio_dm32.c; the hal_audio_t speaker_pcm hook of hrc_audio_pcm)
-void dm32_speaker_pcm(bool on);
 void dm32_bcast_audio(bool on);	// the broadcast receiver's audio path (CONFIG_BCAST_FM)
 // Who keeps the speaker amplifier on: 0x01 receive audio, 0x02 speaker PCM, 0x04 the broadcast receiver, 0x40 the
 // TX tone's sidetone (radio_dm32.c amp())
@@ -60,6 +59,7 @@ typedef struct {
 	char rf_setup;			// the RF section (hardware-dm32.md 8.10): A classic, B newer, - neither locked
 } dm32_radio_diag_t;
 void dm32_radio_diag(dm32_radio_diag_t *d);
+bool dm32_hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len);
 char dm32_rf_setup(void);	// the RF section start-up found, as rf_setup: no bus traffic
 bool dm32_diag_line(uint8_t i, char *buf, uint8_t len);
 void dm32_diag_reset(void);

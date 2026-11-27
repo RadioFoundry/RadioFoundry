@@ -366,6 +366,9 @@ void hrc_host_uart_drain(void);
 void hrc_host_uart_loader_div(void);
 // Weak, called from the receive interrupt for every character (error: the UART flagged it)
 void hrc_host_uart_rx_tap(uint8_t b, bool error);
+// Weak, called from the audio task with each decoded DMR voice frame (160 samples). A board can override it to act
+// on the speech level (a speaker amp held off between words)
+void hrc_vocoder_rx_frame(const int16_t *pcm);
 void hrc_host_uart_put_polled(const char *s);	// interrupts off, no RTOS: the fault trace (irq.c)
 uint32_t hrc_host_uart_overruns(void);	// bytes lost because the receive ring was full
 uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FIFO overran, framing, parity)
