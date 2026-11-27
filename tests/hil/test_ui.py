@@ -494,6 +494,28 @@ def test_long_press_time_reaches_input(home):
     r.wait_for(lambda x: as_int(x.get("input.long_ms")) == before, sections=("link",), what="long press time back")
 
 
+@pytest.mark.feature("vfo")
+@pytest.mark.needs_switch("UI_SETTINGS")
+def test_vfo_step_setting(home):
+    """Settings > Talk & listen > VFO step: the radio core takes the new step (core.vfo_step_hz). OK steps through the
+    list, so going the rest of the way round puts back the step the radio had."""
+    r = home
+    if "VFO" not in r.features():
+        skip("not_built", "built without the VFO")
+    core = r.view(["core"])
+    if core.get("bcast") == "1":
+        skip("state", "in the broadcast band the step is the FM broadcast step's")
+    before = core["vfo_step_hz"]
+    row = "ok 7 3 down down down"
+    values = 11 if "AM_RX" in r.features() else 10     # 8.33 kHz is listed with air band receive
+    settings_keys(r, row + " ok")
+    try:
+        r.wait_for(lambda x: x.get("vfo_step_hz") != before, sections=("core",), what="another VFO step")
+    finally:
+        settings_keys(r, row + " ok" * (values - 1))
+    r.wait_for(lambda x: x.get("vfo_step_hz") == before, sections=("core",), what="the VFO step back")
+
+
 @pytest.mark.feature("key_lock")
 def test_auto_lock(home):
     """Settings > Key lock > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
@@ -569,7 +591,7 @@ def test_updown_changes_the_zone(home):
 @pytest.mark.feature("dmr_privacy")
 @pytest.mark.needs_switch("UI_SETTINGS")
 def test_privacy_key_entry(home):
-    """Settings > Privacy: key type Motorola, key typed 123 (slot 1); type Off again removes it."""
+    """Settings > Privacy: key type 8-bit, key typed 123 (slot 1); type Off again removes it."""
     r = home
     if "DMR_PRIVACY" not in r.features():
         skip("not_built", "built without CONFIG_DMR_PRIVACY")
@@ -582,7 +604,7 @@ def test_privacy_key_entry(home):
         skip("state", "a privacy key is set already: not overwriting it")
     settings_keys(r, "ok 7 4 ok down ok 1 2 3 ok")
     try:
-        r.wait_for(lambda x: x.get("settings.privacy_type") == "1", sections=("storage",), what="key type Motorola")
+        r.wait_for(lambda x: x.get("settings.privacy_type") == "1", sections=("storage",), what="key type 8-bit")
         if r.core().get("mode") == "dmr":
             r.press("quick")
             wait_screen(r, "quick")
@@ -591,7 +613,7 @@ def test_privacy_key_entry(home):
             leave_quick(r)
             r.press("back")
     finally:
-        settings_keys(r, "ok 7 4 ok ok")	# Motorola -> Anytone -> Off
+        settings_keys(r, "ok 7 4 ok ok")	# 8-bit -> 16-bit -> Off
     r.wait_for(lambda x: x.get("settings.privacy_type") == "0", sections=("storage",), what="the key removed")
 
 

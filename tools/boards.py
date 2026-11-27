@@ -336,7 +336,10 @@ def make_vars(root, board, names, args=()):
     import subprocess
     # Without the calling make's variables: run from a build's registry rule, MAKEFLAGS would carry its BUILD and
     # CONFIG_ overrides into this make, which then read another build's values and touched its build directory
-    env = {k: v for k, v in os.environ.items() if k not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES")}
+    # Command-line feature assignments are also exported individually. Keeping them would apply the current
+    # board's optional features to every other board, even when its base feature is unsupported.
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES") and not k.startswith("CONFIG_")}
     try:
         r = subprocess.run(["make", "-s", "--no-print-directory", "-C", root, "BOARD=" + board, *args,
                             "print-vars", "VARS=" + " ".join(names)], capture_output=True, text=True, timeout=60,
@@ -1714,6 +1717,18 @@ def self_test():
         if not cond:
             fails.append(what)
         print("%s %s" % ("ok  " if cond else "FAIL", what))
+
+    # A nested registry query must read the queried board's defaults, not exported feature choices of its caller.
+    from unittest.mock import patch
+    with tempfile.TemporaryDirectory(prefix="rfoundry-boards-env-") as tmpenv:
+        with open(os.path.join(tmpenv, "Makefile"), "w", encoding="utf-8") as f:
+            f.write("CONFIG_REGISTRY_PROBE ?= n\nprint-vars:\n\t@echo CONFIG_REGISTRY_PROBE=$(CONFIG_REGISTRY_PROBE)\n")
+        with patch.dict(os.environ, {"CONFIG_REGISTRY_PROBE": "y", "MAKEFLAGS": "CONFIG_REGISTRY_PROBE=y",
+                                    "MAKEOVERRIDES": "CONFIG_REGISTRY_PROBE=y"}):
+            ok(make_vars(tmpenv, "fixture", ["CONFIG_REGISTRY_PROBE"]) == {"CONFIG_REGISTRY_PROBE": "n"},
+               "make_vars ignores inherited feature assignments")
+            ok(make_vars(tmpenv, "fixture", ["CONFIG_REGISTRY_PROBE"], ["CONFIG_REGISTRY_PROBE=y"])
+               == {"CONFIG_REGISTRY_PROBE": "y"}, "make_vars honors explicit query arguments")
 
     # list's selection (ci.sh --platform, the workflows' per-platform jobs)
     from types import SimpleNamespace as NS

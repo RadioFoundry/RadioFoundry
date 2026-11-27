@@ -33,6 +33,7 @@ typedef enum {
 	BEEP_TX_PERMIT_SHORT,	// DMR: talk now, played before keying (CAP_BEEP_NOT_ON_AIR): one short tone
 	BEEP_SWEEP,		// speaker test (debug link only): a 4 s sweep, BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ
 	BEEP_SYSTEM_BACK,	// a trunked system found again, the radio back on it from its fallback channel
+	BEEP_CALL_ALERT,	// DMR: a call alert paged this radio (the UI asks for it)
 	BEEP_COUNT
 } beep_t;
 
@@ -61,7 +62,7 @@ typedef struct {
 	uint8_t last;		// the last pattern asked for (beep_t), played or dropped
 } beep_stats_t;
 
-#define BEEP_SEGS_MAX	6
+#define BEEP_SEGS_MAX	13	// steps of a fixed pattern (the call alert ring is the longest)
 #define BEEP_CUSTOM_MAX	10	// steps of a custom pattern (SIG_STEPS)
 
 // audio NULL: beeps are counted as dropped
@@ -99,6 +100,13 @@ void beep_warm(uint32_t now_ms);
 bool beep_warm_on(void);
 // From an audio block callback: add the beep to the block (saturating). True while the beep sounds
 bool beep_mix(int16_t *spk);
+// The speaker's sound reaches the microphone (a handheld's speaker sits next to it): true from the block after
+// beep_mix first returned true until BEEP_ECHO_BLOCKS after it last did, the stream's delay from the speaker block to
+// the mic block that hears it, plus one. A voice layer that transmits while beeps mix into its stream mutes the mic
+// for these blocks (its mic gate, ambeVoiceSetMicGate), so a beep never goes on air with the voice. The same audio
+// task as beep_mix, before it in the block
+bool beep_mic_echo(void);
+#define BEEP_ECHO_BLOCKS	3	// 60 ms: the speaker's block is heard in the mic's two blocks later (I2S, on the radio)
 // Whether a pattern is still playing (as last seen by the audio side)
 bool beep_busy(void);
 // The pattern's segments (for tests and docs); count returned

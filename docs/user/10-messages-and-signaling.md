@@ -100,9 +100,9 @@ selected setting.
 | Automatic (default) | Uses Tier III control-channel short data for up to 23 characters on a Tier III channel without data privacy. Longer messages and messages on other channels use ETSI IP text. |
 | ETSI | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
 | ETSI short | Radios that only show ETSI short data messages. Delivery is confirmed |
-| Motorola | MOTOTRBO radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
+| TMS | Commercial radios and dispatch software set to TMS text messages. Delivery is confirmed. Not in builds made without TMS support |
 
-If your radio was set up before ETSI became the default and its data settings were saved, it keeps sending Motorola
+If your radio was set up before ETSI became the default and its data settings were saved, the radio keeps sending TMS
 messages until you change the setting.
 
 ## Call alert
@@ -113,8 +113,10 @@ A call alert pages another radio. It rings there, even when that radio's user is
 2. Press **5** (Call alert). The radio shows "Call alert to ..." and returns to Home.
 3. The radio tries up to 3 times. The result is a banner: "... answered the alert" or "No answer from ...".
 
-When someone sends you a call alert, the radio shows "Call alert from ..." with "PTT replies". Press **#** while the
-banner is up for the caller's actions. Your radio acknowledges the alert unless **Settings > Connections > Answer call
+When someone sends you a call alert, the radio rings twice and shows "Call alert from ..." with "PTT replies". A
+radio with a vibration motor also vibrates once, unless **Settings > Sound > Vibrate** is off. The ring has no setting
+of its own: **Settings > Sound > Tone volume** sets the ring's loudness, and 0 silences every tone. Press **#** while
+the banner is up for the caller's actions. Your radio acknowledges the alert unless **Settings > Connections > Answer call
 alerts** is off.
 
 <img src="../ux/screens/160x120i5/banner_call_alert.png" width="200" alt="A call alert banner">

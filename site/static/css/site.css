@@ -634,6 +634,8 @@ table.grid tr.selected td { background: var(--accent-soft); }
 dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflow: auto; padding: var(--space-4); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-2) var(--space-4); align-items: start; }
 .form-note { grid-column: 1 / -1; margin: 0; }
+/* a note drawn as a callout */
+.form-note.notice { margin: var(--space-2) 0; }
 /* one field per line: the input at a readable width, its help under it at the text's width */
 .form-list { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
 .form-list > .form-row, .form-list > .form-note { max-width: 40rem; }

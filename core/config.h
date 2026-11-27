@@ -83,9 +83,6 @@
 #ifndef CONFIG_NET_WEBCTL
 #define CONFIG_NET_WEBCTL		CONFIG_NET_HTTP
 #endif
-#ifndef CONFIG_NET_RADIO_UDP
-#define CONFIG_NET_RADIO_UDP		CONFIG_DMR_IP_GATEWAY
-#endif
 #ifndef CONFIG_NET_RIGCTL
 #define CONFIG_NET_RIGCTL		CONFIG_NET_TCP
 #endif
@@ -150,6 +147,15 @@
 #endif
 #ifndef CONFIG_TASK_STACKS
 #define CONFIG_TASK_STACKS		CONFIG_DEBUGLINK
+#endif
+// The debug link over the air (docs/spec/debuglink.md 7): a bench diagnostic, off by default. RADIO_DETOUR, derived
+// from it, is the radio core's and the settings store's part (temporary settings a deadline reverts), which host tests
+// build on its own
+#ifndef CONFIG_DEBUGLINK_DMRIP
+#define CONFIG_DEBUGLINK_DMRIP		0
+#endif
+#ifndef CONFIG_RADIO_DETOUR
+#define CONFIG_RADIO_DETOUR		CONFIG_DEBUGLINK_DMRIP
 #endif
 #ifndef CONFIG_CPS_OPENFW
 #define CONFIG_CPS_OPENFW		CONFIG_HOSTLINK
@@ -415,7 +421,7 @@
 
 // Derived: the shared packet data / CSBK code
 // Any of the radio's own services on the USB network link (core/net/net.c starts and polls them)
-#define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP || CONFIG_NET_RADIO_UDP)
+#define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP)
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
 					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT || \
@@ -521,8 +527,8 @@
 #if (CONFIG_NET_KISS || CONFIG_NET_APRSIS) && !(CONFIG_NET_TCP && CONFIG_APRS_AFSK)
 #error "CONFIG_NET_KISS and CONFIG_NET_APRSIS need CONFIG_NET_TCP and CONFIG_APRS_AFSK"
 #endif
-#if (CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_RADIO_UDP) && !CONFIG_DMR_IP_GATEWAY
-#error "CONFIG_MDNS, CONFIG_TFTP and CONFIG_NET_RADIO_UDP need CONFIG_DMR_IP_GATEWAY (the IP stack they run on)"
+#if (CONFIG_MDNS || CONFIG_TFTP) && !CONFIG_DMR_IP_GATEWAY
+#error "CONFIG_MDNS and CONFIG_TFTP need CONFIG_DMR_IP_GATEWAY (the IP stack they run on)"
 #endif
 #if CONFIG_IDDB_COMPACT && !CONFIG_DMR
 #error "CONFIG_IDDB_COMPACT needs CONFIG_DMR"
@@ -538,6 +544,9 @@
 #endif
 #if CONFIG_SNMP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_SNMP needs CONFIG_DMR_IP_GATEWAY"
+#endif
+#if CONFIG_DEBUGLINK_DMRIP && !(CONFIG_DEBUGLINK && CONFIG_DMR_IP_GATEWAY)
+#error "CONFIG_DEBUGLINK_DMRIP needs CONFIG_DEBUGLINK and CONFIG_DMR_IP_GATEWAY"
 #endif
 #if CONFIG_USB_SERIAL_REQUEST && !CONFIG_USB_NETWORK
 #error "CONFIG_USB_SERIAL_REQUEST needs CONFIG_USB_NETWORK"

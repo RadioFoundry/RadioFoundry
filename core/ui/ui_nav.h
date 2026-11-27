@@ -159,6 +159,7 @@ bool ui_has_action(uint8_t action);
 void ui_apply_setting(uint8_t id, int32_t v);
 // Scan on / off (quick 7, Tools 1, long SK2), with a toast that says what scans: the zone, or the band in the VFO
 void ui_scan_toggle(void);
+void ui_monitor_toggle(void);	// a side key set to Monitor toggle: what quick tile 5 does
 void ui_scan_skip(void);	// a side key set to Scan skip: skip the channel that stopped the scan
 // Actions for the last caller (CONTEXT on Home), or a toast when there is none
 void ui_open_caller_actions(void);
@@ -239,6 +240,9 @@ void ui_diag_draw(void);
 bool ui_diag_key(const input_event_t *ev);
 void ui_home_draw(void);
 bool ui_home_key(const input_event_t *ev);
+#if CONFIG_DMR
+bool ui_talk_step(int dir);	// Up / Down set to Talk target: the next talk target (false: nothing to step through)
+#endif
 void ui_quick_draw(void);
 bool ui_quick_key(const input_event_t *ev);
 void ui_quick_enter(void);

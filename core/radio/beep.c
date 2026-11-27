@@ -38,6 +38,11 @@ static const beep_seg_t p_emergency[] = { { 1500, 160 }, { 900, 160 }, { 1500, 1
 static const beep_seg_t p_message[] = { { 1000, 60 }, { 0, 30 }, { 1300, 60 }, { 0, 30 }, { 1700, 90 } };
 // Two rising notes: back on the trunked system
 static const beep_seg_t p_system_back[] = { { 1000, 60 }, { 0, 60 }, { 1400, 60 } };
+// A fast 1400 / 1100 Hz trill, rung twice like a phone: a call alert paged this radio. Unlike the slow, wide
+// emergency warble
+static const beep_seg_t p_call_alert[] = { { 1400, 40 }, { 1100, 40 }, { 1400, 40 }, { 1100, 40 }, { 1400, 40 },
+					   { 1100, 40 }, { 0, 200 }, { 1400, 40 }, { 1100, 40 }, { 1400, 40 },
+					   { 1100, 40 }, { 1400, 40 }, { 1100, 40 } };
 // The speaker test (tests/hil/test_speaker.py): silence with the route up (a pop or a click there is the route's, not
 // the sweep's), the sweep, a short tail
 static const beep_seg_t p_sweep[] = { { 0, 400 }, { BEEP_HZ_SWEEP, 4000 }, { 0, 200 } };
@@ -61,6 +66,7 @@ static const struct {
 	[BEEP_TX_PERMIT_SHORT] = PAT(p_permit_short),
 	[BEEP_SWEEP] = PAT(p_sweep),
 	[BEEP_SYSTEM_BACK] = PAT(p_system_back),
+	[BEEP_CALL_ALERT] = PAT(p_call_alert),
 };
 
 // One period of a sine, Q15
@@ -107,6 +113,7 @@ static uint32_t seen_blocks;
 static uint8_t stall_polls;
 static uint8_t cb_lead;		// lead-in blocks played since the route turned on
 static uint8_t mix_lead;	// the voice stream's lead-in blocks for the pending pattern (beep_mix)
+static uint8_t mix_echo;	// blocks the mic may still hear the last mixed one (beep_mic_echo)
 
 void beep_init(const hal_audio_t *audio)
 {
@@ -395,7 +402,7 @@ static bool tone_mix(int16_t *spk)
 	return true;
 }
 
-bool beep_mix(int16_t *spk)
+static bool mix_block(int16_t *spk)
 {
 	// A pattern the amplifier isn't ready for (cold, or only just powered): its lead-in in silence with the speaker
 	// routed, as on the own stream. A DMR call leaves the voice stream running until the radio leaves DMR, so most
@@ -411,6 +418,22 @@ bool beep_mix(int16_t *spk)
 		}
 	}
 	return tone_mix(spk);
+}
+
+bool beep_mix(int16_t *spk)
+{
+	bool on = mix_block(spk);
+	if (on) {
+		mix_echo = BEEP_ECHO_BLOCKS;
+	} else if (mix_echo != 0) {
+		mix_echo--;
+	}
+	return on;
+}
+
+bool beep_mic_echo(void)
+{
+	return mix_echo != 0;
 }
 
 void beep_audio_block(const int16_t *mic, int16_t *spk, void *ctx)
