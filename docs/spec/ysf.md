@@ -377,27 +377,31 @@ terminator) and the engine ends by itself; it is refused as PTT would be.
 
 ### 9.2 Commands
 
-A sequence byte (0x00), three bytes of command, 0x26, the parameters in ASCII, 0x03, then the byte sum of everything
-before the sum:
+A sequence byte (a commercial portable counts it; RadioFoundry sends 0x00), three bytes of command, 0x27, the
+parameters in ASCII, space padded as a commercial portable sends them (checked against an off-air recording), 0x03,
+then the byte sum of everything before the sum:
 
 | Command | Bytes 1-3 | Parameters |
 |---|---|---|
-| Status (DX) | `5D 71 5F` | none |
-| Connect | `5D 23 5F` | the room's 5 digits and a space |
-| Disconnect | `5D 2A 5F` | none |
+| Status (DX) | `5D 71 5F` | 10 spaces |
+| Connect | `5D 23 5F` | the room's 5 digits and 5 spaces |
+| Disconnect | `5D 2A 5F` | 10 spaces |
 | Room list | `5D 66 5F` | `01` and the first entry in 3 digits |
-| Search | `5D 66 5F` | `11`, the first entry in 3 digits, and the text in 16 characters, upper case, space padded |
+| Search | `5D 66 5F` | `11`, the first entry in 3 digits (3 spaces for the first page), and the text in 16 characters, upper case, space padded |
 
 ### 9.3 Replies
 
-The end is the last 0x03 followed by the byte sum of everything before that sum (the sum may itself be 0x03, and
-frames are padded past it). A reply with a frame lost is dropped whole. Parsed as its bytes come (`core/ysf/ysf_wx.c`),
-with no buffer for a whole list:
+A node's reply has 0x26 where a command has 0x27. The end is the last 0x03 followed by the byte sum of everything
+before that sum (the sum may itself be 0x03, and frames are padded past it). A reply with a frame lost is dropped
+whole. Parsed as its bytes come (`core/ysf/ysf_wx.c`), with no buffer for a whole list; the first 80 bytes are kept
+for the status fields. A node may first send a short transmission without data (a header and a terminator), then its
+reply up to a few seconds later:
 
 | Reply | Bytes 1-4 | Fields |
 |---|---|---|
-| Status, connect, disconnect | `5D 51 5F 26` (status), `5D 41 5F 26` (connect and disconnect) | [5..9] the node's ID, [10..19] its callsign, [20..33] its name, [34..35] `15` in a room (`12` not), [36..40] the room's ID, [41..56] its name |
-| Room list, search | `5D 46 5F 26` | [5] `0` for a search's result; [7..11] the node's ID, [12..21] its callsign; [22..24] rooms on the page, [25..27] in all (a search: the matches); from [29], 50 bytes a room: [1..5] its ID, [6..21] its name, [22..24] its users. A node may pad the page to 20 with blank entries: the page ends at the first entry without an ID, and at the count |
+| Status, connect, disconnect | `5D 52 5F 26` (status), `5D 42 5F 26` (connect and disconnect): a commercial repeater's node | [5..22] not read; from [23]: the node's ID (5), its callsign (10), its name (14), `15` in a room (`12` not), the room's ID (5), its name (16) |
+| The same, shorter | `5D 51 5F 26`, `5D 41 5F 26` | the same fields from [5] |
+| Room list, search | `5D 46 5F 26` | [7..11] the node's ID, [12..21] its callsign, [22] `1` for a search's result, [23..24] rooms on the page, [25..27] in all (a search: the matches); from [29], 50 bytes a room: [1..5] its ID, [6..21] its name, [22..24] its users. A node may pad the page to 20 with blank entries: the page ends at the first entry without an ID, and at the count. Whether it is a search's result is taken from the command sent |
 
 ### 9.4 On the radio
 

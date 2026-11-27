@@ -724,14 +724,20 @@ static void testRooms(void)
 	uint16_t len;
 
 	// Commands, byte for byte
+	// As a commercial portable sends them (an off-air recording; its sequence byte counts, ours stays 0)
 	n = ysf_wx_command(YSF_WX_DX, 0, NULL, cmd);
-	CHECK(n == 7 && !memcmp(cmd, "\x00\x5D\x71\x5F\x26\x03", 6) && cmd[6] == (uint8_t)(0x5D + 0x71 + 0x5F + 0x26 + 0x03), "DX");
-	n = ysf_wx_command(YSF_WX_CONNECT, 12345, NULL, cmd);
-	CHECK(n == 13 && !memcmp(cmd + 1, "\x5D\x23\x5F\x26" "12345 \x03", 11), "CONNECT 12345");
+	CHECK(n == 17 && !memcmp(cmd, "\x00\x5D\x71\x5F\x27          \x03", 16) && cmd[16] == (uint8_t)(0x9B - 0x04), "DX");
+	n = ysf_wx_command(YSF_WX_CONNECT, 86787, NULL, cmd);
+	CHECK(n == 17 && !memcmp(cmd + 1, "\x5D\x23\x5F\x27" "86787     \x03", 15) && cmd[16] == (uint8_t)(0xC3 - 0x06),
+	      "CONNECT 86787");
+	n = ysf_wx_command(YSF_WX_DISCONNECT, 0, NULL, cmd);
+	CHECK(n == 17 && !memcmp(cmd + 1, "\x5D\x2A\x5F\x27          \x03", 15) && cmd[16] == (uint8_t)(0x59 - 0x09),
+	      "DISCONNECT");
 	n = ysf_wx_command(YSF_WX_ALL, 21, NULL, cmd);
-	CHECK(n == 12 && !memcmp(cmd + 4, "\x26" "01021\x03", 7), "ALL from 21");
-	n = ysf_wx_command(YSF_WX_SEARCH, 0, "test", cmd);
-	CHECK(n == 28 && !memcmp(cmd + 5, "11001TEST            \x03", 22), "SEARCH");
+	CHECK(n == 12 && !memcmp(cmd + 4, "\x27" "01021\x03", 7), "ALL from 21");
+	n = ysf_wx_command(YSF_WX_SEARCH, 0, "pol", cmd);
+	CHECK(n == 28 && !memcmp(cmd + 1, "\x5D\x66\x5F\x27" "11   POL             \x03", 26) &&
+	      cmd[27] == (uint8_t)(0xA0 - 0x07), "SEARCH");
 	n = ysf_wx_command(YSF_WX_SEARCH, 21, "xx", cmd);
 	CHECK(n == 28 && !memcmp(cmd + 5, "11021XX              \x03", 22), "SEARCH from 21");
 	CHECK(ysf_wx_command(9, 0, NULL, cmd) == 0, "no such command");
@@ -863,6 +869,70 @@ static void testRooms(void)
 	CHECK(wx_n == 1 && wx_got.search && wx_got.rooms == 1 && wx_got.rooms_total == 1 &&
 	      !strcmp(wx_got.room[0].id, "90002"), "a padded search result: search %d rooms %u total %u", wx_got.search,
 	      wx_got.rooms, wx_got.rooms_total);
+
+	// A commercial repeater's node (the layout of an off-air recording, names changed): status 0x52 with 18 bytes
+	// before the node's ID, in a room
+	memset(d, ' ', sizeof d);
+	d[0] = 0xF0;
+	memcpy(d + 1, "\x5D\x52\x5F\x26", 4);
+	memcpy(d + 5, "ABCDE12]ul \x1c" "0W", 14);
+	put_text(d + 23, "54321", 5);
+	put_text(d + 28, "N0RPT-RPT", 10);
+	put_text(d + 38, "Town", 14);
+	put_text(d + 52, "15", 2);
+	put_text(d + 54, "27784", 5);
+	put_text(d + 59, "COUNTRY-ROOM", 16);
+	put_text(d + 75, "011", 3);
+	len = reply_end(d, 125);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DX && wx_got.connected && !strcmp(wx_got.node_id, "54321") &&
+	      !strcmp(wx_got.node_call, "N0RPT-RPT") && !strcmp(wx_got.node_name, "Town") &&
+	      !strcmp(wx_got.room_id, "27784") && !strcmp(wx_got.room_name, "COUNTRY-ROOM"),
+	      "repeater status: n %u kind %u connected %d '%s' '%s' '%s'", wx_n, wx_got.kind, wx_got.connected,
+	      wx_got.node_call, wx_got.room_id, wx_got.room_name);
+	// ... its disconnect's answer, 0x42 with "12": no room
+	d[2] = 0x42;
+	put_text(d + 52, "12", 2);
+	memset(d + 54, ' ', 24);
+	len = reply_end(d, 125);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DISCONNECT && !wx_got.connected && wx_got.room_id[0] == '\0',
+	      "repeater disconnect: kind %u connected %d", wx_got.kind, wx_got.connected);
+	// ... and connect, 0x42 with "15"
+	put_text(d + 52, "15", 2);
+	put_text(d + 54, "86787", 5);
+	put_text(d + 59, "CITY-ROOM", 16);
+	len = reply_end(d, 125);
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_got.kind == YSF_WX_CONNECT && wx_got.connected && !strcmp(wx_got.room_name, "CITY-ROOM"),
+	      "repeater connect: kind %u '%s'", wx_got.kind, wx_got.room_name);
+	// Its search's result: '1' at [22], three on the page at [23..24], three in all
+	memset(d, ' ', sizeof d);
+	d[0] = 0xF3;
+	memcpy(d + 1, "\x5D\x46\x5F\x26", 4);
+	put_text(d + 5, "04", 2);
+	put_text(d + 7, "54321", 5);
+	put_text(d + 12, "N0RPT-RPT", 10);
+	put_text(d + 22, "103003", 6);
+	d[28] = 0x0D;
+	for (unsigned j = 0; j < 3; j++) {
+		uint8_t *e = d + 29 + j * 50;
+		char id[6];
+
+		snprintf(id, sizeof id, "%05u", 30000 + j);
+		e[0] = '5';
+		put_text(e + 1, id, 5);
+		put_text(e + 6, "ROOM", 16);
+		put_text(e + 22, "002", 3);
+		e[49] = 0x0D;
+	}
+	len = reply_end(d, 29 + 3 * 50);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && wx_got.rooms == 3 && wx_got.rooms_total == 3 && !strcmp(wx_got.room[2].id, "30002"),
+	      "repeater search: rooms %u of %u", wx_got.rooms, wx_got.rooms_total);
 }
 
 int main(void)

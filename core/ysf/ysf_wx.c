@@ -6,9 +6,9 @@
 #include <stddef.h>
 #include <string.h>
 
-// ── Commands (9.2): a sequence byte, three bytes of command, 0x26, the parameters in ASCII, 0x03 and the byte sum of
-// everything before the sum ──
-#define WX_SEP		0x26
+// ── Commands (9.2): a sequence byte, three bytes of command, 0x27, the parameters in ASCII, space padded as a
+// commercial portable sends them, 0x03 and the byte sum of everything before the sum ──
+#define WX_SEP		0x27		// a node's replies have 0x26 there
 #define WX_END		0x03
 
 static const uint8_t code[4][3] = {
@@ -46,10 +46,16 @@ uint8_t ysf_wx_command(uint8_t cmd, uint32_t arg, const char *text, uint8_t out[
 	n += 3;
 	out[n++] = WX_SEP;
 	switch (cmd) {
+	case YSF_WX_DX:
+	case YSF_WX_DISCONNECT:
+		memset(out + n, ' ', 10);		// ten spaces
+		n += 10;
+		break;
 	case YSF_WX_CONNECT:
-		digits(out + n, arg % 100000u, 5);	// the room ID, then a space
+		digits(out + n, arg % 100000u, 5);	// the room ID in a field of ten
 		n += 5;
-		out[n++] = ' ';
+		memset(out + n, ' ', 5);
+		n += 5;
 		break;
 	case YSF_WX_ALL:
 		out[n++] = '0';				// "01": the list; the first entry in three digits
@@ -58,9 +64,12 @@ uint8_t ysf_wx_command(uint8_t cmd, uint32_t arg, const char *text, uint8_t out[
 		n += 3;
 		break;
 	case YSF_WX_SEARCH:
-		out[n++] = '1';				// "11": a search; the first entry in three digits; the text in 16,
-		out[n++] = '1';				// upper case
-		digits(out + n, arg >= 1 && arg <= 999 ? arg : 1, 3);
+		out[n++] = '1';				// "11": a search; the first entry in three digits (spaces for the
+		out[n++] = '1';				// first page, as a portable sends it); the text in 16, upper case
+		if (arg > 1 && arg <= 999)
+			digits(out + n, arg, 3);
+		else
+			memset(out + n, ' ', 3);
 		n += 3;
 		for (uint8_t i = 0; i < YSF_WX_TEXT_LEN; i++) {
 			char c = text && *text ? *text++ : ' ';
@@ -185,7 +194,7 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 {
 	const uint8_t *h = r->hdr;
 	ysf_wx_t *w = &r->out;
-	unsigned end;
+	unsigned end, o;
 
 	if (!r->on)
 		return false;
@@ -194,9 +203,9 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 		return false;
 	end = r->end - 1u;		// the 0x03
 	if (is_list(h) && end >= ROOMS_AT) {
-		// The list and a search's result alike: [7..11] the node's ID, [12..21] its callsign, [22..24] rooms on the
-		// page, [25..27] in all; a search's result has '0' at [5]. A node may fill the page up to 20 with blank
-		// entries (a search with one match came as 20 rows): the first entry without an ID ends the page
+		// The list and a search's result alike: [7..11] the node's ID, [12..21] its callsign, [22] '1' for a
+		// search's result, [23..24] rooms on the page, [25..27] in all. A node may fill the page up to 20 with
+		// blank entries (a search with one match came as 20 rows): the first entry without an ID ends the page
 		unsigned n, k = 0;
 		char call[sizeof w->node_call];
 
@@ -207,7 +216,7 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 			w->connected = false;
 		}
 		w->search = h[5] == '0';
-		n = num_of(h + 22, 3);
+		n = num_of(h + 23, 2);
 		while (k < n && k < YSF_WX_ROOMS && ROOMS_AT + (k + 1u) * ROOM_LEN <= end && w->room[k].id[0] != '\0')
 			k++;
 		w->rooms = (uint8_t)k;
@@ -217,18 +226,26 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 		text_of(h + 12, 10, w->node_call);
 		return true;
 	}
-	if (h[1] != 0x5D || h[3] != 0x5F || (h[2] != 0x51 && h[2] != 0x41) || end < 57)
+	if (h[1] != 0x5D || h[3] != 0x5F)
 		return false;
-	// Status, connect and disconnect: [1..4] the reply code, [5..9] the node's ID, [10..19] its callsign, [20..33]
-	// its name, [34..35] "15" in a room ("12" not), [36..40] the room's ID, [41..56] its name
-	w->connected = h[34] == '1' && h[35] == '5';
-	w->kind = h[2] == 0x51 ? YSF_WX_DX : w->connected ? YSF_WX_CONNECT : YSF_WX_DISCONNECT;
-	text_of(h + 5, 5, w->node_id);
-	text_of(h + 10, 10, w->node_call);
-	text_of(h + 20, 14, w->node_name);
+	// Status, connect and disconnect, in two layouts: a commercial repeater's node answers 0x52 (status) and 0x42
+	// (connect, disconnect) with 18 bytes before the node's ID; 0x51 and 0x41 have the fields from [5]. Then the
+	// node's ID (5), its callsign (10), its name (14), "15" in a room ("12" not), the room's ID (5), its name (16)
+	switch (h[2]) {
+	case 0x51: case 0x41: o = 5; break;
+	case 0x52: case 0x42: o = 23; break;
+	default: return false;
+	}
+	if (end < o + 52u)
+		return false;
+	w->connected = h[o + 29] == '1' && h[o + 30] == '5';
+	w->kind = (h[2] & 0xF0) == 0x50 ? YSF_WX_DX : w->connected ? YSF_WX_CONNECT : YSF_WX_DISCONNECT;
+	text_of(h + o, 5, w->node_id);
+	text_of(h + o + 5, 10, w->node_call);
+	text_of(h + o + 15, 14, w->node_name);
 	if (w->connected) {
-		text_of(h + 36, 5, w->room_id);
-		text_of(h + 41, 16, w->room_name);
+		text_of(h + o + 31, 5, w->room_id);
+		text_of(h + o + 36, 16, w->room_name);
 	} else {
 		w->room_id[0] = w->room_name[0] = '\0';
 	}

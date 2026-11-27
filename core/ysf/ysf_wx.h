@@ -15,7 +15,7 @@ enum { YSF_WX_DX, YSF_WX_CONNECT, YSF_WX_DISCONNECT, YSF_WX_ALL, YSF_WX_SEARCH, 
 #define YSF_WX_TEXT_LEN		16	// a search's text
 #define YSF_WX_ROOMS		20	// rooms on one page of a list
 #define YSF_WX_ROOM_ID_MAX	99999u
-#define YSF_WX_HDR		64	// a reply's first bytes kept: the status reply's fields and a list's header
+#define YSF_WX_HDR		80	// a reply's first bytes kept: the status reply's fields (to [74]) and a list's header
 
 // cmd's bytes for arg (CONNECT: the room ID; ALL and SEARCH: the first entry, 1-based; SEARCH: text) into out; their count, 0
 // for no such command

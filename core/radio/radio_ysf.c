@@ -170,7 +170,8 @@ static void v_wx(const ysf_wx_t *w, void *ctx)
 	(void)ctx;
 	wx_seq++;
 	if (w->kind == YSF_WX_ALL) {
-		wx_state.search = w->search;
+		// A search's result by what was asked: nodes mark it differently ([5] or [22] of the reply)
+		wx_state.search = wx_state.asked_cmd == YSF_WX_SEARCH;
 		wx_state.rooms = w->rooms;
 		wx_state.rooms_total = w->rooms_total;
 		// A page past the node's count holds only what the count leaves (a node may pad the page)
