@@ -6,7 +6,7 @@
 // Tasks (FreeRTOS, configMAX_PRIORITIES 7, heap 28 KB on the STM32F405 radios, shared by stacks and queues; stack sizes in
 // words):
 //   timer service   6   256   FreeRTOS
-//   start / house   5   512   this file: start-up, then a 100 ms power switch poll, the settings saves and the
+//   start / house   5   656   this file: start-up, then a 100 ms power switch poll, the settings saves and the
 //                             UI's codeplug writes (storage_job_poll; sleeps nearly always)
 //   audio           5   1280  board (DMR): PCM blocks, the vocoder runs here (created at the first DMR call)
 //   dmr             5   512   board (DMR): modem events to the DMR call stack's queue or the hotspot's
@@ -48,9 +48,9 @@
 #include "task.h"
 
 #define START_TASK_PRIORITY	5
-// words: the radio core's set-up runs here at boot (radio_sm_init, 584 bytes of frame on an HR_C7000 radio, then the APRS
-// identity load or a DMR VFO's contact search down to the flash driver); 512 left that radio 88 bytes (make stack-check)
-#define START_TASK_STACK	640
+// words: radio initialization and storage jobs share this task. Leave room for inlined UI work as the settings
+// and radio view grow; 640 words fell 32 bytes short of the safety margin in a spectrum build (make stack-check).
+#define START_TASK_STACK	656
 #define HOUSEKEEPING_MS		100
 #define POWER_OFF_TX_MS		200	// after the PTT release, before the latch drops
 #define POWER_OFF_DEREG_MS	3000	// at most this long for the ARS deregistration (gotcha 7.4)

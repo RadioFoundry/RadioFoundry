@@ -39,6 +39,7 @@ or the VFO: dual watch is two frequencies, not the two timeslots of one DMR freq
 | **Dual watch** key (DM-1801 Pro's A/B key held; a side key function elsewhere) | On (last B, or the default B) / off |
 | **Back** twice on Home (within 2 s) | Off, staying on the selected channel. Back first clears what it clears on the normal Home (VFO entry, a banner, the reply target, hear all, changes for now); then the first press says "Press Back again to stop dual watch" |
 | Tools › Scan, the **Scan** key function | A zone scan (the band in the VFO) in its place: dual watch stops on the selected channel, then the scan starts |
+| Tools › Spectrum analyzer | Pauses the watch while the analyzer owns the receiver. Leaving with Back or Home resumes the same A/B pair and selection, keeping changes for now; the saved On flag stays on |
 | **#** **3** while it runs | Another B (**Change B**, the picker) |
 
 A zone scan is in Tools › Scan only (and on a side key set to Scan): tile 7 and SK2 hold are dual watch.

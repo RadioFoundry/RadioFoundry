@@ -400,11 +400,11 @@ static bool strip_fits(const font_t *f, int lx, int rx, const char *word)
 
 // The pill shows st instead of v->state: the hotspot screen shows what the hotspot does without a copy of the whole
 // view on the UI task's stack (the UI task's deepest path, stack check)
-static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t *s, const char *prefix, const char *name)
+static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t *s, const char *prefix, const char *name,
+		       const font_t *f)
 {
 	ui_strip_draws++;
 	const ui_layout_t *L = &ui_layout;
-	const font_t *f = L->small;
 	int w = gfx_width();
 	int ph = f->h;		// the pill: one text cell high
 	bool titled = prefix != NULL || name != NULL;
@@ -591,7 +591,12 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 
 int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, const char *name)
 {
-	return draw_top_as(v, v->state, s, prefix, name);
+	return draw_top_as(v, v->state, s, prefix, name, ui_layout.small);
+}
+
+int ui_draw_top_font(const radio_view_t *v, const ui_state_t *s, const char *prefix, const char *name, const font_t *font)
+{
+	return draw_top_as(v, v->state, s, prefix, name, font);
 }
 
 // The prefix (dim when a name follows) and the name, centered on the screen and moved as little as needed to stay
@@ -730,7 +735,7 @@ static const char *key_names(const char *text, char *out, size_t cap, bool hint)
 // ("Back", "Back keeps", ...) is pinned to the right edge, under the key, and the others run from the left. A hint may
 // hold text alternates (font.h): the longest form that fits is used. A toast is centered; one too long for the row
 // takes a second line above it, so it is never shortened
-void ui_draw_hint(const char *text, bool toast)
+static void draw_hint(const char *text, bool toast, const font_t *f)
 {
 #if CONFIG_VOLUME_BAR
 	ui_hint_draws++;
@@ -738,7 +743,6 @@ void ui_draw_hint(const char *text, bool toast)
 	// The key names go into each alternate once it is picked, in buffers this function has anyway: no static (RAM is
 	// tight on some radios) and no more stack (the UI task's deepest chain runs through here, docs/dev/stack-check.md)
 	const ui_layout_t *L = &ui_layout;
-	const font_t *f = L->small;
 	int w = gfx_width();
 	char fit[64];
 	color_t bg = toast ? ui_col.fg : ui_col.hint_bg;
@@ -819,6 +823,11 @@ void ui_draw_hint(const char *text, bool toast)
 		gfx_text_fit(f, left, w - 2 * margin - (right[0] ? rw + f->w : 0), fit, sizeof fit);
 		gfx_text(f, margin, L->hint_y, fit, fg);
 	}
+}
+
+void ui_draw_hint(const char *text, bool toast)
+{
+	draw_hint(text, toast, ui_layout.small);
 }
 
 // --- boot splash ---
@@ -3056,6 +3065,14 @@ void ui_draw_bottom(const ui_state_t *s, const char *hint)
 		ui_draw_hint(hint, false);
 }
 
+void ui_draw_bottom_font(const ui_state_t *s, const char *hint, const font_t *font)
+{
+	if (s->toast != NULL)
+		draw_hint(s->toast, true, font);
+	else if (s->hints && hint != NULL)
+		draw_hint(hint, false, font);
+}
+
 static void fit_end(const font_t *f, const char *s, int max_w, char *out, size_t len);
 
 // Up to max lines of t wrapped to max_w: lines[] filled, the count returned. Text left after the last line shortens
@@ -3603,7 +3620,7 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 	gfx_clear(ui_col.bg);
 	// the strip's pill shows what the hotspot does
 	int y = draw_top_as(v, h->transmitting ? RS_TX : h->receiving ? RS_RX : RS_IDLE, s,
-		TR(TITLE_HOTSPOT, "Hotspot"), NULL) + 1;
+		TR(TITLE_HOTSPOT, "Hotspot"), NULL, L->small) + 1;
 	const char *word = !h->running ? TR(HOTSPOT_STATE_STARTING, "STARTING") : h->transmitting ?
 		TR(HOTSPOT_STATE_TX_NET, "TX NET") : h->receiving ? TR(HOTSPOT_STATE_RX_RF, "RX RF") :
 		TR(HOTSPOT_STATE_READY, "READY");

@@ -182,7 +182,8 @@ Press **Back** twice on Home. The first press says "Press Back again to stop dua
 it. If you entered a frequency or changed a setting for now, **Back** clears that first. The radio stays on the
 selected channel ("Dual watch off: on B"). These stop it too: **\***, **7**; holding the **A/B** key; **#**, **5**; and a side
 key set to **Dual watch**. Starting a scan (**OK**, **6**, **1**, or the **Scan** key) stops it, staying on the selected
-channel. Nothing else stops it. If the radio can't go on with a channel (it was deleted, for example), Home says where
+channel. **Tools > Spectrum analyzer** pauses it until you leave the analyzer, then resumes the same pair. If the
+radio can't go on with a channel (it was deleted, for example), Home says where
 the radio is: "Dual watch off: on COUNTY DMR".
 
 ### Keys
@@ -206,3 +207,120 @@ marked with an arrow.
 [Design and layouts for every display](../ux/dual-watch.md)
 
 The radio core can also scan a VFO range set by two frequencies. There is no menu item for that yet.
+
+## Spectrum analyzer
+
+Open **Tools > 0 Spectrum analyzer** (**OK**, **6**, **0**). The main screen shows center frequency at the left,
+the listening tuner in a dim color at the right, Peak, and the graph. **Show header: Tuner** always hides the top-right
+tuner frequency because the information row already shows it. In the other header modes, **Center tuner** hides
+it while it matches the center and shows it during an Auto peak capture away from the center. With **Center tuner**
+off, it stays visible in those modes. Frequencies keep five decimal places,
+for example 145.06250 MHz. Narrow screens omit repeated MHz units; small screens also omit the title.
+
+Type a new center frequency directly on the keypad, then press **OK** to apply it: `438250` means 438.25000 MHz.
+Reception stays where it was until confirmation. Back deletes a digit, then cancels an empty entry. The tuner is
+read only in the top row: move it with **Left / Right** or the channel knob. Its white marker moves without
+changing the graph's frequency range while it is inside the window. With **Center tuner** off, moving past
+either edge scrolls the whole window by one **Sweeping** step. The tuner stays at that edge and listens to the next
+frequency. Reverse direction to move it back inside the window; scrolling stops at the receiver band limits.
+
+On the graph, `#` runs **Bandwidth** and `*` runs **Center tuner** by default. Change either assignment in
+Spectrum Settings with `# key` and `* key`. **OK** cycles **Bandwidth / Auto peak / Filter / Center tuner / SQL up / SQL down**;
+both keys may use the same action. Choosing an assignment does not change that parameter until you press the key
+on the graph. A toast shows the result. Assignments and parameter values are remembered. While typing a number,
+# remains the separator and * does not run its assigned action.
+
+**SQL up** raises the squelch threshold by 5 dB (for example, -60 to -55 dBm); **SQL down** lowers it by 5 dB
+(-60 to -65 dBm). The threshold stops at -160 and 0 dBm. A bottom message shows the new value, for example
+`Squelch updated: -65 dBm`. The changed threshold and key assignments are remembered.
+
+These defaults apply to fresh settings. Later openings and power cycles restore your saved choices.
+
+Press **OK** outside frequency entry for **Spectrum Settings**. **Up / Down** choose a row:
+
+| Setting | How to change it |
+|---|---|
+| Squelch | OK, type magnitude 0..160, OK. The minus is automatic: `80` gives **-80 dBm**, `0` gives **0 dBm**. Default -60 dBm. |
+| Sweeping | OK, type spacing in kHz, OK. **#** is the decimal point: `6 # 2 5` means 6.25 kHz. Range 1.00..100.00 kHz. |
+| Bandwidth | OK cycles 65 / 97 / 129 points. Default 97 points (the middle choice), or 1.2 MHz at the default 12.50 kHz spacing. MHz follows count and spacing. |
+| Dwell time | OK, type milliseconds per scanned frequency, OK. Range 10..1000 ms; default 10. Higher is slower. |
+| Filter | OK switches **Wide (25 kHz)** / **Narrow (12.5 kHz)**. Wide by default. It applies to scanning and listening. |
+| Auto peak | OK cycles **After sweep** (default) / **Immediate** / **Off**. |
+| Center tuner | OK switches **Off** (default) / **On**. On keeps the tuner centered and moves the window with Left / Right or the knob. |
+| Show header | OK cycles **Peak** (default) / **Tuner** / **Off**. Tuner shows the arrow frequency and latest signal level, without peak hold; Off gives the row's height to the graph. |
+| Show squelch | OK switches **On** (default) / **Off**. Off hides the small threshold marker; compact screens use its left-hand space for the graph. |
+| * key | OK cycles the action for *. Default **Center tuner**. |
+| # key | OK cycles the action for #. Default **Bandwidth**. |
+
+Back in an editor deletes, then cancels. Back in the menu returns to the running graph. The menu leaves reception
+and scanning running. Back on the graph closes the analyzer; long Back returns Home from either screen.
+
+Without a keypad, OK opens a numeric editor at its current value. Use **Up / Down** or the encoder to change it,
+then **OK** to save or **Back** to cancel. Squelch steps by 1 dB, Sweeping by 0.01 kHz and Dwell time by 1 ms.
+These radios have **Center** (center frequency) as the first row in Spectrum Settings. Its preview moves by the sweep
+spacing and skips gaps between available receiver bands. Reception changes only after OK. If a microphone provides
+digits, typing starts direct numeric entry instead. Keypad radios keep the eleven-row menu and digit entry above.
+
+With **Center tuner** on, **Left / Right** and the knob move the whole window by the **Sweeping** step.
+The tuner normally stays in the middle and listens at the new center frequency. The graph's overlapping
+measurements slide with the window; the new edge fills as scanning continues. Movement stops before an endpoint
+leaves the receiver band. The option is remembered.
+
+Auto peak temporarily moves the tuner to the signal while the window stays in place. When the signal ends and
+the short hold expires, the tuner returns to the center before scanning resumes. If you press **Left / Right** or
+turn the knob during the signal, it stops listening to that peak, returns the tuner to the middle and moves the
+window from its original center by the selected step. A blocked move at a band edge still returns the tuner to
+the center. Turning the option off restores independent tuner movement.
+
+Key beeps and their audio cleanup continue during scanning and listening. The analyzer is unavailable during an
+active diagnostic detour; wait for it to return or end the detour before opening the analyzer.
+
+**Up / Down on the graph move the dBm scale**, rather than changing frequency. From -40 / -80 / -120, one Down
+gives -60 / -100 / -140; another gives -80 / -120 / -160. Two Up presses from the default give 0 / -40 / -80. Movement stops at those limits. This changes
+only the displayed scale. The actual signal strength, tuner and frequency endpoints stay the same.
+A small dim arrow at the graph's left edge marks the squelch threshold. It moves with the scale and stays at the
+top or bottom edge when the threshold is outside the visible range.
+
+Squelch uses **-160..0 dBm** directly. More negative opens more easily. **-160 dBm** opens at the receiver floor;
+**0 dBm** is the highest threshold. Type only the number: `80` is shown as `-80 dBm`; zero loses the minus. With
+noise at -120 dBm, a threshold of -120 opens while -80 stays quiet. Older saved levels are converted without changing
+their threshold: the former `80` becomes **-80 dBm**.
+Changing Filter keeps the frequency but clears the graph history and checks the signal with the new width.
+
+**Auto peak: After sweep** scans the window, chooses its strongest reading at or above squelch, then tunes and confirms it before
+playing continuous audio. A signal that has already ended does not open audio from its old peak. While a
+signal plays, it stays there rather than interrupting it to search for another one. When it ends, the sweep resumes
+after a short hold. The manually selected tuner is checked when starting, so a carrier there can also be heard.
+
+**Auto peak: Immediate** stops on the first frequency at or above squelch and plays it straight away. It does not
+finish the sweep first. When the signal ends, scanning resumes at the following frequency after the short hold
+and, with Center tuner on, a check of the center frequency.
+Both enabled modes keep listening continuously while the signal lasts. Changing the mode preserves current audio.
+
+In the **air band (108 to below 137 MHz)**, scanning and listening automatically use **AM** on a radio with AM
+receive support. Elsewhere they use FM. Type an air-band center frequency directly, or open the analyzer from an
+air-band channel. The frequency being received decides the mode, including when the window crosses 137 MHz.
+Closing the analyzer restores the original channel and its mode. The separate broadcast FM receiver remains outside
+the analyzer; available receive bands and AM support depend on the radio ([feature matrix](../feature-matrix.md)).
+
+**Auto peak Off** leaves the tuner where you put it. Scanned signals update the graph; they do not make it jump.
+Between short batches the radio checks your tuner and can stop to listen there. An open squelch keeps it listening.
+Dwell time controls scanning, while a held signal keeps the fast squelch checks even at long dwell settings.
+
+At 12.50 kHz spacing, the three windows span **0.8 / 1.2 / 1.6 MHz**; at 6.25 kHz they span **0.4 / 0.6 / 0.8 MHz**.
+At the default 10 ms dwell, After sweep targets about 0.7 / 1.0 / 1.3 seconds per quiet sweep; Immediate and Off
+take about 0.8 / 1.1 / 1.5 seconds because they also check the tuner between batches. Tuning and scheduling add time.
+This is a sequential RSSI scan, not an FFT or a laboratory analyzer. Short bursts can fall between visits.
+
+Peak marks and the Peak row show approximately the last five seconds. Old peaks expire even during listening.
+Changing center, spacing or BW clears that history. Labels are inside the full-width plot; endpoints are below it.
+
+Center, the manual tuner, squelch, spacing, bandwidth, dwell, automatic mode, filter and the dBm offset are remembered after reopening
+and power-off. Changes save after about two seconds, or at normal power-off. Automatic capture leaves the saved
+manual tuner untouched. Upgrading preserves old settings and adds defaults for new ones.
+
+The analyzer is receive only: PTT is inhibited and automatic transmissions are suspended. Normal scan stops.
+**Dual watch pauses while the analyzer is open and resumes when you leave**, including Back or Home from Spectrum
+Settings. It keeps the same A/B channels, selected pane and temporary settings; if it was off, it stays off.
+Closing it restores the original channel, mode and temporary talk target. It cannot start during transmission,
+in hotspot or trunking mode, during satellite tracking or on the separate broadcast receiver's range.

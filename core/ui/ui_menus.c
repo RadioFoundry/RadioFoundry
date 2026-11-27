@@ -60,6 +60,9 @@ extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_station_
 #if CONFIG_POSITION
 extern const ui_scr_def_t ui_fixed_pos_screen;	// ui_position.c
 #endif
+#if CONFIG_SPECTRUM
+extern const ui_scr_def_t ui_spectrum_screen, ui_spectrum_settings_screen;
+#endif
 extern const ui_scr_def_t ui_gps_screen;	// ui_gps.c
 #if CONFIG_SATELLITE_TLE
 extern const ui_scr_def_t ui_satellite_screen;	// ui_satellite.c
@@ -6403,21 +6406,21 @@ void ui_crash_tick(uint32_t now_ms)
 
 // ======================= Tools =======================
 
-// Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
-// user guide) is the same everywhere. A build without diagnostics skips 7, and one without satellite skips 9.
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_COUNT };
+// Fixed tools keep shortcuts 1-9 across builds. Spectrum takes 0; a waiting received zone uses Context then,
+// otherwise 0. Missing diagnostics skips 7, and missing satellite skips 9.
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_SPECTRUM, T_ZONE_OFFER, T_COUNT };
 
 // A tool this build doesn't have is left out of the list
 static bool tool_shown(uint16_t i)
 {
 #if CONFIG_ZONE_SHARE
 	if (i == T_ZONE_OFFER)
-		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
+		return offer_waiting();	// Context when Spectrum owns 0, otherwise 0 as before
 #endif
-	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE);
+	return (i != T_SPECTRUM || CONFIG_SPECTRUM) && (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE);
 }
 
-static uint16_t tools_last;	// the highest tool's number, found on each count (the list counts before the hint)
+static uint16_t tools_last;	// highest shortcut in 1-9, found before drawing the hint
 
 static uint16_t tools_count(void)
 {
@@ -6425,7 +6428,8 @@ static uint16_t tools_count(void)
 	for (uint16_t i = 0; i < T_COUNT; i++) {
 		if (tool_shown(i)) {
 			n++;
-			last = (uint16_t)(i + 1u);
+			if (i < T_SPECTRUM)
+				last = (uint16_t)(i + 1u);
 		}
 	}
 	tools_last = last;
@@ -6435,12 +6439,20 @@ static uint16_t tools_count(void)
 // The hint names the last number ("1-9 open"): the highest tool this radio has, from the keys and the translated rest
 static const char *tools_hint(void)
 {
-	static char hint[24];
+	static char hint[48];
 	uint16_t last = tools_last;
 	sbuf_t b;
 	sb_init(&b, hint, sizeof hint);
 	sb_str(&b, "1-");
-	sb_chr(&b, (char)('0' + (last < 9 ? last : 9)));	// "1-9": the zone offer's 0 isn't named
+	sb_chr(&b, (char)('0' + (last < 9 ? last : 9)));
+	bool zero = CONFIG_SPECTRUM;
+#if CONFIG_ZONE_SHARE
+	zero = zero || offer_waiting();
+#endif
+	if (zero) sb_str(&b, ",0");
+#if CONFIG_SPECTRUM && CONFIG_ZONE_SHARE
+	if (offer_waiting()) sb_str(&b, ",#");
+#endif
 	sb_str(&b, TR(TOOLS_HINT_OPEN_BACK, " open  Back"));
 	return hint;
 }
@@ -6460,12 +6472,14 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	static const tr_id_t names[] = { TRN(WORD_SCAN, "Scan"), TRN(TITLE_POSITION, "Position"), TRN(TITLE_HOTSPOT, "Hotspot"),
 					 TRN(TOOLS_ROW_USB_NETWORK, "USB network"), TRN(TOOLS_ROW_SFR, "Single-freq repeater"),
 					 TRN(TITLE_ROAMING, "Roaming"), TRN(TITLE_DIAGNOSTICS, "Diagnostics"), TRX(WORD_APRS, "APRS"),
-					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received") };
+					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SPECTRUM, "Spectrum analyzer"),
+					 TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received") };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
 	str_copy(it->label, sizeof it->label, tr(names[i]));
 	item_num(it, (uint16_t)(i + 1u));	// the tool's own number, not its row (see the enum)
+	if (i == T_ZONE_OFFER) it->num = CONFIG_SPECTRUM ? '#' : '0';
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {
@@ -6551,14 +6565,32 @@ static void tools_select(uint16_t row, bool hold)
 	case T_APRS: ui_push(SCR_APRS, 0); break;
 	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
 	case T_SATELLITE: ui_push(SCR_SATELLITE_PASSES, 0); break;
+#if CONFIG_SPECTRUM
+	case T_SPECTRUM:
+		ui_push(SCR_SPECTRUM, 0);
+		break;
+#endif
 	default: break;
 	}
 }
+
+#if CONFIG_ZONE_SHARE
+static bool tools_key(const input_event_t *ev)
+{
+	if (ev->action != ACT_CONTEXT || ev->gesture != GESTURE_PRESS || !offer_waiting())
+		return false;
+	ui_push(SCR_OFFER, 0);
+	return true;
+}
+#endif
 
 static const ui_scr_def_t tools_screen = {
 	.name = "tools", .flags = SF_LIST | SF_NUMBERED | SF_FIELD | SF_HINT_FN, .prefix = TRN(TITLE_TOOLS, "Tools"),
 	.hint_fn = tools_hint,
 	.count = tools_count, .item = tools_item, .select = tools_select,
+#if CONFIG_ZONE_SHARE
+	.key = tools_key,
+#endif
 };
 
 // ======================= Settings by intent (information-architecture.md 6) =======================
@@ -8231,6 +8263,10 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_MESSAGES] = &messages_screen, [SCR_MESSAGE] = &message_screen, [SCR_COMPOSE] = &compose_screen,
 	[SCR_MESSAGE_READ] = &message_read_screen,
 	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
+#if CONFIG_SPECTRUM
+	[SCR_SPECTRUM] = &ui_spectrum_screen,
+	[SCR_SPECTRUM_SETTINGS] = &ui_spectrum_settings_screen,
+#endif
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
 #if CONFIG_DMR_TRUNK

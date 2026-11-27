@@ -35,6 +35,10 @@
 #endif
 
 
+#if CONFIG_SPECTRUM
+void ui_svc_spectrum(uint8_t cmd, int32_t value) { radio_req_spectrum(cmd, value); }
+#endif
+
 uint32_t ui_svc_feat_voice(void)
 {
 	uint32_t f = CONFIG_FM ? UI_FEAT_MONITOR_LATCH : 0;

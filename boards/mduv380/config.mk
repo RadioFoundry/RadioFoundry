@@ -15,9 +15,10 @@ CONFIG_APRS_IGATE ?= n
 MAXIMAL_VARS := LTO=1
 # Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
 # (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above); French, off by
-# default, so that the maximal build keeps satellite tracking and still fits the app region; Chinese stays out too
-# (its glyph table does not fit beside the rest)
-MAXIMAL_SKIP := NET_PPP APRS_IGATE LANG_FR LANG_ZH LANG_DEFAULT_ZH
+# default, so that the maximal build keeps satellite tracking and still fits the app region. Spectrum leaves
+# too little room for Italian alongside every feature too; its ci extra covers it without satellite tracking.
+# Chinese stays out (its glyph table does not fit beside the rest); its own extra covers it.
+MAXIMAL_SKIP := NET_PPP APRS_IGATE LANG_IT LANG_FR LANG_ZH LANG_DEFAULT_ZH
 
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off

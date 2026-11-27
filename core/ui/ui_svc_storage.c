@@ -243,6 +243,12 @@ static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
 static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 {
 	switch (id) {
+#if CONFIG_SPECTRUM
+	case UI_SET_SPECTRUM_DISPLAY: {
+		uint8_t value = SETTINGS_FIELD(spectrum_display);
+		return value <= 6 && (value & UI_SPECTRUM_HEADER_MASK) != UI_SPECTRUM_HEADER_MASK ? value : 0;
+	}
+#endif
 	case UI_SET_VOLUME:
 		return radio_volume_step(SETTINGS_FIELD(volume));
 	case UI_SET_KNOB_WHEN_LOCKED:
@@ -432,6 +438,15 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	}
 #endif
 	switch (id) {
+#if CONFIG_SPECTRUM
+	case UI_SET_SPECTRUM_DISPLAY:
+		if (value < 0 || value > 6 || (value & UI_SPECTRUM_HEADER_MASK) == UI_SPECTRUM_HEADER_MASK)
+			return false;
+		st = settings_begin();
+		st->spectrum_display = (uint8_t)value;
+		settings_end(hal_millis());
+		return true;
+#endif
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
 	case UI_SET_TOT_S:

@@ -470,6 +470,108 @@ static void test_board_refuses(void)
 	ptt(false);
 }
 
+#if CONFIG_SPECTRUM
+static void spectrum_cmd(uint8_t cmd, int32_t value)
+{
+	radio_req_t r = { .type = RREQ_SPECTRUM, .arg = cmd, .arg2 = (uint32_t)value };
+	radio_sm_request(&sm, &r, now);
+}
+
+static void test_spectrum_am(void)
+{
+	start();
+	uint32_t original = sm.view.ch.rx_hz;
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.active && sm.view.am && hw.am && hw.rx_hz == original);
+	CHECK(sm.view.ch.rx_hz == original && hw.am_bw == RADIO_BW_25K);
+	run(30);
+	CHECK(sm.view.am && hw.am && hw.rx_hz != original);
+	CHECK(!hw.audio && sm.view.spectrum.sweeps == 0);
+	// Both capture modes use the AM receiver and hold its audio continuously.
+	for (unsigned mode = SPECTRUM_AUTO_SWEEP; mode <= SPECTRUM_AUTO_IMMEDIATE; mode++) {
+		spectrum_cmd(SPECTRUM_CENTER, 118100000);
+		spectrum_cmd(SPECTRUM_AUTO_PEAK, (int32_t)mode);
+		hw.sig_hz = 118200000;
+		hw.sig_rssi = -60;
+		for (unsigned i = 0; !hw.audio && i < 200; i++) run(10);
+		CHECK(hw.audio && sm.view.spectrum.listening && sm.view.am && hw.am && hw.rx_hz == hw.sig_hz);
+		CHECK(sm.view.spectrum.sweeps == (mode == SPECTRUM_AUTO_SWEEP ? 1u : 0u));
+		int retunes = hw.am_calls;
+		run(500);
+		CHECK(hw.audio && hw.am_calls == retunes && hw.rx_hz == hw.sig_hz);
+		ptt(true);
+		CHECK(hw.tx_calls == 0 && sm.view.spectrum.active);
+		ptt(false);
+		hw.sig_hz = 0;
+		run(350);
+		CHECK(!hw.audio && hw.am_calls > retunes && sm.view.spectrum.active);
+	}
+	spectrum_cmd(SPECTRUM_FILTER, 1);
+	CHECK(hw.am && sm.view.am && hw.am_bw == RADIO_BW_12K5);
+	// AM ends at 137 MHz, even when the board's VHF band straddles that boundary.
+	spectrum_cmd(SPECTRUM_CENTER, 137000000);
+	CHECK(!hw.am && !sm.view.am && hw.rx_hz == 137000000);
+	spectrum_cmd(SPECTRUM_TUNER, -1);
+	CHECK(hw.am && sm.view.am && hw.rx_hz == 136987500);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	CHECK(!hw.am && !sm.view.am && hw.rx_hz == 137000000);
+	// A centered window may listen to an AM peak, then return to its FM center after the carrier ends.
+	spectrum_cmd(SPECTRUM_CENTER_TUNER, 1);
+	for (unsigned mode = SPECTRUM_AUTO_SWEEP; mode <= SPECTRUM_AUTO_IMMEDIATE; mode++) {
+		spectrum_cmd(SPECTRUM_CENTER, 137000000);
+		spectrum_cmd(SPECTRUM_AUTO_PEAK, (int32_t)mode);
+		hw.sig_hz = 136987500;
+		hw.sig_rssi = -60;
+		for (unsigned i = 0; !hw.audio && i < 200; i++) run(10);
+		CHECK(hw.audio && hw.am && sm.view.am && hw.rx_hz == hw.sig_hz);
+		CHECK(sm.view.spectrum.center_hz == 137000000);
+		hw.sig_hz = 0;
+		for (unsigned i = 0; sm.view.spectrum.tuner != sm.view.spectrum.bins / 2 && i < 40; i++) run(10);
+		CHECK(!hw.audio && !hw.am && !sm.view.am && hw.rx_hz == 137000000);
+		CHECK(sm.view.spectrum.tuner == sm.view.spectrum.bins / 2);
+	}
+	spectrum_cmd(SPECTRUM_CENTER_TUNER, 0);
+	// The lower edge takes AM precedence over the broadcast receiver's inclusive upper bound.
+	spectrum_cmd(SPECTRUM_CENTER, 108000000);
+	CHECK(hw.am && sm.view.am && spectrum_view_frequency(&sm.view.spectrum, 0) == 108000000);
+	spectrum_cmd(SPECTRUM_CENTER, 100100000);
+	CHECK(hw.am && sm.view.am && sm.view.spectrum.center_hz != 100100000 && !bc.on);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	CHECK(!sm.view.spectrum.active && sm.view.am && hw.am && hw.rx_hz == original);
+	// Starting from an ordinary channel, tuning into AM and back, then restoring FM.
+	req(RREQ_ZONE_POS, 2);
+	CHECK(!sm.view.am && !hw.am);
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_cmd(SPECTRUM_CENTER, 118100000);
+	CHECK(sm.view.am && hw.am && sm.view.ch.rx_hz == 146520000);
+	spectrum_cmd(SPECTRUM_CENTER, 146520000);
+	CHECK(!sm.view.am && !hw.am && hw.rx_hz == 146520000);
+	spectrum_cmd(SPECTRUM_CENTER, 118100000);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	CHECK(!sm.view.spectrum.active && !sm.view.am && !hw.am && hw.rx_hz == 146520000);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_cmd(SPECTRUM_CENTER, 118100000);
+	CHECK(sm.view.am && hw.am && sm.view.ch.mode == RADIO_MODE_DMR && !sm.dmr_running);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	CHECK(!sm.view.am && !hw.am && sm.view.ch.mode == RADIO_MODE_DMR && sm.dmr_running);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	// As with normal channels, a refused AM tune falls back to FM; TX remains inhibited.
+	hw.am_refuse = true;
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_cmd(SPECTRUM_CENTER, 118100000);
+	CHECK(sm.view.spectrum.active && !hw.am && !sm.view.am && hw.rx_hz == 118100000);
+	ptt(true);
+	CHECK(hw.tx_calls == 0);
+	ptt(false);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	// The separate broadcast receiver is still outside this analyzer's ownership.
+	req(RREQ_ZONE_POS, 6);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(!sm.view.spectrum.active && sm.view.bcast && bc.on);
+}
+#endif
+
 static void test_vfo_steps(void)
 {
 	start();
@@ -675,6 +777,9 @@ int main(void)
 	test_tone_ignored();
 	test_fm_and_dmr();
 	test_board_refuses();
+#if CONFIG_SPECTRUM
+	test_spectrum_am();
+#endif
 	test_vfo_steps();
 	test_bcast_channel();
 	test_bcast_dead();

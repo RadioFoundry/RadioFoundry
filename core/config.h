@@ -5,6 +5,9 @@
 #ifndef RFOUNDRY_CONFIG_H
 #define RFOUNDRY_CONFIG_H
 
+#ifndef CONFIG_SPECTRUM
+#define CONFIG_SPECTRUM			CONFIG_FM
+#endif
 #ifndef CONFIG_FM
 #define CONFIG_FM			1
 #endif

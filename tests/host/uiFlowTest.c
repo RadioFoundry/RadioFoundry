@@ -57,8 +57,203 @@ typedef struct {
 	{ "7 PTT in Full message calls the sender", "msg:9991234," LONG_TEXT " wait:9000 ok 2 ok ok", "ptt", \
 	  "txid=9991234 txpriv=1", 1, false },
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
+#define SPECTRUM_PANEL "ok down down down down down ok up ok "
+#define SPECTRUM_FEW "ok down down down down down down ok up ok "
 
 static const flow_t flows[] = {
+#if CONFIG_SPECTRUM
+	{ "Spectrum display defaults preserve the peak row and squelch marker", "", "ok 6 0",
+	  "screen=spectrum spec_header=0 spec_show_squelch=1 shows=Peak", 3, false },
+	{ "Spectrum header cycles to Tuner", "ok 6 0 ok up up up up", "ok back",
+	  "screen=spectrum spec_header=1 shows=Tuner_453.62500 hides=Peak_", 2, false },
+	{ "Spectrum tuner header follows an automatic capture", "ok 6 0 ok up up up up ok back", "spectrumrx:56,-55",
+	  "screen=spectrum shows=Tuner_453.72500_-55", 0, false },
+	{ "Spectrum tuner header drops immediately after the carrier", "ok 6 0 ok up up up up ok back spectrumrx:56,-55", "spectrumrxend",
+	  "screen=spectrum shows=Tuner_453.72500_-120", 0, false },
+	{ "Spectrum header can be hidden", "ok 6 0 ok up up up up", "ok ok back",
+	  "screen=spectrum spec_header=2 hides=Peak_ hides=Tuner_ shows=453.62500 shows=453.02500 shows=454.22500", 3, false },
+	{ "Spectrum header cycles back to Peak", "ok 6 0 ok up up up up", "ok ok ok back",
+	  "screen=spectrum spec_header=0 shows=Peak", 4, false },
+	{ "Spectrum marker can hide without hiding frequencies", "ok 6 0 ok up up up", "ok back",
+	  "screen=spectrum spec_show_squelch=0 shows=453.62500 shows=453.02500 shows=454.22500", 2, false },
+	{ "Spectrum header cycle preserves a hidden squelch marker", "ok 6 0 ok up up up ok up", "ok back",
+	  "screen=spectrum spec_header=1 spec_show_squelch=0 shows=Tuner", 2, false },
+	{ "Spectrum display choices survive reopening", "ok 6 0 ok up up up ok up ok back back", "0",
+	  "screen=spectrum spec_header=1 spec_show_squelch=0 shows=Tuner", 1, false },
+	{ "Spectrum tool label has no embedded number", "", "ok 6 up", "screen=tools focus=Spectrum_analyzer", 3, false },
+	{ "Spectrum opens with the tenth tool shortcut", "", "ok 6 0",
+	  "screen=spectrum spec_active=1 shows=453.62500 hides=Sweeping hides=Squelch", 3, false },
+	{ "Spectrum fresh defaults", "", "ok 6 0",
+	  "screen=spectrum spec_squelch=-60 spec_bins=97 spec_dwell=10 spec_narrow=0 spec_auto=1 spec_hash_key=0 spec_star_key=3", 3, false },
+	{ "Spectrum opens from Tools", "", "ok 6 up ok", "screen=spectrum shows=453.62500", 4, false },
+	{ "Spectrum OK opens its settings without stopping reception", "ok 6 0", "ok",
+	  "screen=spectrum-settings spec_active=1 focus=Squelch count=11", 1, false },
+	{ "Spectrum # cycles bandwidth to 129 points", "ok 6 0", "ctx",
+	  "screen=spectrum spec_bins=129", 1, false },
+	{ "Spectrum # cycles bandwidth to 65 points", "ok 6 0 ctx", "ctx",
+	  "screen=spectrum spec_bins=65", 1, false },
+	{ "Spectrum # cycles bandwidth back to 97 points", "ok 6 0 ctx ctx", "ctx",
+	  "screen=spectrum spec_bins=97", 1, false },
+	{ "Spectrum * enables centered tuning without opening quick settings", "ok 6 0", "quick",
+	  "screen=spectrum spec_center_tuner=1 toast=Center_tuner:_On", 1, false },
+	{ "Spectrum * disables centered tuning", "ok 6 0 quick", "quick",
+	  "screen=spectrum spec_center_tuner=0 toast=Center_tuner:_Off", 1, false },
+	{ "Spectrum shortcuts keep their preferences", "ok 6 0 ctx quick back", "0",
+	  "screen=spectrum spec_bins=129 spec_center_tuner=1", 1, false },
+	{ "Spectrum # preserves frequency entry", "ok 6 0 4 3 8", "ctx 2 5 0 ok",
+	  "screen=spectrum spec_bins=97 spec_center=438250000", 5, false },
+	{ "Spectrum * does not toggle while entering a frequency", "ok 6 0 4", "quick 3 8 2 5 0 ok",
+	  "screen=spectrum spec_center_tuner=0 spec_center=438250000", 7, false },
+	{ "Spectrum # stays with bandwidth while a message banner waits", "ok 6 0 msg:9991234,Hello", "ctx",
+	  "screen=spectrum spec_bins=129", 1, false },
+	{ "Spectrum # key defaults to Bandwidth", "ok 6 0 ok up", "",
+	  "screen=spectrum-settings focus=#_key shows=Bandwidth spec_hash_key=0", 0, false },
+	{ "Spectrum * key defaults to Center tuner", "ok 6 0 ok up up", "",
+	  "screen=spectrum-settings focus=*_key shows=Center_tuner spec_star_key=3", 0, false },
+	{ "Spectrum # can control Auto peak", "ok 6 0 ok up", "ok expect:spec_auto=1 back ctx",
+	  "screen=spectrum spec_hash_key=1 spec_auto=2 toast=Auto_peak:_Immediate", 3, false },
+	{ "Spectrum # can control Filter", "ok 6 0 ok up", "ok ok back ctx",
+	  "screen=spectrum spec_hash_key=2 spec_narrow=1 toast=Filter:_Narrow", 4, false },
+	{ "Spectrum # can control Center tuner", "ok 6 0 ok up", "ok ok ok back ctx",
+	  "screen=spectrum spec_hash_key=3 spec_center_tuner=1", 5, false },
+	{ "Spectrum # choice cycles back to Bandwidth", "ok 6 0 ok up", "ok ok ok ok ok ok back ctx",
+	  "screen=spectrum spec_hash_key=0 spec_bins=129", 8, false },
+	{ "Spectrum * can control Bandwidth", "ok 6 0 ok up up", "ok ok ok back quick",
+	  "screen=spectrum spec_star_key=0 spec_bins=129 spec_center_tuner=0", 5, false },
+	{ "Spectrum * can control Auto peak", "ok 6 0 ok up up", "ok ok ok ok back quick",
+	  "screen=spectrum spec_star_key=1 spec_auto=2", 6, false },
+	{ "Spectrum * can control Filter", "ok 6 0 ok up up", "ok ok ok ok ok back quick",
+	  "screen=spectrum spec_star_key=2 spec_narrow=1", 7, false },
+	{ "Spectrum * choice cycles back to Center tuner", "ok 6 0 ok up up", "ok ok ok ok ok ok back quick",
+	  "screen=spectrum spec_star_key=3 spec_center_tuner=1", 8, false },
+	{ "Spectrum both keys may control the same setting", "ok 6 0 ok up ok ok up ok ok ok ok ok back", "ctx quick",
+	  "screen=spectrum spec_hash_key=2 spec_star_key=2 spec_narrow=0", 2, false },
+	{ "Spectrum custom key choices survive reopening", "ok 6 0 ok up ok ok up ok ok ok back ctx quick back", "0",
+	  "screen=spectrum spec_hash_key=2 spec_star_key=0 spec_narrow=1 spec_bins=129", 1, false },
+	{ "Spectrum * raises squelch by 5 dB", "ok 6 0 ok up up", "ok expect:spec_squelch=-60 back quick",
+	  "screen=spectrum spec_star_key=4 spec_squelch=-55 toast=Squelch_updated:_-55_dBm", 3, false },
+	{ "Spectrum * lowers squelch by 5 dB", "ok 6 0 ok up up ok ok back", "quick",
+	  "screen=spectrum spec_star_key=5 spec_squelch=-65 toast=Squelch_updated:_-65_dBm shows=Squelch_updated:_-65_dBm", 1, false },
+	{ "Spectrum # raises squelch by 5 dB", "ok 6 0 ok up ok ok ok ok back", "ctx",
+	  "screen=spectrum spec_hash_key=4 spec_squelch=-55 toast=Squelch_updated:_-55_dBm", 1, false },
+	{ "Spectrum # lowers squelch by 5 dB", "ok 6 0 ok up ok ok ok ok ok back", "ctx",
+	  "screen=spectrum spec_hash_key=5 spec_squelch=-65 toast=Squelch_updated:_-65_dBm", 1, false },
+	{ "Spectrum SQL up clamps at zero", "ok 6 0 ok ok 2 ok up up ok back", "quick quick",
+	  "screen=spectrum spec_squelch=0 toast=Squelch_updated:_0_dBm", 2, false },
+	{ "Spectrum SQL down clamps at the receiver floor", "ok 6 0 ok ok 1 5 8 ok up up ok ok back", "quick quick",
+	  "screen=spectrum spec_squelch=-160 toast=Squelch_updated:_-160_dBm", 2, false },
+	{ "Spectrum SQL shortcut and threshold survive reopening", "ok 6 0 ok up up ok ok back quick back", "0 quick",
+	  "screen=spectrum spec_star_key=5 spec_squelch=-70 toast=Squelch_updated:_-70_dBm", 2, false },
+	{ "Spectrum capture updates the tuner display", "ok 6 0", "spectrumrx:56,-55",
+	  "screen=spectrum shows=453.62500_MHz shows=453.72500", 0, false },
+	{ "Spectrum immediate capture updates the tuner display", "ok 6 0 ok up up up up up up ok back", "spectrumrx:56,-55",
+	  "screen=spectrum spec_auto=2 shows=453.72500", 0, false },
+	{ "Spectrum disabled capture leaves the manual tuner", "ok 6 0 ok up up up up up up ok ok back", "spectrumrx:56,-55",
+	  "screen=spectrum spec_auto=0 spec_tuner=453625000 shows=453.62500", 0, false },
+	{ "Spectrum center is entered directly with digits", "ok 6 0", "4 3 8 2 5 0 ok",
+	  "screen=spectrum spec_center=438250000 shows=438.25000_MHz", 7, false },
+	{ "Spectrum center can change bands", "ok 6 0", "1 4 6 5 2 0 ok",
+	  "screen=spectrum shows=146.52000_MHz", 7, false },
+	{ "Spectrum center accepts an AM air-band frequency", "am ok 6 0", "1 1 8 1 0 0 ok",
+	  "screen=spectrum spec_center=118100000 shows=118.10000_MHz", 7, false },
+	{ "Spectrum center waits for confirmation", "ok 6 0", "1 4 5",
+	  "screen=spectrum spec_center=453625000", 3, false },
+	{ "Spectrum frequency keeps five decimal places", "ok 6 0", "4 4 6 1 2 4 5 ok",
+	  "screen=spectrum shows=446.12450_MHz", 8, false },
+	{ "Spectrum initial window has both endpoints", "", "ok 6 0",
+	  "screen=spectrum shows=453.02500 shows=454.22500", 3, false },
+	{ "Spectrum spacing is entered with a decimal", "ok 6 0 ok down", "ok 6 ctx 2 5 ok",
+	  "screen=spectrum-settings shows=6.25_kHz spec_active=1", 6, false },
+	{ "Spectrum squelch is entered with digits", "ok 6 0 ok", "ok 9 5 ok",
+	  "screen=spectrum-settings shows=-95_dBm spec_squelch=-95", 4, false },
+	{ "Spectrum keypad entry keeps arrows out of the numeric value", "ok 6 0 ok", "ok up down 9 5 ok",
+	  "screen=spectrum-settings count=11 spec_squelch=-95", 6, false },
+	{ "Spectrum optional mic digits replace the panel's numeric preview", "ok 6 0 keypad:0 ok down", "ok up 9 5 ok",
+	  "screen=spectrum-settings count=12 spec_squelch=-95", 5, false },
+	{ "Spectrum panel center crosses the gap to the next band", "ok 6 0 1 7 4 0 0 0 ok keypad:0 ok",
+	  "ok up ok", "screen=spectrum-settings spec_center=400600000", 3, false },
+	{ "Spectrum rejects an invalid squelch", "ok 6 0 ok", "ok 1 6 1 ok",
+	  "screen=spectrum-settings toast=Value_out_of_range", 5, false },
+	{ "Spectrum squelch adds the minus automatically", "ok 6 0 ok", "ok 8 0 ok",
+	  "screen=spectrum-settings spec_squelch=-80 shows=-80_dBm", 4, false },
+	{ "Spectrum zero squelch has no minus", "ok 6 0 ok", "ok 0 ok",
+	  "screen=spectrum-settings spec_squelch=0 shows=0_dBm hides=-0", 3, false },
+	{ "Spectrum zero entry hides the minus immediately", "ok 6 0 ok", "ok 0",
+	  "screen=spectrum-settings hides=-0", 2, false },
+	{ "Spectrum squelch accepts the receiver floor", "ok 6 0 ok", "ok 1 6 0 ok",
+	  "screen=spectrum-settings spec_squelch=-160 shows=-160_dBm", 5, false },
+	{ "Spectrum bandwidth cycles to 129 points", "ok 6 0 ok down down", "ok",
+	  "screen=spectrum-settings spec_bins=129 shows=1.6_MHz", 1, false },
+	{ "Spectrum bandwidth cycles to 65 points", "ok 6 0 ok down down", "ok ok",
+	  "screen=spectrum-settings spec_bins=65 shows=0.8_MHz", 2, false },
+	{ "Spectrum bandwidth cycles back to 97 points", "ok 6 0 ok down down", "ok ok ok",
+	  "screen=spectrum-settings spec_bins=97 shows=1.2_MHz", 3, false },
+	{ "Spectrum default middle bandwidth follows the spacing", "ok 6 0 ok down", "ok 6 ctx 2 5 ok down",
+	  "screen=spectrum-settings spec_bins=97 shows=0.6_MHz", 7, false },
+	{ "Spectrum bandwidth follows the spacing", "ok 6 0 ok down ok 6 ctx 2 5 ok down", "ok",
+	  "screen=spectrum-settings spec_bins=129 shows=0.8_MHz", 1, false },
+	{ "Spectrum dwell time is entered in milliseconds", "ok 6 0 ok down down down", "ok 5 0 ok",
+	  "screen=spectrum-settings spec_dwell=50 shows=50_ms", 4, false },
+	{ "Spectrum rejects a dwell time below settling", "ok 6 0 ok down down down", "ok 9 ok",
+	  "screen=spectrum-settings spec_dwell=10 toast=Value_out_of_range", 3, false },
+	{ "Spectrum automatic peak tuning defaults to a complete sweep", "ok 6 0 ok", "up up up up up up",
+	  "screen=spectrum-settings focus=Auto_peak spec_auto=1 shows=After_sweep", 6, false },
+	{ "Spectrum automatic peak tuning can capture immediately", "ok 6 0 ok up up up up up up", "ok",
+	  "screen=spectrum-settings spec_auto=2 shows=Immediate", 1, false },
+	{ "Spectrum automatic peak tuning can be disabled", "ok 6 0 ok up up up up up up", "ok ok",
+	  "screen=spectrum-settings spec_auto=0 shows=Off", 2, false },
+	{ "Spectrum automatic peak tuning can be enabled", "ok 6 0 ok up up up up up up ok ok", "ok",
+	  "screen=spectrum-settings spec_auto=1 shows=After_sweep", 1, false },
+	{ "Spectrum down shifts the dBm scale", "ok 6 0", "down",
+	  "screen=spectrum spec_scale=-20 shows=-60 shows=-100 shows=-140", 1, false },
+	{ "Spectrum up restores the dBm scale", "ok 6 0 down", "up",
+	  "screen=spectrum spec_scale=0 shows=-40", 1, false },
+	{ "Spectrum dBm scale stops at its limits", "ok 6 0", "down down down",
+	  "screen=spectrum spec_scale=-40", 3, false },
+	{ "Spectrum settings survive reopening",
+	  "ok 6 0 1 4 5 0 6 2 5 ok down ok ok 4 0 ok down ok 6 ctx 2 5 ok down ok down ok 5 0 ok down ok down ok back back",
+	  "0", "screen=spectrum shows=145.06250_MHz spec_bins=129 spec_dwell=50 spec_auto=2 spec_scale=-20 spec_narrow=1", 1, false },
+	{ "Spectrum menu follows the requested order", "ok 6 0 ok", "down expect:focus=Sweeping down expect:focus=Bandwidth down expect:focus=Dwell_time down expect:focus=Filter down expect:focus=Auto_peak down expect:focus=Center_tuner down expect:focus=Show_header down expect:focus=Show_squelch down expect:focus=*_key down",
+	  "screen=spectrum-settings focus=#_key", 10, false },
+	{ "Spectrum filter defaults wide", "ok 6 0 ok", "up up up up up up up",
+	  "screen=spectrum-settings focus=Filter spec_narrow=0 shows=Wide", 7, false },
+	{ "Spectrum filter switches to narrow", "ok 6 0 ok up up up up up up up", "ok",
+	  "screen=spectrum-settings spec_narrow=1 shows=Narrow", 1, false },
+	{ "Spectrum filter switches back to wide", "ok 6 0 ok up up up up up up up ok", "ok",
+	  "screen=spectrum-settings spec_narrow=0 shows=Wide", 1, false },
+	{ "Spectrum centered tuner defaults off", "ok 6 0 ok", "up up up up up",
+	  "screen=spectrum-settings focus=Center_tuner spec_center_tuner=0 shows=Off", 5, false },
+	{ "Spectrum centered tuner keeps its window during automatic capture", "ok 6 0 ok up up up up up ok back", "spectrumrx:56,-55",
+	  "screen=spectrum spec_center=453625000 spec_tuner=453725000", 0, false },
+	{ "Spectrum scale reaches the bottom in two presses", "ok 6 0", "down down",
+	  "screen=spectrum spec_scale=-40 shows=-80 shows=-120 shows=-160", 2, false },
+	{ "Spectrum scale reaches the top in two presses", "ok 6 0", "up up",
+	  "screen=spectrum spec_scale=40 shows=0 shows=-40 shows=-80", 2, false },
+	{ "Spectrum center edit can be canceled", "ok 6 0 4", "back back",
+	  "screen=spectrum shows=453.62500_MHz", 2, false },
+	{ "Spectrum settings Back keeps the analyzer active", "ok 6 0 ok", "back",
+	  "screen=spectrum spec_active=1", 1, false },
+	{ "Spectrum settings Home restores the radio", "ok 6 0 ok", "long:back",
+	  "screen=home spec_active=0", 1, false },
+	{ "Spectrum exits to Tools", "ok 6 0", "back", "screen=tools spec_active=0", 1, false },
+	{ "Spectrum exits to Home", "ok 6 0", "long:back", "screen=home spec_active=0", 1, false },
+#if CONFIG_DUAL_WATCH
+	{ "Spectrum pauses dual watch without dropping its panes", "quick 7", "ok 6 0 wait:2000",
+	  "screen=spectrum spec_active=1 dual=1 sel=A", 3, false },
+	{ "Spectrum Back preserves dual watch", "quick 7 ok 6 0 wait:2000", "back",
+	  "screen=tools spec_active=0 dual=1 sel=A", 1, false },
+	{ "Spectrum Home restores the selected B pane", "quick 7 ctx 1 ok 6 0 wait:2000", "long:back",
+	  "screen=home spec_active=0 dual=1 sel=B", 1, false },
+	{ "Spectrum settings Home restores dual watch", "quick 7 ok 6 0 ok wait:2000", "long:back",
+	  "screen=home spec_active=0 dual=1 sel=A", 1, false },
+	{ "Spectrum leaves an inactive dual watch off", "ok 6 0 wait:2000", "long:back",
+	  "screen=home spec_active=0 dual=0", 1, false },
+	{ "Spectrum does not run dual-watch talk back", TALK_BACK "tune:b rx:9995555,91,g ok 6 0", "rxend wait:12000",
+	  "screen=spectrum spec_active=1 dual=1 sel=A", 0, false },
+	{ "Spectrum return does not start stale dual-watch talk back", TALK_BACK "tune:b rx:9995555,91,g ok 6 0 rxend wait:12000", "long:back",
+	  "screen=home spec_active=0 dual=1 sel=A", 1, false },
+#endif
+#endif
 #if CONFIG_SATELLITE_TLE
 	{ "Satellite asks to load TLEs when the store is empty", "satempty", "ok 6 9",
 	  "screen=satellite-passes shows=No_TLEs:_load_from_site", 4, false },
@@ -330,8 +525,17 @@ static const flow_t flows[] = {
 	{ "zone offer banner hidden with Back", "zoneoffer:9991234", "back", "banner=none screen=home", 1, false },
 	{ "zone offer banner goes with the offer", "zoneoffer:9991234 wait:5000", "zoneexpire", "banner=none", 0, false },
 	{ "zone offer banner hidden with Back on a menu", "zoneoffer:9991234 ok", "back", "banner=none screen=hub", 1, false },
-	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:9991234", "ok 6 0", "banner=none shows=Import", 3,
+	{ "zone offer banner goes when Tools opens the offer", "zoneoffer:9991234", "ok 6 ctx", "banner=none shows=Import", 3,
 	  false },
+#if CONFIG_SPECTRUM
+	{ "Spectrum zero shortcut survives a pending offer", "zoneoffer:9991234 back", "ok 6 0",
+	  "screen=spectrum", 3, false },
+	{ "Hidden zone offer opens with Context in Tools", "zoneoffer:9991234 back", "ok 6 ctx",
+	  "banner=none shows=Import", 3, false },
+#else
+	{ "Zone offer keeps zero without Spectrum", "zoneoffer:9991234 back", "ok 6 0",
+	  "banner=none shows=Import", 3, false },
+#endif
 	// Trunked channels whose system isn't set up here: dimmed in the preview, said after the import (and in the offer's
 	// text, where the screen has room for it)
 	{ "zone offer preview marks a trunked channel", "zoneoffer:9991234 ctx 2", "up", "shows=ystem", 1, false },
@@ -1330,6 +1534,16 @@ static const flow_t satellite_small_detail_flows[] = {
 
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
+#if CONFIG_SPECTRUM
+	{ "M centered tuner pans with Right", "ok 6 0 ok up up up up up ok back", "right",
+	  "screen=spectrum spec_center=453637500 spec_tuner=453637500", 1, false },
+	{ "M centered tuner pans with Left", "ok 6 0 ok up up up up up ok back", "left",
+	  "screen=spectrum spec_center=453612500 spec_tuner=453612500", 1, false },
+#endif
+#if CONFIG_SPECTRUM
+	{ "Spectrum tuner moves with arrow keys", "ok 6 up ok", "right",
+	  "screen=spectrum shows=453.62500_MHz shows=453.63750", 1, false },
+#endif
 	LONG_MESSAGE_FLOWS
 	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
 	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
@@ -1355,6 +1569,40 @@ static const flow_t flows_mono[] = {
 
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
+#if CONFIG_SPECTRUM
+	{ "K Spectrum free tuner scrolls past the right edge", "ok 6 0 spectrumrx:96,-55", "user4",
+	  "screen=spectrum spec_center_tuner=0 spec_center=453637500 spec_tuner=454237500", 1, false },
+	{ "K Spectrum free tuner scrolls past the left edge", "ok 6 0 spectrumrx:0,-55", "user1",
+	  "screen=spectrum spec_center=453612500 spec_tuner=453012500", 1, false },
+	{ "K Spectrum encoder scrolls past the right edge", "ok 6 0 spectrumrx:96,-55", "enc+",
+	  "screen=spectrum spec_center=453637500 spec_tuner=454237500", 1, false },
+	{ "K Spectrum pan right interrupts an automatic peak", "ok 6 0 ok up up up up up ok back spectrumrx:56,-55", "user4",
+	  "screen=spectrum spec_center=453637500 spec_tuner=453637500", 1, false },
+	{ "K Spectrum pan left interrupts an automatic peak", "ok 6 0 ok up up up up up ok back spectrumrx:56,-55", "user1",
+	  "screen=spectrum spec_center=453612500 spec_tuner=453612500", 1, false },
+	{ "K Spectrum encoder interrupts an automatic peak", "ok 6 0 ok up up up up up ok back spectrumrx:56,-55", "enc+",
+	  "screen=spectrum spec_center=453637500 spec_tuner=453637500", 1, false },
+	{ "K Spectrum centered tuner pans user4", "ok 6 0 ok up up up up up ok back", "user4",
+	  "screen=spectrum spec_center_tuner=1 spec_center=453637500 spec_tuner=453637500", 1, false },
+	{ "K Spectrum centered tuner pans user1", "ok 6 0 ok up up up up up ok back", "user1",
+	  "screen=spectrum spec_center=453612500 spec_tuner=453612500", 1, false },
+	{ "K Spectrum centered tuner also pans with the encoder", "ok 6 0 ok up up up up up ok back", "enc+",
+	  "screen=spectrum spec_center=453637500 spec_tuner=453637500", 1, false },
+	{ "K Spectrum centered tuner uses the selected spacing", "ok 6 0 ok down ok 6 ctx 2 5 ok up up up up up up ok back", "user4",
+	  "screen=spectrum spec_center=453631250 spec_tuner=453631250", 1, false },
+	{ "K Spectrum centered tuner preference survives reopening", "ok 6 0 ok up up up up up ok back user4 back", "0",
+	  "screen=spectrum spec_center_tuner=1 spec_center=453637500 spec_tuner=453637500", 1, false },
+	{ "K Spectrum centered tuner can return to the fixed window", "ok 6 0 ok up up up up up ok ok back", "user4",
+	  "screen=spectrum spec_center_tuner=0 spec_center=453625000 spec_tuner=453637500", 1, false },
+#endif
+#if CONFIG_SPECTRUM
+	{ "Spectrum tuner moves with P2", "ok 6 up ok", "user4",
+	  "screen=spectrum shows=453.62500_MHz shows=453.63750", 1, false },
+	{ "Spectrum tuner moves with encoder", "ok 6 up ok", "enc+",
+	  "screen=spectrum shows=453.62500_MHz shows=453.63750", 1, false },
+	{ "Spectrum held P2 stays in the analyzer", "ok 6 up ok", "long:user4",
+	  "screen=spectrum shows=453.62500_MHz shows=453.63750", 1, false },
+#endif
 	LONG_MESSAGE_FLOWS
 	// Dual watch on the side keys: SK2 is A/B pressed, Dual watch held; P1 / P2 (zones) and the knob act on the
 	// selected channel
@@ -1538,6 +1786,18 @@ static const flow_t flows_k[] = {
 
 // Few-key radios (7.5): fallbacks
 static const flow_t flows_f[] = {
+#if CONFIG_SPECTRUM
+	{ "F spectrum settings have a center row", SPECTRUM_FEW, "ok",
+	  "screen=spectrum-settings count=12 focus=Center", 1, false },
+	{ "F spectrum squelch uses arrows and confirms once", SPECTRUM_FEW "ok down", "ok up ok",
+	  "screen=spectrum-settings spec_squelch=-59", 3, false },
+	{ "F spectrum spacing uses arrows", SPECTRUM_FEW "ok down down", "ok down down ok",
+	  "screen=spectrum-settings shows=12.48_kHz", 4, false },
+	{ "F spectrum dwell stops at its lower bound", SPECTRUM_FEW "ok down down down", "ok down ok",
+	  "screen=spectrum-settings spec_dwell=10", 3, false },
+	{ "F spectrum center confirms through the settings row", SPECTRUM_FEW "ok", "ok up ok",
+	  "screen=spectrum-settings spec_center=453637500", 3, false },
+#endif
 	{ "F next channel", "", "up", "pos=4", 1, false },
 	{ "F quick settings (long OK)", "", "long:ok", "screen=quick", 1, false },
 	{ "F last caller (Hub item 0)", CALLER, "ok ok ptt", "txid=91", 3, false },
@@ -1569,6 +1829,28 @@ static const flow_t flows_f[] = {
 // The MD-9600's front panel alone on its 128x64 screen (information-architecture.md 7.4): no digits, P1 / P2 as QUICK /
 // CONTEXT and named so in the hints, the encoder, P3 / P4 / the orange key as side keys
 static const flow_t flows_p[] = {
+#if CONFIG_SPECTRUM
+	{ "P spectrum panel shortcuts stay in the analyzer", SPECTRUM_PANEL, "ctx quick",
+	  "screen=spectrum spec_bins=129 spec_center_tuner=1", 2, false },
+#endif
+#if CONFIG_SPECTRUM
+	{ "P centered tuner pans with the encoder", SPECTRUM_PANEL "quick", "enc+",
+	  "screen=spectrum spec_center_tuner=1 spec_center=453637500 spec_tuner=453637500", 1, false },
+#endif
+#if CONFIG_SPECTRUM
+	{ "P spectrum numeric preview waits for confirmation", SPECTRUM_PANEL "ok down", "ok up expect:spec_squelch=-60 ok",
+	  "screen=spectrum-settings spec_squelch=-59", 3, false },
+	{ "P spectrum Back cancels the numeric preview", SPECTRUM_PANEL "ok down", "ok down back",
+	  "screen=spectrum-settings spec_squelch=-60 focus=Squelch", 3, false },
+	{ "P spectrum squelch also accepts the encoder", SPECTRUM_PANEL "ok down", "ok enc+ enc+ ok",
+	  "screen=spectrum-settings spec_squelch=-58", 4, false },
+	{ "P spectrum dwell also accepts the encoder", SPECTRUM_PANEL "ok down down down down", "ok enc+ ok",
+	  "screen=spectrum-settings spec_dwell=11", 3, false },
+	{ "P spectrum center preview leaves the receiver alone", SPECTRUM_PANEL "ok", "ok enc+ expect:spec_center=453625000 ok",
+	  "screen=spectrum-settings spec_center=453637500", 3, false },
+	{ "P spectrum center preview cancels on Back", SPECTRUM_PANEL "ok", "ok enc+ back",
+	  "screen=spectrum-settings spec_center=453625000", 3, false },
+#endif
 	{ "P next channel", "", "up", "pos=4", 1, false },
 	{ "P next channel by the knob", "", "enc+", "pos=4", 1, false },
 	{ "P hints name P1, not *", "", "", "shows=P1_Quick", 0, false },
@@ -1771,7 +2053,12 @@ static void crawl(const sim_geom_t *g, sim_map_t map, const char *mapname)
 		// PTT from any screen: the strip shows TX
 		snprintf(path, sizeof path, "%s pttdown", nodes[i].path);
 		if (replay(g, map, path, &s1)) {
-			if (sim_view()->state != RS_TX && sim_view()->state != RS_TX_DENIED) {
+			if (strcmp(s0.screen, "spectrum") == 0 || strcmp(s0.screen, "spectrum-settings") == 0) {
+				if (sim_view()->state == RS_TX) {
+					printf("FAIL spectrum PTT: transmitted\n");
+					fails++;
+				}
+			} else if (sim_view()->state != RS_TX && sim_view()->state != RS_TX_DENIED) {
 				printf("FAIL crawl [%s] %s: PTT didn't transmit\n", mapname, s0.screen);
 				fails++;
 			} else if (!s1.strip_drawn && strcmp(s1.screen, "diag") != 0) {
@@ -2251,6 +2538,19 @@ static void title_row_checks(void)
 			snprintf(buf, sizeof buf, "ok 7 3 expect:centered=Talk_&_Listen");
 			ok = sim_run(buf, err, sizeof err);
 		}
+#if CONFIG_SPECTRUM
+		if (ok) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "ok 6 0 expect:screen=spectrum expect:%s=Spectrum_Analyzer",
+				 merged ? "hides" : "centered");
+			ok = sim_run(buf, err, sizeof err);
+		}
+#endif
+		if (ok && !merged) {
+#if CONFIG_SPECTRUM
+			ok = sim_run("expect:shows=OK_settings", err, sizeof err);
+#endif
+		}
 		if (!ok) {
 			printf("FAIL title row [%s]: %s\n", sim_geoms[g].name, err);
 			fails++;
@@ -2418,10 +2718,48 @@ static int check_satellite_path_endpoint_colors(void)
 }
 #endif
 
+#if CONFIG_SPECTRUM
+static int check_spectrum_tuner_text(void)
+{
+	static const struct { const char *name, *script; int center, peak; } cases[] = {
+		{ "free tuner at center", "ok 6 0", 2, 0 },
+		{ "centered tuner", "ok 6 0 quick", 1, 0 },
+		{ "centered carrier", "ok 6 0 quick spectrumrx:48,-55", 1, 0 },
+		{ "captured peak", "ok 6 0 quick spectrumrx:56,-55", 1, 1 },
+		{ "released peak", "ok 6 0 quick spectrumrx:56,-55 spectrumrxend "
+		  "expect:spec_tuner=453625000", 1, 0 },
+		{ "free tuner on peak", "ok 6 0 quick spectrumrx:56,-55 quick", 1, 1 },
+		{ "free tuner restored", "ok 6 0 quick quick", 2, 0 },
+	};
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			char err[200] = "";
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			if (!sim_run(cases[i].script, err, sizeof err)) {
+				printf("FAIL spectrum tuner text [%s] %s: %s\n", sim_geoms[g].name, cases[i].name, err);
+				return 1;
+			}
+			int center = sim_text_count("453.62500") + sim_text_count("453.62500 MHz");
+			int peak = sim_text_count("453.72500") + sim_text_count("453.72500 MHz");
+			if (center != cases[i].center || peak != cases[i].peak) {
+				printf("FAIL spectrum tuner text [%s] %s: center %d (want %d), peak %d (want %d)\n",
+				       sim_geoms[g].name, cases[i].name, center, cases[i].center, peak, cases[i].peak);
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+#endif
+
 int main(void)
 {
 	if (check_name_is_id() != 0)
 		return 1;
+#if CONFIG_SPECTRUM
+	if (check_spectrum_tuner_text() != 0)
+		return 1;
+#endif
 #if CONFIG_SATELLITE_TLE
 	if (check_satellite_countdowns() != 0)
 		return 1;

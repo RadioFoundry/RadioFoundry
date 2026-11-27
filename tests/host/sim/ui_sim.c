@@ -5,6 +5,7 @@
 // services other packages own (ui_svc.h; the settings store is the weak one from ui_svc_stub.c).
 //
 // Script tokens (separated by spaces):
+//   keypad:0|1          onboard keypad capability (optional mic digit actions stay available)
 //   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
 //   powerkey zone+ zone- scankey skipkey monkey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
@@ -18,6 +19,8 @@
 //   receivers:2         a receiver per dual watch channel; rxa:/rxb:<src>,<dst>,g|p a call on A's / B's own,
 //                       rxaend / rxbend its end
 //   tune:a|b            dual watch: the receiver moves to channel A or B (a call there holds it)
+//   spectrumrx:<bin>,<dBm>  a quiet sweep with one carrier, followed by its tuned confirmation
+//   spectrumrxend       quiet readings through the carrier-release delay
 //   hop:a|b             the same just before the next key, with no UI pass between: the key reads the view as the
 //                       radio left it
 //   busy:a|b|none       dual watch: the radio's mark for a signal found on A / B in the wait after a call
@@ -81,6 +84,8 @@
 #define board board_as_declared
 #include "board.h"
 #undef board
+#include "radio/radio_bands.h"
+#include "radio/scan.h"
 #include "hal_time.h"
 #include "ui/gfx.h"
 #include "ui/ui_screens.h"
@@ -185,6 +190,14 @@ bool sim_text_has_color(const char *text, uint16_t color)
 					return true;
 	}
 	return false;
+}
+
+int sim_text_count(const char *text)
+{
+	int count = 0;
+	for (int i = 0; i < live_n; i++)
+		count += strcmp(live[i].s, text) == 0;
+	return count;
 }
 
 bool sim_text_bounds(const char *text, int *x, int *y, int *w, int *h)
@@ -1251,6 +1264,9 @@ static const char *contact_name(uint32_t id, bool group)
 // ---------------- the radio core ----------------
 
 static radio_view_t view;
+#if CONFIG_SPECTRUM
+static spectrum_t spectrum;
+#endif
 static uint32_t serial;
 #if CONFIG_SATELLITE_TLE
 static radio_satellite_view_t satellite_view;
@@ -1319,6 +1335,10 @@ uint32_t radio_view_serial(void) { return serial; }
 static int32_t sim_step;	// UI_SET_VFO_STEP: 0 auto (the width's), else 10 Hz units
 static void changed(void)
 {
+#if CONFIG_SPECTRUM
+	if (spectrum.active || view.spectrum.active)
+		spectrum_read(&spectrum, &view.spectrum);
+#endif
 	view.vfo_step_hz = sim_step == 833 ? 8333u : sim_step > 0 ? (uint32_t)sim_step * 10u :
 			   view.ch.bw == RADIO_BW_25K ? 25000u : 12500u;
 	view.vfo_step_auto = sim_step == 0;
@@ -1464,6 +1484,92 @@ void radio_req_channel_step(int8_t dir)
 	view.zone_pos = (uint16_t)((view.zone_pos + view.zone_size + dir) % view.zone_size);
 	load_channel();
 }
+#if CONFIG_SPECTRUM
+static struct {
+	uint32_t center, step, tuner;
+	uint8_t bins;
+	int16_t squelch_dbm;
+	uint16_t dwell_ms;
+	int8_t scale_db;
+	uint8_t auto_peak;
+	uint8_t hash_key, star_key;
+	bool narrow, center_tuner;
+} spectrum_preferences;
+
+static void to_selected(void);
+
+static const band_t *spectrum_band(uint32_t hz)
+{
+	if (radio_listen_band(hz) && !radio_am_tx_refused(hz))
+		return NULL;
+	for (unsigned i = 0; i < board.band_count; i++)
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz)
+			return &board.bands[i];
+	return NULL;
+}
+
+void ui_svc_spectrum(uint8_t cmd, int32_t value)
+{
+	spectrum_t *s = &spectrum;
+	bool adjusted = false;
+	if (cmd == SPECTRUM_STOP) {
+		s->active = false;
+		view.am = radio_am_channel(&view.ch);
+		if (view.scan == 3)
+			view.scan_phase = SCAN_PH_LISTEN;
+	} else if (cmd == SPECTRUM_START) {
+		if (view.state == RS_TX || view.hotspot) return;
+		to_selected();
+		uint32_t center = spectrum_preferences.center ? spectrum_preferences.center : view.ch.rx_hz;
+		const band_t *band = spectrum_band(center);
+		if (band == NULL) return;
+		spectrum_start(s, center, band->lo_hz, band->hi_hz, spectrum_preferences.step, spectrum_preferences.bins, now_ms);
+		if (view.scan == 3)
+			view.scan_phase = SCAN_PH_PAUSED;
+		s->squelch_dbm = spectrum_preferences.squelch_dbm;
+		s->dwell_ms = spectrum_preferences.dwell_ms;
+		s->scale_db = spectrum_preferences.scale_db;
+		s->auto_peak = spectrum_preferences.auto_peak;
+		s->narrow = spectrum_preferences.narrow;
+		s->center_tuner = spectrum_preferences.center_tuner;
+		s->hash_key = spectrum_preferences.hash_key;
+		s->star_key = spectrum_preferences.star_key;
+		uint32_t first = spectrum_frequency(s, 0), tuner = spectrum_preferences.tuner;
+		if (!s->center_tuner && tuner >= first && tuner <= spectrum_frequency(s, s->bins - 1))
+			s->tuner = (uint8_t)((tuner - first + s->step_hz / 2) / s->step_hz);
+		for (unsigned i = 0; i < s->bins; i++) {
+			int d = (int)i - (s->bins / 2 + 8);
+			s->level[i] = s->peak[0][i] = (uint8_t)(160 + (d > -4 && d < 4 ? -55 - d * d * 4 : -119 + (int)(i % 4)));
+		}
+	} else if (cmd == SPECTRUM_CENTER) {
+		const band_t *band = spectrum_band((uint32_t)value);
+		adjusted = band != NULL && spectrum_recenter(s, (uint32_t)value, band->lo_hz, band->hi_hz, now_ms);
+	} else {
+		adjusted = spectrum_adjust(s, cmd, value, now_ms);
+	}
+	if (s->active)
+		view.am = radio_am_tx_refused(spectrum_receiver_hz(s));
+	if (adjusted) {
+		spectrum_preferences.squelch_dbm = s->squelch_dbm;
+		spectrum_preferences.dwell_ms = s->dwell_ms;
+		spectrum_preferences.scale_db = s->scale_db;
+		spectrum_preferences.auto_peak = s->auto_peak;
+		spectrum_preferences.narrow = s->narrow;
+		spectrum_preferences.center_tuner = s->center_tuner;
+		spectrum_preferences.hash_key = s->hash_key;
+		spectrum_preferences.star_key = s->star_key;
+		if (cmd == SPECTRUM_TUNER || cmd == SPECTRUM_CENTER || cmd == SPECTRUM_STEP || cmd == SPECTRUM_BANDWIDTH ||
+		    cmd == SPECTRUM_CENTER_TUNER) {
+			spectrum_preferences.center = s->center_hz;
+			spectrum_preferences.step = s->step_hz;
+			spectrum_preferences.bins = s->bins;
+			spectrum_preferences.tuner = spectrum_frequency(s, s->tuner);
+		}
+	}
+	changed();
+}
+#endif
+
 void radio_req_zone_pos(uint16_t pos) { retune(); view.vfo = false; view.zone_pos = pos; load_channel(); }
 void radio_req_zone(uint16_t index) { retune(); view.zone_index = index; view.zone_pos = 0; load_channel(); }
 static void sim_vfo(bool on);
@@ -1650,6 +1756,9 @@ void radio_req_reply_cancel(void) { view.dmr.reply_active = false; reply_until =
 
 static void ptt(bool down)
 {
+#if CONFIG_SPECTRUM
+	if (view.spectrum.active) return;
+#endif
 	if (down) {
 		to_selected();	// the radio core transmits on the selected channel
 		if (view.ch.rx_only) {
@@ -2677,6 +2786,17 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
+#if CONFIG_SPECTRUM
+	memset(&spectrum, 0, sizeof spectrum);
+	memset(&spectrum_preferences, 0, sizeof spectrum_preferences);
+	spectrum_preferences.step = 12500;
+	spectrum_preferences.bins = 97;
+	spectrum_preferences.squelch_dbm = -60;
+	spectrum_preferences.dwell_ms = 10;
+	spectrum_preferences.auto_peak = SPECTRUM_AUTO_SWEEP;
+	spectrum_preferences.star_key = SPECTRUM_KEY_CENTER_TUNER;
+	ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, 0);
+#endif
 #if CONFIG_DMR_AES
 	sim_aes_keys = false;
 #endif
@@ -3073,6 +3193,22 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "radio_backlight") == 0) snprintf(got, sizeof got, "%ld", (long)sim_rec.backlight_s);
 	else if (strcmp(key, "count") == 0) snprintf(got, sizeof got, "%u", s.count);
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
+#if CONFIG_SPECTRUM
+	else if (strcmp(key, "spec_header") == 0) snprintf(got, sizeof got, "%u", (unsigned)ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) & UI_SPECTRUM_HEADER_MASK);
+	else if (strcmp(key, "spec_show_squelch") == 0) snprintf(got, sizeof got, "%u", !(ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) & UI_SPECTRUM_HIDE_SQUELCH));
+	else if (strcmp(key, "spec_active") == 0) snprintf(got, sizeof got, "%u", view.spectrum.active);
+	else if (strcmp(key, "spec_bins") == 0) snprintf(got, sizeof got, "%u", view.spectrum.bins);
+	else if (strcmp(key, "spec_center") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.spectrum.center_hz);
+	else if (strcmp(key, "spec_tuner") == 0) snprintf(got, sizeof got, "%u", (unsigned)spectrum_view_frequency(&view.spectrum, view.spectrum.tuner));
+	else if (strcmp(key, "spec_dwell") == 0) snprintf(got, sizeof got, "%u", view.spectrum.dwell_ms);
+	else if (strcmp(key, "spec_auto") == 0) snprintf(got, sizeof got, "%u", view.spectrum.auto_peak);
+	else if (strcmp(key, "spec_squelch") == 0) snprintf(got, sizeof got, "%d", (int)view.spectrum.squelch_dbm);
+	else if (strcmp(key, "spec_scale") == 0) snprintf(got, sizeof got, "%d", (int)view.spectrum.scale_db);
+	else if (strcmp(key, "spec_narrow") == 0) snprintf(got, sizeof got, "%u", view.spectrum.narrow);
+	else if (strcmp(key, "spec_center_tuner") == 0) snprintf(got, sizeof got, "%u", view.spectrum.center_tuner);
+	else if (strcmp(key, "spec_hash_key") == 0) snprintf(got, sizeof got, "%u", view.spectrum.hash_key);
+	else if (strcmp(key, "spec_star_key") == 0) snprintf(got, sizeof got, "%u", view.spectrum.star_key);
+#endif
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
 	else if (strcmp(key, "usbnet") == 0) snprintf(got, sizeof got, "%u", usb_net);
 	else if (strcmp(key, "aprs_sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)aprs_sim.sent);
@@ -3400,6 +3536,13 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 #endif
+	if (strcmp(t, "keypad") == 0 && arg != NULL && (strcmp(arg, "0") == 0 || strcmp(arg, "1") == 0)) {
+		if (arg[0] == '1') board.caps |= CAP_KEYPAD;
+		else board.caps &= ~CAP_KEYPAD;
+		changed();
+		advance(100);
+		return true;
+	}
 	if (strcmp(t, "dlpos") == 0 && arg != NULL) {	// the debug link (or any other task) asks for channel position N
 		radio_req_zone_pos((uint16_t)(atoi(arg) - 1));
 		advance(100);
@@ -3433,6 +3576,42 @@ static bool run_token(char *t, char *err, size_t len)
 		changed();	// no UI tick here: a request right after it races the UI, as on the radio
 		return true;
 	}
+#if CONFIG_SPECTRUM
+	if (strcmp(t, "spectrumrxend") == 0 && spectrum.active) {
+		for (unsigned ms = 0; ms <= SPECTRUM_RELEASE_MS; ms += SPECTRUM_SETTLE_MS) {
+			advance(SPECTRUM_SETTLE_MS);
+			spectrum_sample(&spectrum, -120, now_ms);
+		}
+		changed();
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "spectrumrx") == 0) {
+		unsigned bin;
+		int dbm;
+		spectrum_t *s = &spectrum;
+		if (!s->active || arg == NULL || sscanf(arg, "%u,%d", &bin, &dbm) != 2 || bin >= s->bins ||
+		    dbm < -160 || dbm > 0) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		s->index = 0;
+		s->listening = s->audio_open = false;
+		uint32_t sweep = s->sweeps;
+		for (unsigned i = 0; i < 2u * s->bins && s->sweeps == sweep && !s->audio_open; i++) {
+			unsigned tuned = s->listening ? s->tuner : s->index;
+			s->due_ms = now_ms;
+			spectrum_sample(s, (int16_t)(tuned == bin ? dbm : -120), now_ms);
+		}
+		if (s->listening) {
+			s->due_ms = now_ms;
+			spectrum_sample(s, (int16_t)(s->tuner == bin ? dbm : -120), now_ms);
+		}
+		changed();
+		advance(100);
+		return true;
+	}
+#endif
 	if (strcmp(t, "tune") == 0 && arg != NULL && (arg[0] == 'a' || arg[0] == 'b')) {	// dual watch: the receiver
 		sim_tune(arg[0] == 'b');							// on A or B
 		advance(100);

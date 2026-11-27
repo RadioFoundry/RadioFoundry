@@ -260,6 +260,21 @@ typedef struct {
 	// DMR AES: the end of the MI positions reserved for our overs (dmrAesSeq_t, dmr-voice.md 5.1; appended: an older
 	// record reads 0, no position yet). A restart starts here, past every position sent
 	uint32_t aes_mi_res;
+	// Spectrum preferences (spectrum.md): manual changes only; sweep captures never write settings.
+	uint32_t spectrum_center_hz;	// 0 = start at the current channel
+	uint32_t spectrum_step_hz;
+	uint32_t spectrum_tuner_hz;	// 0 = center; otherwise the last manually selected frequency
+	uint8_t spectrum_bins;		// 65, 97 or 129
+	uint8_t spectrum_squelch;	// legacy level: threshold + 160, 0..100; imported if spectrum_squelch_dbm is unset
+	uint8_t spectrum_center_tuner;	// reserved12[0]: 0 = move tuner, 1 = keep it centered and pan the window
+	uint8_t spectrum_keys;		// offset 427: packed shortcuts (spectrum_keys_pack/unpack, spectrum.md)
+	uint16_t spectrum_dwell_ms;	// scan reading delay, 10..1000 ms
+	uint8_t spectrum_no_peak;	// 0 = automatic peak tuning on (including older records), 1 = off
+	int8_t spectrum_scale_db;	// graph offset: -40..40 dB in 20 dB increments
+	uint8_t spectrum_narrow;	// 0 = wide (25 kHz, also the default for older records), 1 = narrow (12.5 kHz)
+	uint8_t spectrum_peak_immediate;	// was reserved13: 0 = after sweep (as before), 1 = immediate; off in no_peak
+	int16_t spectrum_squelch_dbm;	// -160..0 dBm; INT16_MIN = import the legacy level
+	uint8_t spectrum_display;	// bits 0..1: Peak / Tuner / Off header; bit 2: hide squelch marker; zero = defaults
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size

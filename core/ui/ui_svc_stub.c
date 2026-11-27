@@ -11,6 +11,10 @@
 
 #define WEAK __attribute__((weak))
 
+#if CONFIG_SPECTRUM
+WEAK void ui_svc_spectrum(uint8_t cmd, int32_t value) { (void)cmd; (void)value; }
+#endif
+
 // What each package provides, ORed; a package defines its own ui_svc_feat_* when it connects its calls
 WEAK uint32_t ui_svc_feat_voice(void) { return 0; }
 WEAK void ui_svc_boot_text(char line1[17], char line2[17]) { line1[0] = line2[0] = '\0'; }

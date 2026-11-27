@@ -12,6 +12,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "config.h"
+#if CONFIG_SPECTRUM
+void ui_svc_spectrum(uint8_t cmd, int32_t value);
+#endif
 #include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
@@ -459,8 +462,12 @@ typedef enum {
 	// One step of a chain, set whole (its frequency and length in one write of the settings area): the value is
 	// UI_SIG_STEP(event, step, Hz, ms). Write only
 	UI_SET_SIG_STEP,
+	UI_SET_SPECTRUM_DISPLAY,	// Spectrum header and marker presentation, UI_SPECTRUM_* (settings_t.spectrum_display)
 	UI_SET_COUNT
 } ui_setting_t;
+
+enum { UI_SPECTRUM_PEAK, UI_SPECTRUM_TUNER, UI_SPECTRUM_OFF, UI_SPECTRUM_HEADER_MASK = 3,
+	UI_SPECTRUM_HIDE_SQUELCH = 4 };
 
 // The value of UI_SET_SIG_STEP: the frequency in bits 0-11, the length in 10 ms units in 12-18, the step in 19-22, the event in 23-24
 #define UI_SIG_STEP(ev, k, hz, ms)	((int32_t)(((hz) & 0xFFFu) | ((((ms) / 10u) & 0x7Fu) << 12) | (((k) & 15u) << 19) | (((ev) & 3u) << 23)))

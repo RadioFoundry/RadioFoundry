@@ -694,6 +694,10 @@ static void post_pair(uint8_t type, int32_t arg, uint32_t arg2, TickType_t wait)
 	send(&req, wait);
 }
 
+#if CONFIG_SPECTRUM
+void radio_req_spectrum(uint8_t cmd, int32_t value) { post_pair(RREQ_SPECTRUM, cmd, (uint32_t)value, pdMS_TO_TICKS(50)); }
+#endif
+
 #if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
 void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }
 #endif

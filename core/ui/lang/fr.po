@@ -92,7 +92,7 @@ msgctxt "ABOUT_VALUE_HWOPT_UNSET"
 msgid "not set"
 msgstr "non défini"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c core/ui/ui_spectrum.c
 msgctxt "VALUE_OFF"
 msgid "Off"
 msgstr "Désactivé"
@@ -977,7 +977,7 @@ msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "NMEA sur USB"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c core/ui/ui_spectrum.c
 msgctxt "VALUE_ON"
 msgid "On"
 msgstr "Activé"
@@ -1022,7 +1022,7 @@ msgctxt "APRS_TITLE_HEARD"
 msgid "Heard"
 msgstr "Entendu"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c core/ui/ui_spectrum.c
 msgctxt "HINT_BACK"
 msgid "Back"
 msgstr "Retour"
@@ -3573,6 +3573,11 @@ msgid "Diagnostics"
 msgstr "Diagnostics"
 
 #: core/ui/ui_menus.c
+msgctxt "TOOLS_ROW_SPECTRUM"
+msgid "Spectrum analyzer"
+msgstr "Analyseur de spectre"
+
+#: core/ui/ui_menus.c
 msgctxt "TOOLS_ROW_SHARES_RECEIVED"
 msgid "Zones/Chs Received"
 msgstr "Zones/Canaux reçus"
@@ -5676,6 +5681,156 @@ msgstr "Ce firmware vise peut-être une autre version de cette radio"
 msgctxt "DIAG_HINT"
 msgid "* more  Back"
 msgstr "* plus  Retour"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_VALUE_IMMEDIATE"
+msgid "Immediate"
+msgstr "Immédiat"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_VALUE_AFTER_SWEEP"
+msgid "After sweep"
+msgstr "Après balayage"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_VALUE_TUNER"
+msgid "Tuner"
+msgstr "Accordeur"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_LABEL_PEAK"
+msgid "Peak"
+msgstr "Pic"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_BANDWIDTH"
+msgid "Bandwidth"
+msgstr "Largeur de bande"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_AUTO_PEAK"
+msgid "Auto peak"
+msgstr "Pic automatique"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_FILTER"
+msgid "Filter"
+msgstr "Filtre"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_KEY_SQL_UP"
+msgid "SQL up"
+msgstr "SQL +"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_KEY_SQL_DOWN"
+msgid "SQL down"
+msgstr "SQL -"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_CENTER_TUNER"
+msgid "Center tuner"
+msgstr "Centrer curseur"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_VALUE_NARROW"
+msgid "Narrow"
+msgstr "Étroit"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_VALUE_WIDE"
+msgid "Wide"
+msgstr "Large"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_TITLE_ANALYZER"
+msgid "Spectrum Analyzer"
+msgstr "Analyseur de Spectre"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_WHY_UNAVAILABLE"
+msgid "Unavailable on this channel or radio busy"
+msgstr "Indisponible sur ce canal ou radio occupée"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_HINT_ENTRY"
+msgid "Digits  # .  OK save  Back"
+msgstr "Chiffres  # .  OK sauver  Retour"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_HINT_MAIN"
+msgid "OK settings  Type freq  Back"
+msgstr "OK réglages  Saisir fréq  Retour"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_HINT_NO_KEYPAD"
+msgid "OK settings  Back"
+msgstr "OK réglages  Retour"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_WHY_VALUE"
+msgid "Value out of range"
+msgstr "Valeur hors plage"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_TOAST_SQUELCH_UPDATED"
+msgid "Squelch updated"
+msgstr "Squelch modifié"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_CENTER"
+msgid "Center"
+msgstr "Centre"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_SQUELCH"
+msgid "Squelch"
+msgstr "Squelch"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_VALUE_SWEEPING"
+msgid "Sweeping"
+msgstr "Balayage"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_DWELL"
+msgid "Dwell time"
+msgstr "Temps de pause"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_HEADER"
+msgid "Show header"
+msgstr "Afficher l'en-tête"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_SHOW_SQUELCH"
+msgid "Show squelch"
+msgstr "Afficher SQL"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_STAR_KEY"
+msgid "* key"
+msgstr "Touche *"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_HASH_KEY"
+msgid "# key"
+msgstr "Touche #"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_HINT_ADJUST"
+msgid "Up/Down  OK save  Back"
+msgstr "Haut/Bas  OK sauver  Retour"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_HINT_SETTINGS"
+msgid "OK change  Back"
+msgstr "OK changer  Retour"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_TITLE_SETTINGS"
+msgid "Spectrum Settings"
+msgstr "Réglages du Spectre"
 
 #: core/ui/ui_svc_storage.c
 msgctxt "STORE_ERR_CODEPLUG_WRITE"

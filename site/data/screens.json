@@ -705,6 +705,106 @@
    "group": "tools",
    "needs": []
   },
+  "tools_spectrum": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "tools_spectrum_unfocused": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "tools_spectrum_offer": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM",
+    "ZONE_SHARE"
+   ]
+  },
+  "spectrum": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_captured": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_edit": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_settings": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_immediate": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_air": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM",
+    "AM_RX"
+   ]
+  },
+  "spectrum_dual": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM",
+    "DUAL_WATCH"
+   ]
+  },
+  "spectrum_filter": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_scale": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_precision": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM",
+    "VFO"
+   ]
+  },
+  "spectrum_settings_keys": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_center_keys": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_bandwidth": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
   "hotspot": {
    "group": "tools",
    "needs": [
@@ -931,6 +1031,54 @@
    "group": "settings",
    "needs": [
     "UI_SETTINGS"
+   ]
+  },
+  "spectrum_center_tuner": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_panned": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_squelch_updated": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_display_settings": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_tuner_header": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_header_off": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_squelch_off": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_shortcuts": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
    ]
   }
  }

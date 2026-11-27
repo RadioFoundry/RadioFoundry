@@ -169,6 +169,7 @@ is `tools/bringup.py list --radio <id>`.
 | `air_raw` | off | off | off | off | off | off | off | off |
 | `debuglink_dmrip` | off | off | off | off | off | off | off | off |
 | `audio_probe` | not written | off | not written | not written | not written | off | off | not written |
+| `spectrum` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 <!-- end generated -->
 
 What the records don't hold yet: limits and known problems from the bring-up pages.
@@ -269,6 +270,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ✕ | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `SPECTRUM` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DUAL_WATCH` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `BEEP` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `SIG_TONES` | ● | ● | ● | ● | ○ | ● | ● | ● |
@@ -356,6 +358,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Volume bar when a knob the MCU reads turns (#354) | `VOLUME_BAR` | 520 | 492 | Shows only on a radio with such a knob. Off, the volume screen keeps the segment drawing it now shares (about 90 bytes) |
 | Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,468 | 2,224 | Up to 9 keys |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 25,640 | 24,204 |  |
+| Spectrum analyzer and listening tuner | `SPECTRUM` | 11,316 | — | Needs `FM`. Receive-only RSSI sweep, recent peaks and FM/air-band AM listening ([spectrum.md](spec/spectrum.md)). Default minus `SPECTRUM=n`: 1,552 B RAM on DM-1701; 12,660 B flash and 2,680 B RAM on DM-32UV. History stays in the radio task; view copies carry aggregated peaks only. |
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 20,876 | 20,640 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). |
 | Beeps and alert tones | `BEEP` | 8,036 | 2,700 |  |
 | Signaling tone chains (Settings > Signaling tones) | `SIG_TONES` | 5,340 | 5,748* | Needs `BEEP` |
@@ -471,6 +474,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Default | 704,632 | 575,736 |
 | Maximal (every compatible switch on) | 733,604 | 631,656 |
 | FM only, minimal | 240,436 | 213,428 |
+
+With Spectrum enabled, the maximal configurations on DM-1701 and MD-UV380 leave Italian off alongside French
+and Chinese to fit their 720 KB app regions. Separate `italian` and `chinese` CI builds keep Spectrum and Spanish
+on, and leave satellite tracking off for those language variants. Owners can still select these switches.
 
 Link time optimization is on by default on both radios. On the DM-1701 `LTO_3P=1` would take another 3 KB or so off
 by optimizing the third-party code too.

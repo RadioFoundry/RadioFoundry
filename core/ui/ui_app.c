@@ -150,7 +150,7 @@ static void update_focus_target(void)
 		ui_svc_focus_target(0, false);
 }
 
-#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE || CONFIG_SPECTRUM
 // Screens from the top down to stack level `from` leave the stack: each runs its leave hook (the backlight tests give
 // the light back)
 static void left(uint8_t from)
@@ -2210,6 +2210,9 @@ void ui_app_key(const input_event_t *ev)
 	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)
 	bool typing = stack[sp].scr == SCR_TEXT || stack[sp].scr == SCR_APRS_TO ||
 		stack[sp].scr == SCR_MESSAGE_TEXT;
+#if CONFIG_SPECTRUM
+	typing = typing || ui_spectrum_typing();
+#endif
 	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG && (sp == 0 || ui_st.locked)) :
 		(ev->action == ACT_BACK && ev->gesture == GESTURE_LONG && ui_st.locked);
 	// A side key set to key lock (keyassign.h) locks and unlocks on a press or a long press, as long QUICK does
@@ -2343,6 +2346,12 @@ void ui_app_key(const input_event_t *ev)
 		ui_toast(TR(WHY_VOICE_PROMPTS_NOT_IN_BUILD, "Voice prompts: not in this build"));
 		return;
 	}
+#if CONFIG_SPECTRUM
+	// Short * and # on the analyzer belong to its receiver controls, ahead of quick settings and banners.
+	if (stack[sp].scr == SCR_SPECTRUM && ev->gesture == GESTURE_PRESS &&
+	    (ev->action == ACT_QUICK || ev->action == ACT_CONTEXT) && ui_scr[SCR_SPECTRUM]->key(ev))
+		return;
+#endif
 	// In text entry * and # are the typewriter's keys, not quick settings or a banner's
 	// A banner up: CONTEXT opens what it is about (not while a VFO frequency is typed: # tunes it, as OK)
 	if (!typing && !ui_st.entry && ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&

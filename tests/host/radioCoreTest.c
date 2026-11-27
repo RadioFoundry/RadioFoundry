@@ -63,6 +63,7 @@ static struct {
 	radio_bw_t rx_bw;
 	subtone_t rx_tone;
 	int rx_calls;
+	bool fail_next_rx;
 	radio_bw_t tx_bw;
 	subtone_t tx_tone;
 	int tx_calls;
@@ -82,6 +83,10 @@ static radio_mode_t hw_mode;
 static void r_set_mode(radio_mode_t m) { hw_mode = m; hw.set_mode_calls++; sim.refuse_start = m != RADIO_MODE_DMR; }
 static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 {
+	if (hw.fail_next_rx) {
+		hw.fail_next_rx = false;
+		return false;
+	}
 	hw.rx_hz = hz;
 	hw.rx_bw = bw;
 	hw.rx_tone = *t;
@@ -1970,6 +1975,509 @@ static void dmr_start(bool codec)
 	req(RREQ_ZONE_POS, 3);		// channel 4: DMR, CC 2, TS 1, talk target TG 201, listen list 1
 	run(50);
 }
+
+#if CONFIG_SPECTRUM
+static void spectrum_cmd(uint8_t cmd, int32_t value)
+{
+	radio_req_t r = { .type = RREQ_SPECTRUM, .arg = cmd, .arg2 = (uint32_t)value };
+	radio_sm_request(&sm, &r, now);
+}
+
+static void test_spectrum(void)
+{
+	dmr_start(true);
+	req(RREQ_DMR_TARGET, 3100);
+	req(RREQ_DMR_HEAR_ALL, 1);
+	uint32_t original = sm.view.ch.rx_hz;
+	uint16_t channel = sm.view.channel_number;
+	int tx = hw.tx_calls;
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.active && !sm.dmr_running && hw_mode == RADIO_MODE_FM);
+	CHECK(sm.view.ch.rx_hz == original && sm.view.channel_number == channel);
+	CHECK(hw.rx_hz == original && !hw.audio);
+	CHECK(hw.rx_bw == RADIO_BW_25K && !sm.view.spectrum.narrow);
+	run(5);
+	CHECK(sm.view.spectrum.index == 0);
+	hw.st.rssi_dbm = -120;
+	run(2000);
+	CHECK(sm.view.spectrum.sweeps >= 1);
+	uint32_t center = sm.view.spectrum.center_hz;
+	for (unsigned i = 0; sm.view.spectrum.listening && i < 10; i++) run(10);
+	CHECK(!sm.view.spectrum.listening);
+	uint8_t caught = sm.view.spectrum.index;
+	uint32_t caught_hz = hw.rx_hz;
+	int retunes = hw.rx_calls;
+	hw.st.rssi_dbm = -50;
+	for (unsigned i = 0; !sm.view.spectrum.audio_open && i < 200; i++) run(10);
+	CHECK(sm.view.spectrum.tuner == caught && sm.view.spectrum.center_hz == center);
+	CHECK(sm.view.spectrum.audio_open && hw.audio && hw.rx_hz == caught_hz);
+	CHECK(hw.rx_calls > retunes); // finish the sweep, then tune and confirm its strongest bin
+	CHECK(sm.view.rssi_dbm == -50);
+	int held_retunes = hw.rx_calls;
+	hw.st.rssi_dbm = -120;
+	run(350);
+	CHECK(!sm.view.spectrum.audio_open && hw.rx_calls > held_retunes);
+	spectrum_cmd(SPECTRUM_CENTER, (int32_t)center);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	CHECK(sm.view.spectrum.center_hz == center && hw.rx_hz == original + 12500);
+	hw.st.rssi_dbm = -54;
+	run(20);
+	CHECK(sm.view.spectrum.audio_open && hw.audio && sm.view.spectrum.listening);
+	uint32_t held_hz = hw.rx_hz;
+	spectrum_cmd(SPECTRUM_FILTER, 1);
+	CHECK(sm.view.spectrum.narrow && hw.rx_bw == RADIO_BW_12K5 && hw.rx_hz == held_hz);
+	run(20);
+	CHECK(sm.view.spectrum.audio_open && hw.audio);
+	spectrum_cmd(SPECTRUM_FILTER, 0);
+	CHECK(!sm.view.spectrum.narrow && hw.rx_bw == RADIO_BW_25K && hw.rx_hz == held_hz);
+	run(20);
+	int tuned = hw.rx_calls;
+	run(100);
+	CHECK(hw.rx_calls == tuned && hw.audio); // an audible carrier never gets interrupted by scanning
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(hw.tx_calls == tx && sm.view.state == RS_IDLE && sm.view.spectrum.active);
+	req(RREQ_PTT, 0);
+	hw.st.rssi_dbm = -120;
+	run(20);
+	CHECK(!hw.audio && sm.view.spectrum.listening);
+	uint8_t index = sm.view.spectrum.index;
+	run(350);
+	CHECK(sm.view.spectrum.index != index);
+	spectrum_cmd(SPECTRUM_STEP, 6250);
+	CHECK(sm.view.spectrum.step_hz == 6250 && hw.rx_hz == original + 12500);
+	spectrum_cmd(SPECTRUM_CENTER, 146520000);
+	CHECK(sm.view.spectrum.center_hz == 146520000 && hw.rx_hz == 146520000);
+	CHECK(sm.view.ch.rx_hz == original);
+	spectrum_cmd(SPECTRUM_SQUELCH, -160);
+	run(20);
+	CHECK(hw.audio && sm.view.spectrum.audio_open);
+	spectrum_cmd(SPECTRUM_SQUELCH, 0);
+	run(20);
+	CHECK(!hw.audio && !sm.view.spectrum.audio_open);
+	spectrum_cmd(SPECTRUM_SQUELCH, -160);
+	run(20);
+	CHECK(hw.audio && sm.view.spectrum.audio_open);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	CHECK(!sm.view.spectrum.active && sm.dmr_running && hw_mode == RADIO_MODE_DMR);
+	CHECK(!hw.audio);
+	CHECK(hw.rx_hz == original && sm.view.ch.rx_hz == original && sm.view.channel_number == channel);
+	CHECK(sm.view.dmr.target_manual && sm.view.dmr.target_id == 3100 && sm.view.dmr.hear_all_latch);
+	// A codeplug replacement also releases the borrowed receiver before reloading.
+	spectrum_cmd(SPECTRUM_START, 0);
+	cp_serial++;
+	run(50);
+	CHECK(!sm.view.spectrum.active && sm.dmr_running && hw.rx_hz == original);
+	// A sweep requested during TX never retunes or unkeys the caller.
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	uint32_t frequency = hw.rx_hz;
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(!sm.view.spectrum.active && sm.view.state == RS_TX && hw.rx_hz == frequency);
+	req(RREQ_PTT, 0);
+	run(1000);
+	// Channel changes leave the sweep before normal tuning takes over.
+	spectrum_cmd(SPECTRUM_START, 0);
+	req(RREQ_CH_STEP, 1);
+	CHECK(!sm.view.spectrum.active && sm.view.channel_number != channel);
+}
+
+#if CONFIG_BEEP
+static void test_spectrum_local_feedback(void)
+{
+	dmr_start(true);
+	aud.feed = true;
+	sm.set.beep_level = 50;
+	spectrum_cmd(SPECTRUM_START, 0);
+	hw.st.rssi_dbm = -60;
+	run(20);
+	CHECK(sm.view.spectrum.active && sm.view.spectrum.audio_open);
+	uint32_t hz = hw.rx_hz;
+	req(RREQ_BEEP, BEEP_KEY);
+	run(1000);
+	CHECK(!aud.started && !aud.pcm && !beep_busy());
+	CHECK(sm.view.spectrum.active && sm.view.spectrum.audio_open && hw.rx_hz == hz);
+	// A deferred beep is serviced on its deadline without leaving the analyzer.
+	beep_stats_t before, after;
+	beep_get_stats(&before);
+	radio_req_t delayed = { RREQ_BEEP, BEEP_KEY, 100 };
+	radio_sm_request(&sm, &delayed, now);
+	run(50);
+	beep_get_stats(&after);
+	CHECK(after.played == before.played && sm.beep_due == BEEP_KEY);
+	run(950);
+	beep_get_stats(&after);
+	CHECK(after.played == before.played + 1 && sm.beep_due == BEEP_NONE);
+	CHECK(!aud.started && !aud.pcm && sm.view.spectrum.active);
+	// If the audio clock stalls, the normal watchdog still releases the PCM route for analog reception.
+	req(RREQ_BEEP, BEEP_KEY);
+	run(40);
+	CHECK(aud.started && aud.pcm);
+	aud.feed = false;
+	run(1000);
+	CHECK(!aud.started && !aud.pcm && !beep_busy());
+	CHECK(sm.view.spectrum.active && sm.view.spectrum.audio_open && hw.audio && hw.rx_hz == hz);
+#if CONFIG_VIBRATE
+	fake_power.vibrate = p_vibrate;
+	vibrations = 0;
+	vibe_play(VIBE_MESSAGE);
+	run(1000);
+	CHECK(vibrations == 2 && !vibe_busy() && sm.view.spectrum.active);
+	fake_power.vibrate = NULL;
+#endif
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
+#endif
+
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH
+static void test_spectrum_dual_restore(void)
+{
+	const radio_dual_ref_t pair[2] = { { false, 0, 3 }, { false, 1, 0 } };
+	for (uint8_t sel = 0; sel < 2; sel++) {
+		dmr_start(true);
+		hw.st.rssi_dbm = -120;
+		radio_req_dual(pair, sel);
+		req(RREQ_POWER, -1);
+		req(RREQ_SQUELCH, 1);
+		if (sel == 0) {
+			req(RREQ_DMR_TARGET, 3100);
+			req(RREQ_DMR_HEAR_ALL, 1);
+		}
+		uint8_t power = sm.view.power, squelch = sm.view.squelch;
+		uint32_t frequency = sm.view.ch.rx_hz;
+		// Open while the receiver is on the unselected pane, including a different zone.
+		for (unsigned i = 0; sm.dual_at == sel && i < 200; i++) run(10);
+		CHECK(sm.view.scan == SCAN_DUAL && sm.dual_at != sel);
+		spectrum_cmd(SPECTRUM_START, 0);
+		CHECK(sm.view.spectrum.active && sm.view.scan == SCAN_DUAL && sm.view.scan_phase == SCAN_PH_PAUSED);
+		CHECK(sm.dual_sel == sel && sm.dual_at == sel && sm.view.ch.rx_hz == frequency);
+		CHECK(sm.dual[0].zone == 0 && sm.dual[0].pos == 3 && sm.dual[1].zone == 1 && sm.dual[1].pos == 0);
+		uint32_t steps = sm.scan.steps;
+		run(2000);
+		CHECK(sm.view.spectrum.active && sm.scan.steps == steps && sm.dual_at == sel);
+		CHECK(sm.view.scan_phase == SCAN_PH_PAUSED && !sm.dmr_running);
+		spectrum_cmd(SPECTRUM_CENTER, 146520000);
+		spectrum_cmd(SPECTRUM_STOP, 0);
+		CHECK(!sm.view.spectrum.active && sm.view.scan == SCAN_DUAL && sm.scan.phase == SCAN_PH_LISTEN);
+		CHECK(sm.dual_sel == sel && sm.dual_at == sel && hw.rx_hz == frequency && sm.scan.tuned_ms == now);
+		CHECK(sm.view.power == power && sm.view.squelch == squelch);
+		if (sel == 0)
+			CHECK(sm.dmr_running && sm.view.dmr.target_manual && sm.view.dmr.target_id == 3100 &&
+			      sm.view.dmr.hear_all_latch);
+		for (unsigned i = 0; sm.dual_at == sel && i < 200; i++) run(10);
+		CHECK(sm.dual_at != sel);
+		for (unsigned i = 0; sm.dual_at != sel && i < 200; i++) run(10);
+		CHECK(sm.dual_at == sel && sm.view.power == power && sm.view.squelch == squelch);
+		// A failed analyzer retune also returns the borrowed receiver to the watch.
+		spectrum_cmd(SPECTRUM_START, 0);
+		hw.fail_next_rx = true;
+		spectrum_cmd(SPECTRUM_TUNER, 1);
+		CHECK(!sm.view.spectrum.active && sm.view.scan == SCAN_DUAL && hw.rx_hz == frequency);
+		// Explicit scan stop and channel changes retain their normal meaning after leaving the analyzer.
+		spectrum_cmd(SPECTRUM_START, 0);
+		uint8_t stops = sm.view.dual_stops;
+		req(RREQ_SCAN, RSCAN_STOP);
+		CHECK(!sm.view.spectrum.active && sm.view.scan == SCAN_OFF && sm.view.dual_stops == (uint8_t)(stops + 1));
+		spectrum_cmd(SPECTRUM_STOP, 0);
+		CHECK(sm.view.scan == SCAN_OFF);
+		radio_req_dual(pair, sel);
+		spectrum_cmd(SPECTRUM_START, 0);
+		req(RREQ_ZONE_POS, 0);
+		CHECK(!sm.view.spectrum.active && sm.view.scan == SCAN_OFF && sm.view.zone_pos == 0);
+	}
+	// A selected VFO keeps its own frequency and remains one of the two panes.
+	dmr_start(true);
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 145550000);
+	const radio_dual_ref_t vfo_pair[2] = { { false, 0, 3 }, { true, 0, 0 } };
+	radio_req_dual(vfo_pair, 1);
+	spectrum_cmd(SPECTRUM_START, 0);
+	run(500);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.dual_sel == 1 && sm.view.vfo && sm.view.vfo_index == 0 &&
+	      hw.rx_hz == 145550000 && sm.dual[1].vfo);
+	radio_req_dual(NULL, 0);
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	CHECK(sm.view.scan == SCAN_OFF); // a watch that was off is never started by the analyzer
+}
+#endif
+
+static void test_spectrum_immediate(void)
+{
+	dmr_start(true);
+	hw.st.rssi_dbm = -120;
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_cmd(SPECTRUM_AUTO_PEAK, SPECTRUM_AUTO_IMMEDIATE);
+	run(20);
+	CHECK(!sm.view.spectrum.listening);
+	uint8_t bin = sm.view.spectrum.index;
+	uint32_t hz = hw.rx_hz, sweeps = sm.view.spectrum.sweeps;
+	int retunes = hw.rx_calls;
+	hw.st.rssi_dbm = -50;
+	run(10);
+	CHECK(sm.view.spectrum.listening && sm.view.spectrum.audio_open && hw.audio);
+	CHECK(sm.view.spectrum.tuner == bin && sm.view.spectrum.index == bin + 1);
+	CHECK(hw.rx_hz == hz && hw.rx_calls == retunes && sm.view.spectrum.sweeps == sweeps);
+	run(500);
+	CHECK(hw.audio && hw.rx_calls == retunes && sm.view.spectrum.index == bin + 1);
+	hw.st.rssi_dbm = -120;
+	run(350);
+	CHECK(!hw.audio && !sm.view.spectrum.listening && hw.rx_calls > retunes);
+	CHECK(sm.view.spectrum.index > bin);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
+
+static void test_spectrum_persist(void)
+{
+	dmr_start(true);
+	uint32_t original = sm.view.ch.rx_hz;
+	spectrum_cmd(SPECTRUM_START, 0);
+	// Fresh settings select the middle window; saved preferences below must supersede every default.
+	CHECK(sm.view.spectrum.squelch_dbm == -60 && sm.view.spectrum.step_hz == 12500 && sm.view.spectrum.bins == 97);
+	CHECK(spectrum_view_frequency(&sm.view.spectrum, 96) - spectrum_view_frequency(&sm.view.spectrum, 0) == 1200000);
+	CHECK(sm.view.spectrum.dwell_ms == 10 && !sm.view.spectrum.narrow && sm.view.spectrum.auto_peak == SPECTRUM_AUTO_SWEEP);
+	CHECK(sm.view.spectrum.star_key == SPECTRUM_KEY_CENTER_TUNER && sm.view.spectrum.hash_key == SPECTRUM_KEY_BANDWIDTH);
+
+	spectrum_cmd(SPECTRUM_CENTER, 145062500);
+	spectrum_cmd(SPECTRUM_STEP, 6250);
+	spectrum_cmd(SPECTRUM_BANDWIDTH, 65);
+	spectrum_cmd(SPECTRUM_SQUELCH, -120);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	CHECK(hw.rx_hz == 145068750);
+	settings_t saved;
+	settings_read(&saved);
+	CHECK(saved.spectrum_center_hz == 145062500 && saved.spectrum_step_hz == 6250 &&
+	      saved.spectrum_bins == 65 && saved.spectrum_squelch_dbm == -120 && saved.spectrum_tuner_hz == 145068750);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	CHECK(hw.rx_hz == original);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.bins == 65 && sm.view.spectrum.squelch_dbm == -120 && hw.rx_hz == 145068750);
+	// A scanned carrier changes the live tuner, without dirtying the saved manual preference.
+	hw.st.rssi_dbm = -160;
+	run(400);
+	for (unsigned i = 0; sm.view.spectrum.listening && i < 10; i++) run(10);
+	hw.st.rssi_dbm = -50;
+	run(2000);
+	CHECK(sm.view.spectrum.audio_open && hw.rx_hz != saved.spectrum_tuner_hz);
+	CHECK(SETTINGS_FIELD(spectrum_tuner_hz) == saved.spectrum_tuner_hz);
+	int retunes = hw.rx_calls;
+	spectrum_cmd(SPECTRUM_DWELL, 50);
+	spectrum_cmd(SPECTRUM_SCALE, -20);
+	spectrum_cmd(SPECTRUM_AUTO_PEAK, 0);
+	CHECK(hw.rx_calls == retunes && hw.audio && sm.view.spectrum.audio_open);
+	CHECK(SETTINGS_FIELD(spectrum_no_peak) == 1 && SETTINGS_FIELD(spectrum_peak_immediate) == 0);
+	spectrum_cmd(SPECTRUM_AUTO_PEAK, SPECTRUM_AUTO_IMMEDIATE);
+	CHECK(hw.rx_calls == retunes && hw.audio && sm.view.spectrum.audio_open);
+	CHECK(SETTINGS_FIELD(spectrum_no_peak) == 0 && SETTINGS_FIELD(spectrum_peak_immediate) == 1);
+	CHECK(SETTINGS_FIELD(spectrum_tuner_hz) == saved.spectrum_tuner_hz);
+	spectrum_cmd(SPECTRUM_FILTER, 1);
+	CHECK(hw.rx_bw == RADIO_BW_12K5 && sm.view.spectrum.narrow);
+	CHECK(SETTINGS_FIELD(spectrum_tuner_hz) == saved.spectrum_tuner_hz);
+	boot();
+	CHECK(!sm.view.spectrum.active && hw.rx_hz == original);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.center_hz == 145062500 && sm.view.spectrum.step_hz == 6250 &&
+	      sm.view.spectrum.bins == 65 && sm.view.spectrum.squelch_dbm == -120 && hw.rx_hz == 145068750);
+	CHECK(sm.view.spectrum.dwell_ms == 50 && sm.view.spectrum.scale_db == -20 &&
+	      sm.view.spectrum.auto_peak == SPECTRUM_AUTO_IMMEDIATE);
+	CHECK(sm.view.spectrum.narrow && hw.rx_bw == RADIO_BW_12K5);
+	hw.st.rssi_dbm = -160;
+	run(200);
+	CHECK(hw.rx_bw == RADIO_BW_12K5 && hw.rx_hz != saved.spectrum_tuner_hz);
+	spectrum_cmd(SPECTRUM_AUTO_PEAK, 1);
+	hw.st.rssi_dbm = -50;
+	for (unsigned i = 0; !sm.view.spectrum.audio_open && i < 600; i++) run(10);
+	CHECK(sm.view.spectrum.audio_open && hw.audio && hw.rx_bw == RADIO_BW_12K5);
+	spectrum_cmd(SPECTRUM_SQUELCH, 1);
+	spectrum_cmd(SPECTRUM_BANDWIDTH, 66);
+	spectrum_cmd(SPECTRUM_FILTER, 2);
+	CHECK(SETTINGS_FIELD(spectrum_squelch_dbm) == -120 && SETTINGS_FIELD(spectrum_bins) == 65);
+	CHECK(SETTINGS_FIELD(spectrum_narrow) == 1 && hw.rx_bw == RADIO_BW_12K5);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	// Corrupt or unavailable preferences fall back safely; no settings layout reset is needed.
+	settings_t *st = settings_begin();
+	st->spectrum_center_hz = 800000000;
+	st->spectrum_step_hz = 1;
+	st->spectrum_bins = 2;
+	st->spectrum_squelch = 200;
+	st->spectrum_squelch_dbm = 200;
+	st->spectrum_dwell_ms = 2;
+	st->spectrum_scale_db = -17;
+	st->spectrum_no_peak = 9;
+	st->spectrum_peak_immediate = 9;
+	st->spectrum_narrow = 9;
+	settings_end(now);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.center_hz == original && sm.view.spectrum.step_hz == 12500 &&
+	      sm.view.spectrum.bins == 97 && sm.view.spectrum.squelch_dbm == -60 && hw.rx_hz == original);
+	CHECK(sm.view.spectrum.dwell_ms == 10 && sm.view.spectrum.scale_db == 0 &&
+	      sm.view.spectrum.auto_peak == SPECTRUM_AUTO_SWEEP);
+	CHECK(!sm.view.spectrum.narrow && hw.rx_bw == RADIO_BW_25K);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	st = settings_begin();
+	st->spectrum_bins = 129;
+	st->spectrum_step_hz = 12500;
+	st->spectrum_squelch = 80;
+	st->spectrum_squelch_dbm = INT16_MIN;
+	settings_end(now);
+	boot();
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.bins == 129 && sm.view.spectrum.squelch_dbm == -80);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	st = settings_begin();
+	st->spectrum_squelch = 40;
+	st->spectrum_squelch_dbm = INT16_MIN;
+	settings_end(now);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.squelch_dbm == -120 && sm.view.spectrum.squelch_dbm == -120);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	st = settings_begin();
+	st->spectrum_squelch_dbm = -40;
+	st->spectrum_no_peak = 1;
+	st->spectrum_peak_immediate = 1;
+	settings_end(now);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.squelch_dbm == -40 && sm.view.spectrum.squelch_dbm == -40);
+	CHECK(sm.view.spectrum.auto_peak == SPECTRUM_AUTO_OFF); // a saved Off retains precedence
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
+
+static void test_spectrum_center_tuner(void)
+{
+	dmr_start(true);
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_view_t *s = &sm.view.spectrum;
+	CHECK(!s->center_tuner);
+	spectrum_cmd(SPECTRUM_CENTER, 446000000);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	uint32_t tuned = hw.rx_hz;
+	spectrum_cmd(SPECTRUM_CENTER_TUNER, 1);
+	CHECK(s->center_tuner && s->center_hz == tuned && s->tuner == s->bins / 2 && hw.rx_hz == tuned);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	uint32_t manual = tuned + s->step_hz;
+	CHECK(s->center_hz == manual && hw.rx_hz == manual);
+	CHECK(SETTINGS_FIELD(spectrum_center_tuner) == 1 && SETTINGS_FIELD(spectrum_center_hz) == manual &&
+	      SETTINGS_FIELD(spectrum_tuner_hz) == manual);
+	// Capture moves only the tuner; later non-tuning edits preserve the saved manual window.
+	hw.st.rssi_dbm = -160;
+	run(20);
+	hw.st.rssi_dbm = -60;
+	run(1500);
+	CHECK(s->audio_open && hw.audio && s->center_hz == manual && hw.rx_hz != manual);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == manual && SETTINGS_FIELD(spectrum_tuner_hz) == manual);
+	spectrum_cmd(SPECTRUM_DWELL, 20);
+	spectrum_cmd(SPECTRUM_SCALE, -20);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == manual && SETTINGS_FIELD(spectrum_tuner_hz) == manual);
+	hw.st.rssi_dbm = -160;
+	for (unsigned i = 0; s->tuner != s->bins / 2 && i < 40; i++) run(10);
+	CHECK(s->center_hz == manual && s->tuner == s->bins / 2 && hw.rx_hz == manual && !hw.audio);
+	// Moving during a new peak interrupts it and pans from the original center, not the peak's frequency.
+	run(20);
+	hw.st.rssi_dbm = -60;
+	for (unsigned i = 0; (s->tuner == s->bins / 2 || !s->audio_open) && i < 400; i++) run(10);
+	CHECK(s->audio_open && s->tuner != s->bins / 2 && s->center_hz == manual);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	manual += s->step_hz;
+	CHECK(s->center_hz == manual && s->tuner == s->bins / 2 && hw.rx_hz == manual && !hw.audio);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == manual && SETTINGS_FIELD(spectrum_tuner_hz) == manual);
+	boot();
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(s->center_tuner && s->center_hz == manual && s->tuner == s->bins / 2 && hw.rx_hz == manual);
+	CHECK(s->dwell_ms == 20 && s->scale_db == -20);
+	int calls = hw.rx_calls;
+	spectrum_cmd(SPECTRUM_CENTER_TUNER, 0);
+	CHECK(!s->center_tuner && hw.rx_calls == calls);
+	spectrum_cmd(SPECTRUM_TUNER, -1);
+	CHECK(s->center_hz == manual && hw.rx_hz == manual - s->step_hz);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
+
+static void test_spectrum_edge_pan(void)
+{
+	dmr_start(true);
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_cmd(SPECTRUM_CENTER, 446000000);
+	spectrum_view_t *s = &sm.view.spectrum;
+	CHECK(!s->center_tuner);
+	for (unsigned i = 0; i < s->bins / 2u; i++) spectrum_cmd(SPECTRUM_TUNER, -1);
+	CHECK(s->tuner == 0 && s->center_hz == 446000000 && hw.rx_hz == 445400000);
+	spectrum_cmd(SPECTRUM_TUNER, -1);
+	CHECK(s->tuner == 0 && s->center_hz == 445987500 && hw.rx_hz == 445387500);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == 445987500 && SETTINGS_FIELD(spectrum_tuner_hz) == 445387500);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(!s->center_tuner && s->tuner == 0 && s->center_hz == 445987500 && hw.rx_hz == 445387500);
+	for (unsigned i = 1; i < s->bins; i++) spectrum_cmd(SPECTRUM_TUNER, 1);
+	CHECK(s->tuner == s->bins - 1 && s->center_hz == 445987500 && hw.rx_hz == 446587500);
+	spectrum_cmd(SPECTRUM_TUNER, 1);
+	CHECK(s->tuner == s->bins - 1 && s->center_hz == 446000000 && hw.rx_hz == 446600000);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == 446000000 && SETTINGS_FIELD(spectrum_tuner_hz) == 446600000);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
+
+static void test_spectrum_display_preferences(void)
+{
+	dmr_start(true);
+	CHECK(ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) == 0);
+	for (int value = 0; value <= 6; value++) {
+		if (value == 3) continue;
+		CHECK(ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, value));
+		boot();
+		CHECK(ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) == value);
+	}
+	CHECK(!ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, -1));
+	CHECK(!ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, 3));
+	CHECK(!ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, 7));
+	CHECK(!ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, 255));
+	settings_t *st = settings_begin();
+	st->spectrum_display = 0xff;
+	settings_end(now);
+	CHECK(ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) == 0);
+}
+
+static void test_spectrum_key_preferences(void)
+{
+	dmr_start(true);
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_view_t *s = &sm.view.spectrum;
+	CHECK(s->hash_key == SPECTRUM_KEY_BANDWIDTH && s->star_key == SPECTRUM_KEY_CENTER_TUNER);
+	spectrum_cmd(SPECTRUM_CENTER, 446000000);
+	spectrum_cmd(SPECTRUM_SQUELCH, -160);
+	run(20);
+	CHECK(hw.audio && s->audio_open);
+	int retunes = hw.rx_calls;
+	spectrum_cmd(SPECTRUM_HASH_KEY, SPECTRUM_KEY_FILTER);
+	spectrum_cmd(SPECTRUM_STAR_KEY, SPECTRUM_KEY_AUTO_PEAK);
+	CHECK(hw.audio && s->audio_open && hw.rx_calls == retunes);
+	CHECK(!s->narrow && s->auto_peak == SPECTRUM_AUTO_SWEEP);
+	CHECK(SETTINGS_FIELD(spectrum_keys) == 0x0a);
+	boot();
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(s->hash_key == SPECTRUM_KEY_FILTER && s->star_key == SPECTRUM_KEY_AUTO_PEAK);
+	CHECK(!s->narrow && s->auto_peak == SPECTRUM_AUTO_SWEEP && s->center_hz == 446000000);
+	for (unsigned hash = 0; hash < SPECTRUM_KEY_COUNT; hash++) {
+		for (unsigned star = 0; star < SPECTRUM_KEY_COUNT; star++) {
+			spectrum_cmd(SPECTRUM_HASH_KEY, (int32_t)hash);
+			spectrum_cmd(SPECTRUM_STAR_KEY, (int32_t)star);
+			spectrum_cmd(SPECTRUM_STOP, 0);
+			spectrum_cmd(SPECTRUM_START, 0);
+			CHECK(s->hash_key == hash && s->star_key == star);
+		}
+	}
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	boot();
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(s->hash_key == SPECTRUM_KEY_SQL_DOWN && s->star_key == SPECTRUM_KEY_SQL_DOWN);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	settings_t *st = settings_begin();
+	st->spectrum_keys = 0xff;
+	settings_end(now);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(s->hash_key == SPECTRUM_KEY_BANDWIDTH && s->star_key == SPECTRUM_KEY_CENTER_TUNER);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
+#endif
 
 static void test_dmr_rx(void)
 {
@@ -4190,6 +4698,13 @@ void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
 void radio_req_volume_hold(bool hold) { req(RREQ_VOLUME_HOLD, hold); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 void radio_req_retune(void) { req(RREQ_RETUNE, 0); }
+#if CONFIG_SPECTRUM
+void radio_req_spectrum(uint8_t cmd, int32_t value)
+{
+	radio_req_t r = { .type = RREQ_SPECTRUM, .arg = cmd, .arg2 = (uint32_t)value };
+	radio_sm_request(&sm, &r, now);
+}
+#endif
 #if CONFIG_NXDN
 // As radio_task.c does it: the settings to the module, the request to the state machine
 void radio_req_nxdn_settings(const radio_nxdn_settings_t *s)
@@ -6519,7 +7034,8 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(452);	// the settings records (page 1: 192 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
+	// Commit every settings page (12-byte header, payload, CRC and commit); fail at the native erase next.
+	sim_flash_cut_after(sizeof(settings_t) + 20u * SETTINGS_PAGES);
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);
@@ -11797,6 +12313,40 @@ static void detour_req(uint8_t op, uint32_t backstop_ms)
 	radio_sm_request(&sm, &r, now);
 }
 
+#if CONFIG_SPECTRUM
+static void test_spectrum_detour_ownership(void)
+{
+	sim_flash_create(0x40000u, &reset_map);
+	CHECK(storage_init());
+	settings_init();
+	dmr_start(true);
+	settings_poll(now);
+	CHECK(settings_flush());
+	uint32_t home = hw.rx_hz;
+	detour_req(RADIO_DETOUR_MARK, 1000);
+	CHECK(sm.view.detour.armed && settings_held());
+	int tuned = hw.rx_calls;
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(!sm.view.spectrum.active && sm.view.detour.armed && settings_held());
+	CHECK(sm.dmr_running && hw_mode == RADIO_MODE_DMR && hw.rx_hz == home && hw.rx_calls == tuned);
+	run(1200);
+	CHECK(!sm.view.detour.armed && !settings_held() && !sm.view.spectrum.active && hw.rx_hz == home);
+	// In the other order the detour request closes Spectrum before saving its home receiver.
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_cmd(SPECTRUM_CENTER, 146520000);
+	CHECK(sm.view.spectrum.active && hw.rx_hz == 146520000);
+	CHECK(settings_flush()); // a detour waits for ordinary preference writes to finish
+	detour_req(RADIO_DETOUR_MARK, 1000);
+	CHECK(!sm.view.spectrum.active && sm.view.detour.armed && sm.detour.rx_hz == home);
+	CHECK(sm.dmr_running && hw_mode == RADIO_MODE_DMR && hw.rx_hz == home);
+	run(1200);
+	CHECK(!sm.view.detour.armed && !settings_held() && hw.rx_hz == home);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.active && !sm.dmr_running && hw_mode == RADIO_MODE_FM);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
+#endif
+
 // A detour (docs/spec/debuglink.md 7.4): every setting the debug link can change while one runs is back after the
 // deadline, and nothing of it was stored, not by the save timer, not by a power-off's flush
 static void test_detour(void)
@@ -12009,6 +12559,21 @@ int main(void)
 	test_temp_bw_tone();
 	test_tone_lists();
 	test_dmr_rx();
+#if CONFIG_SPECTRUM
+	test_spectrum();
+#if CONFIG_BEEP
+	test_spectrum_local_feedback();
+#endif
+	test_spectrum_immediate();
+	test_spectrum_persist();
+	test_spectrum_center_tuner();
+	test_spectrum_edge_pan();
+	test_spectrum_key_preferences();
+	test_spectrum_display_preferences();
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH
+	test_spectrum_dual_restore();
+#endif
+#endif
 	test_dmr_rssi_hold();
 	test_fm_rssi_raw();
 	test_dmr_tx();
@@ -12119,6 +12684,9 @@ int main(void)
 	test_factory_reset();
 #if CONFIG_RADIO_DETOUR
 	test_detour();
+#if CONFIG_SPECTRUM
+	test_spectrum_detour_ownership();
+#endif
 #endif
 	test_volume_step_of();
 	CHECK(rekeys == 0);	// every keying in every test above was ended before the next

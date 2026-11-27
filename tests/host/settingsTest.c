@@ -637,6 +637,105 @@ static void test_settings_gateway_upgrade(void)
 	CHECK(st.load == SETTINGS_LOADED && s.ds_ip_gateway == 9996543u && s.vfo2_rx_hz == 446006250u);
 }
 
+static void test_settings_spectrum_upgrade(void)
+{
+	settings_t old, s;
+	settings_stats_t stats;
+	sim_flash_create(FLASH_SIZE, &map);
+	settings_defaults(&old);
+	old.squelch = 4;
+	old.aes_mi_res = 0x12345678u;
+	// These bytes did not exist in the previous record; its values and AES reservation must survive.
+	old.spectrum_squelch = 1;
+	put_record(&map, 0, 0, 1, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT),
+		   (uint16_t)(offsetof(settings_t, spectrum_center_hz) - SETTINGS_PAGE_BYTES),
+		   (const uint8_t *)&old + SETTINGS_PAGE_BYTES, true, true);
+	put_record(&map, 0, 1, 2, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &old, true, true);
+	boot();
+	settings_read(&s);
+	settings_get_stats(&stats);
+	CHECK(stats.load == SETTINGS_UPGRADED && s.squelch == 4 && s.aes_mi_res == 0x12345678u);
+	CHECK(s.spectrum_center_hz == 0 && s.spectrum_tuner_hz == 0 && s.spectrum_step_hz == 12500 &&
+	      s.spectrum_squelch == 100 && s.spectrum_bins == 97);
+	CHECK(s.spectrum_dwell_ms == 10 && s.spectrum_no_peak == 0 && s.spectrum_scale_db == 0);
+	CHECK(s.spectrum_narrow == 0 && s.spectrum_squelch_dbm == INT16_MIN && s.spectrum_peak_immediate == 0);
+	CHECK(s.spectrum_center_tuner == 0 && s.spectrum_keys == 0);
+	CHECK(s.spectrum_display == 0);
+	settings_t *st = settings_begin();
+	st->spectrum_center_hz = 145062500;
+	st->spectrum_tuner_hz = 145068750;
+	st->spectrum_step_hz = 6250;
+	st->spectrum_bins = 129;
+	st->spectrum_squelch = 42;
+	st->spectrum_dwell_ms = 50;
+	st->spectrum_no_peak = 1;
+	st->spectrum_scale_db = -20;
+	st->spectrum_narrow = 1;
+	st->spectrum_center_tuner = 1;
+	st->spectrum_keys = 0x0b;
+	st->spectrum_display = 5;
+	st->spectrum_squelch_dbm = -120;
+	settings_end(1);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	settings_get_stats(&stats);
+	CHECK(stats.load == SETTINGS_LOADED && s.aes_mi_res == 0x12345678u && s.squelch == 4);
+	CHECK(s.spectrum_center_hz == 145062500 && s.spectrum_tuner_hz == 145068750 &&
+	      s.spectrum_step_hz == 6250 && s.spectrum_bins == 129 && s.spectrum_squelch == 42);
+	CHECK(s.spectrum_dwell_ms == 50 && s.spectrum_no_peak == 1 && s.spectrum_scale_db == -20 && s.spectrum_narrow == 1 && s.spectrum_squelch_dbm == -120);
+	CHECK(s.spectrum_center_tuner == 1 && s.spectrum_keys == 0x0b);
+	CHECK(s.spectrum_display == 5);
+	st = settings_begin();
+	st->spectrum_no_peak = 0;
+	st->spectrum_peak_immediate = 1;
+	settings_end(2);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	CHECK(s.spectrum_no_peak == 0 && s.spectrum_peak_immediate == 1 && s.spectrum_squelch_dbm == -120);
+	// The first spectrum build's 428-byte record also upgrades without resetting its saved window.
+	s.spectrum_center_tuner = 0; // reserved12 was zero in records written before the option
+	s.spectrum_keys = 0;
+	put_record(&map, 1, 0, 20, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT), 428 - SETTINGS_PAGE_BYTES,
+		   (const uint8_t *)&s + SETTINGS_PAGE_BYTES, true, true);
+	put_record(&map, 1, 1, 21, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &s, true, true);
+	boot();
+	settings_read(&s);
+	settings_get_stats(&stats);
+	CHECK(stats.load == SETTINGS_UPGRADED && s.spectrum_center_hz == 145062500 && s.spectrum_squelch == 42);
+	CHECK(s.spectrum_dwell_ms == 10 && s.spectrum_no_peak == 0 && s.spectrum_scale_db == 0);
+	CHECK(s.spectrum_narrow == 0 && s.spectrum_squelch_dbm == INT16_MIN && s.spectrum_peak_immediate == 0);
+	// The 432-byte record preserves its scale and dwell, while the appended filter defaults to Wide.
+	s.spectrum_dwell_ms = 50;
+	s.spectrum_no_peak = 1;
+	s.spectrum_scale_db = -20;
+	s.spectrum_narrow = 1;
+	s.spectrum_peak_immediate = 1;
+	put_record(&map, 2, 0, 30, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT), 432 - SETTINGS_PAGE_BYTES,
+		   (const uint8_t *)&s + SETTINGS_PAGE_BYTES, true, true);
+	put_record(&map, 2, 1, 31, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &s, true, true);
+	boot();
+	settings_read(&s);
+	settings_get_stats(&stats);
+	CHECK(stats.load == SETTINGS_UPGRADED && s.spectrum_center_hz == 145062500 && s.spectrum_squelch == 42);
+	CHECK(s.spectrum_dwell_ms == 50 && s.spectrum_no_peak == 1 && s.spectrum_scale_db == -20 && s.spectrum_narrow == 0 && s.spectrum_squelch_dbm == INT16_MIN);
+	CHECK(s.spectrum_peak_immediate == 0);
+	CHECK(s.spectrum_center_tuner == 0);
+	// The last 436-byte layout gains default display preferences without changing its shortcuts or threshold.
+	s.spectrum_keys = 0x34;
+	s.spectrum_squelch_dbm = -65;
+	s.spectrum_display = 6;
+	put_record(&map, 0, 2, 40, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT), 436 - SETTINGS_PAGE_BYTES,
+		   (const uint8_t *)&s + SETTINGS_PAGE_BYTES, true, true);
+	put_record(&map, 0, 3, 41, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &s, true, true);
+	boot();
+	settings_read(&s);
+	settings_get_stats(&stats);
+	CHECK(stats.load == SETTINGS_UPGRADED && s.spectrum_display == 0);
+	CHECK(s.spectrum_keys == 0x34 && s.spectrum_squelch_dbm == -65 && s.spectrum_center_hz == 145062500);
+}
+
 // Stored power levels count against the board's level count (power_levels): a record from before it (0), or from a
 // build whose board had another count, loads with the levels back to the defaults, since the same index may name a
 // higher power now; a record of this count keeps them
@@ -961,8 +1060,22 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, sig_fm), 403 },
 		{ offsetof(settings_t, reserved11), 406 },
 		{ offsetof(settings_t, aes_mi_res), 408 },
+		{ offsetof(settings_t, spectrum_center_hz), 412 },
+		{ offsetof(settings_t, spectrum_step_hz), 416 },
+		{ offsetof(settings_t, spectrum_tuner_hz), 420 },
+		{ offsetof(settings_t, spectrum_bins), 424 },
+		{ offsetof(settings_t, spectrum_squelch), 425 },
+		{ offsetof(settings_t, spectrum_center_tuner), 426 },
+		{ offsetof(settings_t, spectrum_keys), 427 },
+		{ offsetof(settings_t, spectrum_dwell_ms), 428 },
+		{ offsetof(settings_t, spectrum_no_peak), 430 },
+		{ offsetof(settings_t, spectrum_scale_db), 431 },
+		{ offsetof(settings_t, spectrum_narrow), 432 },
+		{ offsetof(settings_t, spectrum_squelch_dbm), 434 },
+		{ offsetof(settings_t, spectrum_peak_immediate), 433 },
+		{ offsetof(settings_t, spectrum_display), 436 },
 	};
-	CHECK(sizeof(settings_t) == 412);
+	CHECK(sizeof(settings_t) == 440);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);
@@ -1299,6 +1412,7 @@ int main(void)
 	test_map_for();
 	test_settings_pages();
 	test_settings_gateway_upgrade();
+	test_settings_spectrum_upgrade();
 	test_settings_power_levels();
 	test_settings_bad_records();
 	test_settings_worn_sector();
