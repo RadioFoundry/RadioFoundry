@@ -630,9 +630,7 @@ static void vibrate(uint8_t vibe)
 		ui_svc_vibrate(vibe);
 }
 
-// noinline: inlined, its banner text and buffers sit in ui_task's frame under every draw as well (the deepest path is a
-// draw, never an event), and LTO inlines it or not by how the build's partitions fall
-__attribute__((noinline)) static void handle_event(const ui_event_t *ev)
+static void handle_event(const ui_event_t *ev)
 {
 	char title[UI_BANNER_TEXT];
 	sbuf_t b;
@@ -2551,7 +2549,9 @@ void ui_app_set_view(const radio_view_t *v)
 #endif
 }
 
-bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
+// noinline: LTO inlines it into ui_task or not by how the build's partitions fall, and inlined, its frame (the
+// events' banner text and buffers) sits under every key path as well
+__attribute__((noinline)) bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
 	static uint32_t serial_seen;
 	static uint8_t battery_seen;
