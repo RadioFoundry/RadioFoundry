@@ -326,12 +326,14 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
            $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
            $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c \
            $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_keyrun.c \
-           $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c
+           $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c \
+           $(CORE)/support/sha256.c $(CORE)/support/kcv.c $(CORE)/codeplug/key_store.c \
+           $(CORE)/ui/ui_svc_zeroize.c $(CORE)/zeroize/zeroize.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
-		-DCONFIG_SATELLITE_TLE=1 -o $@ $(RCORE) -lm
+		-DCONFIG_SATELLITE_TLE=1 -DCONFIG_ZEROIZE=1 -o $@ $(RCORE) -lm
 
 # The same with the DMR VFO off (CONFIG_VFO_DMR=0): the VFO stays analog and nothing about it changes
 TESTS   += radioCoreTestNoVfoDmr
@@ -740,12 +742,12 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
-           $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
+           $(CORE)/support/support_info.c $(CORE)/support/kcv.c $(CORE)/dmr/dmrAes.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
 ABOUT_H := out/gen/rfoundry_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
 UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
-           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
+           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE -DCONFIG_ZEROIZE=1
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 TESTS   += uiFlowTestSatellite
@@ -889,6 +891,29 @@ run: run-support
 run-support: supportInfoTest
 	./supportInfoTest
 .PHONY: run-support
+# Key check values (core/support/kcv.c, docs/spec/key-check.md): the published vectors, every method
+TESTS   += kcvTest
+KCVSRC := $(CORE)/support/sha256.c $(CORE)/support/kcv.c $(CORE)/dmr/dmrAes.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
+kcvTest: kcvTest.c $(KCVSRC) $(wildcard $(CORE)/support/*.h) ../vectors/key-check.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ kcvTest.c $(KCVSRC)
+run: run-kcv
+run-kcv: kcvTest
+	./kcvTest
+.PHONY: run-kcv
+# The stored keys (core/codeplug/key_store.c, key-check.md 4): privacy slots, then traffic keys whose system exists,
+# with their check values, on a simulated flash with an in-memory settings record
+TESTS   += keyStoreTest
+KEYSTORE := $(CORE)/codeplug/key_store.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c \
+            $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/storage/storage.c sim/sim_flash.c \
+            $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/support/sha256.c \
+            $(CORE)/support/kcv.c $(CORE)/dmr/dmrAes.c
+keyStoreTest: keyStoreTest.c $(KEYSTORE) $(wildcard $(CORE)/codeplug/*.h $(CORE)/support/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_KEY_CHECK=1 -DCONFIG_DMR_PRIVACY=1 -DCODEPLUG_MODE_RECORDS=1 \
+		-o $@ keyStoreTest.c $(KEYSTORE)
+run: run-key-store
+run-key-store: keyStoreTest
+	./keyStoreTest
+.PHONY: run-key-store
 # The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 ppb, to the board's hook
 TESTS   += refTrimTest
 refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(ROOT)/hal/hal_radio.h
@@ -1570,6 +1595,21 @@ run: run-cpedit
 run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
+
+# The emergency wipe (core/zeroize, docs/spec/zeroize.md) on a simulated NOR flash with the real storage, settings store
+# and codeplug: the code's hash, the key sequence, whole wipes in both scopes (no copy of a key left, exactly the
+# expected sectors erased, the calibration and the rest byte for byte), failures reported
+ZEROIZE := $(CORE)/zeroize/zeroize.c $(CORE)/support/sha256.c $(CORE)/settings/settings.c $(CPEDIT)
+TESTS   += zeroizeTest
+
+# Built without the __attribute__ override: the test's zeroize_ram_hook takes the weak default's place, as key fill's will
+zeroizeTest: zeroizeTest.c $(ZEROIZE) $(wildcard $(CORE)/zeroize/*.h $(CORE)/codeplug/*.h $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
+	$(CC) -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers -Iout/gen 		-I$(ROOT)/hal -I. -Wshadow -DCONFIG_ZEROIZE=1 -o $@ zeroizeTest.c $(ZEROIZE)
+
+run: run-zeroize
+run-zeroize: zeroizeTest
+	./zeroizeTest
+.PHONY: run-zeroize
 
 # The codeplug settings area: keyed values, unknown keys kept, invalid and newer areas, power cuts during a write
 TESTS   += codeplugKvTest

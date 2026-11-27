@@ -165,6 +165,13 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "settings_sound_tones", "ok 7 1 down down down down down down" },	// the tones (radio-features.md)
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
+	{ "settings_privacy_check", "ok 7 4 ok down ok 1 ok down" },	// Key check (key-check.md 4)
+	{ "stored_keys", "ok 7 4 ok down ok 1 ok down down ok" },	// Stored keys: a slot and a traffic key
+	{ "settings_privacy_wipe", "wipecode:2468 ok 7 4 down down down down down down down" },	// the wipe rows (zeroize.md 3.1)
+	{ "wipe_code", "ok 7 4 down down down down ok 2 4" },		// the wipe code, two digits typed
+	{ "wipe_confirm", "wipecode:2468 2 4 6 8 ctx" },			// the code and # on Home: the confirmation
+	{ "wipe_failed", "wipecode:2468 wipefail:6 2 4 6 8 ctx ok" },	// a wipe that didn't finish says what
+	{ "clear_keys_confirm", "ok 7 4 down down down down down down down down ok" },	// Clear all keys asks first
 	{ "settings_freq_trim", "trim ok 7 up ok up" },	// on a radio with a reference trim (radio-features.md 6.1)
 	{ "freq_trim", "trim ok 7 up ok up ok ctx 4 5 ok" },
 	{ "freq_trim_typing", "trim ok 7 up ok up ok 1 2" },

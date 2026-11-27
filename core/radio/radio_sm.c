@@ -1758,6 +1758,7 @@ static void dmr_load_channel(radio_sm_t *sm)
 
 #if CONFIG_DMR_PRIVACY
 static dmrPrivacyKey_t privacy_key;	// the call stack's privacy hook context (radio task only)
+static dmrPrivacyKey_t data_key;	// the data layer's crypt context: the voice key (radio task only)
 #endif
 
 // Hang time (ms) as the call stack's reply window (whole seconds, rounded up); 0 keeps the stack's default
@@ -3350,7 +3351,6 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	c.channelKey = h;
 #if CONFIG_DMR_PRIVACY
 	// The voice key is the data key: data is encrypted or held back as the scheme says
-	static dmrPrivacyKey_t data_key;	// the data layer's crypt context points here (radio task only)
 	data_key.type = (dmrPrivacyType_t)sm->privacy_type;
 	data_key.key = sm->privacy_key;
 	dmrPrivacyDataConfig(&data_key, &c.privacy);
@@ -8504,7 +8504,10 @@ static bool dmr_mic_gate(void)
 }
 #endif
 
-void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
+// The set-up from the saved settings, up to the saved position, which it writes to at[] (zone, channel number, zone
+// position); true when the VFO was in use. noinline: its settings copy would otherwise stay in radio_sm_init's frame
+// under select_position, the start task's deepest path (stack-check.md)
+static bool __attribute__((noinline)) init_saved(radio_sm_t *sm, uint32_t now_ms, uint16_t at[3])
 {
 	settings_t st;
 	settings_read(&st);	// a zone add or delete a power cut interrupted is settled first (radio_core_start)
@@ -8623,13 +8626,31 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
 	load_own_id(sm);
-	select_position(sm, st.zone_index, st.channel, st.zone_pos);
+	at[0] = st.zone_index;
+	at[1] = st.channel;
+	at[2] = st.zone_pos;
+	return st.vfo != 0;
+}
+
+// apply_prefs from the saved settings, read again: a copy of its own, released before the caller goes on
+static void __attribute__((noinline)) apply_saved_prefs(radio_sm_t *sm)
+{
+	settings_t st;
+	settings_read(&st);
 	apply_prefs(sm, &st);
+}
+
+void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint16_t at[3];
+	bool vfo = init_saved(sm, now_ms, at);
+	select_position(sm, at[0], at[1], at[2]);
+	apply_saved_prefs(sm);
 #if CONFIG_DMR
 	sm->hs_power = sm->view.hs_power = default_power();
 	sm->hs_rf_level = RADIO_HS_RF_OWN;
 #endif
-	if (!sm->have_channels || (st.vfo && VFO_AVAILABLE)) {
+	if (!sm->have_channels || (vfo && VFO_AVAILABLE)) {
 		if (VFO_AVAILABLE) {
 			enter_vfo(sm, now_ms);
 		} else {
@@ -8762,6 +8783,31 @@ static int req_steps(const radio_req_t *req)
 	// (RREQ_DUAL packs a channel into arg, RADIO_DUAL_VFO in bit 31: INT32_MIN can't be negated, and isn't a step)
 	return req->arg > 0 ? req->arg : req->arg != INT32_MIN ? -req->arg : INT32_MAX;
 }
+
+#if CONFIG_ZEROIZE
+// The emergency wipe (docs/spec/zeroize.md 4.2): every key copy the radio core holds, zeroed, and privacy off. The
+// settings store's copy is the wipe's own (settings_scrub); persist() writes the zeros from now on
+static void zeroize_keys(radio_sm_t *sm)
+{
+#if CONFIG_DMR_PRIVACY
+	sm->privacy_type = DMR_PRIVACY_OFF;
+	sm->privacy_key = 0;
+	memset(&privacy_key, 0, sizeof(privacy_key));
+	memset(&data_key, 0, sizeof(data_key));
+#if CONFIG_DMR_AES
+	radio_aes_wipe();	// the AES channel's key schedule; dmr_configure below reloads only what the codeplug still holds
+#endif
+	if (sm->dmr_running) {
+		dmr_configure(sm);	// the call stack's hook and service options without the key
+	}
+	changed(sm);
+#endif
+#if CONFIG_NXDN
+	radio_nxdn_wipe();
+#endif
+	(void)sm;
+}
+#endif
 
 static void ch_step_request(radio_sm_t *sm, const radio_req_t *req, bool busy, uint32_t now_ms)
 {
@@ -9385,6 +9431,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_PTT: ptt_request(sm, req, now_ms); break;
 	case RREQ_MONITOR: monitor_request(sm, req, now_ms); break;
 	case RREQ_POWER: power_request(sm, req); break;
+#if CONFIG_ZEROIZE
+	case RREQ_ZEROIZE: zeroize_keys(sm); break;
+#endif
 	case RREQ_VOLUME:
 		sm->vol_step = (uint8_t)(req->arg < 0 ? 0 : req->arg > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : req->arg);
 		break;

@@ -72,6 +72,14 @@ bool radio_aes_configure(const channel_t *ch, dmr_call_config_t *cfg)
 	return true;
 }
 
+void radio_aes_wipe(void)
+{
+	dmrAesClearKeys(&channel_keys);	// keeps the MI sequence: positions already sent stay used
+	channel_key_ref = 0;
+	channel_key_system = 0;
+	channel_tx_allowed = false;
+}
+
 bool radio_aes_data_config(const channel_t *ch, dmrDataPrivacy_t *out)
 {
 	if (ch->kind != CODEPLUG_KIND_DMR_AES)

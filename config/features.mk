@@ -25,6 +25,9 @@ CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
 # decrypted, and our overs encrypted, on channels bound to a traffic key in the codeplug. Needs DMR_PRIVACY (its AMBE
 # FEC helpers)
 CONFIG_DMR_AES ?= $(CONFIG_DMR_PRIVACY)
+# key check values: six hex digits per stored key, so two radios can see they hold the same key (Settings > Privacy >
+# Key check and Stored keys; docs/spec/key-check.md). Lists privacy key slots and traffic keys, where the build has them
+CONFIG_KEY_CHECK ?= y
 # talker alias decode and TX of our radio name (needs DMR)
 CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 # ETSI GPS Info in the embedded LC (FLCO 8): the caller's position decoded and shown, ours sent from the position
@@ -205,6 +208,10 @@ CONFIG_LANG_DEFAULT_ZH ?= n
 CONFIG_UI_COLOR ?= y
 # the Settings menu on the radio (off: settings keep their stored values and are set with qdmr; docs/spec/ui.md)
 CONFIG_UI_SETTINGS ?= y
+# emergency wipe: a 4-digit wipe code and # on Home or while locked erases the keys (and by default the codeplug) from
+# the flash and RAM, then restarts (Settings > Privacy; docs/spec/zeroize.md). Needs UI_SETTINGS (the code is set there).
+# Off by default (about 4.3 KB flash): a custom build turns it on with CONFIG_ZEROIZE=y
+CONFIG_ZEROIZE ?= n
 # channel / zone scan, VFO band scan, dual watch, nuisance delete (docs/spec/radio-features.md)
 CONFIG_SCAN ?= y
 # the dual watch screens: two channels on Home, which one PTT uses and which one a call came in on; the radio core's
@@ -349,7 +356,7 @@ CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 CONFIG_SATELLITE_TLE ?= $(if $(filter y,$(CONFIG_DEBUGLINK)),y,n)
 
 
-FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_AES DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
+FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_AES KEY_CHECK ZEROIZE DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK DEBUGLINK_DMRIP CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG BACKLIGHT_TEST FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_FR LANG_ZH CJK_GLYPHS LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_FR LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP SIG_TONES FM_TX_TONES DTMF \
 	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG SUPPORT_INFO FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY SATELLITE_TLE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR P25 P25_TRUNK NXDN NXDN_SCRAMBLER AIR_RAW
 
@@ -415,6 +422,7 @@ ifneq ($(call feature_on,HOTSPOT_SPLIT),)
     $(error CONFIG_HOTSPOT_SPLIT=y needs CONFIG_HOTSPOT=y)
   endif
 endif
+$(if $(and $(call feature_on,ZEROIZE),$(if $(call feature_on,UI_SETTINGS),,x)),$(error CONFIG_ZEROIZE=y needs CONFIG_UI_SETTINGS=y))
 $(if $(and $(call feature_on,NXDN_SCRAMBLER),$(if $(call feature_on,NXDN),,x)),$(error CONFIG_NXDN_SCRAMBLER=y needs CONFIG_NXDN=y))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_P25=y or CONFIG_NXDN=y (an air-framed mode)))
 $(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))

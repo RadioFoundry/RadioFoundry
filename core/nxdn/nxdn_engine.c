@@ -275,3 +275,9 @@ void nxdn_engine_view(const nxdn_engine_t *e, nxdn_engine_view_t *out)
 	} while ((seq & 1) || seq != e->seq);
 	out->tx = (uint8_t)air_session_tx_state(&e->session);
 }
+
+void nxdn_engine_wipe_keys(nxdn_engine_t *e)
+{
+	e->rx.scramble_key = 0;
+	e->tx.scramble_key = 0;
+}

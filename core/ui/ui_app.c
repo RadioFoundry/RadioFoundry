@@ -25,6 +25,7 @@
 #include "radio/tones.h"
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// CODEPLUG_KIND_NONE
+#include "zeroize/zeroize.h"		// the wipe's key sequence (header only)
 #if CONFIG_HOTSPOT || (CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
 #include "hostlink/hostlink.h"
 #endif
@@ -125,9 +126,18 @@ static void entry_cancel(void)
 	dirty = true;
 }
 
+#if CONFIG_ZEROIZE
+static zeroize_seq_t wipe_seq;		// the emergency wipe's key sequence (docs/spec/zeroize.md 3)
+static uint8_t wipe_wrong;		// wrong codes typed while locked, since the keys were last unlocked
+#endif
+
 // Lock or unlock the keys; PTT goes with them when Settings > Key lock > PTT when locked is off
 static void set_locked(bool locked)
 {
+#if CONFIG_ZEROIZE
+	if (!locked)
+		wipe_wrong = 0;		// the owner unlocked: wrong codes count from 0 again
+#endif
 	ui_st.locked = locked;
 	if (locked) {
 		ui_st.quick_edit = false;
@@ -1965,6 +1975,10 @@ void ui_app_init(void)
 	radio_view = NULL;
 #endif
 	memset(&ui_st, 0, sizeof ui_st);
+#if CONFIG_ZEROIZE
+	zeroize_seq_reset(&wipe_seq);
+	wipe_wrong = 0;		// a restart starts the count again (docs/spec/zeroize.md 3.1)
+#endif
 	ui_st.volbar = -1;
 #if CONFIG_VOLUME_BAR
 	knob_seen = -1;
@@ -2148,6 +2162,48 @@ static void call_back_key(void)
 	ui_toast(TR(EMPTY_NO_CALLS_HEARD, "No calls heard yet"));
 }
 
+#if CONFIG_ZEROIZE
+// The emergency wipe's key sequence (docs/spec/zeroize.md 3): four digits and # on Home (and in Find, which the first
+// digit opens in channel mode), or on any screen while the keys are locked. The digits are never taken: they do what
+// they do, so no other sequence behaves differently. # is taken only after the wipe code. True: taken
+static bool wipe_seq_key(const input_event_t *ev)
+{
+	if (stack[sp].scr == SCR_WIPE && ui_scr[SCR_WIPE] != NULL)
+		return ui_scr[SCR_WIPE]->key(ev);	// its confirmation and result, before the key lock
+	bool where = ui_st.locked || sp == 0 || (wipe_seq.n > 0 && sp == 1 && stack[1].scr == SCR_FIND);
+	int d = digit_of(ev);
+	if (where && d >= 0 && ev->gesture == GESTURE_PRESS) {
+		zeroize_seq_digit(&wipe_seq, (char)('0' + d));
+		return false;
+	}
+	if (!where || ev->action != ACT_CONTEXT || ev->gesture != GESTURE_PRESS) {
+		zeroize_seq_reset(&wipe_seq);	// any other key, a long press, another screen: from the start again
+		return false;
+	}
+	char code[ZEROIZE_CODE_LEN];
+	if (!zeroize_seq_end(&wipe_seq, code) || ui_svc_setting_get(UI_SET_WIPE_CODE) == 0)
+		return false;
+	bool match = ui_svc_wipe_code_check(code);
+	memset(code, 0, sizeof code);
+	bool confirm = true;
+	if (!match) {
+		int32_t tries = ui_svc_setting_get(UI_SET_WIPE_TRIES);
+		if (!ui_st.locked || tries <= 0 || ++wipe_wrong < tries)
+			return false;	// # does what it does (the VFO entry, Find, the lock's toast)
+		confirm = false;	// the nth wrong code while locked: at once
+	} else {
+		confirm = ui_svc_setting_get(UI_SET_WIPE_CONFIRM) != 0;
+	}
+	wipe_wrong = 0;
+	if (!ui_st.locked) {
+		ui_go_home();		// Find closes, the frequency typed goes: the code was neither
+		entry_cancel();
+	}
+	ui_wipe_open(confirm);
+	return true;
+}
+#endif
+
 void ui_app_key(const input_event_t *ev)
 {
 #if CONFIG_DUAL_WATCH
@@ -2205,6 +2261,10 @@ void ui_app_key(const input_event_t *ev)
 		ui_svc_beep(UI_BEEP_KEY);
 	if (emergency_key(ev))
 		return;
+#if CONFIG_ZEROIZE
+	if (wipe_seq_key(ev))
+		return;
+#endif
 	// Key lock: only long QUICK (and PTT, MONITOR, emergency) get through
 	// Long * locks only from Home (principles 3): in a menu it would lock the keys mid-task, and in text entry a slow *
 	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)

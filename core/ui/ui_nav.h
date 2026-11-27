@@ -46,6 +46,8 @@ typedef enum {
 	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
 	SCR_SATELLITE_TEXT,		// one 69-character TLE line
 	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
+	SCR_KEYS,			// Settings > Privacy > Keys: every stored key and its check value (codeplug/key_store.h)
+	SCR_WIPE_CODE, SCR_WIPE,	// the emergency wipe (CONFIG_ZEROIZE): its code; the confirmation and the wipe
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
@@ -137,6 +139,8 @@ void ui_pop(void);
 void ui_backlight_hold(int16_t percent);
 #endif
 void ui_go_home(void);
+// The emergency wipe's screen (CONFIG_ZEROIZE, docs/spec/zeroize.md 3.1): its confirmation, or the wipe started at once
+void ui_wipe_open(bool confirm);
 void ui_toast(const char *text);
 // Save temporary channel changes and tell the user why a save cannot start
 bool ui_try_save_channel(void);

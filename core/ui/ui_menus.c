@@ -17,6 +17,7 @@
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_modes.h"
 #include "codeplug/codeplug_tag.h"
+#include "codeplug/key_store.h"
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #endif
@@ -6567,7 +6568,12 @@ static const ui_scr_def_t tools_screen = {
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
 enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS,
-	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// signaling tone steps, by sig_event_t
+	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_KEY_CHECK, SA_KEYS,
+	SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE,	// signaling tone steps, by sig_event_t
+	SA_WIPE_CODE, SA_CLEAR_KEYS };
+// The wipe screen's arg: the emergency wipe's confirmation, then it going (ui_wipe_open); Clear all keys' confirmation,
+// then that going (keys only, whatever Wipe what says)
+enum { WIPE_ASK, WIPE_RUN, WIPE_ASK_KEYS_ONLY, WIPE_RUN_KEYS_ONLY };
 
 typedef struct {
 	tr_id_t name;			// TRN; TR_NONE for a key's row (set_name)
@@ -6614,6 +6620,15 @@ static const tr_id_t n_accent[] = { TRN(VALUE_DEFAULT, "Default"), TRN(SET_VALUE
 	TRN(SET_VALUE_ACCENT_ORANGE, "Orange"), TRN(SET_VALUE_ACCENT_YELLOW, "Yellow"),
 	TRN(SET_VALUE_ACCENT_TEAL, "Teal"), TRN(SET_VALUE_ACCENT_LIGHT_BLUE, "Light blue"),
 	TRN(SET_VALUE_ACCENT_PURPLE, "Purple"), TRN(SET_VALUE_ACCENT_PINK, "Pink") };
+#endif
+#if CONFIG_ZEROIZE && CONFIG_DMR && CONFIG_DMR_PRIVACY	// the Privacy page's settings (below)
+// The emergency wipe (docs/spec/zeroize.md 3.1): what it erases, and after how many wrong codes typed while locked
+static const int16_t v_wipe_scope[] = { 0, 1 };
+static const tr_id_t n_wipe_scope[] = { TRN(SET_VALUE_WIPE_KEYS_CODEPLUG, "Keys+codeplug"),
+	TRN(SET_VALUE_WIPE_KEYS_ONLY, "Keys only") };
+static const int16_t v_wipe_tries[] = { 0, 3, 5, 10 };
+static const tr_id_t n_wipe_tries[] = { TRN(VALUE_OFF, "Off"), TRN(SET_VALUE_WIPE_3_WRONG, "3 wrong"),
+	TRN(SET_VALUE_WIPE_5_WRONG, "5 wrong"), TRN(SET_VALUE_WIPE_10_WRONG, "10 wrong") };
 #endif
 static const int16_t v_tot[] = { 0, 30, 60, 120, 180, 300, 600 };
 static const tr_id_t n_tot[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_30_S, "30 s"), TRN(VALUE_1_MIN, "1 min"),
@@ -6902,6 +6917,26 @@ static const set_item_t s_privacy[] = {
 	LIST(TRN(SET_LABEL_PRIVACY_KEY_TYPE, "Key type"), "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
 	// the range follows the type (set_range)
 	NUMBER(TRN(SET_LABEL_PRIVACY_KEY, "Key"), "privacy BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),
+#if CONFIG_KEY_CHECK
+	// the key's check value (key-check.md): compared with another radio's, it says both hold the same key
+	ACTION(TRN(SET_LABEL_PRIVACY_KEY_CHECK, "Key check"), "privacy kcv check value compare", SA_KEY_CHECK),
+#endif
+#if KEY_STORE
+	// every stored key with its check value: the privacy slots and the systems' traffic keys
+	ACTION(TRN(SET_LABEL_PRIVACY_KEYS, "Stored keys"), "privacy encryption traffic keys kcv list", SA_KEYS),
+#endif
+#if CONFIG_ZEROIZE
+	// The emergency wipe (zeroize.md 3): the code typed on Home or while locked, what it erases, the confirmation
+	// press, wrong codes typed while locked
+	ACTION(TRN(SET_LABEL_WIPE_CODE, "Wipe code"), "emergency zeroize erase keys", SA_WIPE_CODE),
+	LIST(TRN(SET_LABEL_WIPE_WHAT, "Wipe what"), "emergency zeroize erase codeplug", UI_SET_WIPE_SCOPE, v_wipe_scope,
+		n_wipe_scope),
+	TOGGLE(TRN(SET_LABEL_WIPE_CONFIRM, "Wipe confirm"), "emergency zeroize", UI_SET_WIPE_CONFIRM),
+	LIST(TRN(SET_LABEL_WIPE_AFTER, "Wipe after"), "emergency zeroize wrong codes", UI_SET_WIPE_TRIES, v_wipe_tries,
+		n_wipe_tries),
+	// Every key erased now, the channels kept (zeroize.md 3.2): the wipe's keys only steps, always after a confirmation
+	ACTION(TRN(SET_LABEL_CLEAR_KEYS, "Clear all keys"), "erase delete keys zeroize privacy aes", SA_CLEAR_KEYS),
+#endif
 };
 #endif
 // The key lock's rules: when it locks by itself and what still works while locked
@@ -7490,6 +7525,12 @@ static bool mic_agc_on(void)
 // Why a setting can't be used on this radio or in this build (the row is dimmed and OK says it), NULL if it can
 static const char *set_why_not(const set_item_t *s)
 {
+	if (s->type == ST_ACTION && s->id == SA_KEY_CHECK)
+		return !(feats() & UI_FEAT_PRIVACY) ? TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build") :
+			ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0 ? TR(SET_WHY_PICK_KEY_TYPE_FIRST, "Pick a key type first") :
+			NULL;
+	if (s->type == ST_ACTION && s->id == SA_WIPE_CODE)
+		return ui_has_action(ACT_DIGIT_1) ? NULL : TR(WHY_NEEDS_NUMBER_KEYS, "Needs number keys");
 	if (s->type == ST_ACTION)
 		return s->id >= SA_SIG_BEGIN && s->id <= SA_SIG_IDLE && !(CONFIG_BEEP && CONFIG_SIG_TONES) ?
 			TR(WHY_TONES_NOT_IN_BUILD, "Tones: not in this build") : NULL;
@@ -7591,9 +7632,18 @@ static void group_item(uint16_t i, ui_item_t *it)
 		set_value_text(s, edit ? set_value : ui_svc_setting_get(s->id), it->value, sizeof it->value);
 	else if (s->id == SA_LANGUAGE)
 		str_copy(it->value, sizeof it->value, lang_name(lang_current()));
+#if CONFIG_KEY_CHECK
+	else if (s->id == SA_KEY_CHECK && !ui_svc_privacy_kcv(it->value))
+		strcpy(it->value, "-");
+#endif
 #if CONFIG_SIG_TONES
 	else if (s->id >= SA_SIG_BEGIN && s->id <= SA_SIG_IDLE)
 		sc_summary(it->value, sizeof it->value, (uint8_t)(s->id - SA_SIG_BEGIN));
+#endif
+#if CONFIG_ZEROIZE
+	else if (s->id == SA_WIPE_CODE)
+		str_copy(it->value, sizeof it->value, ui_svc_setting_get(UI_SET_WIPE_CODE) ? TR(VALUE_SET, "Set") :
+			TR(VALUE_OFF, "Off"));
 #endif
 	if (s->id == UI_SET_PRIVACY_KEY && s->type == ST_NUMBER && !edit && ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0)
 		strcpy(it->value, "-");
@@ -7675,6 +7725,18 @@ static void group_select(uint16_t i, bool hold)
 		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
+#if CONFIG_KEY_CHECK
+		case SA_KEY_CHECK:
+			ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "Radios that show the same check value hold the same key"));
+			break;
+#endif
+#if KEY_STORE
+		case SA_KEYS: ui_push(SCR_KEYS, 0); break;
+#endif
+#if CONFIG_ZEROIZE
+		case SA_WIPE_CODE: ui_push(SCR_WIPE_CODE, 0); break;
+		case SA_CLEAR_KEYS: ui_push(SCR_WIPE, WIPE_ASK_KEYS_ONLY); break;
+#endif
 #if CONFIG_SIG_TONES
 		case SA_SIG_BEGIN ... SA_SIG_IDLE: ui_push(SCR_SIG_CHAIN, (uint16_t)(s->id - SA_SIG_BEGIN)); break;
 #endif
@@ -8142,6 +8204,287 @@ static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
 
+#if KEY_STORE
+// ======================= Settings > Privacy > Keys =======================
+// Every stored key (codeplug/key_store.h): a privacy slot by its number and scheme, a traffic key by its system's name
+// and key ID; the value is the key check value (docs/spec/key-check.md), never the key
+
+static uint16_t keys_count(void) { return ui_svc_keys_count(); }
+
+static void keys_item(uint16_t i, ui_item_t *it)
+{
+	key_row_t e;
+	char name[CODEPLUG_NAME_LEN + 1];
+	if (!ui_svc_key(i, &e, name))
+		return;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	if (e.cls == KCV_CLASS_PRIVACY) {
+		sb_str(&b, TR(KEYS_LABEL_PRIVACY, "Privacy"));
+		sb_chr(&b, ' ');
+		sb_u32(&b, e.num, 1);
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+		// The type by its short name: the Key type setting's names carry the key range, too wide beside the
+		// check value (index = the privacy type, as n_ptype)
+		static const tr_id_t types[] = { TR_NONE, TRN(KEYS_TYPE_8_BIT, "8-bit"), TRN(KEYS_TYPE_16_BIT, "16-bit") };
+		if (e.type < sizeof types / sizeof types[0] && types[e.type] != TR_NONE) {
+			sb_chr(&b, ' ');
+			sb_str(&b, tr(types[e.type]));
+		}
+#endif
+	} else {
+		sb_str(&b, name[0] ? name : codeplug_systype_name(e.type));
+		sb_str(&b, " #");
+		sb_u32(&b, e.key_id, 1);
+	}
+	if (e.kcv_ok)
+		kcv_text(e.kcv, it->value);
+	else
+		str_copy(it->value, sizeof it->value, "-");
+}
+
+static void keys_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	(void)i;
+	ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "Radios that show the same check value hold the same key"));
+}
+
+static const ui_scr_def_t keys_screen = {
+	.name = "keys", .flags = SF_LIST, .prefix = TRN(SET_LABEL_PRIVACY_KEYS, "Stored keys"),
+	.hint = TRN(HINT_BACK, "Back"),
+	.empty = TRN(KEYS_EMPTY, "No keys stored"),
+	.count = keys_count, .item = keys_item, .select = keys_select,
+};
+#endif
+
+#if CONFIG_ZEROIZE
+// ======================= Settings > Privacy > Wipe code (docs/spec/zeroize.md 2) =======================
+// Four digits, typed twice; the radio keeps a salted hash (ui_svc_wipe_code_set). The digits typed are shown as stars
+
+#define WC_LEN		4
+static char wc_digits[2 * WC_LEN];	// the code, then the same again
+static uint8_t wc_len;
+
+static void wc_forget(void)
+{
+	memset(wc_digits, 0, sizeof wc_digits);
+	wc_len = 0;
+}
+
+static uint16_t wc_count(void) { return ui_svc_setting_get(UI_SET_WIPE_CODE) ? 2 : 1; }
+
+static void wc_item(uint16_t i, ui_item_t *it)
+{
+	if (i == 1) {
+		str_copy(it->label, sizeof it->label, TR(WIPE_ROW_CLEAR, "Clear code"));
+		it->flags |= UI_ITEM_WARN;
+		return;
+	}
+	str_copy(it->label, sizeof it->label, wc_len < WC_LEN ? TR(WIPE_LABEL_NEW_CODE, "New code") :
+		TR(WIPE_LABEL_AGAIN, "Again"));
+	uint8_t typed = wc_len < WC_LEN ? wc_len : (uint8_t)(wc_len - WC_LEN);
+	for (uint8_t k = 0; k < WC_LEN; k++)
+		it->value[k] = k < typed ? '*' : '-';
+	it->value[WC_LEN] = 0;
+	if (wc_len > 0)
+		it->flags |= UI_ITEM_EDIT;
+}
+
+static const char *wc_body(void)
+{
+	return wc_len < WC_LEN ? TR(WIPE_BODY_TYPE, "Type 4 digits. Then on Home, or while locked, they and # wipe the radio") :
+		TR(WIPE_BODY_AGAIN, "Type the 4 digits again");
+}
+
+static void wc_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (i == 1) {
+		ui_svc_setting_set(UI_SET_WIPE_CODE, 0);
+		wc_forget();
+		ui_pop();
+		ui_toast(TR(WIPE_TOAST_CLEARED, "Wipe code cleared"));
+		return;
+	}
+	wc_forget();		// OK starts over
+	ui_dirty();
+}
+
+static bool wc_key(const input_event_t *ev)
+{
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && ev->gesture == GESTURE_PRESS) {
+		ui_frame()->focus = 0;
+		wc_digits[wc_len++] = (char)('0' + (ev->action - ACT_DIGIT_0));
+		if (wc_len == 2 * WC_LEN) {
+			bool same = memcmp(wc_digits, &wc_digits[WC_LEN], WC_LEN) == 0;
+			bool stored = same && ui_svc_wipe_code_set(wc_digits);
+			wc_forget();
+			if (!same) {
+				ui_toast(TR(WIPE_TOAST_DIFFER, "Not the same: type the code again"));
+			} else if (!stored) {
+				ui_toast(TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
+			} else {
+				ui_pop();
+				ui_toast(TR(WIPE_TOAST_SET, "Wipe code set"));
+				return true;
+			}
+		}
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && wc_len > 0) {
+		wc_digits[--wc_len] = 0;	// takes the last digit back
+		ui_dirty();
+		return true;
+	}
+	return false;
+}
+
+static void wc_enter(void)
+{
+	wc_forget();
+}
+
+static const ui_scr_def_t wipe_code_screen = {
+	.name = "wipe-code", .flags = SF_LIST, .prefix = TRN(WIPE_TITLE_CODE, "Wipe Code"),
+	.hint = TRN(WIPE_HINT_CODE, "0-9 type  Back"),
+	.count = wc_count, .item = wc_item, .select = wc_select, .key = wc_key, .enter = wc_enter, .body = wc_body,
+};
+
+// ======================= The emergency wipe (docs/spec/zeroize.md 3, 4) =======================
+// arg WIPE_ASK: the confirmation, OK wipes and any other key goes back; WIPE_RUN: the wipe going, then what failed.
+// WIPE_ASK_KEYS_ONLY and WIPE_RUN_KEYS_ONLY: the same for Settings > Privacy > Clear all keys (zeroize.md 3.2). Its keys
+// come here before the key lock (ui_app.c): a wipe typed on a locked radio is confirmed and followed without unlocking
+
+void ui_wipe_open(bool confirm)
+{
+	ui_push(SCR_WIPE, confirm ? WIPE_ASK : WIPE_RUN);
+	if (!confirm)
+		ui_svc_wipe_start();
+}
+
+static bool wipe_asking(void)
+{
+	return ui_frame()->arg == WIPE_ASK || ui_frame()->arg == WIPE_ASK_KEYS_ONLY;
+}
+
+static bool wipe_keys_only(void)
+{
+	return ui_frame()->arg == WIPE_ASK_KEYS_ONLY || ui_frame()->arg == WIPE_RUN_KEYS_ONLY;
+}
+
+// Start (or try again) the wipe this screen is for
+static void wipe_go(void)
+{
+	if (wipe_keys_only()) {
+		ui_frame()->arg = WIPE_RUN_KEYS_ONLY;
+		ui_svc_clear_keys_start();
+	} else {
+		ui_frame()->arg = WIPE_RUN;
+		ui_svc_wipe_start();
+	}
+}
+
+static uint8_t wipe_now(uint8_t *failed)
+{
+	*failed = 0;
+	return wipe_asking() ? UI_WIPE_IDLE : ui_svc_wipe_state(failed);
+}
+
+static uint16_t wipe_count(void)
+{
+	uint8_t f, st = wipe_now(&f);
+	return wipe_asking() || st == UI_WIPE_FAILED ? 1 : 0;
+}
+
+static void wipe_item(uint16_t i, ui_item_t *it)
+{
+	(void)i;
+	str_copy(it->label, sizeof it->label, !wipe_asking() ? TR(WIPE_ROW_AGAIN, "Try again") :
+		wipe_keys_only() ? TR(WIPE_ROW_CLEAR_KEYS, "Clear keys") : TR(WIPE_ROW_NOW, "Wipe now"));
+	it->flags |= UI_ITEM_WARN;
+}
+
+static char wipe_text[96];
+
+static const char *wipe_body(void)
+{
+	uint8_t f, st = wipe_now(&f);
+	sbuf_t b;
+	sb_init(&b, wipe_text, sizeof wipe_text);
+	if (ui_frame()->arg == WIPE_ASK_KEYS_ONLY) {
+		sb_str(&b, TR(WIPE_ASK_CLEAR_KEYS, "Erase every key now? Channels stay"));
+	} else if (ui_frame()->arg == WIPE_ASK) {
+		sb_str(&b, ui_svc_setting_get(UI_SET_WIPE_SCOPE) ? TR(WIPE_ASK_KEYS, "Erase the keys now?") :
+			TR(WIPE_ASK_ALL, "Erase the keys and the codeplug now?"));
+	} else if (st == UI_WIPE_FAILED) {
+		// Every step ran; these didn't finish (spec 4.5)
+		static const tr_id_t parts[] = { TRN(WIPE_PART_KEYS, "keys area"), TRN(WIPE_PART_SETTINGS, "settings"),
+			TRN(WIPE_PART_CODEPLUG, "codeplug"), TRN(WIPE_PART_NATIVE, "native area"),
+			TRN(WIPE_PART_PURGE, "old copies"), TRN(WIPE_PART_RADIO, "radio RAM") };
+		sb_str(&b, TR(WIPE_BODY_INCOMPLETE, "Wipe incomplete:"));
+		const char *sep = " ";
+		for (unsigned k = 0; k < sizeof parts / sizeof parts[0]; k++) {
+			if (f & (1u << k)) {
+				sb_str(&b, sep);
+				sb_str(&b, tr(parts[k]));
+				sep = ", ";
+			}
+		}
+	} else if (st == UI_WIPE_DONE) {
+		sb_str(&b, wipe_keys_only() ? TR(WIPE_BODY_KEYS_DONE, "Keys cleared. Restarting") :
+			TR(WIPE_BODY_DONE, "Wiped. Restarting"));
+	} else {
+		sb_str(&b, TR(WIPE_BODY_RUNNING, "Wiping. Don't switch off"));
+	}
+	return wipe_text;
+}
+
+static const char *wipe_hint(void)
+{
+	uint8_t f, st = wipe_now(&f);
+	return ui_frame()->arg == WIPE_ASK_KEYS_ONLY ? TR(WIPE_HINT_CLEAR, "OK clears  Other keys cancel") :
+		ui_frame()->arg == WIPE_ASK ? TR(WIPE_HINT_CONFIRM, "OK wipes  Other keys cancel") :
+		st == UI_WIPE_FAILED ? TR(WIPE_HINT_FAILED, "OK again  Back") : "";
+}
+
+static bool wipe_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	uint8_t f, st = wipe_now(&f);
+	if (wipe_asking()) {
+		if (ev->action == ACT_SELECT && ev->gesture == GESTURE_PRESS) {
+			wipe_go();
+		} else if (press || ev->action == ACT_ENC_STEP) {
+			ui_pop();	// anything else cancels
+		}
+		ui_dirty();
+		return true;
+	}
+	if (st == UI_WIPE_FAILED && ev->gesture == GESTURE_PRESS) {
+		if (ev->action == ACT_SELECT)
+			wipe_go();
+		else if (ev->action == ACT_BACK)
+			ui_pop();
+	}
+	ui_dirty();
+	return true;		// nothing else while it runs, nor leaves its result unread
+}
+
+// Clear all keys is named for itself: "Emergency Wipe" over it read as if the channels went too
+static const char *wipe_title(void)
+{
+	return wipe_keys_only() ? TR(SET_LABEL_CLEAR_KEYS, "Clear all keys") : TR(WIPE_TITLE, "Emergency Wipe");
+}
+
+static const ui_scr_def_t wipe_screen = {
+	.name = "wipe", .flags = SF_LIST | SF_HINT_FN, .prefix = TR_NONE, .title = wipe_title,
+	.hint_fn = wipe_hint,
+	.count = wipe_count, .item = wipe_item, .key = wipe_key, .body = wipe_body,
+};
+#endif
+
 // ======================= Settings > Display > Language =======================
 // Every language a catalog exists for, each in its own name; one this image was built without is dimmed and says so
 // (the flasher builds it in, docs/user)
@@ -8242,6 +8585,12 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_FIXED_POS] = &ui_fixed_pos_screen,
 #endif
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
+#if KEY_STORE
+	[SCR_KEYS] = &keys_screen,
+#endif
+#if CONFIG_ZEROIZE
+	[SCR_WIPE_CODE] = &wipe_code_screen, [SCR_WIPE] = &wipe_screen,
+#endif
 	[SCR_DMR_ID] = &dmr_id_screen,
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if DATA_IDS

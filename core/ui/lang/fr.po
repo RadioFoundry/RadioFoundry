@@ -3678,6 +3678,31 @@ msgid "Pink"
 msgstr "Rose"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_KEYS_CODEPLUG"
+msgid "Keys+codeplug"
+msgstr "Clés+codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_KEYS_ONLY"
+msgid "Keys only"
+msgstr "Clés seules"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_3_WRONG"
+msgid "3 wrong"
+msgstr "3 erreurs"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_5_WRONG"
+msgid "5 wrong"
+msgstr "5 erreurs"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_10_WRONG"
+msgid "10 wrong"
+msgstr "10 erreurs"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_3_MIN"
 msgid "3 min"
 msgstr "3 min"
@@ -4058,6 +4083,41 @@ msgid "Key"
 msgstr "Clé"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEY_CHECK"
+msgid "Key check"
+msgstr "Contrôle clé"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEYS"
+msgid "Stored keys"
+msgstr "Clés stockées"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_CODE"
+msgid "Wipe code"
+msgstr "Code effacement"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_WHAT"
+msgid "Wipe what"
+msgstr "Effacer quoi"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_CONFIRM"
+msgid "Wipe confirm"
+msgstr "Confirmer effac."
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_AFTER"
+msgid "Wipe after"
+msgstr "Effacer après"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_CLEAR_KEYS"
+msgid "Clear all keys"
+msgstr "Effacer clés"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_AUTO_LOCK"
 msgid "Auto lock"
 msgstr "Verrouillage auto"
@@ -4358,6 +4418,16 @@ msgid " steps"
 msgstr " étapes"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
+msgid "Pick a key type first"
+msgstr "Choisir type de clé"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_NEEDS_NUMBER_KEYS"
+msgid "Needs number keys"
+msgstr "Touches chiffres requises"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
 msgid "Talk permit tone: not in this build"
 msgstr "Bip TX non supporté"
@@ -4418,11 +4488,6 @@ msgid "Talker alias: not in this build"
 msgstr "Alias interloc. N/D"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
-msgid "Pick a key type first"
-msgstr "Choisir type de clé"
-
-#: core/ui/ui_menus.c
 msgctxt "SET_WHY_NO_GPS_ON_RADIO"
 msgid "No GPS on this radio"
 msgstr "Pas de GPS sur radio"
@@ -4433,9 +4498,19 @@ msgid "DMR position: not in this build"
 msgstr "Pos. DMR non dispo."
 
 #: core/ui/ui_menus.c
+msgctxt "VALUE_SET"
+msgid "Set"
+msgstr "Défini"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "Diag. non supporté"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_KEY_CHECK_COMPARE"
+msgid "Radios that show the same check value hold the same key"
+msgstr "Les radios qui affichent la même valeur de contrôle ont la même clé"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -4551,6 +4626,176 @@ msgstr "Balayage stoppé ici"
 msgctxt "SCAN_TOAST_LISTS_USE_QDMR"
 msgid "Edit scan lists in qdmr"
 msgstr "Éditer balayage qdmr"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_LABEL_PRIVACY"
+msgid "Privacy"
+msgstr "Confidentialité"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_TYPE_8_BIT"
+msgid "8-bit"
+msgstr "8 bits"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_TYPE_16_BIT"
+msgid "16-bit"
+msgstr "16 bits"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_EMPTY"
+msgid "No keys stored"
+msgstr "Aucune clé"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_CLEAR"
+msgid "Clear code"
+msgstr "Supprimer le code"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_LABEL_NEW_CODE"
+msgid "New code"
+msgstr "Nouveau code"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_LABEL_AGAIN"
+msgid "Again"
+msgstr "Encore"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_TYPE"
+msgid "Type 4 digits. Then on Home, or while locked, they and # wipe the radio"
+msgstr "Tapez 4 chiffres. Puis à l'accueil, ou touches verrouillées, eux et # effacent la radio"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_AGAIN"
+msgid "Type the 4 digits again"
+msgstr "Retapez les 4 chiffres"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_CLEARED"
+msgid "Wipe code cleared"
+msgstr "Code d'effacement supprimé"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_DIFFER"
+msgid "Not the same: type the code again"
+msgstr "Différent : retapez le code"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_SET"
+msgid "Wipe code set"
+msgstr "Code d'effacement défini"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TITLE_CODE"
+msgid "Wipe Code"
+msgstr "Code d'Effacement"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CODE"
+msgid "0-9 type  Back"
+msgstr "0-9 tape  Ret"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_AGAIN"
+msgid "Try again"
+msgstr "Réessayer"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_CLEAR_KEYS"
+msgid "Clear keys"
+msgstr "Effacer clés"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_NOW"
+msgid "Wipe now"
+msgstr "Effacer maintenant"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_CLEAR_KEYS"
+msgid "Erase every key now? Channels stay"
+msgstr "Effacer toutes les clés ? Les canaux restent"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_KEYS"
+msgid "Erase the keys now?"
+msgstr "Effacer les clés maintenant ?"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_ALL"
+msgid "Erase the keys and the codeplug now?"
+msgstr "Effacer les clés et le codeplug maintenant ?"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_KEYS"
+msgid "keys area"
+msgstr "zone des clés"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_SETTINGS"
+msgid "settings"
+msgstr "réglages"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_CODEPLUG"
+msgid "codeplug"
+msgstr "codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_NATIVE"
+msgid "native area"
+msgstr "zone native"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_PURGE"
+msgid "old copies"
+msgstr "anciennes copies"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_RADIO"
+msgid "radio RAM"
+msgstr "RAM radio"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_INCOMPLETE"
+msgid "Wipe incomplete:"
+msgstr "Effacement incomplet :"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_KEYS_DONE"
+msgid "Keys cleared. Restarting"
+msgstr "Clés effacées. Redémarrage"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_DONE"
+msgid "Wiped. Restarting"
+msgstr "Effacée. Redémarrage"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_RUNNING"
+msgid "Wiping. Don't switch off"
+msgstr "Effacement. N'éteignez pas"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CLEAR"
+msgid "OK clears  Other keys cancel"
+msgstr "OK efface  Autres touches annulent"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CONFIRM"
+msgid "OK wipes  Other keys cancel"
+msgstr "OK efface  Autres touches annulent"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_FAILED"
+msgid "OK again  Back"
+msgstr "OK réessayer  Ret"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TITLE"
+msgid "Emergency Wipe"
+msgstr "Effacement d'Urgence"
 
 #: core/ui/ui_menus.c
 msgctxt "LANG_VALUE_IN_USE"

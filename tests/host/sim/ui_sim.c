@@ -54,6 +54,8 @@
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
+//   wipecode:<dddd>     the emergency wipe's code is set to these four digits (CONFIG_ZEROIZE)
+//   wipefail:<bits>     the next emergency wipe fails with these UI_WIPE_FAIL_* bits (0: it works)
 //   datadeny:<d>[,<p>]  why the channel can't send data now: view.data_deny d, packet_deny p (default d), each none,
 //                       aes_key, not_dmr or data_encrypted
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
@@ -93,6 +95,8 @@
 #include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
 #include "codeplug/codeplug_tag.h"
+#include "codeplug/key_store.h"
+#include "support/kcv.h"
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
@@ -1993,6 +1997,45 @@ bool ui_svc_privacy(bool on)
 	return view.dmr.privacy == on;
 }
 bool ui_svc_monitor(bool on) { view.monitor = on; changed(); return true; }
+
+// The stored keys (codeplug/key_store.h): key slot 1 from the settings, then an NXDN scrambler key on a system the
+// simulated codeplug doesn't otherwise have, so the Keys screen shows both kinds
+bool ui_svc_privacy_kcv(char out[7])
+{
+	int32_t type = ui_svc_setting_get(UI_SET_PRIVACY_TYPE), key = ui_svc_setting_get(UI_SET_PRIVACY_KEY);
+	uint8_t v[KCV_LEN];
+	if (type == 0 || (type == 1 && (key < 1 || key > 255)) || !kcv_privacy((uint8_t)type, (uint32_t)key, v))
+		return false;
+	kcv_text(v, out);
+	return true;
+}
+uint16_t ui_svc_keys_count(void)
+{
+	return ui_svc_setting_get(UI_SET_PRIVACY_TYPE) != 0 ? 2 : 1;
+}
+bool ui_svc_key(uint16_t i, struct key_row_s *e, char name[17])
+{
+	static const uint8_t seed[2] = { 0x34, 0x12 };
+	char t[KCV_TEXT];
+	memset(e, 0, sizeof *e);
+	name[0] = 0;
+	if (i == 0 && ui_svc_privacy_kcv(t)) {
+		e->cls = KCV_CLASS_PRIVACY;
+		e->num = 1;
+		e->type = (uint8_t)ui_svc_setting_get(UI_SET_PRIVACY_TYPE);
+		e->kcv_ok = kcv_privacy(e->type, (uint32_t)ui_svc_setting_get(UI_SET_PRIVACY_KEY), e->kcv);
+		return true;
+	}
+	if (i != ui_svc_keys_count() - 1u)
+		return false;
+	e->cls = KCV_CLASS_TRAFFIC;
+	e->num = 2;
+	e->type = 4;
+	e->key_id = 5;
+	strcpy(name, "NXDN Ops");
+	e->kcv_ok = kcv_traffic(4, 1, seed, sizeof seed, e->kcv);
+	return true;
+}
 bool ui_svc_vox(bool on)
 {
 	view.vox_on = on && view.ch.mode == RADIO_MODE_FM;
@@ -2491,6 +2534,40 @@ bool ui_svc_emergency(bool on) { emergency_on = on; return true; }
 bool ui_svc_emergency_active(void) { return emergency_on; }
 bool ui_svc_factory_reset(void) { return true; }
 
+// The emergency wipe (ui_svc.h, docs/spec/zeroize.md): the code kept as typed (the firmware keeps a salted hash), a
+// wipe counted and done at once, or failed with the bits wipefail: set
+static char sim_wipe_code[4];
+static uint32_t sim_wipes;
+static uint8_t sim_wipe_state, sim_wipe_fail;
+bool ui_svc_wipe_code_set(const char code[4])
+{
+	memcpy(sim_wipe_code, code, sizeof sim_wipe_code);
+	sim_late[UI_SET_WIPE_CODE - UI_SET_RAM_COUNT] = 1;
+	return true;
+}
+bool ui_svc_wipe_code_check(const char code[4])
+{
+	return ui_svc_setting_get(UI_SET_WIPE_CODE) != 0 && memcmp(code, sim_wipe_code, sizeof sim_wipe_code) == 0;
+}
+static uint32_t sim_key_clears;
+bool ui_svc_clear_keys_start(void)
+{
+	sim_key_clears++;
+	sim_wipe_state = sim_wipe_fail != 0 ? UI_WIPE_FAILED : UI_WIPE_DONE;
+	return true;
+}
+bool ui_svc_wipe_start(void)
+{
+	sim_wipes++;
+	sim_wipe_state = sim_wipe_fail != 0 ? UI_WIPE_FAILED : UI_WIPE_DONE;
+	return true;
+}
+uint8_t ui_svc_wipe_state(uint8_t *failed)
+{
+	*failed = sim_wipe_state == UI_WIPE_FAILED ? sim_wipe_fail : 0;
+	return sim_wipe_state;
+}
+
 // The crash log (ui_svc.h): "crash:on" a record from before this start nobody has seen, "crash:ask" / "crash:auto"
 // the same with the report's mode and the first contact (USA, TG 3100) as its target. A report goes at once;
 // "crashtx:refuse" makes the next sends fail to start (one still going), "crashtx:fail" makes them end failed
@@ -2561,6 +2638,7 @@ static sim_map_t cur_map;
 static const char *shot_dir, *shot_prefix;
 int sim_presses(void) { return presses; }
 void sim_count_reset(void) { presses = 0; }
+
 void sim_set_shot_dir(const char *dir, const char *prefix) { shot_dir = dir; shot_prefix = prefix; }
 static void (*tick_hook)(uint32_t now_ms);
 void sim_set_tick_hook(void (*hook)(uint32_t now_ms)) { tick_hook = hook; }
@@ -2642,6 +2720,11 @@ void ui_svc_next_aes_key(channel_t *c)
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
+	memset(sim_wipe_code, 0, sizeof sim_wipe_code);
+	sim_wipes = 0;
+	sim_key_clears = 0;
+	sim_wipe_state = UI_WIPE_IDLE;
+	sim_wipe_fail = 0;
 	sim_foreign = sim_held = false;
 	disp.width = g->w;
 	disp.height = g->h;
@@ -2775,6 +2858,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ARS_SERVER, 0);
 	ui_svc_setting_set(UI_SET_IP_GATEWAY, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
+	ui_svc_setting_set(UI_SET_WIPE_CODE, 0);	// the emergency wipe as on a new radio: no code, keys and codeplug,
+	ui_svc_setting_set(UI_SET_WIPE_SCOPE, 0);	// the confirmation press on, no count of wrong codes
+	ui_svc_setting_set(UI_SET_WIPE_CONFIRM, 1);
+	ui_svc_setting_set(UI_SET_WIPE_TRIES, 0);
 	for (uint8_t id = UI_SET_CALL_END_TONE; id <= UI_SET_EMERGENCY_TONE; id++)
 		ui_svc_setting_set(id, id != UI_SET_SCAN_TONE);	// as on a new radio: the scan stop tone off, the rest on
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
@@ -3065,6 +3152,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "volbar_at") == 0) snprintf(got, sizeof got, "%s", s.volbar_top ? "top" : "bottom");
 	else if (strcmp(key, "volbar") == 0) snprintf(got, sizeof got, "%d", s.volbar);	// the knob's bar, -1 = none
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
+	else if (strcmp(key, "wipes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_wipes);	// emergency wipes started
+	else if (strcmp(key, "keyclears") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_key_clears);	// Clear all keys
+	else if (strcmp(key, "wipecode") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_WIPE_CODE));
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
 	else if (strcmp(key, "wake") == 0) snprintf(got, sizeof got, "%u", ui_app_take_wake());	// the backlight asked for
 	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value
@@ -3733,6 +3823,14 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 #endif
+	if (strcmp(t, "wipecode") == 0 && arg != NULL && strlen(arg) == 4) {
+		ui_svc_wipe_code_set(arg);
+		return true;
+	}
+	if (strcmp(t, "wipefail") == 0 && arg != NULL) {
+		sim_wipe_fail = (uint8_t)atoi(arg);
+		return true;
+	}
 	if (strcmp(t, "datadeny") == 0 && arg != NULL) {
 		static const struct { const char *name; uint8_t code; } codes[] = {
 			{ "none", TXDENY_NONE }, { "aes_key", TXDENY_AES_KEY }, { "not_dmr", TXDENY_NOT_DMR },

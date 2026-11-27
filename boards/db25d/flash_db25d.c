@@ -84,6 +84,17 @@ static bool rep(uint32_t addr, const void *data)
 	return ok;
 }
 
+#if CONFIG_ZEROIZE
+// The emergency wipe's last flash step: the old copies the layer keeps of rewritten sectors, erased
+static bool purge(void)
+{
+	db25d_nand_lock();
+	bool ok = nand_sectors_purge(&layer);
+	db25d_nand_unlock();
+	return ok;
+}
+#endif
+
 static uint32_t jedec(void)
 {
 	uint16_t id = db25d_nand_id();
@@ -100,6 +111,9 @@ hal_flash_t db25d_flash = {
 	.replace = rep,
 	.map = &map,
 	.jedec = jedec,
+#if CONFIG_ZEROIZE
+	.purge = purge,
+#endif
 };
 
 bool db25d_flash_init(void)

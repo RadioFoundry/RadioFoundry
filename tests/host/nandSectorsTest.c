@@ -391,6 +391,52 @@ static void test_basic(void)
 	CHECK(nand.violations == 0);
 }
 
+// The emergency wipe's purge (nand_sectors_purge, docs/spec/zeroize.md 4.4): a sector's old content stays in the NAND
+// after a rewrite or an erase (copy on write) until the purge erases every block that may hold it. The current content,
+// the map and the mount survive; a purge with nothing to do is harmless
+static bool raw_has(const char *pat)
+{
+	size_t n = strlen(pat);
+	for (uint32_t p = 0; p < (uint32_t)nand.blocks * nand.ppb; p++) {
+		for (uint32_t i = 0; i + n <= PAGE; i++) {
+			if (nand.data[p][i] == (uint8_t)pat[0] && memcmp(&nand.data[p][i], pat, n) == 0) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+static void test_purge(void)
+{
+	static uint8_t b[NAND_SECTORS_SECTOR];
+	static const char key[] = "KEY:0123456789ab";
+	fresh(8, 16, 12);
+	CHECK(rewrite_both(1, 9) && rewrite_both(7, 11));
+	fill(b, sizeof(b), 77);
+	memcpy(b, key, sizeof(key) - 1u);
+	memcpy(&b[NAND_SECTORS_PAGE], key, sizeof(key) - 1u);
+	CHECK(write_both(3 * NAND_SECTORS_SECTOR, b, sizeof(b)));
+	CHECK(write_both(5 * NAND_SECTORS_SECTOR, b, sizeof(b)));
+	CHECK(rewrite_both(3, 5));			// rewritten: its old pages stay in their block
+	CHECK(erase_both(5 * NAND_SECTORS_SECTOR));	// erased: an erase record, the old pages stay
+	CHECK(matches_model());
+	CHECK(raw_has(key));
+	CHECK(nand_sectors_purge(&ns));
+	CHECK(!raw_has(key));
+	CHECK(matches_model());
+	CHECK(remount() && matches_model());
+	CHECK(nand_sectors_purge(&ns) && matches_model());	// again, with nothing old left
+	CHECK(rewrite_both(3, 6) && matches_model());		// and the layer goes on as before
+	CHECK(remount() && matches_model());
+	CHECK(nand.violations == 0);
+	// Not mounted: refused
+	nand_sectors_t none;
+	memset(&none, 0, sizeof(none));
+	none.dev = &dev;
+	CHECK(!nand_sectors_purge(&none));
+}
+
 // Rewrites far beyond the region's size: garbage collection, wear spread over every block, the map right after
 // remounts at random points, a full device
 // The long loops call the busy hook (a board feeds its watchdog there, docs/spec/watchdog.md 4): the mount at least once
@@ -1341,6 +1387,7 @@ static void test_cps(void)
 int main(void)
 {
 	test_basic();
+	test_purge();
 	test_busy_hook();
 	test_gc_and_wear();
 	test_bad_blocks();

@@ -118,6 +118,12 @@ bool nand_sectors_write(nand_sectors_t *ns, uint32_t addr, const void *buf, uint
 bool nand_sectors_replace(nand_sectors_t *ns, uint32_t addr, const void *buf);
 // Erase the 4 KB sector at addr (aligned): it reads 0xFF afterwards
 bool nand_sectors_erase(nand_sectors_t *ns, uint32_t addr);
+// Erase every block that may hold a superseded record (an old copy of a sector that was rewritten or erased since),
+// its current records moved to fresh blocks first, so the chip keeps nothing a sector held before (the emergency wipe,
+// docs/spec/zeroize.md 4.4). The current content and the map stay. Blocks with foreign data are left alone; a retired
+// block can't be erased. Slow: every block holding data is emptied and erased. False when a block couldn't be emptied
+// or erased
+bool nand_sectors_purge(nand_sectors_t *ns);
 void nand_sectors_get_stats(const nand_sectors_t *ns, nand_sectors_stats_t *out);
 
 #endif

@@ -1045,6 +1045,32 @@ bool codeplug_start_new(void)
 	return ok;
 }
 
+#if CONFIG_ZEROIZE
+// The flash image's codeplug: channel banks 1-7 from 0x7B1B0, the contacts, the RX group lists to 0x8EE60
+// (open-firmware-cps.md 7.1); its sectors, 0x7B000-0x8EFFF. The voice prompts start in the next one (0x8F400)
+#define FL_CODEPLUG	0x7B000u
+#define FL_CODEPLUG_END	0x8F000u
+_Static_assert((0x8EE60u + STORAGE_SECTOR - 1u) / STORAGE_SECTOR * STORAGE_SECTOR == FL_CODEPLUG_END, "lists end");
+
+bool codeplug_wipe_keys(void)
+{
+	return storage_erase(EE(CODEPLUG_KV_ADDR), 2u * STORAGE_SECTOR);	// the area and its reserved continuation
+}
+
+bool codeplug_wipe(void)
+{
+	storage_lock();
+	index_all();		// ee_base and fl_base from the map, as every other write
+	bool ok = codeplug_wipe_keys();
+	ok = storage_erase(EE(0), 0x10000u) && ok;
+	ok = storage_erase(FL(FL_CODEPLUG), FL_CODEPLUG_END - FL_CODEPLUG) && ok;
+	codeplug_accept(false);	// a blank area is no other firmware's codeplug to keep
+	codeplug_reload();
+	storage_unlock();
+	return ok;
+}
+#endif
+
 static bool write_bitmap(uint16_t number)
 {
 	unsigned bank = (number - 1u) / CH_PER_BANK;

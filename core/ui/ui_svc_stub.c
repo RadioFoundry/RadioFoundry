@@ -36,6 +36,9 @@ WEAK bool ui_svc_mode(uint8_t mode) { (void)mode; return false; }
 WEAK uint8_t ui_svc_vfo_copy(const radio_view_t *v) { (void)v; return VFO_COPY_NO_VFO; }
 WEAK bool ui_svc_hear_all(bool on) { (void)on; return false; }
 WEAK bool ui_svc_privacy(bool on) { (void)on; return false; }
+WEAK bool ui_svc_privacy_kcv(char out[7]) { (void)out; return false; }
+WEAK uint16_t ui_svc_keys_count(void) { return 0; }
+WEAK bool ui_svc_key(uint16_t i, struct key_row_s *row, char name[17]) { (void)i; (void)row; (void)name; return false; }
 WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
@@ -187,6 +190,11 @@ WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }
 WEAK bool ui_svc_emergency_active(void) { return false; }
 WEAK bool ui_svc_factory_reset(void) { return false; }
+WEAK bool ui_svc_wipe_code_set(const char code[4]) { (void)code; return false; }
+WEAK bool ui_svc_wipe_code_check(const char code[4]) { (void)code; return false; }
+WEAK bool ui_svc_wipe_start(void) { return false; }
+WEAK bool ui_svc_clear_keys_start(void) { return false; }
+WEAK uint8_t ui_svc_wipe_state(uint8_t *failed) { *failed = 0; return UI_WIPE_IDLE; }
 WEAK bool ui_svc_codeplug_answer(uint8_t answer) { (void)answer; return false; }
 
 WEAK bool ui_svc_crash_get(ui_crash_t *out) { (void)out; return false; }

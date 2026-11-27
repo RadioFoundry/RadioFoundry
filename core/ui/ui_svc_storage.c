@@ -44,11 +44,13 @@
 #endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#include "support/kcv.h"
 #endif
 #if CONFIG_POSITION
 #include "position/position.h"
 #endif
 #include "codeplug/codeplug_tag.h"
+#include "codeplug/key_store.h"
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
@@ -121,6 +123,21 @@ static void privacy_store(uint8_t type, uint32_t key)
 		radio_req_dmr_privacy(type, (uint16_t)key);
 	}
 }
+
+#if CONFIG_KEY_CHECK
+bool ui_svc_privacy_kcv(char out[7])
+{
+	// the two fields alone (settings_read_field), not a whole settings_t on the UI task's stack
+	uint8_t type = SETTINGS_FIELD(privacy_type[0]), kcv[KCV_LEN];
+	uint32_t key = SETTINGS_FIELD(privacy_key[0]);
+	bool ok = type != DMR_PRIVACY_OFF && type < DMR_PRIVACY_NUM_TYPES && key <= 0xFFFFu &&
+		dmrPrivacyKeyIsValid((dmrPrivacyType_t)type, (uint16_t)key) && kcv_privacy(type, key, kcv);
+	if (ok)
+		kcv_text(kcv, out);
+	crypto_wipe(&key, sizeof key);	// the key was in this copy
+	return ok;
+}
+#endif
 #endif
 
 #if CONFIG_KEY_ASSIGN
@@ -414,6 +431,11 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 
 int32_t ui_svc_setting_get(uint8_t id)
 {
+#if CONFIG_ZEROIZE
+	if (id >= UI_SET_WIPE_CODE && id <= UI_SET_WIPE_TRIES) {
+		return ui_svc_wipe_get(id);
+	}
+#endif
 #if CONFIG_KEY_ASSIGN
 	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {	// not under setting_get_flash's frame: key_apply is deep
 		return key_get(id);
@@ -426,6 +448,11 @@ int32_t ui_svc_setting_get(uint8_t id)
 bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
 	settings_t *st;
+#if CONFIG_ZEROIZE
+	if (id >= UI_SET_WIPE_CODE && id <= UI_SET_WIPE_TRIES) {
+		return ui_svc_wipe_set(id, value);
+	}
+#endif
 #if CONFIG_KEY_ASSIGN
 	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
 		return key_set(id, value);
@@ -1664,6 +1691,56 @@ static bool key_set(uint8_t id, int32_t value)
 	keyassign_set(key_slots, k / 2u, (k & 1u) != 0, (uint8_t)value);
 	key_apply();
 	key_dirty = true;
+	return true;
+}
+#endif
+
+#if KEY_STORE
+// Stored keys draws a page of rows on every frame: one walk of the codeplug fills a page and the count, kept until the
+// codeplug changes (its serial) or a second goes by (a privacy slot changed in the settings). Each walk checks the whole
+// area, so a row each would be seconds for a page (a watchdog restart, seen on a radio with 34 keys). Rows, not whole
+// entries, and the few system names they use: 126 B of .bss on every radio (key_store.h)
+#define KEYS_PAGE	10u
+static struct {
+	bool ok;
+	uint8_t serial;
+	uint8_t n;
+	uint16_t at_ms;		// the low 16 bits of hal_millis(): only ages under a second are compared
+	uint16_t first, total;
+	key_row_t e[KEYS_PAGE];
+	key_names_t names;
+} keys_page;
+
+static bool keys_fresh(void)
+{
+	return keys_page.ok && keys_page.serial == codeplug_kv_serial() && (uint16_t)((uint16_t)hal_millis() - keys_page.at_ms) < 1000u;
+}
+
+static void keys_fill(uint16_t first)
+{
+	keys_page.first = first;
+	keys_page.n = (uint8_t)key_store_window(first, keys_page.e, KEYS_PAGE, &keys_page.total, &keys_page.names);
+	keys_page.serial = codeplug_kv_serial();
+	keys_page.at_ms = (uint16_t)hal_millis();
+	keys_page.ok = true;
+}
+
+uint16_t ui_svc_keys_count(void)
+{
+	if (!keys_fresh())
+		keys_fill(keys_page.ok ? keys_page.first : 0);
+	return keys_page.total;
+}
+
+bool ui_svc_key(uint16_t i, struct key_row_s *row, char name[CODEPLUG_NAME_LEN + 1])
+{
+	if (!keys_fresh() || i < keys_page.first || i >= keys_page.first + keys_page.n)
+		keys_fill(i >= KEYS_PAGE / 2u ? (uint16_t)(i - KEYS_PAGE / 2u) : 0);
+	if (i < keys_page.first || i >= keys_page.first + keys_page.n)
+		return false;
+	*row = keys_page.e[i - keys_page.first];
+	if (row->cls != KCV_CLASS_TRAFFIC || !key_names_get(&keys_page.names, row->num, name))
+		name[0] = 0;
 	return true;
 }
 #endif
