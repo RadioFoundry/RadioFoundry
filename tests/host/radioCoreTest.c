@@ -485,8 +485,11 @@ static bool far_on_air(void) { return false; }
 #endif
 
 // Writable under the symbol the core reads as const (board.h): the caps change at run time here (a board whose beeps
-// can't sound on air)
-board_t board_rw __asm__("board") = {
+// can't sound on air). The alias names the assembler symbol, so it carries the platform's label prefix: Mach-O puts
+// "_" before every C name, and a bare "board" left macOS with an undefined "_board" while Linux (no prefix) linked
+#define RW_STR2(x) #x
+#define RW_STR(x) RW_STR2(x)
+board_t board_rw __asm__(RW_STR(__USER_LABEL_PREFIX__) "board") = {
 	.name = "fake",
 	.hwopts = fake_hwopts,
 	.hwopt_count = 1,
