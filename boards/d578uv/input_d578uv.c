@@ -137,7 +137,7 @@ static void init(void)
 	mcu_pin_analog(PIN_KEY_LADDER1);
 	mcu_pin_in(PIN_KEY_SINGLE, MCU_PULL_UP);
 	mcu_pin_in(PIN_MIC_LINE9, MCU_PULL_UP);
-	mcu_pin_in(PIN_MIC_LINE10, MCU_PULL_UP);
+	mcu_pin_rx(PIN_MIC_LINE10, MIC_RX_AF, MCU_PULL_UP);
 	mcu_pin_in(PIN_ENC_A, MCU_PULL_UP);
 	mcu_pin_in(PIN_ENC_B, MCU_PULL_UP);
 	anytone_mic_init(&mic);

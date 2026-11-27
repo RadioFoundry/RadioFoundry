@@ -38,7 +38,7 @@ void MCU_UART4_HANDLER(void)
 void d578uv_bt_init(void)
 {
 	bt_at_init(&bt);
-	mcu_pin_in(PIN_BT_RX, MCU_PULL_UP);
+	mcu_pin_rx(PIN_BT_RX, BT_RX_AF, MCU_PULL_UP);
 	mcu_pin_af(PIN_BT_TX, BT_TX_AF, false);
 	mcu_uart_start(MCU_UART4, BT_BAUD, true);
 	NVIC_SetPriority(MCU_UART4_IRQn, BT_IRQ_PRIORITY);

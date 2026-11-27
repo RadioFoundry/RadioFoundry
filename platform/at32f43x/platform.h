@@ -50,6 +50,7 @@ void at32_pin_out(at32_gpio_t *port, uint16_t pins, bool level, bool open_drain)
 void at32_pin_in(at32_gpio_t *port, uint16_t pins, at32_pull_t pull);
 // The multiplexed function af (0..15, the data sheet's pin table) on the pins
 void at32_pin_af(at32_gpio_t *port, uint16_t pins, uint8_t af, bool open_drain);
+void at32_pin_rx(at32_gpio_t *port, uint16_t pins, uint8_t af, at32_pull_t pull);
 void at32_pin_analog(at32_gpio_t *port, uint16_t pins);
 // EXINT line `line` (0..15) from this port's pin of the same number
 void at32_exint_route(at32_gpio_t *port, uint8_t line);

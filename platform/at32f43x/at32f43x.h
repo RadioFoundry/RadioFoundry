@@ -262,7 +262,9 @@ typedef struct {
 #define DAC_D1DTH12R		AT32_REG(DAC_BASE + 0x08u)
 #define DAC_D2DTH12R		AT32_REG(DAC_BASE + 0x14u)
 #define DAC_CTRL_D1EN		(1u << 0)
+#define DAC_CTRL_D1OBDIS	(1u << 1)	// output buffer off
 #define DAC_CTRL_D2EN		(1u << 16)
+#define DAC_CTRL_D2OBDIS	(1u << 17)
 
 // ADC1 and the common block: Artery's ADC (not the STM32F1's), regular ("ordinary") sequence by software trigger
 #define ADC1_BASE		0x40012000u

@@ -31,9 +31,10 @@ void at32_adc_init(void)
 	ADCCOM_CCTRL = (ADCCOM_CCTRL & ~ADCCOM_CCTRL_ADCDIV_MASK) | ADCCOM_CCTRL_ADCDIV_4;
 	ADC_CTRL1(ADC1_BASE) = 0;	// 12 bits, no scan
 	ADC_CTRL2(ADC1_BASE) = 0;	// right aligned, single conversion
-	// The longest sample time on every channel (640.5 cycles): the ladders and dividers have high source impedance
-	ADC_SPT1(ADC1_BASE) = 0x07FFFFFFu;
-	ADC_SPT2(ADC1_BASE) = 0x3FFFFFFFu;
+	// 47.5 cycles on every channel (code 4): long enough for the ladders' and dividers' source impedance, and a
+	// conversion (about 2 us) stays well inside one audio sampling tick. The longest, 640.5, takes over 20 us
+	ADC_SPT1(ADC1_BASE) = 0x04924924u;
+	ADC_SPT2(ADC1_BASE) = 0x24924924u;
 	ADC_OSQ1(ADC1_BASE) = 0;	// one conversion in the ordinary sequence
 	ADC_CTRL2(ADC1_BASE) |= ADC_CTRL2_ADCEN;
 	for (uint32_t n = 0; n < SPINS && !(ADC_STS(ADC1_BASE) & ADC_STS_RDY); n++) {

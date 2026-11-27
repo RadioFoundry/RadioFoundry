@@ -56,8 +56,8 @@ static void clock_on(bool on)
 	(void)*en;
 }
 
-// The TX pin's multiplexed function: 7 for USART1..3, 8 for UART4 and UART5 (the data sheet's pin table)
-static uint8_t tx_af(void)
+// The RX and TX pins' multiplexed function: 7 for USART1..3, 8 for UART4 and UART5 (the data sheet's pin table)
+static uint8_t uart_af(void)
 {
 	return (cfg->uart == UART4 || cfg->uart == UART5) ? 8u : 7u;
 }
@@ -90,7 +90,7 @@ static void gps_on(bool on)
 		(void)u->DT;
 		u->CTRL1 = USART_CTRL1_UEN | USART_CTRL1_REN | USART_CTRL1_RDBFIEN | (cfg->setup_n != 0 ? USART_CTRL1_TEN : 0u);
 		if (cfg->setup_n != 0) {
-			at32_pin_af(cfg->tx_port, cfg->tx_pin, tx_af(), false);
+			at32_pin_af(cfg->tx_port, cfg->tx_pin, uart_af(), false);
 		}
 		NVIC_SetPriority(cfg->irq, GPS_IRQ_PRIORITY);
 		NVIC_EnableIRQ(cfg->irq);
@@ -166,7 +166,7 @@ void at32_gps_init(const at32_gps_cfg_t *c)
 {
 	cfg = c;
 	present = false;
-	at32_pin_in(c->rx_port, c->rx_pin, AT32_PULL_NONE);
+	at32_pin_rx(c->rx_port, c->rx_pin, uart_af(), AT32_PULL_NONE);
 	if (task == NULL) {
 		xTaskCreate(gps_task, "gps", GPS_TASK_STACK, NULL, GPS_TASK_PRIORITY, &task);
 	}

@@ -15,11 +15,12 @@
 static bool ready;
 
 // One byte: the data lines in one store (set and clear at once), then WR low and high. The panel takes the byte on
-// WR's rising edge; WR low is held for two stores, above the 15 ns minimum at 120 MHz, and the whole cycle stays over
-// the 66 ns write cycle
+// WR's rising edge; WR low is held for three stores, above the 15 ns minimum at 120 MHz even where the port sits on
+// the AHB (AT32, one store in two cycles), and the whole cycle stays over the 66 ns write cycle
 static inline void put_byte(uint8_t v)
 {
 	mcu_port_put(LCD_DATA_PORT, (uint16_t)(v << LCD_DATA_SHIFT), (uint16_t)((uint8_t)~v << LCD_DATA_SHIFT));
+	mcu_pin_write(LCD_WR_PORT, LCD_WR_BIT, false);
 	mcu_pin_write(LCD_WR_PORT, LCD_WR_BIT, false);
 	mcu_pin_write(LCD_WR_PORT, LCD_WR_BIT, false);
 	mcu_pin_write(LCD_WR_PORT, LCD_WR_BIT, true);

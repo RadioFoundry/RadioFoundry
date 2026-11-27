@@ -25,6 +25,8 @@ static inline void mcu_pin_write(mcu_gpio_t *p, uint16_t pins, bool level) { at3
 static inline bool mcu_pin_read(mcu_gpio_t *p, uint16_t pin) { return at32_pin_read(p, pin); }
 // af: the multiplexed function number (the data sheet's pin table)
 static inline void mcu_pin_af(mcu_gpio_t *p, uint16_t pins, uint8_t af, bool od) { at32_pin_af(p, pins, af, od); }
+// A USART's receive pin, with its pull; mcu_pin_read still reads its level
+static inline void mcu_pin_rx(mcu_gpio_t *p, uint16_t pins, uint8_t af, mcu_pull_t pull) { at32_pin_rx(p, pins, af, pull); }
 
 // One store that sets `set` and clears `clr` (a bus's data lines at once)
 static inline void mcu_port_put(mcu_gpio_t *p, uint16_t set, uint16_t clr)

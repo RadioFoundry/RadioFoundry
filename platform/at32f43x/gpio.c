@@ -27,12 +27,14 @@ static uint32_t put2(uint32_t reg, uint16_t pins, uint32_t v)
 }
 
 // Read-modify-writes of the port's words: interrupts masked, so a task or handler that changes another pin of the port
-// in between (the RF bus and the receiver's I2C share port B) isn't undone
+// in between (the RF bus and the receiver's I2C share port B) isn't undone. Every pin set up gets drive strength 1
+// (strong): the reset value is not one the radio's buses were designed around
 static void pin_cfg(at32_gpio_t *port, uint16_t pins, uint32_t mode, bool open_drain, at32_pull_t pull)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();
 	port->OMODE = open_drain ? (port->OMODE | pins) : (port->OMODE & ~(uint32_t)pins);
+	port->ODRVR = put2(port->ODRVR, pins, 1u);
 	port->PULL = put2(port->PULL, pins, pull == AT32_PULL_UP ? 1u : pull == AT32_PULL_DOWN ? 2u : 0u);
 	port->CFGR = put2(port->CFGR, pins, mode);
 	__set_PRIMASK(primask);
@@ -58,7 +60,7 @@ void at32_pin_in(at32_gpio_t *port, uint16_t pins, at32_pull_t pull)
 	pin_cfg(port, pins, MODE_IN, false, pull);
 }
 
-void at32_pin_af(at32_gpio_t *port, uint16_t pins, uint8_t af, bool open_drain)
+static void pin_mux(at32_gpio_t *port, uint16_t pins, uint8_t af, bool open_drain, at32_pull_t pull)
 {
 	at32_gpio_clock(port);
 	uint32_t primask = __get_PRIMASK();
@@ -78,7 +80,19 @@ void at32_pin_af(at32_gpio_t *port, uint16_t pins, uint8_t af, bool open_drain)
 	port->MUXL = lo;
 	port->MUXH = hi;
 	__set_PRIMASK(primask);
-	pin_cfg(port, pins, MODE_MUX, open_drain, AT32_PULL_NONE);
+	pin_cfg(port, pins, MODE_MUX, open_drain, pull);
+}
+
+void at32_pin_af(at32_gpio_t *port, uint16_t pins, uint8_t af, bool open_drain)
+{
+	pin_mux(port, pins, af, open_drain, AT32_PULL_NONE);
+}
+
+// A USART's receive pin: on this GPIO only a pin in mux mode reaches the peripheral (a plain input never does), and
+// the input register still reads the pin's level
+void at32_pin_rx(at32_gpio_t *port, uint16_t pins, uint8_t af, at32_pull_t pull)
+{
+	pin_mux(port, pins, af, false, pull);
 }
 
 void at32_pin_analog(at32_gpio_t *port, uint16_t pins)

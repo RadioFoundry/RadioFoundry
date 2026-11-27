@@ -33,6 +33,12 @@ static inline void mcu_pin_af(mcu_gpio_t *p, uint16_t pins, uint8_t af, bool od)
 	(void)af;
 	gd32_pin_af(p, pins, od);
 }
+// A USART's receive pin, with its pull: an input here, where the USART reads any input pin; af as for mcu_pin_af
+static inline void mcu_pin_rx(mcu_gpio_t *p, uint16_t pins, uint8_t af, mcu_pull_t pull)
+{
+	(void)af;
+	gd32_pin_in(p, pins, pull);
+}
 
 // One store that sets `set` and clears `clr` (a bus's data lines at once)
 static inline void mcu_port_put(mcu_gpio_t *p, uint16_t set, uint16_t clr)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DAC: the two 12-bit outputs (DAC1 on PA4, DAC2 on PA5; channels 0 and 1 here), output buffer on, written by software.
+// DAC: the two 12-bit outputs (DAC1 on PA4, DAC2 on PA5; channels 0 and 1 here), output buffer off (the setting
+// the radio's circuits run with), written by software.
 // Writes are single stores, so any task (and a fault handler) may write
 #include "platform.h"
 
@@ -11,10 +12,12 @@ void at32_dac_init(uint8_t ch)
 	if (ch == 0) {
 		at32_pin_analog(GPIOA, AT32_PIN(4));
 		DAC_D1DTH12R = 0;
+		DAC_CTRL |= DAC_CTRL_D1OBDIS;
 		DAC_CTRL |= DAC_CTRL_D1EN;
 	} else {
 		at32_pin_analog(GPIOA, AT32_PIN(5));
 		DAC_D2DTH12R = 0;
+		DAC_CTRL |= DAC_CTRL_D2OBDIS;
 		DAC_CTRL |= DAC_CTRL_D2EN;
 	}
 }
