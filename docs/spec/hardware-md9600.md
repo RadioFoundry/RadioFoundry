@@ -421,6 +421,22 @@ FM: IF chip discriminator -> U_V_AF_SW (band) -> FM_SW (stages on) -> FM_MUTE (h
 volume knob -> amplifier. DMR and beeps: HR_C6000 line out -> volume control. The amplifier mute is AF_SW (PB6) driven
 as PWM from TIM4: 0 % = unmuted, 100 % = muted; a partial duty (30 %) can be used for click suppression. The volume knob is analog only (no ADC input): no software volume.
 
+The two paths meet only at the knob, so their levels are set apart. FM has no gain stage the MCU sets. The line out
+follows the HR_C6000 RX gain, 4:0x37 = 0xC4 (+4, `MD9600_RX_GAIN_DB`, [modem-hrc6000.md](modem-hrc6000.md) 2),
+measured at the speaker as about 0.7 dB a code. At that gain decoded voice plays at the FM level. Speaker level against
+the source, with the same recorded voice in each mode:
+
+| Knob | Narrow FM | Wide FM | DMR | NXDN | P25 |
+|---|---|---|---|---|---|
+| 3/4 | +0.5 dB | | +0.8 dB | +0.7 dB | +0.2 dB |
+| Full | +3.4 dB | +3.1 dB | +1.9 dB | +2.0 dB | +1.6 dB |
+
+From 3/4 to full the knob raises FM about 2.7 dB but the line out only about 1.1 dB, so one gain can't match both ends;
++4 matches where the knob usually sits. Nothing clips at full: the digital modes peak at -4.5 dBFS at the microphone,
+FM at -0.7 dBFS. Beeps leave the line out with the voice and play at about its level. The knob can't be read, so beeps
+follow the knob to the top. A bench build can try another gain with `make BOARD=md9600 MD9600_DEFS=-DMD9600_RX_GAIN_DB=5`,
+or set 0x37 live through CHIP_REG (4.1): the gain is written only at start, so a live value holds until a restart.
+
 ### 6.2 Microphone
 
 Hand mic on the RJ-45 jack: mic audio to the HR_C6000 line input, PTT on PE10, keypad on PA6 / PA7 (9.3). Mic and GPS
