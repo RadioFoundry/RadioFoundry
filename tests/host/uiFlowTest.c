@@ -502,6 +502,10 @@ static const flow_t flows[] = {
 	{ "11 dual watch: changes kept over hops", "quick 7 ctx 3 5 ok quick 2 back", "tune:b tune:a", "pos=3 temporary=1", 0,
 	  false },
 	{ "11 dual watch: talk target for the selected", "quick 7 tune:b", "tt", "dual=1 screen=picker", 1, false },
+	// #1116: Up / Down set to Talk target (Settings > Keys) step the selected channel's talk target in dual watch too,
+	// not the channel, as on the single Home
+	{ "11 dual watch: Up/Down on talk target", "ok 7 8 down down ok ok long:back quick 7", "up",
+	  "dual=1 sel=A pos=3 talk=91 toast=Talking_to", 1, false },
 	// #1013: the receiver hops to A's channel between the UI's passes, just before a digit: the digit still goes to
 	// B's VFO entry, not to Find
 	{ "11 dual watch: a digit just after a hop to the channel", "quick 7 ctx 1 vfokey tune:b", "hop:a 1",
