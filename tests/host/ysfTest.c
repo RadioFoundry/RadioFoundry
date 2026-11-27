@@ -870,6 +870,24 @@ static void testRooms(void)
 	      !strcmp(wx_got.room[0].id, "90002"), "a padded search result: search %d rooms %u total %u", wx_got.search,
 	      wx_got.rooms, wx_got.rooms_total);
 
+	// A hotspot gateway's status (its layout read off the radio, names changed): "13" linked to a reflector
+	memset(d, ' ', sizeof d);
+	d[0] = 0x18;
+	memcpy(d + 1, "\x5D\x51\x5F\x26", 4);
+	put_text(d + 5, "29615", 5);
+	put_text(d + 10, "N0CALL-Y", 10);
+	put_text(d + 20, "N0CALL_HS", 14);
+	put_text(d + 34, "13", 2);
+	put_text(d + 36, "26001", 5);
+	put_text(d + 41, "XX-REFLECTOR", 16);
+	put_text(d + 57, "000", 3);
+	len = reply_end(d, 127);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DX && wx_got.connected && !strcmp(wx_got.room_id, "26001") &&
+	      !strcmp(wx_got.room_name, "XX-REFLECTOR"), "gateway status '13': connected %d room '%s' '%s'",
+	      wx_got.connected, wx_got.room_id, wx_got.room_name);
+
 	// A commercial repeater's node (the layout of an off-air recording, names changed): status 0x52 with 18 bytes
 	// before the node's ID, in a room
 	memset(d, ' ', sizeof d);

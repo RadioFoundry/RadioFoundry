@@ -230,7 +230,9 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 		return false;
 	// Status, connect and disconnect, in two layouts: a commercial repeater's node answers 0x52 (status) and 0x42
 	// (connect, disconnect) with 18 bytes before the node's ID; 0x51 and 0x41 have the fields from [5]. Then the
-	// node's ID (5), its callsign (10), its name (14), "15" in a room ("12" not), the room's ID (5), its name (16)
+	// node's ID (5), its callsign (10), its name (14), its link state, the room's ID (5), its name (16). The state is
+	// "12" with no room; a commercial node says "15" in a room, a hotspot gateway "13" linked to a reflector: any
+	// state but "12" with a room ID in digits is in a room
 	switch (h[2]) {
 	case 0x51: case 0x41: o = 5; break;
 	case 0x52: case 0x42: o = 23; break;
@@ -238,7 +240,7 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 	}
 	if (end < o + 52u)
 		return false;
-	w->connected = h[o + 29] == '1' && h[o + 30] == '5';
+	w->connected = !(h[o + 29] == '1' && h[o + 30] == '2') && h[o + 31] >= '0' && h[o + 31] <= '9';
 	w->kind = (h[2] & 0xF0) == 0x50 ? YSF_WX_DX : w->connected ? YSF_WX_CONNECT : YSF_WX_DISCONNECT;
 	text_of(h + o, 5, w->node_id);
 	text_of(h + o + 5, 10, w->node_call);
