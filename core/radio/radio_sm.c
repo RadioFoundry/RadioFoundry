@@ -9521,7 +9521,7 @@ uint8_t radio_volume_percent(uint8_t step)
 
 int16_t radio_volume_db10(uint8_t step)
 {
-	return (int16_t)(-RADIO_VOLUME_STEP_DB10 * (int)(RADIO_VOLUME_MAX - (step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step)));
+	return (int16_t)RADIO_VOLUME_DB10((int)(step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step));
 }
 
 int16_t radio_volume_curve_db10(uint8_t percent)

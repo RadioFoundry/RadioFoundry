@@ -52,7 +52,8 @@
 #ifndef DB25D_PCM_TRIM_DB
 #define DB25D_PCM_TRIM_DB	15
 #endif
-#define VOL_DAC_DEFAULT		(RADIO_VOLUME_STEP_DB10 * (RADIO_VOLUME_MAX - RADIO_VOLUME_DEFAULT) / 10 - DB25D_PCM_TRIM_DB)
+#define PCM_DB(db10)		((db10) / 10 + DB25D_PCM_TRIM_DB)	// the line out gain at a point of the curve
+#define VOL_DAC_DEFAULT		(-PCM_DB(RADIO_VOLUME_DB10(RADIO_VOLUME_DEFAULT)))	// hrc7000_dac_code() of a gain <= 0
 _Static_assert(VOL_DAC_DEFAULT >= 0 && VOL_DAC_DEFAULT <= 31, "the default step's line out gain is 0 dB or less");
 #define TX_RX_OFF_US		50u		// 3.2: RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// ours: the chip's VCO calibration, before the PA is selected. The stock has none beyond the page's delay
@@ -80,7 +81,7 @@ static bool have_rx;
 static bool transmitting;
 static bool audio_open;		// what audio() was last asked, restored after a transmission
 static bool vol_muted;		// volume step 0: the chip output stays off whatever audio() asks
-static int16_t vol_db10 = (int16_t)(-RADIO_VOLUME_STEP_DB10 * (RADIO_VOLUME_MAX - RADIO_VOLUME_DEFAULT));	// the curve at the step
+static int16_t vol_db10 = RADIO_VOLUME_DB10(RADIO_VOLUME_DEFAULT);	// the curve at the step
 static uint8_t vol_dac = VOL_DAC_DEFAULT;	// the modem's line out gain code the volume step selects (0..31 = 0..-31 dB)
 static bool tx_uhf;
 static uint16_t tx_pa;
@@ -767,7 +768,7 @@ static void volume(uint8_t percent)
 {
 	vol_muted = percent == 0;
 	vol_db10 = radio_volume_curve_db10(percent);
-	vol_dac = hrc7000_dac_code(vol_muted ? HRC7000_DAC_MIN_DB : vol_db10 / 10 + DB25D_PCM_TRIM_DB);
+	vol_dac = hrc7000_dac_code(vol_muted ? HRC7000_DAC_MIN_DB : PCM_DB(vol_db10));
 	if (modem.buf != NULL) {	// attached by init(), which applies vol_dac itself
 		hrc7000_set_dac_gain(&modem, vol_dac);
 		speaker_pins();		// step 0 and back: the amplifier

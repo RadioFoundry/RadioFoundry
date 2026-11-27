@@ -23,7 +23,8 @@ typedef struct {
 	void (*rx_tone)(void *chip, superhet_tone_t type, uint16_t value);	// Hz x 10, or the 9-bit DCS code
 	void (*af)(void *chip, superhet_af_t af);
 	// The received audio level, in tenths of a dB below the chip's loudest (0 and below): the volume curve
-	// (radio_volume_db10)
+	// (radio_volume_db10). The chip takes its nearest level at or above the value: 0.5 dB levels on the BK4819, 2 dB
+	// on the FD6818, so the curve's 2 dB steps are exact on both
 	void (*af_db10)(void *chip, int16_t db10);
 	// FM transmit: words written while still receiving (pa_gain 0..15, for chips with a PA gain), the tune into TX,
 	// the end back to receive on the TX frequency

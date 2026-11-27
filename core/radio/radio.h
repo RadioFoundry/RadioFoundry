@@ -802,6 +802,7 @@ uint8_t radio_volume_percent(uint8_t step);
 // into its own gain registers and trims each path once, so FM and the PCM path (DMR, NXDN, P25, beeps) stay level at
 // every step. Step 0 (mute) gives the step below 1
 #define RADIO_VOLUME_STEP_DB10	20
+#define RADIO_VOLUME_DB10(step)	(-RADIO_VOLUME_STEP_DB10 * (RADIO_VOLUME_MAX - (step)))	// a constant step 0..MAX
 int16_t radio_volume_db10(uint8_t step);
 // The same from a volume percent, in hal_radio_t.volume_db10's form: a board on the curve sets the hook to this
 int16_t radio_volume_curve_db10(uint8_t percent);

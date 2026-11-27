@@ -166,6 +166,7 @@ void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain);
 #ifndef BK4819_AF_TOP_GAIN2
 #define BK4819_AF_TOP_GAIN2	0x3Bu	// the init table's value (+3.5 dB)
 #endif
+_Static_assert(BK4819_AF_TOP_GAIN2 >= 1 && BK4819_AF_TOP_GAIN2 <= 0x3F, "gain 2 is 6 bits, 0 is its floor");
 void bk4819_set_af_db10(bk4819_t *dev, int16_t db10);
 // DMR receive (hardware-db25d.md 4.5): the stock firmware's digital mode set for the main chip, written when it enters a
 // digital channel: 0x2A, 0x51 = 0, AFC off, 0x52, 0x47, 0x7E, 0x43, 0x40 = 0, 0x27, 0x2B, 0x48, then the AF output on

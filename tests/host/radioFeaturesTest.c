@@ -2853,7 +2853,7 @@ static void test_beep_knob_cap(void)
 	run(100);
 	int pk = beep_peak();
 	CHECK(pk > 11500 && pk <= 12900);
-	knob_pos = 30;			// under the cap step's 44 %
+	knob_pos = 30;			// under the cap step's 50 %
 	run(100);
 	pk = beep_peak();
 	CHECK(pk > 11500 && pk <= 12900);

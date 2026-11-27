@@ -153,15 +153,16 @@ the room's noise floor. In DMR the chip's output is the modem's input (4.5): the
 
 DMR, NXDN and P25 voice and beeps leave the modem's codec line out instead (4.5), which never passes the main chip's AF
 gain. That path follows the curve on the HR_C7000 line out gain (GCR_DACL, 1 dB a code, `hrc7000_dac_code`), at
-`DB25D_PCM_TRIM_DB` (15 dB) over the curve, so decoded voice plays at the FM level. Measured at the speaker, with the same
-recorded voice in each mode:
+`DB25D_PCM_TRIM_DB` (15 dB) over the curve, so decoded voice plays at the FM level. Measured at the speaker of a radio
+with a BK4819 main chip, with the same recorded voice in each mode:
 
 | Step | FM | DMR | NXDN | P25 |
 |---|---|---|---|---|
 | 3 | -21.0 dB | -20.9 dB | | |
 | 7 | -13.1 dB | -13.1 dB | -13.1 dB | -13.2 dB |
 
-Steps above 7 are not measured (unverified). At step 7 neither path clips (FM peaks at -9 dBFS, DMR at -17 dBFS at the
+Steps above 7 are not measured (unverified). On a radio with an FD6818 main chip, FM keeps that chip's 16 AF levels, one
+a step from the top; their dB and the trim against them are not measured (unverified). At step 7 neither path clips (FM peaks at -9 dBFS, DMR at -17 dBFS at the
 microphone).
 
 The radio sets `volume_pcm`, so beeps play at `beep_level` and the line out scales them on the way out; at the steps
