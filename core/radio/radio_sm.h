@@ -35,6 +35,8 @@
 #define RADIO_LED_WAKE_MS	100
 #define RADIO_LED_STUCK_STEP_MS	125	// a stuck PTT line: red and green in turn, to ask for a power cycle
 #define RADIO_LED_DENY_STEP_MS	100
+#define RADIO_LED_BLINK_MS	50	// the scan pulse and the heartbeat: how long the green LED is on for one flash
+#define RADIO_LED_BEAT_GAP_MS	80	// the heartbeat is two flashes this far apart: on, off, on, then dark until the next
 #define RADIO_LED_DENY_STEPS	6
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_SQUELCH_DEFAULT	5

@@ -2783,6 +2783,103 @@ static void test_dmr_wake_leds(void)
 	setup_codeplug();
 }
 
+// Scan pulse and heartbeat (radio-features.md 5.7): the green LED flashes once every few seconds while a scan runs,
+// and twice, close together, while the radio is on and quiet; never over a transmission, and not with both off
+static void blink_count(uint32_t ms, uint32_t *flashes, uint32_t *on_ms)
+{
+	bool was = hw.led[LED_GREEN];
+	*flashes = *on_ms = 0;
+	for (uint32_t t = 0; t < ms; t += 5) {
+		run(5);
+		bool g = hw.led[LED_GREEN];
+		CHECK(g == ((sm.view.leds & RADIO_LED_GREEN) != 0));	// the view says what is driven
+		CHECK(!hw.led[LED_RED]);
+		*flashes += (g && !was) ? 1u : 0u;
+		*on_ms += g ? 5u : 0u;
+		was = g;
+	}
+}
+
+static void test_led_blink(void)
+{
+	uint32_t flashes, on_ms;
+	setup_codeplug();
+	run(100);
+	// Off by default: a scan and idle time show nothing
+	CHECK(sm.set.led_scan_pulse == 0 && sm.set.led_heartbeat == 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	blink_count(6000, &flashes, &on_ms);
+	CHECK(scan_on(&sm.scan) && flashes == 0 && on_ms == 0);
+	// Scan pulse every 2 s: one flash each, three in 6 s, each about RADIO_LED_BLINK_MS long
+	sm.set.led_scan_pulse = 2;
+	blink_count(6000, &flashes, &on_ms);
+	CHECK(flashes >= 2 && flashes <= 3);
+	CHECK(on_ms >= flashes * RADIO_LED_BLINK_MS && on_ms <= flashes * (RADIO_LED_BLINK_MS + RADIO_POLL_MS + 10u));
+	// A stopped scan doesn't pulse, and with the heartbeat off the idle radio shows nothing
+	req(RREQ_SCAN, RSCAN_TOGGLE);
+	run(100);
+	CHECK(!scan_on(&sm.scan));
+	blink_count(6000, &flashes, &on_ms);
+	CHECK(flashes == 0 && on_ms == 0 && !hw.led[LED_GREEN]);
+	// Heartbeat every 5 s: two flashes per period, so 7 to 9 in 20 s, each flash short
+	sm.set.led_heartbeat = 5;
+	blink_count(20000, &flashes, &on_ms);
+	CHECK(flashes >= 7 && flashes <= 9 && on_ms <= flashes * (RADIO_LED_BLINK_MS + RADIO_POLL_MS + 10u));
+	// The two flashes are RADIO_LED_BEAT_GAP_MS apart: dark between them, lit again after
+	{
+		uint32_t gap_ms = 0, first_gap = 0;
+		bool was = hw.led[LED_GREEN], seen = false;
+		for (uint32_t t = 0; t < 6000 && first_gap == 0; t += 5) {
+			run(5);
+			bool g = hw.led[LED_GREEN];
+			if (!g && seen) {
+				gap_ms += 5;
+			}
+			if (g && !was && seen) {
+				first_gap = gap_ms;
+			}
+			seen = seen || g;
+			was = g;
+		}
+		CHECK(first_gap >= RADIO_LED_BEAT_GAP_MS - RADIO_POLL_MS && first_gap <= RADIO_LED_BEAT_GAP_MS + RADIO_POLL_MS + 10u);
+	}
+	// A scan with both set pulses once (its own interval), not the heartbeat's two: 5 s pulse, 2 s heartbeat
+	sm.set.led_scan_pulse = 5;
+	sm.set.led_heartbeat = 2;
+	req(RREQ_SCAN, RSCAN_ZONE);
+	blink_count(10000, &flashes, &on_ms);
+	CHECK(scan_on(&sm.scan) && flashes >= 1 && flashes <= 3);
+	// With only the heartbeat set, a scan keeps the heartbeat: the radio is idle, just looking around
+	sm.set.led_scan_pulse = 0;
+	blink_count(10000, &flashes, &on_ms);
+	CHECK(flashes >= 8);
+	req(RREQ_SCAN, RSCAN_TOGGLE);
+	run(100);
+	// Not during a transmission: red is solid and green stays dark
+	req(RREQ_PTT, 1);
+	bool green_seen = false;
+	for (uint32_t t = 0; t < 6000; t += 5) {
+		run(5);
+		green_seen = green_seen || hw.led[LED_GREEN];
+	}
+	CHECK(!green_seen);
+	req(RREQ_PTT, 0);
+	run(600);
+	// Turned off, the LED is dark again at once
+	sm.set.led_heartbeat = 0;
+	blink_count(6000, &flashes, &on_ms);
+	CHECK(flashes == 0 && !hw.led[LED_GREEN]);
+	// A stored byte past the limit reads as off, not as some interval
+	{
+		radio_settings_t bad = sm.set;
+		bad.led_scan_pulse = 200;
+		bad.led_heartbeat = 61;
+		radio_sm_set_settings(&sm, &bad, 0);
+		CHECK(sm.set.led_scan_pulse == 0 && sm.set.led_heartbeat == 0);
+	}
+	setup_codeplug();
+}
+
 // A stand-in for the hotspot's SFR engine (hotspot_alt_t): only its active flag matters here
 static bool fake_alt_on;
 static bool fa_active(void) { return fake_alt_on; }
@@ -12071,6 +12168,7 @@ int main(void)
 	test_dmr_denied();
 	test_dmr_rpt_ticks_alone();
 	test_dmr_wake_leds();
+	test_led_blink();
 	test_dmr_voice_features();
 	test_dmr_contact_added();
 	test_ui_requests();
