@@ -1746,6 +1746,8 @@
  "editor.aes.show_keys": "Show AES keys",
  "editor.aes.generate": "Generate",
  "editor.aes.sharing_help": "Zone sharing can include the system record. AES keys stay local.",
+ "editor.aes.enc_only": "Encrypted only",
+ "editor.aes.enc_only_help": "Calls and data sent in the clear on this channel are ignored, as calls on another color code are. Digital monitor still plays them.",
  "editor.mode_name.NXDN": "NXDN",
  "editor.modes.add": "Add System",
  "editor.modes.add_title": "New {type} system",

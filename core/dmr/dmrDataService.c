@@ -2392,6 +2392,14 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	bool confirmed = (packet->dpf == DMR_DPF_CONFIRMED) && !packet->group;
 
 	stats.rxPackets++;
+#if CONFIG_DMR_AES
+	// An encrypted-only channel takes nothing in the clear: not passed on, not acknowledged, as if not heard
+	if (channel.privacy.rxClearDrop && !packet->privacy.encrypted)
+	{
+		stats.rxClearDropped++;
+		return;
+	}
+#endif
 	// Confirmed data to us must be acknowledged, whatever it carries, or the sender keeps retrying
 	pendingReply_t reply = {
 			.queuedAt = now,

@@ -124,6 +124,7 @@ void debuglink_view_dmr_data(uint8_t part, dl_text_t *t)
 	// Data privacy (dmr-data.md 13): packets decrypted, encrypted ones dropped, lists sent encrypted, lists held back
 	dl_text(t, "data.privacy_rx=%u\ndata.privacy_rx_dropped=%u\ndata.privacy_tx=%u\ndata.privacy_blocked=%u\n",
 		(unsigned)s.rxPrivacy, (unsigned)s.rxPrivacyDropped, (unsigned)s.txPrivacy, (unsigned)s.txPrivacyBlocked);
+	dl_text(t, "data.clear_rx_dropped=%u\n", (unsigned)s.rxClearDropped);	// an encrypted-only channel's
 	return;
 counters:
 	dl_text(t, "data.rx_bursts=%u\ndata.rx_csbk=%u\ndata.rx_headers=%u\ndata.rx_blocks=%u\n", (unsigned)s.rxBursts,

@@ -86,6 +86,9 @@ typedef struct {
 	bool any_cc;		// monitor: any color code too
 	bool both_ts;		// monitor: either timeslot, the first call heard until it ends
 	bool accept_bad_crc;	// the channel's Accept invalid CRC: a header / terminator LC that fails, taken when it repeats
+	// Encrypted only (CONFIG_DMR_AES): a call whose LC lacks the privacy option is ignored, as one of another color
+	// code: not played, not shown, not busy for polite access. The caller clears it for digital monitor
+	bool encrypted_only;
 	const uint32_t *groups;	// the channel's listen list (RX group list), owned by the caller, may be NULL
 	uint16_t group_count;
 	bool (*group_ok)(uint32_t tg, void *ctx);	// optional lookup instead of / besides the table
@@ -313,6 +316,7 @@ typedef struct {
 	uint32_t rx_private_calls;	// rx_calls that were private (FLCO 3), to us or not
 	uint32_t rx_emergency_calls;	// rx_calls with the emergency service option
 	uint32_t rx_encrypted_calls;	// rx_calls marked private by the service options, PI or a PI header
+	uint32_t rx_clear_ignored;	// rx_calls in the clear ignored by listen.encrypted_only
 	uint32_t rx_pi_headers;		// PI headers with a good CRC on our call's slot
 	uint32_t tx_pi_headers;		// PI headers sent (encrypted overs, tx_crypt_alg)
 	uint32_t rx_alias_complete;	// talker aliases completed

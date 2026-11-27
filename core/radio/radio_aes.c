@@ -34,6 +34,8 @@ bool radio_aes_configure(const channel_t *ch, dmr_call_config_t *cfg)
 {
 	// The call stack refuses an over it can't encrypt, even if it gets past the radio task's TX check.
 	cfg->tx_crypt_required = ch->kind == CODEPLUG_KIND_DMR_AES;
+	// Encrypted only: digital monitor (hear_all, set before) still plays everything, as it does other color codes
+	cfg->listen.encrypted_only = radio_aes_enc_only(ch, cfg->listen.hear_all);
 	if (!cfg->tx_crypt_required) {
 		if (channel_key_ref != 0 || dmrAesHasKeys(&channel_keys)) {
 			dmrAesClearKeys(&channel_keys);
@@ -72,12 +74,18 @@ bool radio_aes_configure(const channel_t *ch, dmr_call_config_t *cfg)
 	return true;
 }
 
-bool radio_aes_data_config(const channel_t *ch, dmrDataPrivacy_t *out)
+bool radio_aes_enc_only(const channel_t *ch, bool monitor)
+{
+	return ch->kind == CODEPLUG_KIND_DMR_AES && (ch->aes_opts & CODEPLUG_AES_ENC_ONLY) != 0 && !monitor;
+}
+
+bool radio_aes_data_config(const channel_t *ch, bool monitor, dmrDataPrivacy_t *out)
 {
 	if (ch->kind != CODEPLUG_KIND_DMR_AES)
 		return false;
 	memset(out, 0, sizeof(*out));
 	out->mode = DMR_DATA_PRIVACY_BLOCK;
+	out->rxClearDrop = radio_aes_enc_only(ch, monitor);
 	return true;
 }
 

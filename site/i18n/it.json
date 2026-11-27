@@ -1746,6 +1746,8 @@
  "editor.aes.show_keys": "Mostra chiavi AES",
  "editor.aes.generate": "Genera",
  "editor.aes.sharing_help": "La condivisione delle zone può includere il record del sistema. Le chiavi AES restano locali.",
+ "editor.aes.enc_only": "Solo cifrato",
+ "editor.aes.enc_only_help": "Le chiamate e i dati in chiaro su questo canale vengono ignorati, come quelli di un altro codice colore. Il monitor digitale li riproduce comunque.",
  "editor.mode_name.NXDN": "NXDN",
  "editor.modes.add": "Aggiungi sistema",
  "editor.modes.add_title": "Nuovo sistema {type}",

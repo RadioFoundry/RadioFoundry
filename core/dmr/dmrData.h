@@ -238,6 +238,7 @@ typedef struct dmrDataPrivacy_s
 	// false when the scheme can't (another algorithm), the data left as it is
 	bool (*crypt)(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length);
 	const void *ctx;						// the scheme's key, for crypt
+	bool rxClearDrop;						// RX: packets without a privacy header are dropped (encrypted only)
 } dmrDataPrivacy_t;
 
 // The channel's data privacy (copied; NULL or mode CLEAR: off). With ENCRYPT every unconfirmed and confirmed packet we

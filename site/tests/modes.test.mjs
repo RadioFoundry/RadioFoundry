@@ -16,7 +16,7 @@ import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../st
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
 import { t3System, OPTS as T3_OPTS } from "../static/js/codeplug/mode_t3.js";
-import { aesSystem, randomAesKey } from "../static/js/codeplug/mode_aes.js";
+import { aesKind, aesSystem, randomAesKey } from "../static/js/codeplug/mode_aes.js";
 
 const VECTORS = new URL("../../tests/vectors/channel-modes.txt", import.meta.url);
 const bytes = (s) => (s === "-" ? null : Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16)));
@@ -565,6 +565,24 @@ test("AES keys are traffic keys: round-trip by system and ID, stripped exports r
 	assert.equal(stripped.channels[0].kind, 5);
 	assert.equal(stripped.channels[0].params.id, 0);
 	assert.ok(stripped.systems.every((s) => s.trafficKeys.length === 0));
+});
+
+test("AES: encrypted only is bit 0 of the block's third byte; a two-byte block reads off, other bits are kept", () => {
+	assert.deepEqual(aesKind.decode(Uint8Array.of(0x25, 7)), { id: 7, encOnly: false });
+	assert.equal(hexOf(aesKind.encode({ id: 7, encOnly: false }, Uint8Array.of(0x25, 7))), "2507");
+	assert.equal(hexOf(aesKind.encode({ id: 7, encOnly: true }, Uint8Array.of(0x25, 7))), "250701");
+	assert.equal(hexOf(aesKind.encode({ id: 7, encOnly: false }, Uint8Array.of(0x25, 7, 0x81, 0xAA))), "250780AA");
+	assert.deepEqual(aesKind.decode(Uint8Array.of(0x25, 7, 0x81)), { id: 7, encOnly: true });
+	const m = empty(), c = newChannel({ name: "Quiet" });
+	m.channels.push(c);
+	m.systems.push(newSystem(m, 5, "North"));
+	numberAll(m);
+	m.systems[0].trafficKeys = [{ id: 3, key: "12".repeat(32) }];
+	setKind(m, c, 5);
+	c.params.id = 3;
+	assert.equal(round(m).channels[0].params.encOnly, false);
+	c.params.encOnly = true;
+	assert.equal(round(m).channels[0].params.encOnly, true);
 });
 
 test("AES: Generate fills a key from the CSPRNG", () => {

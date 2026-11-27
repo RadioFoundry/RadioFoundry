@@ -595,6 +595,27 @@ static void test_aes_reference(void)
 	c.kind = CODEPLUG_KIND_NONE;
 	CHECK(codeplug_set_channel(10, &c));
 	CHECK(get(10).kind == CODEPLUG_KIND_NONE && !get(10).rx_only);
+
+	// The options byte (#1159): a block written before it reads encrypted only off; the switch round-trips, and
+	// the bits this firmware doesn't know stay as stored
+	uint8_t v[CODEPLUG_TAG_HEAD_MAX + 8];
+	uint16_t check = codeplug_name_check("Old");
+	uint8_t old_tag[] = { CODEPLUG_KIND_DMR_AES, 2, (uint8_t)check, (uint8_t)(check >> 8), CODEPLUG_TAG_TX, 0x25, 7 };
+	c = make("Old", RADIO_MODE_DMR, true);
+	CHECK(codeplug_set_channel(11, &c));
+	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_CH_TAG + 10u), old_tag, sizeof old_tag));
+	c = get(11);
+	CHECK(c.kind == CODEPLUG_KIND_DMR_AES && c.aes_ref == 8 && c.aes_opts == 0);
+	c.aes_opts |= CODEPLUG_AES_ENC_ONLY;
+	CHECK(codeplug_set_channel(11, &c));
+	CHECK(tag_bytes(11, v, sizeof v) == 8 && v[7] == CODEPLUG_AES_ENC_ONLY);
+	CHECK((get(11).aes_opts & CODEPLUG_AES_ENC_ONLY) && get(11).aes_ref == 8);
+	v[7] = 0x80 | CODEPLUG_AES_ENC_ONLY;	// a later firmware's bit
+	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_CH_TAG + 10u), v, 8));
+	c = get(11);
+	c.aes_opts &= (uint8_t)~CODEPLUG_AES_ENC_ONLY;
+	CHECK(codeplug_set_channel(11, &c));
+	CHECK(tag_bytes(11, v, sizeof v) == 8 && v[7] == 0x80 && !(get(11).aes_opts & CODEPLUG_AES_ENC_ONLY));
 }
 #endif
 

@@ -60,8 +60,14 @@ typedef struct {
 	uint8_t system;
 #if CONFIG_DMR_AES
 	uint16_t aes_ref;  // 1 + the eight-bit PI key ID, zero for a missing or malformed reference
+	uint8_t aes_opts;  // the parameter block's options byte as stored: CODEPLUG_AES_ENC_ONLY, other bits kept
 #endif
 } channel_t;
+
+#if CONFIG_DMR_AES
+// channel_t.aes_opts: calls and packet data in the clear are ignored, as another color code's (channel-modes.md 4)
+#define CODEPLUG_AES_ENC_ONLY	0x01u
+#endif
 
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
 #define CODEPLUG_ALIAS_TS1_TEXT	0x01u

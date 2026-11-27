@@ -1746,6 +1746,8 @@
  "editor.aes.show_keys": "显示 AES 密钥",
  "editor.aes.generate": "生成",
  "editor.aes.sharing_help": "区域共享可以包含系统记录。AES 密钥只保留在本机。",
+ "editor.aes.enc_only": "仅加密",
+ "editor.aes.enc_only_help": "忽略此信道上未加密的呼叫和数据，如同其他色码的呼叫。数字监听仍会播放它们。",
  "editor.mode_name.NXDN": "NXDN",
  "editor.modes.add": "添加系统",
  "editor.modes.add_title": "新建{type}系统",

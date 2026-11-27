@@ -878,8 +878,12 @@ computed over the ciphertext, so a receiver without the key still checks and ack
 - RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm. Otherwise (no key, an
   MI-based algorithm) it is dropped and never shown; confirmed data is still acknowledged. A wrong BP key gives
   garbage that the IP checks drop.
+- RX on an encrypted-only AES channel ([dmr-voice.md](dmr-voice.md) 5.2, `dmrDataPrivacy_t.rxClearDrop`, unless
+  digital monitor is on): a packet without a privacy header is dropped as if not heard, not passed on and not
+  acknowledged. CSBKs are not affected.
 - Counters (debug link section 8): `data.privacy_rx` (decrypted), `data.privacy_rx_dropped`, `data.privacy_tx` (lists
-  sent encrypted), `data.privacy_blocked` (lists refused).
+  sent encrypted), `data.privacy_blocked` (lists refused), `data.clear_rx_dropped` (packets in the clear dropped on an
+  encrypted-only channel).
 
 ### 13.4 Open
 

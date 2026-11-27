@@ -163,6 +163,9 @@ static struct {
 	bool drop_wait;		// the repeater dropped under our over: ended, the repeater woken once the modem is done
 	bool rpt_bursts;	// this channel's modem reports the repeater's bursts (BS sync), not only its slot numbers
 	bool rx_echo;		// the call heard (RXC_OTHER) is our own over echoed by the repeater (own_echo)
+#if CONFIG_DMR_AES
+	bool rx_clear;		// the call heard (RXC_OTHER) is in the clear on an encrypted-only channel (rx_ignored)
+#endif
 	uint32_t permit_ms;	// the talk permit hold's start (TX_PERMIT)
 	bool permit_done;	// this PTT press had its hold
 	uint32_t tx_start_ms;
@@ -570,9 +573,30 @@ static bool own_echo(const dmr_lc_t *l, uint32_t now)
 	       (s.tx != TX_NONE || !elapsed(now, s.tx_end_ms, s.tx_end_seen, DMR_CALL_OWN_ECHO_MS));
 }
 
+// A call in the clear on an encrypted-only channel (listen.encrypted_only): nothing of it is played or shown
+static bool clear_ignored(const dmr_lc_t *l)
+{
+#if CONFIG_DMR_AES
+	return s.cfg.listen.encrypted_only && (l->svc & DMR_SVC_PRIVACY) == 0;
+#else
+	(void)l;
+	return false;
+#endif
+}
+
+// The call being heard is such a call: as one of another color code, it is no activity, no busy channel, no view
+static bool rx_ignored(void)
+{
+#if CONFIG_DMR_AES
+	return s.rx == RXC_OTHER && s.rx_clear;
+#else
+	return false;
+#endif
+}
+
 static bool rx_accept(const dmr_lc_t *l, uint32_t now)
 {
-	if (own_echo(l, now))
+	if (own_echo(l, now) || clear_ignored(l))
 		return false;
 	if (l->flco == DMR_FLCO_GROUP_VOICE)
 		return group_listened(l->dst, now);
@@ -628,6 +652,7 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 	bool continuing = s.rx != RXC_NONE;
 	bool new_talker = !continuing || l.src != s.view.caller.src;
 	bool resumed = late && !continuing && rx_resuming(lc, b, now);
+	bool was_ignored = continuing && rx_ignored();
 
 	if (s.rx == RXC_PLAY) {
 		dual_flush();
@@ -707,6 +732,13 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 
 	s.rx = rx_accept(&l, now) ? RXC_PLAY : RXC_OTHER;
 	s.rx_echo = s.rx == RXC_OTHER && own_echo(&l, now);
+#if CONFIG_DMR_AES
+	s.rx_clear = s.rx == RXC_OTHER && clear_ignored(&l);
+	if (s.rx_clear && !was_ignored && !resumed)
+		stats.rx_clear_ignored++;
+#else
+	(void)was_ignored;
+#endif
 	if (s.rx == RXC_PLAY && !continuing && !resumed)
 		stats.rx_calls_played++;
 	if (s.rx == RXC_PLAY && s.sink && s.sink->begin)
@@ -725,6 +757,9 @@ static void rx_recheck(uint32_t now)
 	if (!rx_accept(&l, now))
 		return;
 	s.rx = RXC_PLAY;
+#if CONFIG_DMR_AES
+	s.rx_clear = false;
+#endif
 	stats.rx_calls_played++;
 	if (s.sink && s.sink->begin)
 		s.sink->begin(&s.view.caller, s.sink->ctx);
@@ -1017,6 +1052,8 @@ static void rx_embedded(const dmr_burst_t *b, uint32_t now)
 			rx_lc(b->lc, b, true, now);	// a new talker without a header (repeater)
 			s.have_index = false;
 		}
+	} else if (rx_ignored()) {
+		return;		// its alias and position are clear data too
 	} else if (flco >= DMR_FLCO_TA_HEADER && flco <= DMR_FLCO_TA_BLOCK3) {
 #if CONFIG_DMR_TALKER_ALIAS
 		bool was = s.ta.complete;
@@ -1171,6 +1208,9 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		TR_WHAT('s');
 		return;
 	}
+	uint32_t activity_ms = s.last_activity_ms;
+	bool activity_seen = s.activity_seen;
+
 	if (b->kind != DMR_BURST_IDLE) {
 		s.last_activity_ms = now;
 		s.activity_seen = true;
@@ -1262,6 +1302,12 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		}
 		break;
 	}
+	// A burst of an ignored call leaves the channel as idle as one of another color code does: a scan moves on,
+	// machine traffic and DMO timing don't wait for it
+	if (rx_ignored()) {
+		s.last_activity_ms = activity_ms;
+		s.activity_seen = activity_seen;
+	}
 	// The call's color code and slot when the burst that started it (a late entry at A, simplex) didn't give them
 	if (s.rx != RXC_NONE && b->kind == DMR_BURST_VOICE) {
 		if (!s.rx_cc_known && cc_known(b)) {
@@ -1331,7 +1377,7 @@ static bool repeater_up(uint32_t now)
 // Our own over echoed by the repeater (the voice restarted after it dropped under us) doesn't make the channel busy
 static bool voice_channel_busy(uint32_t now)
 {
-	bool call = s.rx != RXC_NONE && !(s.rx == RXC_OTHER && s.rx_echo);
+	bool call = s.rx != RXC_NONE && !(s.rx == RXC_OTHER && s.rx_echo) && !rx_ignored();
 
 	switch (s.cfg.access) {
 	case DMR_ACCESS_POLITE_CC:
@@ -2229,7 +2275,8 @@ static void view_update(uint32_t now)
 	if (transmitting() || s.tx == TX_WAKE_LISTEN || s.tx == TX_PERMIT)
 		state = DMR_CALL_STATE_TX;
 	else
-		state = s.rx != RXC_NONE || data_receiving(now) ? DMR_CALL_STATE_RX : DMR_CALL_STATE_IDLE;
+		state = (s.rx != RXC_NONE && !rx_ignored()) || data_receiving(now) ? DMR_CALL_STATE_RX :
+			DMR_CALL_STATE_IDLE;
 
 	switch (s.tx) {
 	case TX_ACCESS:
@@ -2257,7 +2304,7 @@ static void view_update(uint32_t now)
 		break;
 	default:
 		phase = s.rx == RXC_PLAY ? DMR_CALL_PHASE_RX_VOICE
-					 : (s.rx == RXC_OTHER ? DMR_CALL_PHASE_RX_BUSY : DMR_CALL_PHASE_IDLE);
+					 : (s.rx == RXC_OTHER && !rx_ignored() ? DMR_CALL_PHASE_RX_BUSY : DMR_CALL_PHASE_IDLE);
 		break;
 	}
 
@@ -2357,7 +2404,7 @@ const dmr_call_view_t *dmr_call_view(void)
 
 bool dmr_call_channel_clear(uint32_t now_ms)
 {
-	if (transmitting() || s.rx != RXC_NONE)
+	if (transmitting() || (s.rx != RXC_NONE && !rx_ignored()))
 		return false;
 	if (!s.cfg.rmo)
 		return elapsed(now_ms, s.last_activity_ms, s.activity_seen, DMR_CALL_LBT_DMO_MS);

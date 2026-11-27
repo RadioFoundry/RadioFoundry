@@ -158,6 +158,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
 			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\ncall.rx_lc_taken=%u\n",
 				(unsigned)c.rx_ts_dropped, (unsigned)c.rx_cc_dropped, (unsigned)c.rx_lc_taken);
+			dl_text(t, "call.rx_clear_ignored=%u\n", (unsigned)c.rx_clear_ignored);	// encrypted only
 			// The reverse channel heard while sending: here, as dmr_stats fills a reply
 			dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
 				(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);

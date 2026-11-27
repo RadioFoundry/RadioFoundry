@@ -198,6 +198,13 @@ static const flow_t flows[] = {
 	  "focus=AES_key shows=None", 3, false },
 	{ "AES key row: saved with the channel", "aeskeys ok 5 ok down down down down down down down ok", "long:ok",
 	  "writes=1 toast=Saved_channel_3 focus=AES_key shows=3/0", 1, true },
+	// Encrypted only (#1159): a row of its own once a key is chosen, Off by default; OK toggles it, hold OK saves
+	{ "Encrypted only row: hidden without a key", "aeskeys ok 5 ok down down down down down down down", "",
+	  "focus=AES_key hides=Encrypted_only", 0, false },
+	{ "Encrypted only row: off with a key", "aeskeys ok 5 ok down down down down down down down ok", "down",
+	  "focus=Encrypted_only shows=Off", 1, false },
+	{ "Encrypted only row: toggled and saved", "aeskeys ok 5 ok down down down down down down down ok down", "ok long:ok",
+	  "writes=1 toast=Saved_channel_3 focus=Encrypted_only shows=On", 2, true },
 #endif
 #if CONFIG_CHANNEL_EDIT
 	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic

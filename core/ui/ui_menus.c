@@ -2620,7 +2620,7 @@ static const ui_scr_def_t chlist_screen = {
 // Without CONFIG_CHANNEL_EDIT the rows are read only and OK goes to the channel
 
 enum { CE_NAME, CE_NUMBER, CE_MODE, CE_CODE, CE_RATE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
-       CE_BURST, CE_AES, CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
+       CE_BURST, CE_AES, CE_ENC_ONLY, CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
        CE_ZONES, CE_GO, CE_SHARE, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
 
 static channel_t ced_ch;		// what the screen shows (the working copy when editing)
@@ -2813,6 +2813,8 @@ static bool ced_changed(uint8_t r)
 #if CONFIG_DMR_AES
 	if (r == CE_AES)
 		return ced_ch.kind != ced_orig.kind || ced_ch.system != ced_orig.system || ced_ch.aes_ref != ced_orig.aes_ref;
+	if (r == CE_ENC_ONLY)
+		return ((ced_ch.aes_opts ^ ced_orig.aes_opts) & CODEPLUG_AES_ENC_ONLY) != 0;
 #endif
 #if CONFIG_P25 || CONFIG_NXDN
 	if (r == CE_CODE || r == CE_RATE)
@@ -2936,6 +2938,9 @@ static void ced_build(void)
 	ced_n = 0;
 	for (uint8_t r = 0; r < CE_COUNT; r++) {
 		if (r == CE_AES && (!CONFIG_DMR_AES || (!ced_keys_available && ced_ch.kind != CODEPLUG_KIND_DMR_AES) || !dmr || into || (ced_ch.kind && ced_ch.kind != CODEPLUG_KIND_DMR_AES)))
+			continue;
+		// Only with a key chosen: the switch is the AES block's
+		if (r == CE_ENC_ONLY && (!CONFIG_DMR_AES || !dmr || into || ced_ch.kind != CODEPLUG_KIND_DMR_AES))
 			continue;
 		bool fm_only = r == CE_BW || r == CE_RX_TONE || r == CE_TX_TONE || r == CE_VOX || r == CE_BURST;
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
@@ -3138,7 +3143,8 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		TRN(LABEL_MODE, "Mode"), TRX(CHAN_LABEL_NAC, "NAC"), TRN(CHAN_LABEL_RATE, "Rate"), TRX(CHAN_LABEL_RX, "RX"), TRX(CHAN_LABEL_TX, "TX"), TRN(LABEL_POWER, "Power"),
 		TRN(WORD_RX_ONLY, "RX only"), TRN(CHAN_LABEL_BANDWIDTH, "Bandwidth"),
 		TRN(CHAN_LABEL_RX_TONE, "RX CTCSS/DCS"), TRN(CHAN_LABEL_TX_TONE, "TX CTCSS/DCS"), TRX(WORD_VOX, "VOX"),
-		TRN(WORD_TONE_BURST, "Tone burst"), TRN(CHAN_AES_KEY, "AES key"), TRN(CHAN_LABEL_COLOR_CODE, "Color code"),
+		TRN(WORD_TONE_BURST, "Tone burst"), TRN(CHAN_AES_KEY, "AES key"),
+		TRN(CHAN_LABEL_ENCRYPTED_ONLY, "Encrypted only"), TRN(CHAN_LABEL_COLOR_CODE, "Color code"),
 		TRN(LABEL_TIMESLOT, "Timeslot"), TRN(CHAN_LABEL_TX_CONTACT, "TX contact"),
 		TRN(CHAN_LABEL_RX_GROUP_LIST, "RX group list"), TRN(CHAN_LABEL_OWN_ID, "Own ID"),
 		TRN(CHAN_LABEL_DIRECT_MODE, "Direct mode"), TRN(CHAN_LABEL_TALK_PERMIT_BEEPS, "Talk permit beeps"),
@@ -3302,6 +3308,9 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 			if (ch->aes_ref) sb_u32(&b, ch->aes_ref - 1u, 1);
 			else sb_chr(&b, '?');
 		} else sb_str(&b, TR(VALUE_NONE, "None"));
+		break;
+	case CE_ENC_ONLY:
+		sb_onoff(&b, ch->aes_opts & CODEPLUG_AES_ENC_ONLY);
 		break;
 #endif
 	case CE_DMO:
@@ -3805,6 +3814,7 @@ static void chinfo_select(uint16_t i, bool hold)
 		ui_svc_next_aes_key(c);
 		break;
 	}
+	case CE_ENC_ONLY: c->aes_opts ^= CODEPLUG_AES_ENC_ONLY; break;
 #endif
 	case CE_DMO: c->dmo = !c->dmo; break;
 	case CE_BEEP: c->no_beep = !c->no_beep; break;
