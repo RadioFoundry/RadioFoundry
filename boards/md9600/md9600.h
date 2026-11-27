@@ -150,6 +150,8 @@ void md9600_diag_reset(void);
 
 // HR_C6000, PCM audio and the speaker routing (c6000_md9600.c). Radio task, after md9600_radio_early
 void md9600_c6000_init(void);
+// The debug link's CHIP_REG (board.chip_reg): chip 1 the HR_C6000, pages 1 and 4
+bool md9600_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 #if CONFIG_DMR && (CONFIG_AUDIO_PROBE || MD9600_FM_RX_TAP)
 // The audio tap: FM receive audio on the stream (MD9600_FM_RX_TAP); the audio probe's HR_C6000 register access
 // (debuglink.md 3.14)

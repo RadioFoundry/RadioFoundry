@@ -182,6 +182,11 @@ PCLK2 / 64 = about 560 kHz), I2S3 slave full duplex Philips 16-bit (extended) 8 
 PC0-PC2: the DM-1701's wiring except the voice port, which is on SPI1 here instead of the DM-1701's SPI. The
 register behavior is the DM-1701's ([modem-hrc6000.md](modem-hrc6000.md)).
 
+The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches the HR_C6000 as chip 1, pages 1
+and 4 (2 and 3 are the data and vocoder FIFOs, which a read would drain), registers 0x00-0xFF, one byte. The IF
+receiver and the synthesizers have no chip number. `rfoundry_debug.py reg 1 0x37 --page 4` reads the line out gain
+(0xC4, 6.1). A write goes straight to the chip; the driver's next set-up of that register overwrites the value.
+
 ### 4.2 Differences from the DM-1701 set-up
 
 | Item | MD-9600 |
