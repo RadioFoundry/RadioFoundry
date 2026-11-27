@@ -9126,6 +9126,102 @@ static void test_nxdn_tx(void)
 	nfar_stop();
 }
 
+// The talk permit on NXDN: the same path as P25's (air_talk, air_key), checked here so a change that breaks it for
+// one mode and not the other is caught. Settings > Sound's switch, the DMR row's start tone, and the hold before keying
+// on a board whose beeps can't sound on air
+static void test_nxdn_permit(void)
+{
+	beep_stats_t b0, b1;
+	radio_settings_t sr;
+
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	aud.feed = true;	// the beeps play out on the PCM stream, so the hold before keying ends as on the radio
+	req(RREQ_ZONE_POS, 2);
+	run(100);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running());
+
+	// Beeps that sound on air: the permit as it keys
+	beep_get_stats(&b0);
+	int calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_calls == calls + 1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// The switch off: keyed, none
+	ui_svc_apply(UI_SET_TALK_PERMIT, 0);
+	run(20);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.keyed && b1.played == b0.played);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.view.state == RS_IDLE);
+	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
+	run(20);
+
+	// The DMR row's start tone on the speaker replaces it
+	radio_get_settings(&sr);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_LOCAL;
+	sr.sig_hz[SIG_EV_BEGIN][0] = 910;
+	sr.sig_ms[SIG_EV_BEGIN][0] = 10;
+	radio_set_settings(&sr);
+	run(20);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1 && b1.last == BEEP_CUSTOM);
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_DEFAULT;
+	sr.sig_hz[SIG_EV_BEGIN][0] = 0;
+	sr.sig_ms[SIG_EV_BEGIN][0] = 0;
+	radio_set_settings(&sr);
+	run(20);
+
+	// Beeps that can't sound on air: the short permit first, the key-up once it is over, not at the hold's limit
+	uint32_t caps = board_rw.caps;
+	board_rw.caps |= CAP_BEEP_NOT_ON_AIR;
+	beep_get_stats(&b0);
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	beep_get_stats(&b1);
+	CHECK(!hw.keyed && hw.tx_calls == calls && sm.view.state != RS_TX);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT_SHORT && beep_busy());
+	int waited = 0;
+	while (!hw.keyed && waited < 2000) {
+		run(10);
+		waited += 10;
+	}
+	CHECK(hw.keyed && sm.view.state == RS_TX && hw.tx_calls == calls + 1 && waited >= 40 && waited < 400);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);	// once: none again as it keys
+	run(300);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// Let go during the permit: it never keys
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(10);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(hw.tx_calls == calls && !hw.keyed && sm.view.state == RS_IDLE);
+	board_rw.caps = caps;
+	aud.feed = false;
+}
+
 static void test_nxdn_mode(void)
 {
 	settings_t set;
@@ -9713,6 +9809,7 @@ static void test_nxdn(void)
 {
 	test_nxdn_rx();
 	test_nxdn_tx();
+	test_nxdn_permit();
 #if CONFIG_NXDN_SCRAMBLER
 	test_nxdn_system();
 #endif
