@@ -7,7 +7,8 @@
  * kHz samples, as a radio's PCM path delivers them), the demodulator and the deframer. Voice frames carry known
  * pseudo-random bits, so the voice bits the deframer hands back give the bit error rate.
  *
- * Then D-STAR on the soft modem (core/air): its transmitter is the modulator, sample for sample.
+ * Then D-STAR on the soft modem (core/air): its transmitter is the modulator, sample for sample, and its receiver on
+ * D-STAR's profile (dstar_air.h) reads a whole transmission bit for bit.
  *
  * Impairments: carrier offset, the transmitter's bit clock off by some ppm, an inverted discriminator, a first-order
  * high-pass in the transmit or receive audio path (with and without the low-frequency restorer), the modulator run
@@ -567,7 +568,44 @@ static void test_demod_guard(void)
 	CHECK(guard_bits == 0, "%u bits from a demodulator never started", guard_bits);
 }
 
-// --- D-STAR on the soft modem (dstar_air.h): its transmitter is the modulator
+// --- D-STAR on the soft modem (dstar_air.h): its transmitter is the modulator, and its receiver on D-STAR's profile
+// --- reads a whole transmission bit for bit, finding the frame sync once and the resync pattern every superframe
+
+#define SM_BITS_MAX	8000u
+static uint8_t sm_sent[SM_BITS_MAX];
+static uint32_t sm_nsent;
+static dstar_tx_t sm_tx;
+static uint8_t sm_got[SM_BITS_MAX + 512];
+static uint32_t sm_ngot;
+static int32_t sm_frame_at = -1;
+static uint32_t sm_resyncs[8], sm_nresync;
+
+static int sm_pull(void *ctx)
+{
+	(void)ctx;
+	int b = dstar_tx_bit(&sm_tx);
+	if (b >= 0 && sm_nsent < SM_BITS_MAX) {
+		sm_sent[sm_nsent++] = (uint8_t)b;
+	}
+	return b;
+}
+
+static void sm_out(const air_chunk_t *c, void *ctx)
+{
+	(void)ctx;
+	if (c->sync_at >= 0) {
+		uint32_t at = sm_ngot + (uint32_t)c->sync_at;
+		if (c->sync_id == DSTAR_AIR_SYNC_FRAME && sm_frame_at < 0) {
+			sm_frame_at = (int32_t)at;
+		} else if (c->sync_id == DSTAR_AIR_SYNC_RESYNC && sm_nresync < 8u) {
+			sm_resyncs[sm_nresync++] = at;
+		}
+	}
+	for (uint16_t i = 0; i < c->nsyms && sm_ngot < sizeof sm_got; i++) {
+		uint8_t d = (uint8_t)((c->hard[i >> 2] >> (6 - 2 * (i & 3))) & 3);
+		sm_got[sm_ngot++] = d == 1 ? 1 : 0;	// 01 is +, a 1; 11 is -, a 0 (dstar_air.h)
+	}
+}
 
 // A tap's functions are never called here: the fits only look for them
 static bool tap_start(void) { return true; }
@@ -584,6 +622,7 @@ static void test_softmodem(void)
 		.tx_start = tap_start, .tx_write = tap_write,
 	};
 	CHECK(air_softmodem_tx_fit(&dstar_air_profile, &tap) == AIR_FIT_TX, "tx fit");
+	CHECK(air_softmodem_rx_fit(&dstar_air_profile, &tap) == (AIR_FIT_RX | AIR_FIT_SOFT), "rx fit");
 	air_profile_t rrc = dstar_air_profile;
 	rrc.shape = AIR_SHAPE_RRC;
 	CHECK(air_softmodem_tx_fit(&rrc, &tap) == 0, "a pulse not written is no fit");
@@ -604,6 +643,48 @@ static void test_softmodem(void)
 	CHECK(air_softmodem_tx_open(&smt, &dstar_air_profile, &tap, iso_sym, NULL), "tx open");
 	size_t nb = air_softmodem_tx(&smt, b, 400);
 	CHECK(na == nb && memcmp(a, b, na * sizeof a[0]) == 0, "the modulator and the soft modem differ");
+
+	// A whole transmission at 8 kHz, as the radio sends it, into the soft modem's receiver
+	dstar_header_t h;
+	dstar_header_set(&h, 0, "DIRECT", "DIRECT", "CQCQCQ", "N0CALL", "TEST");
+	src_t src = { 0, 50, 3 };
+	dstar_tx_init(&sm_tx, &h, "Soft modem", 240, pull_voice, &src);
+	CHECK(dstar_gmsk_mod_init(&mod, 8000, 2400, sm_pull, NULL), "mod init");
+	air_softmodem_t rx;
+	CHECK(air_softmodem_rx_open(&rx, &dstar_air_profile, 8000, 2000, sm_out, NULL), "rx open");
+	int16_t blk[160];
+	uint32_t t_us = 0x1000u;
+	size_t n;
+	while ((n = dstar_gmsk_mod(&mod, blk, 160)) > 0) {
+		air_softmodem_rx(&rx, blk, (uint16_t)n, t_us);
+		t_us += (uint32_t)n * 125u;
+	}
+	memset(blk, 0, sizeof blk);
+	for (int i = 0; i < 4; i++) {	// the delay line out
+		air_softmodem_rx(&rx, blk, 160, t_us);
+		t_us += 160u * 125u;
+	}
+	const uint32_t pre = 240u, hdr = pre + DSTAR_FRAME_SYNC_BITS, frames = hdr + 660u;
+	CHECK(sm_frame_at >= 0, "no frame sync found");
+	int32_t lag = sm_frame_at - (int32_t)pre;	// received symbol index minus sent bit index
+	uint32_t errs = 0, cmp = 0;
+	for (uint32_t i = pre; i < sm_nsent; i++) {
+		int32_t j = (int32_t)i + lag;
+		if (j >= 0 && (uint32_t)j < sm_ngot) {
+			errs += sm_got[j] != sm_sent[i];
+			cmp++;
+		}
+	}
+	printf("# soft modem on D-STAR's profile: %u bits from the frame sync on, %u errors, %u resync patterns\n",
+	       (unsigned)cmp, (unsigned)errs, (unsigned)sm_nresync);
+	CHECK(cmp + 8u >= sm_nsent - pre && errs == 0, "%u errors in %u bits", (unsigned)errs, (unsigned)cmp);
+	// Frames 0, 21 and 42 carry the resync pattern, after their 72 voice bits
+	CHECK(sm_nresync == 3, "%u resync patterns", (unsigned)sm_nresync);
+	for (uint32_t k = 0; k < sm_nresync && k < 3u; k++) {
+		uint32_t want = frames + k * DSTAR_SUPERFRAME * DSTAR_FRAME_BITS + DSTAR_VOICE_BITS;
+		CHECK(sm_resyncs[k] == want + (uint32_t)lag, "resync %u at %u, sent at %u", (unsigned)k,
+		      (unsigned)sm_resyncs[k], (unsigned)(want + (uint32_t)lag));
+	}
 }
 
 int main(int argc, char **argv)

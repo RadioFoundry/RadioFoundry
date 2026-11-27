@@ -199,7 +199,7 @@ at 0.88 of it. The modulator pulls bits from the framer and writes samples at th
 when the board set one.
 
 The pulse and the arithmetic are the soft modem's transmitter's (`core/air/air_softmodem_tx.c`,
-[air-interface.md](air-interface.md) 6.1) on D-STAR's profile (`dstar_air.h`): `dstar_gmsk_mod` maps bits to levels, runs it and
+[air-interface.md](air-interface.md) 6.1) on D-STAR's profile (2.7): `dstar_gmsk_mod` maps bits to levels, runs it and
 puts the restorer after it. Its output is the same, sample for sample, as when the pulse was D-STAR's own (checked at
 8 to 96 kHz, both polarities, with a clock trim and with the restorer: 369,601 samples, none different).
 
@@ -252,6 +252,23 @@ Unmarked cells decoded 4 of 4 headers. The voice frames, with their own FEC, sta
 cost under 0.3 dB; the 8 kHz modulator (held samples and an interpolation filter, as a radio's DAC does) about 1 dB; a
 restored high-pass about 2 dB and a floor near 3e-4 at a 60 Hz restorer floor. The host test asserts margins under
 these at 14 dB.
+
+### 2.7 As an air interface profile
+
+`dstar_air_profile` (`dstar_air.h`) describes D-STAR to `core/air` ([air-interface.md](air-interface.md)):
+
+| Field | Value |
+|---|---|
+| Symbols | 4800 a second, two levels: a bit 1 is + (dibit 01), a 0 is - (11) |
+| Shape | Gaussian, BT 0.5 (`AIR_SHAPE_GAUSS`, 50), +-1200 Hz |
+| Syncs | the resync pattern (24 symbols, 4 errors, 72 symbols into its frame), every 21 frames (`sync_every_syms` 2016); the frame sync (15 symbols, 1 error, `AIR_SYNC_START_ONLY`), which the header follows |
+| Idle | 1010, the preamble |
+
+Transmit: the modulator is the soft modem's transmitter on it (2.2). Receive: the soft modem on it reads a whole
+transmission at 8 kHz bit for bit from the frame sync on, and finds the resync pattern in each superframe where it
+was sent (`dstarModemTest`). The radio still receives through the demodulator above (2.3), which tracks the bit clock
+between syncs where the soft modem holds the last sync's timing; it goes when the two have been compared on air (an
+Icom radio and a hotspot, both ways, a weak signal) and the soft modem is no worse.
 
 ## 3. Framing
 

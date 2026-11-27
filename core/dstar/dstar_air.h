@@ -2,7 +2,9 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // D-STAR DV as an air interface profile (hal_air.h, docs/spec/dstar-modem.md 2.7): 4800 symbols/s, two levels,
 // Gaussian at BT 0.5, +-1200 Hz, the frame sync once after the preamble and the resync pattern every 21st frame. The
-// GMSK modulator (dstar_gmsk.c) runs on the soft modem's transmitter with it (air_softmodem_tx).
+// GMSK modulator (dstar_gmsk.c) runs on the soft modem's transmitter with it (air_softmodem_tx). Receive on the soft
+// modem (air_softmodem_rx) is host tested against the GMSK demodulator's input; the radio keeps the demodulator until
+// the two have been compared on air.
 #ifndef RFOUNDRY_DSTAR_AIR_H
 #define RFOUNDRY_DSTAR_AIR_H
 
