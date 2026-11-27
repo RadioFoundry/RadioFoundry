@@ -910,6 +910,11 @@ msgid "  Sent "
 msgstr "  已发 "
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_TYPE_FREQUENCY"
+msgid "Type the frequency, then press OK"
+msgstr "输入频率，然后按 OK"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_ROW_SEND_NOW"
 msgid "Send position now"
 msgstr "立即发送位置"

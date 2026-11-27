@@ -908,6 +908,11 @@ msgid "  Sent "
 msgstr "  Env. "
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_TOAST_TYPE_FREQUENCY"
+msgid "Type the frequency, then press OK"
+msgstr "Teclea la frecuencia y pulsa OK"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_ROW_SEND_NOW"
 msgid "Send position now"
 msgstr "Enviar posición ya"
