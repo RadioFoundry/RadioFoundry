@@ -2151,10 +2151,12 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 typedef struct {
 	bool played, enc, unit;
 	uint32_t src, dst;
+	const char *name;	// the caller's contact name, "" for none (#1141)
 } air_call_t;
 
 static bool air_call(const radio_view_t *v, air_call_t *c)
 {
+	c->name = v->air_src_name;
 #if CONFIG_P25
 	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
 		const radio_p25_view_t *p = &v->p25;
@@ -2182,8 +2184,8 @@ static bool air_call(const radio_view_t *v, air_call_t *c)
 	return false;
 }
 
-// Why the call isn't played, else who calls and where ("ID 1234 > TG 1", "ID 1234 > Private to 5678"; the ID is
-// missing until the call's link control is read)
+// Why the call isn't played, else who calls and where ("ID 1234 > TG 1", "ID 1234 > Private to 5678", the caller's
+// contact name for its ID: "Joe > TG 1"; the ID is missing until the call's link control is read)
 static void air_call_line(const air_call_t *c, const font_t *f, int y)
 {
 	char buf[64], fit[48];
@@ -2201,8 +2203,12 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 		if (c->enc)
 			sb_str(&b, "ENC ");
 		if (with_id) {
-			sb_str(&b, "ID ");
-			sb_u32(&b, c->src, 1);
+			if (c->name[0] != '\0') {
+				sb_str(&b, c->name);
+			} else {
+				sb_str(&b, "ID ");
+				sb_u32(&b, c->src, 1);
+			}
 			sb_str(&b, " " GLYPH_ARROW " ");
 		}
 		if (c->unit) {

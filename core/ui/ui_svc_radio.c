@@ -339,6 +339,24 @@ bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out)
 			strncpy(out->src_name, v->dmr.call.src_name, sizeof out->src_name - 1);
 		}
 #endif
+#if CONFIG_P25
+		if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
+			out->air = true;	// the caller as on DMR (#1141)
+			out->src = v->p25.src;
+			out->dst = v->p25.dst;
+			out->group = (v->p25.flags & RADIO_P25_UNIT) == 0;
+			strncpy(out->src_name, v->air_src_name, sizeof out->src_name - 1);
+		}
+#endif
+#if CONFIG_NXDN
+		if (v->ch.mode == RADIO_MODE_NXDN && (v->nxdn.flags & RADIO_NXDN_RX) != 0) {
+			out->air = true;
+			out->src = v->nxdn.src;
+			out->dst = v->nxdn.dst;
+			out->group = (v->nxdn.flags & RADIO_NXDN_UNIT) == 0;
+			strncpy(out->src_name, v->air_src_name, sizeof out->src_name - 1);
+		}
+#endif
 		return true;
 	}
 	rx2_status_t st;

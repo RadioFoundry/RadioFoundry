@@ -557,6 +557,10 @@ typedef struct {
 #if CONFIG_NXDN
 	radio_nxdn_view_t nxdn;	// NXDN conventional (docs/spec/nxdn.md 6): the same
 #endif
+#if CONFIG_AIR
+	// The P25 or NXDN caller's (p25.src / nxdn.src) codeplug contact name, "" for none: one for both, one mode runs
+	char air_src_name[CODEPLUG_NAME_LEN + 1];
+#endif
 #if CONFIG_DMR_TRUNK
 	radio_t3_brief_t t3;
 #endif
