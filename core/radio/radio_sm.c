@@ -1185,9 +1185,7 @@ static void select_switch_position(radio_sm_t *sm, uint16_t pos, uint32_t now_ms
 #endif
 		sm->view.zone_pos = pos;
 		sm->view.channel_number = 0;
-		sm->view.ch = (channel_t){ .mode = RADIO_MODE_FM, .rx_only = true };
-		clear_temporary(sm);
-		apply_tot(sm);
+		load_channel(sm, &(channel_t){ .mode = RADIO_MODE_FM, .rx_only = true });
 	}
 	tune(sm, now_ms);
 }

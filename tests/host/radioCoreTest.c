@@ -6303,14 +6303,18 @@ static void test_rx_ext(void)
 static void test_channel_selector(void)
 {
 	setup_codeplug();
+	chans[2].mode = RADIO_MODE_DMR;
 	start();
 	knob_pos = 1;
 	radio_sm_request(&sm, &(radio_req_t){ .type = RREQ_ZONE_POS, .arg = knob_pos, .arg2 = 1 }, now);
 	CHECK(sm.view.zone_pos == 1 && sm.view.channel_number == 2);
+	CHECK(sm.dmr_running && sim.started);
 
 	knob_pos = (int8_t)zones[0].count;
 	radio_sm_request(&sm, &(radio_req_t){ .type = RREQ_ZONE_POS, .arg = knob_pos, .arg2 = 1 }, now);
 	CHECK(sm.view.zone_pos == (uint16_t)knob_pos && sm.view.channel_number == 0);
+	CHECK(!sm.dmr_running && !sim.started && !sm.view.dmr.active);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && sm.view.ch.rx_hz == 0);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_FREQ && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
