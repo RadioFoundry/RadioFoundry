@@ -6132,6 +6132,13 @@ static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
 	r.fm_rx = sm->aprs_phase == APRS_RF_OFF && sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot &&
 		  sm->view.state != RS_TX;
 	r.rx_hz = sm->view.ch.rx_hz;
+	// The selected channel for KISS packet mode (aprs.md 9.2)
+	r.ch_fm = sm->view.ch.mode == RADIO_MODE_FM;
+	r.ch_tx_hz = sm->view.ch.rx_only ? 0u : sm->view.ch.tx_hz;
+	r.ch_narrow = sm->view.ch.bw == RADIO_BW_12K5;
+#if CONFIG_SCAN
+	r.scanning = scan_on(&sm->scan) || dual_running(sm);
+#endif
 #endif
 #if CONFIG_DMR
 	r.on_dmr = sm->dmr_running && !sm->hotspot;

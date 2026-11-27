@@ -322,6 +322,12 @@ spec = "docs/spec/aprs.md"
 switch = "APRS_IGATE"
 spec = "docs/spec/aprs.md"
 
+[feature.aprs_packet]
+switch = "APRS_PACKET"
+spec = "docs/spec/aprs.md"
+planned_tests = ["tests/hil/test_aprs.py::test_aprs_packet_mode_on_air"]
+manual = "A host's AX.25 connected mode over the KISS port (PAT or kissattach) with another station on a simplex amateur channel: connect, data both ways, disconnect"
+
 [feature.gps_sky]
 switch = "GPS_SKY"
 hardware = "a GPS receiver"

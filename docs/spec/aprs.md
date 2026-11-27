@@ -420,8 +420,9 @@ zone or VFO scan or dual watch runs (`scanning`).
    of flags plus the 3 tail flags after. The packet build's buffer is 768 bytes (6144 symbols, 5.1 s): two frames
    with 256 bytes of information and no digipeaters (274 bytes with the FCS, at most 2630 symbols stuffed) fit after a
    300 ms TXDELAY (360 symbols). A frame that doesn't fit waits for the next transmission. The queue holds 4 frames.
-4. Duty cycle: the keyed time in any 60 s is at most `PACKET_DUTY_MS` (30 s). A job that would pass it waits; the
-   wait counts in `duty_holds`. The radio's TX timeout applies to each transmission as for PTT.
+4. Duty cycle: the keyed time in any 60 s is at most `PACKET_DUTY_MS` (30 s). A job that would pass it waits and is
+   checked again a second later; each wait counts once in `duty_holds`. The radio's TX timeout applies to each
+   transmission as for PTT.
 5. Our PTT, a channel change or any other request that aborts an APRS job (6) aborts this one; the frames taken are
    dropped, not retried 15 s later (the host retries). PTT itself works as always.
 
@@ -511,7 +512,8 @@ debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native c
 (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX), `aprs_flags2` (iGate, iGate TX, messaging, UDT,
 to APRS-IS, mute), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
 `aprs_symbol`, `aprs_path`, `aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1),
-`aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
+`aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater), `aprs_flags2` bit 7 (KISS mode Packet, 9.2; where it is
+stored is open, 14). The position fields in the same record (`aprs_lat`,
 `aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's
 ([position.md](position.md) 5): APRS never changes them, and its save keeps them. The codeplug's APRS record 1 (EEPROM 0x1588,
 64 bytes each) gives the SSID, path, symbol, comment, frequency and ambiguity when present; its fixed position

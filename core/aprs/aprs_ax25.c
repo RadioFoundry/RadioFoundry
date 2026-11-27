@@ -33,6 +33,12 @@ enum { K_BEACON, K_STATUS, K_MSG, K_ACK, K_HOST, K_GATE, K_DIGI };
 
 static uint8_t rf_block(void);
 
+// KISS packet mode (aprs.md 9.2): the KISS TNC on, set to Packet, in a build with it
+static inline bool packet_on(void)
+{
+	return CONFIG_APRS_PACKET && aprs_s.cfg.kiss && aprs_s.cfg.packet;
+}
+
 // --- Configuration ---
 
 static const uint32_t region_hz[APRS_REGION_COUNT] = {
@@ -329,6 +335,9 @@ static bool band_tx(uint32_t hz)
 static uint8_t rf_block(void)
 {
 	uint32_t hz = aprs_cfg_freq(&aprs_s.cfg);
+	if (packet_on()) {
+		return APRS_PACKET;	// beacons, status, messages, acks, iGate and the digipeater wait (aprs.md 9.2)
+	}
 	if (!aprs_s.me_ok) {
 		return APRS_NO_CALL;
 	}
@@ -342,6 +351,98 @@ static uint8_t rf_block(void)
 		return APRS_NO_AFSK;
 	}
 	return APRS_OK;
+}
+
+#if CONFIG_APRS_PACKET
+// Why the host's frames can't go on the selected channel (aprs.md 9.2; lock held)
+static uint8_t packet_block(const aprs_radio_t *r)
+{
+	if (!aprs_s.me_ok) {
+		return APRS_NO_CALL;
+	}
+	if (!r->ch_fm) {
+		return APRS_NOT_FM;
+	}
+	if (r->ch_tx_hz == 0) {
+		return APRS_NO_FREQ;
+	}
+	if (!aprs_amateur_hz(r->ch_tx_hz) || !band_tx(r->ch_tx_hz)) {
+		return APRS_NOT_AMATEUR;
+	}
+	if (board.afsk == NULL || board.afsk->tx_start == NULL) {
+		return APRS_NO_AFSK;
+	}
+	if (r->scanning) {
+		return APRS_SCANNING;
+	}
+	return APRS_OK;
+}
+
+// The host's KISS parameters as at start-up and at every change of mode (aprs.md 9.2)
+static void packet_params_default(void)
+{
+	aprs_s.kp_txdelay = aprs_s.cfg.txdelay;
+	aprs_s.kp_persist = 63;
+	aprs_s.kp_slot = 10;
+	aprs_s.kp_txtail = 0;
+}
+
+// Keyed time in the last PACKET_DUTY_WINDOW_MS
+static uint32_t duty_used(uint32_t now_ms)
+{
+	uint32_t sum = 0;
+	for (uint8_t i = 0; i < PACKET_DUTY_SLOTS; i++) {
+		if (aprs_s.duty_ms[i] != 0 && now_ms - aprs_s.duty_at[i] < PACKET_DUTY_WINDOW_MS) {
+			sum += aprs_s.duty_ms[i];
+		}
+	}
+	return sum;
+}
+
+static void duty_note(uint32_t now_ms, uint16_t ms)
+{
+	aprs_s.duty_at[aprs_s.duty_next] = now_ms;
+	aprs_s.duty_ms[aprs_s.duty_next] = ms;
+	aprs_s.duty_next = (uint8_t)((aprs_s.duty_next + 1u) % PACKET_DUTY_SLOTS);
+}
+
+// Host frames not on the air PACKET_STALE_MS after they came are dropped: the host's retry timer sends them again
+static void packet_drop_stale(uint32_t now_ms)
+{
+	uint8_t keep = aprs_s.taken;	// the frames of a transmission under way stay
+	for (uint8_t i = aprs_s.taken; i < aprs_s.qn; i++) {
+		if (now_ms - aprs_s.q[i].queued_ms >= PACKET_STALE_MS) {
+			aprs_s.v.rf_busy++;
+			aprs_changed();
+			continue;
+		}
+		if (keep != i) {
+			aprs_s.q[keep] = aprs_s.q[i];
+		}
+		keep++;
+	}
+	aprs_s.qn = keep;
+}
+#endif
+
+void aprs_host_kiss_param(uint8_t cmd, uint8_t value)
+{
+#if CONFIG_APRS_PACKET
+	LOCK();
+	if (packet_on()) {
+		switch (cmd) {
+		case KISS_CMD_TXDELAY: aprs_s.kp_txdelay = value < 5 ? 5 : value > 100 ? 100 : value; break;
+		case KISS_CMD_PERSIST: aprs_s.kp_persist = value; break;
+		case KISS_CMD_SLOTTIME: aprs_s.kp_slot = value < 1 ? 1 : value > 25 ? 25 : value; break;
+		case KISS_CMD_TXTAIL: aprs_s.kp_txtail = value > 10 ? 10 : value; break;
+		default: break;
+		}
+	}
+	UNLOCK();
+#else
+	(void)cmd;
+	(void)value;
+#endif
 }
 
 
@@ -377,6 +478,9 @@ static bool queue_frame(uint8_t kind, const char *path, const char *info, size_t
 	}
 	q->kind = kind;
 	q->tries = 0;
+#if CONFIG_APRS_PACKET
+	q->queued_ms = aprs_s.now;
+#endif
 	aprs_s.qn++;
 	aprs_changed();
 	return true;
@@ -393,6 +497,9 @@ static bool queue_raw(uint8_t kind, const uint8_t *frame, size_t n)
 	q->len = (uint16_t)n;
 	q->kind = kind;
 	q->tries = 0;
+#if CONFIG_APRS_PACKET
+	q->queued_ms = aprs_s.now;
+#endif
 	aprs_changed();
 	return true;
 }
@@ -553,6 +660,10 @@ void aprs_ax25_init(uint32_t now_ms)
 	aprs_s.host_tokens = HOST_BURST;
 	aprs_s.host_refill_ms = now_ms;
 	aprs_s.msg_seq = (uint16_t)(now_ms % 900u);
+#if CONFIG_APRS_PACKET
+	aprs_s.pk_block = APRS_NO_FREQ;	// until the first tick has seen the channel
+	packet_params_default();
+#endif
 }
 
 void aprs_ax25_poll(uint32_t now_ms)
@@ -568,8 +679,33 @@ void aprs_ax25_poll(uint32_t now_ms)
 	}
 }
 
-void aprs_ax25_tick(uint32_t now_ms)
+void aprs_ax25_tick(const aprs_radio_t *r, uint32_t now_ms)
 {
+#if CONFIG_APRS_PACKET
+	bool on = packet_on();
+	if (on != aprs_s.pk_on) {
+		aprs_s.pk_on = on;
+		if (aprs_s.taken == 0) {
+			aprs_s.qn = 0;		// nothing queued in one mode goes out in the other
+		}
+		packet_params_default();
+		aprs_s.pk_block = APRS_NO_FREQ;
+		aprs_changed();
+	}
+	if (on) {
+		aprs_s.ch_rx_hz = r->rx_hz;
+		aprs_s.ch_tx_hz = r->ch_tx_hz;
+		aprs_s.ch_narrow = r->ch_narrow;
+		uint8_t pb = packet_block(r);
+		if (pb != aprs_s.pk_block) {
+			aprs_s.pk_block = pb;
+			aprs_changed();
+		}
+		packet_drop_stale(now_ms);
+	}
+#else
+	(void)r;
+#endif
 	while (aprs_s.host_tokens < HOST_BURST && now_ms - aprs_s.host_refill_ms >= HOST_REFILL_MS) {
 		aprs_s.host_tokens++;
 		aprs_s.host_refill_ms += HOST_REFILL_MS;
@@ -601,6 +737,10 @@ void aprs_ax25_service(void)
 	// This half's view fields first: the returns below leave them set
 	aprs_s.v.freq_hz = aprs_cfg_freq(&aprs_s.cfg);
 	aprs_s.v.block = aprs_s.block;
+#if CONFIG_APRS_PACKET
+	aprs_s.v.packet = aprs_s.pk_on;
+	aprs_s.v.pk_block = aprs_s.pk_block;
+#endif
 	aprs_s.v.msg_pending = aprs_s.out.active;
 	aprs_s.v.msg_tries = aprs_s.out.tries;
 	aprs_s.v.msg_acked = aprs_s.out.acked;
@@ -844,16 +984,23 @@ void aprs_rx_frame(const uint8_t *frame, size_t n, uint32_t now_ms)
 {
 	ax25_frame_t f;
 	aprs_parsed_t p;
-	bool ok = ax25_decode(frame, n, &f) && f.control == AX25_CONTROL_UI && f.pid == AX25_PID_NONE;
+	bool decoded = ax25_decode(frame, n, &f);
+	bool ui = decoded && f.control == AX25_CONTROL_UI && f.pid == AX25_PID_NONE;
 	LOCK();
 	aprs_s.now = now_ms;
-	if (!ok) {
+	// Packet mode passes every well formed frame to the host (aprs.md 9.2); APRS mode takes UI with no layer 3 only
+	if (!(packet_on() ? decoded : ui)) {
 		aprs_s.v.rx_bad++;
 		UNLOCK();
 		return;
 	}
 	aprs_s.v.rx_frames++;
 	host_emit(KISS_CMD_DATA, frame, n);
+	if (!ui) {
+		aprs_changed();
+		UNLOCK();
+		return;		// connected mode's frames are the host's alone
+	}
 	if (aprs_s.me_ok && ax25_addr_equal(&f.src, &aprs_s.me)) {
 		UNLOCK();
 		return;		// our own packet, digipeated back
@@ -866,7 +1013,7 @@ void aprs_rx_frame(const uint8_t *frame, size_t n, uint32_t now_ms)
 	if (p.type == APRS_T_THIRD_PARTY && aprs_s.me_ok) {
 		third_party_in(&f);
 	}
-	if (aprs_s.cfg.igate && aprs_s.cfg.kiss && aprs_s.me_ok && CONFIG_APRS_IGATE &&
+	if (aprs_s.cfg.igate && aprs_s.cfg.kiss && aprs_s.me_ok && CONFIG_APRS_IGATE && !packet_on() &&
 	    aprs_igate_rf_to_is(&aprs_s.dedup_gate, &f, &aprs_s.me, now_ms, aprs_s.gate, sizeof(aprs_s.gate)) == APRS_GATE_OK) {
 		host_is_line(aprs_s.gate, strlen(aprs_s.gate));
 		aprs_s.v.igated++;
@@ -938,9 +1085,20 @@ void aprs_rx_release(void)
 	aprs_s.rx_running = false;
 }
 
+// Where the receive path listens: the APRS frequency, or in packet mode the selected channel (aprs.md 9.2)
+static uint32_t listen_hz(void)
+{
+#if CONFIG_APRS_PACKET
+	if (aprs_s.pk_on) {
+		return aprs_s.ch_rx_hz;
+	}
+#endif
+	return aprs_cfg_freq(&aprs_s.cfg);
+}
+
 uint32_t aprs_rx_freq(void)
 {
-	return aprs_s.cfg.rx_on && aprs_can_receive() ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
+	return aprs_s.cfg.rx_on && aprs_can_receive() ? listen_hz() : 0u;
 }
 
 uint32_t aprs_mute_hz(void)
@@ -953,7 +1111,13 @@ void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
 	const hal_afsk_t *h = board.afsk;
 	bool own = rx_by_board();
-	bool want = aprs_s.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == aprs_cfg_freq(&aprs_s.cfg) &&
+	uint32_t hz = listen_hz();
+#if CONFIG_APRS_PACKET
+	if (aprs_s.pk_on) {
+		hz = r->rx_hz;		// the selected channel, also before the next tick has noted it
+	}
+#endif
+	bool want = aprs_s.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == hz &&
 		    (own || rx_by_stream());
 	// The wait only after a refusal: an old rx_retry_ms compared 24.8 days later would read as in the future
 	if (want && !aprs_s.rx_running && (!aprs_s.rx_retry_wait || (int32_t)(now_ms - aprs_s.rx_retry_ms) >= 0)) {
@@ -1015,10 +1179,25 @@ bool aprs_rx_listening(void)
 #endif
 }
 
+// Why the queue can't go now: in packet mode the host's frames on the selected channel (pk_block), else APRS's (lock
+// held)
+static uint8_t queue_block(void)
+{
+#if CONFIG_APRS_PACKET
+	if (packet_on()) {
+		return aprs_s.pk_block;
+	}
+#endif
+	return aprs_s.block;
+}
+
 bool aprs_rf_pending(void)
 {
 	LOCK();
-	bool p = aprs_s.qn > 0 && aprs_s.taken == 0 && aprs_s.block == APRS_OK && (int32_t)(aprs_s.now - aprs_s.rf_next_ms) >= 0;
+	bool p = aprs_s.qn > 0 && aprs_s.taken == 0 && queue_block() == APRS_OK && (int32_t)(aprs_s.now - aprs_s.rf_next_ms) >= 0;
+#if CONFIG_APRS_PACKET
+	p = p && !(packet_on() && aprs_s.duty_waiting && (int32_t)(aprs_s.now - aprs_s.duty_wait_ms) < 0);
+#endif
 	UNLOCK();
 	return p;
 }
@@ -1027,11 +1206,21 @@ bool aprs_rf_take(aprs_rf_job_t *job, uint32_t now_ms)
 {
 	LOCK();
 	aprs_s.now = now_ms;
-	if (aprs_s.qn == 0 || aprs_s.block != APRS_OK || aprs_s.taken != 0) {
+	if (aprs_s.qn == 0 || queue_block() != APRS_OK || aprs_s.taken != 0) {
 		UNLOCK();
 		return false;
 	}
-	uint16_t flags = hdlc_flags_for_ms((uint16_t)(aprs_s.cfg.txdelay * 10u), AFSK_BAUD, MIN_FLAGS);
+	// The preamble and the tail: APRS's settings, or in packet mode the host's TXDELAY and TXTAIL (aprs.md 9.2)
+	uint8_t txdelay = aprs_s.cfg.txdelay;
+	uint16_t tail = TAIL_FLAGS;
+#if CONFIG_APRS_PACKET
+	bool pk = packet_on();
+	if (pk) {
+		txdelay = aprs_s.kp_txdelay;
+		tail = (uint16_t)(tail + (aprs_s.kp_txtail != 0 ? hdlc_flags_for_ms((uint16_t)(aprs_s.kp_txtail * 10u), AFSK_BAUD, 0) : 0u));
+	}
+#endif
+	uint16_t flags = hdlc_flags_for_ms((uint16_t)(txdelay * 10u), AFSK_BAUD, MIN_FLAGS);
 	hdlc_enc_t e;
 	uint8_t n = 0;
 	for (;;) {
@@ -1042,11 +1231,11 @@ bool aprs_rf_take(aprs_rf_job_t *job, uint32_t now_ms)
 		// it found it and resets the stuffing count, so taking the tail's extra flags back off is exact
 		while (ok && n < aprs_s.qn) {
 			hdlc_enc_t keep = e;
-			if (!hdlc_enc_frame(&e, aprs_s.q[n].data, aprs_s.q[n].len) || !hdlc_enc_flags(&e, TAIL_FLAGS)) {
+			if (!hdlc_enc_frame(&e, aprs_s.q[n].data, aprs_s.q[n].len) || !hdlc_enc_flags(&e, tail)) {
 				e = keep;
 				break;
 			}
-			e.nbits -= 8u * (TAIL_FLAGS - 1u);
+			e.nbits -= 8u * (tail - 1u);
 			n++;
 		}
 		if (n > 0 || flags <= MIN_FLAGS) {
@@ -1061,13 +1250,39 @@ bool aprs_rf_take(aprs_rf_job_t *job, uint32_t now_ms)
 		UNLOCK();
 		return false;
 	}
-	hdlc_enc_flags(&e, TAIL_FLAGS - 1u);	// room checked above
-	aprs_s.taken = n;
+	hdlc_enc_flags(&e, (uint16_t)(tail - 1u));	// room checked above
 	job->hz = aprs_cfg_freq(&aprs_s.cfg);
 	job->narrow = aprs_s.cfg.narrow;
 	job->level = aprs_s.cfg.level;
 	job->tones = aprs_s.tones;
 	job->nbits = (uint16_t)e.nbits;
+	job->packet = false;
+	job->persist = 0;
+	job->slot_ms = 0;
+#if CONFIG_APRS_PACKET
+	if (pk) {
+		// The duty cycle: a transmission that would pass it waits, checked again a second later
+		uint16_t ms = (uint16_t)((e.nbits * 1000u + AFSK_BAUD - 1u) / AFSK_BAUD);
+		if (duty_used(now_ms) + ms > PACKET_DUTY_MS) {
+			if (!aprs_s.duty_waiting) {
+				aprs_s.v.duty_holds++;
+				aprs_changed();
+			}
+			aprs_s.duty_waiting = true;
+			aprs_s.duty_wait_ms = now_ms + 1000u;
+			UNLOCK();
+			return false;
+		}
+		aprs_s.duty_waiting = false;
+		aprs_s.job_ms = ms;
+		job->hz = aprs_s.ch_tx_hz;
+		job->narrow = aprs_s.ch_narrow;
+		job->packet = true;
+		job->persist = aprs_s.kp_persist;
+		job->slot_ms = (uint16_t)(aprs_s.kp_slot * 10u);
+	}
+#endif
+	aprs_s.taken = n;
 	aprs_s.v.rf_active = true;
 	aprs_changed();
 	UNLOCK();
@@ -1078,6 +1293,30 @@ void aprs_rf_done(aprs_rf_result_t r, uint32_t now_ms)
 {
 	LOCK();
 	aprs_s.now = now_ms;
+#if CONFIG_APRS_PACKET
+	if (aprs_s.job_ms != 0) {
+		// A packet job: keyed time counts toward the duty cycle; one that didn't go out is dropped, not tried again
+		// later (the host's own retries do that, aprs.md 9.2)
+		if (r == APRS_RF_SENT || r == APRS_RF_ABORTED || r == APRS_RF_TIMEOUT) {
+			duty_note(now_ms, aprs_s.job_ms);
+		}
+		aprs_s.job_ms = 0;
+		if (r == APRS_RF_SENT) {
+			aprs_s.v.rf_sent++;
+		} else if (r == APRS_RF_BUSY) {
+			aprs_s.v.rf_busy++;
+		} else {
+			aprs_s.v.rf_failed++;
+			aprs_s.v.rf_fail = (uint8_t)r;
+		}
+		queue_drop(aprs_s.taken);
+		aprs_s.taken = 0;
+		aprs_s.v.rf_active = false;
+		aprs_changed();
+		UNLOCK();
+		return;
+	}
+#endif
 	if (r == APRS_RF_SENT) {
 		queue_drop(aprs_s.taken);
 		aprs_s.v.rf_sent++;
@@ -1301,9 +1540,24 @@ bool aprs_msg_delete(uint8_t i)
 bool aprs_host_frame(const uint8_t *frame, size_t n, uint32_t now_ms)
 {
 	ax25_frame_t f;
-	bool ok = ax25_decode(frame, n, &f) && f.control == AX25_CONTROL_UI;
+	bool decoded = ax25_decode(frame, n, &f);
+	bool ok = decoded && f.control == AX25_CONTROL_UI;
 	LOCK();
 	aprs_s.v.host_in++;
+#if CONFIG_APRS_PACKET
+	if (packet_on()) {
+		// Packet mode (aprs.md 9.2): any frame type, still from our callsign; the selected channel's checks; no burst
+		// limit (the duty cycle bounds the air time)
+		aprs_s.now = now_ms;
+		ok = decoded && aprs_s.me_ok && strcmp(f.src.call, aprs_s.me.call) == 0 && aprs_s.pk_block == APRS_OK &&
+		     queue_raw(K_HOST, frame, n);
+		if (!ok) {
+			aprs_s.v.host_dropped++;
+		}
+		UNLOCK();
+		return ok;
+	}
+#endif
 	// Station identification: the source must be our callsign (any SSID); the APRS rules (amateur frequency,
 	// callsign) apply as to our own packets; a burst of HOST_BURST, then one per HOST_REFILL_MS
 	ok = ok && aprs_s.cfg.kiss && aprs_s.me_ok && strcmp(f.src.call, aprs_s.me.call) == 0 && aprs_s.host_tokens > 0 &&

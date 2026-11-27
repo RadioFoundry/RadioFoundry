@@ -105,6 +105,7 @@ is `tools/bringup.py list --radio <id>`.
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | pass, needs re-run | partial, needs re-run |
 | `aprs_mute` | not recorded | not recorded | not recorded | not written | not written | not recorded | not recorded | not recorded |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written | off | pass, needs re-run | partial, needs re-run |
+| `aprs_packet` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `usb` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded | not recorded | ✕ |
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -296,6 +297,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS_DMR` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `APRS_RX` | ● | ● | ● | … | … | ● | ● | ● |
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● | ● |
+| `APRS_PACKET` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● | ✕ |
 | `SATELLITE_TLE` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -381,6 +383,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | APRS receive: demodulator, station list, digipeater | `APRS_RX` | 10,012 | — | DM-1701: FM receive audio on the I2S stream, squelch gated ([aprs](spec/aprs.md) 5.3). MD-380: not written |
 | GPS screen: sky plot, signal bars, grid locator (Tools > Position) | `GPS_SKY` | 6,200 | 5,332 | Needs GPS. 176 B of RAM |
 | APRS iGate rules (with tools/aprs_gate.py) | `APRS_IGATE` | 1,420* | — | Needs APRS receive. DM-1701: off by default |
+| KISS packet mode: any AX.25 frame on the selected channel (Winlink, BBS, connected mode) | `APRS_PACKET` | 1,104 | — | Needs APRS on FM. Measured on the MD-UV380, with 144 B of RAM |
 
 ## Host link and USB
 
