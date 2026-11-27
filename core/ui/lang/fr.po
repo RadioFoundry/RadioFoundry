@@ -3057,7 +3057,7 @@ msgctxt "MYID_LABEL_DMR_ID"
 msgid "DMR ID"
 msgstr "ID DMR"
 
-#: core/ui/ui_menus.c core/ui/ui_position.c core/ui/ui_rooms.c
+#: core/ui/ui_menus.c core/ui/ui_position.c
 msgctxt "VALUE_NOT_SET"
 msgid "Not set"
 msgstr "Non défini"
@@ -4651,6 +4651,11 @@ msgstr "Max 90 N/S, 180 E/O"
 msgctxt "WX_TOAST_YSF_ONLY"
 msgid "Rooms: on a YSF channel"
 msgstr "Salons : sur un canal YSF"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_REFRESH"
+msgid "Refresh"
+msgstr "Actualiser"
 
 #: core/ui/ui_rooms.c
 msgctxt "WX_LABEL_NODE"

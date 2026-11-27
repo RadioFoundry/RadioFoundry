@@ -408,7 +408,7 @@ reply up to a few seconds later:
 | Item | Rule |
 |---|---|
 | Where | Tools > Rooms (key 0 there, while no zone offer waits), # on Home and quick settings tile 3 on a YSF channel (Tone's place: YSF has no tones), a key set to Rooms (`KEYFN_YSF_ROOMS`). Off a YSF channel: "Rooms: on a YSF channel" |
-| The page | TX DG-ID (as quick settings tile 8: OK, two digits, OK sets it; BACK leaves it), RX DG-ID (as tile 2), Node (OK asks for the status), Room, Room ID (digits type it anywhere on the page, kept while the radio runs), Connect, Disconnect, Rooms (the list, 20 a page), Search (text entry; its result pages like the list) |
+| The page | TX DG-ID (as quick settings tile 8: OK, two digits, OK sets it; BACK leaves it), RX DG-ID (as tile 2), Refresh (asks for the status, as OK on the next three rows does), Node, Room, Room ID (the room the node is in, as it said), Connect (the room ID to go to: digits type it anywhere on the page, kept while the radio runs; OK connects), Disconnect, Rooms (the list, 20 a page), Search (text entry; its result pages like the list) |
 | Waiting | Until the node answers what was asked: "Waiting..."; "No answer" after 8 s |
 | State | `radio_ysf_wx`: the last reply's fields, what was asked; `radio_ysf_wx_room`: the page of rooms. The provider's task writes them, the screens read them under a sequence count |
 | Memory | The reply's parser runs in the engine's memory (about 0.7 KB); the published state and page of rooms in the radio core (about 0.6 KB) |

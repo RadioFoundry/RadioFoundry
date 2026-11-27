@@ -478,10 +478,12 @@ network): it asks the node where it is, connects it to a room, disconnects it, a
 
 | Row | What it does |
 |---|---|
-| Node | The node's name. **OK** asks the node; until it answers the row says "Waiting...", and "No answer" after 8 s |
-| Room | The room the node is in, or None. **OK** asks again |
-| Room ID | Type a room's 5-digit number with the digit keys (anywhere on the page); **Back** takes a digit back |
-| Connect | Connects the node to the room ID typed |
+| TX DG-ID, RX DG-ID | The DG-IDs sent and heard (as quick settings tiles 8 and 2) |
+| Refresh | Asks the node where it is. **OK** on Node, Room or Room ID does the same |
+| Node | The node's name; until it answers the row says "Waiting...", and "No answer" after 8 s |
+| Room | The room the node is in, or None |
+| Room ID | That room's number, or - |
+| Connect | Type a room's 5-digit number with the digit keys (anywhere on the page; **Back** takes a digit back), then **OK** connects the node to it |
 | Disconnect | Takes the node out of its room |
 | Rooms | The node's list of rooms, 20 a page: **OK** on a room connects to it, **Next page** asks for the next 20 |
 | Search | Type a name or its start: the rooms that match, as a list, 20 a page; the last row asks for the next page |

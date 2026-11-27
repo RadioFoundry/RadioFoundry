@@ -3,7 +3,8 @@
 // Rooms (docs/spec/ysf.md 9): the node this YSF channel hears, the room it is in, connect and disconnect,
 // the room list a page at a time, a search. Every command is a short transmission the radio core keys (refused as
 // PTT would be); the node's reply comes in its own time, so the screens show what was asked until it answers.
-// The first row is the DG-ID, both ways (as quick settings tile 8). Opened from Tools > Rooms (key 0), # on Home or
+// The first rows are the DG-IDs (as quick settings tiles 8 and 2), then Refresh and what the node said; OK on any of
+// those asks the node again. Opened from Tools > Rooms (key 0), # on Home or
 // quick settings tile 3 on a YSF channel, or a key set to Rooms
 #include "config.h"
 #if CONFIG_YSF	// the whole file
@@ -66,7 +67,7 @@ static bool send(uint8_t cmd, uint32_t arg, const char *text)
 }
 
 // ── The Rooms page ──
-enum { WX_DGID, WX_RX_DGID, WX_NODE, WX_ROOM, WX_ROOM_ID, WX_CONNECT, WX_DISCONNECT, WX_ROOMS,
+enum { WX_DGID, WX_RX_DGID, WX_REFRESH, WX_NODE, WX_ROOM, WX_ROOM_ID, WX_CONNECT, WX_DISCONNECT, WX_ROOMS,
 #if CONFIG_CHANNEL_EDIT
 	WX_SEARCH,
 #endif
@@ -81,7 +82,7 @@ static uint16_t wx_count(void)
 static void wx_item(uint16_t i, ui_item_t *it)
 {
 	static const tr_id_t labels[WX_COUNT] = { TRX(YSF_LABEL_TX_DGID, "TX DG-ID"), TRX(YSF_LABEL_RX_DGID, "RX DG-ID"),
-		TRN(WX_LABEL_NODE, "Node"), TRN(WX_LABEL_ROOM, "Room"),
+		TRN(WX_ROW_REFRESH, "Refresh"), TRN(WX_LABEL_NODE, "Node"), TRN(WX_LABEL_ROOM, "Room"),
 		TRN(WX_LABEL_ROOM_ID, "Room ID"), TRN(WX_ROW_CONNECT, "Connect"), TRN(WX_ROW_DISCONNECT, "Disconnect"),
 		TRN(WX_ROW_ROOMS, "Rooms"),
 #if CONFIG_CHANNEL_EDIT
@@ -124,6 +125,11 @@ static void wx_item(uint16_t i, ui_item_t *it)
 			sb_str(&b, wx.room_name[0] ? wx.room_name : wx.room_id);
 		break;
 	case WX_ROOM_ID:
+		// The room the node is in, as it said (Room's ID); the room to go to is typed on Connect
+		sb_str(&b, wx.serial != 0 && wx.connected && wx.room_id[0] ? wx.room_id : "-");
+		break;
+	case WX_CONNECT:
+		// The room ID typed (digits anywhere on the page); OK connects to it
 		if (id_editing) {
 			if (id_len)
 				sb_u32(&b, room_id, id_len);
@@ -131,13 +137,7 @@ static void wx_item(uint16_t i, ui_item_t *it)
 			it->flags |= UI_ITEM_EDIT;
 		} else if (room_id) {
 			sb_u32(&b, room_id, WX_ID_DIGITS);
-		} else {
-			sb_str(&b, TR(VALUE_NOT_SET, "Not set"));
 		}
-		break;
-	case WX_CONNECT:
-		if (room_id)
-			sb_u32(&b, room_id, WX_ID_DIGITS);
 		break;
 	case WX_ROOMS:
 		if (wx.rooms_total && !wx.search)
@@ -159,7 +159,7 @@ static void search_kept(void)
 static void wx_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	if (id_editing && i != WX_ROOM_ID)
+	if (id_editing && i != WX_CONNECT)
 		id_editing = false;
 	if (dg_editing && i != dg_row)
 		dg_editing = false;
@@ -181,23 +181,19 @@ static void wx_select(uint16_t i, bool hold)
 		ui_dirty();
 		break;
 	}
+	case WX_REFRESH:
 	case WX_NODE:
 	case WX_ROOM:
+	case WX_ROOM_ID:
 		send(YSF_WX_DX, 0, NULL);
 		break;
-	case WX_ROOM_ID:
-		id_editing = !id_editing;
-		if (id_editing) {
-			room_id = 0;
-			id_len = 0;
-		}
-		ui_dirty();
-		break;
 	case WX_CONNECT:
+		id_editing = false;
 		if (!room_id)
 			ui_toast(TR(WX_TOAST_ROOM_ID_FIRST, "Type a room ID first"));
 		else
 			send(YSF_WX_CONNECT, room_id, NULL);
+		ui_dirty();
 		break;
 	case WX_DISCONNECT:
 		send(YSF_WX_DISCONNECT, 0, NULL);
@@ -242,7 +238,7 @@ static bool wx_key(const input_event_t *ev)
 		}
 		room_id = room_id * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
 		id_len++;
-		ui_frame()->focus = WX_ROOM_ID;
+		ui_frame()->focus = WX_CONNECT;
 		ui_dirty();
 		return true;
 	}

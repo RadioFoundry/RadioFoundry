@@ -3059,7 +3059,7 @@ msgctxt "MYID_LABEL_DMR_ID"
 msgid "DMR ID"
 msgstr "DMR ID"
 
-#: core/ui/ui_menus.c core/ui/ui_position.c core/ui/ui_rooms.c
+#: core/ui/ui_menus.c core/ui/ui_position.c
 msgctxt "VALUE_NOT_SET"
 msgid "Not set"
 msgstr "未设置"
@@ -4653,6 +4653,11 @@ msgstr "北南 90，东西 180"
 msgctxt "WX_TOAST_YSF_ONLY"
 msgid "Rooms: on a YSF channel"
 msgstr "房间：仅限 YSF 信道"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_REFRESH"
+msgid "Refresh"
+msgstr "更新"
 
 #: core/ui/ui_rooms.c
 msgctxt "WX_LABEL_NODE"
