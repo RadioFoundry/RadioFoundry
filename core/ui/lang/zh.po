@@ -1810,6 +1810,11 @@ msgid "OK open  # reply  Back"
 msgstr "OK 打开  # 回复  返回"
 
 #: core/ui/ui_menus.c
+msgctxt "MSG_HINT_OPEN"
+msgid "OK open  Back"
+msgstr "OK 打开  返回"
+
+#: core/ui/ui_menus.c
 msgctxt "MSG_ROW_FULL_MESSAGE"
 msgid "Full message"
 msgstr "显示全文"

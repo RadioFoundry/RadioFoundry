@@ -1808,6 +1808,11 @@ msgid "OK open  # reply  Back"
 msgstr "OK apri  # rispondi  Indietro"
 
 #: core/ui/ui_menus.c
+msgctxt "MSG_HINT_OPEN"
+msgid "OK open  Back"
+msgstr "OK apri  Indietro"
+
+#: core/ui/ui_menus.c
 msgctxt "MSG_ROW_FULL_MESSAGE"
 msgid "Full message"
 msgstr "Messaggio completo"

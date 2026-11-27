@@ -1912,12 +1912,41 @@ static const char *list_title_name(const ui_scr_def_t *d)
 	return d->title != NULL ? d->title() : NULL;
 }
 
+// A focused row that went (a message deleted, the list shorter) leaves the focus on a row that can take it: the last
+// row, or from a text row the nearest one above, else below
+static bool list_focusable(const ui_scr_def_t *d, uint16_t i)
+{
+	ui_item_t it;
+	list_item(d, i, &it);
+	return !(it.flags & UI_ITEM_INFO);
+}
+
+static void list_focus_fix(const ui_scr_def_t *d)
+{
+	ui_frame_t *f = &stack[sp];
+	uint16_t n = d->count();
+	if (n == 0)
+		return;
+	uint16_t was = f->focus;
+	if (f->focus >= n)
+		f->focus = (uint16_t)(n - 1u);
+	for (uint16_t k = 1, at = f->focus; k < n && !list_focusable(d, f->focus); k++) {
+		if (at >= k && list_focusable(d, (uint16_t)(at - k)))
+			f->focus = (uint16_t)(at - k);
+		else if (at + k < n && list_focusable(d, (uint16_t)(at + k)))
+			f->focus = (uint16_t)(at + k);
+	}
+	if (f->focus != was)
+		update_focus_target();
+}
+
 static void list_draw(const ui_scr_def_t *d)
 {
 	ui_frame_t *f = &stack[sp];
 	static char header[24];
 	ui_list_t l;
 	memset(&l, 0, sizeof l);
+	list_focus_fix(d);
 	l.prefix = tr(d->prefix);	// a screen definition's text is a key (TRN): translated here
 	l.name = list_title_name(d);
 	l.count = d->count();

@@ -59,7 +59,7 @@ From Messages:
    | Key | Row | Sends to |
    |---|---|---|
    | **1** | Last caller | The station heard last, by name or ID. Unavailable until a call is heard |
-   | **2** | Talk target | Where **PTT** talks now, such as the channel's talkgroup. DMR channels only |
+   | **2** | Talk target | Where **PTT** talks now, such as the channel's talkgroup, shown beside the row. DMR channels only |
    | **3** | Contact or ID... | A contact: type letters to find it by name, as in Contacts. To send to a station that isn't a contact, type its ID and pick "Private ID ..." or "TG ..." |
 
 3. The composer opens. Continue at step 3 below. **Back** in the composer returns to Messages.

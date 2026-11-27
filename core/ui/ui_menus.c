@@ -1015,9 +1015,21 @@ static void msgs_context(uint16_t i)
 	ui_open_actions(&t);
 }
 
+// # replies on a message only: New message, New APRS message and an empty list have nobody to reply to
+static const char *msgs_hint(void)
+{
+	uint16_t i = ui_frame()->focus;
+	bool aprs;
+	uint16_t index;
+	if (msgs_count() == 0)
+		return TR(HINT_BACK, "Back");
+	return i >= msgs_lead() && msg_row((uint16_t)(i - msgs_lead()), &aprs, &index) ?
+		TR(MSG_HINT_LIST, "OK open  # reply  Back") : TR(MSG_HINT_OPEN, "OK open  Back");
+}
+
 static const ui_scr_def_t messages_screen = {
-	.name = "messages", .flags = SF_LIST | SF_FIELD, .prefix = TRN(TITLE_MESSAGES, "Messages"),
-	.hint = TRN(MSG_HINT_LIST, "OK open  # reply  Back"),
+	.name = "messages", .flags = SF_LIST | SF_FIELD | SF_HINT_FN, .prefix = TRN(TITLE_MESSAGES, "Messages"),
+	.hint_fn = msgs_hint,
 	.empty = TRN(MSG_EMPTY, "No messages yet"),
 	.count = msgs_count, .item = msgs_item, .select = msgs_select, .context = msgs_context, .enter = msgs_enter,
 };
@@ -1274,13 +1286,23 @@ static void mn_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_DIM;
 		return;
 	}
-	// Whom it goes to, left out where it doesn't fit beside the label
+	// Whom it goes to, the first that fits beside the label: "TG 42001 Ops North", then the talkgroup's number or the
+	// person's name ("TG 42001", "Joe Smith"), then the number alone, else nothing
 	char to[32];
 	ui_sb_target(to, sizeof to, &t);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	sb_str(&b, TEXT_ALT_OPEN);
 	sb_str(&b, to);
+	sb_str(&b, TEXT_ALT_NEXT);
+	if (t.group)
+		sb_str(&b, "TG ");
+	if (!t.group && t.name[0] != '\0')
+		sb_str(&b, t.name);
+	else
+		sb_u32(&b, t.id, 1);
+	sb_str(&b, TEXT_ALT_NEXT);
+	sb_u32(&b, t.id, 1);
 	sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
 }
 
