@@ -34,8 +34,9 @@ A frame is 20 ms (160 samples at 8 kHz) of parameters (`mbe_params_t`):
 | `MBE_UV_DENSITY` | an unvoiced amplitude is a spectral density over the whole band: the band's noise power is the amplitude's times w0 / 2^32, the harmonic's share of the spectrum. Without the flag an unvoiced amplitude is the band's level, like a voiced one's. The estimator reads the flag too, so an encoder codes what its decoder plays |
 | `MBE_PHASE_REGEN` | voiced phases from the amplitudes (1.2), not random offsets scaled by the frame's unvoiced share |
 
-The last two are built only with a front end that sets them (`MBE_OPTS`, on with `CONFIG_MBE2400`). A build with the
-full-rate front end alone leaves their code out.
+The last two are built, and defined, only with a front end that sets them: `CONFIG_MBE_OPTS`, derived in
+`core/config.h`, on with `CONFIG_MBE2400`. A build with the full-rate front end alone leaves their code out. Another
+front end that sets one adds its switch to `CONFIG_MBE_OPTS`; without that the flag is not defined and the build stops.
 
 ### 1.2 Regenerated phases
 
@@ -62,8 +63,11 @@ The phases follow the envelope from frame to frame and do not depend on the nois
 
 A front end passes a bad frame as `bad` (or `in` NULL). The core repeats the last good frame, then plays silence.
 `mbe_synth_frame` repeats up to `MBE_REPEAT_MAX` (4) frames at full level. `mbe_synth_conceal` takes a stream's own
-policy (`mbe_conceal_t`): up to `repeat_max` repeats, each `fade` (log2 Q11) quieter than the one before. Both return
-the count of bad frames in a row; past the repeats the front end resets its prediction state.
+policy (`mbe_conceal_t`), in every build: up to `repeat_max` repeats, each `fade` (log2 Q11) quieter than the one
+before. Both return the count of bad frames in a row; past the repeats the front end resets its prediction state.
+
+A frame with L 0 is a good frame that plays silence: a repeat after such a frame is silent too. A front end that
+conceals another way (a frame of its own making in place of the lost one) passes that frame as a good one.
 
 ## 3. Analysis (`mbe_est.c`)
 
@@ -76,8 +80,8 @@ The estimator finds the model's parameters in 20 ms of speech. The steps are in 
 | `mbe_est_params` | voicing and amplitudes at the chosen fundamental, for bands of a count of harmonics (the full-rate front end: 3) |
 | `mbe_est_params_hz` | the same for bands of a width in Hz from 0 Hz (the 2400 bit/s front end: four of 1 kHz) |
 
-The last band takes every harmonic above. A band is voiced when the window's transform at each of its harmonics
-explains the band's bins to within a threshold.
+The last band takes every harmonic above; at most 16 bands. A band is voiced when the window's transform at each of its
+harmonics explains the band's bins to within a threshold.
 
 ## 4. Shared by the quantizers (`mbe_q.c`)
 
@@ -89,7 +93,7 @@ front end sets rho and the value at harmonic 0.
 
 | Test | What |
 |---|---|
-| `tests/host/mbeTest.c` | the synthesis and the full-rate decoder against golden vectors; silence, concealment, levels, extreme inputs |
+| `tests/host/mbeTest.c` | the synthesis and the full-rate decoder against golden vectors; silence, concealment, a stream's own concealment policy, levels, extreme inputs |
 | `tests/host/mbeExactTest.c` | the full-rate encoder and decoder sample for sample against fixed CRCs (speech, random frames, channel errors), with and without the halfword multiplies |
 | `tests/host/imbeEncTest.c` | the full-rate quantizer against its dequantizer; the estimator on made-up signals |
 | `tests/host/mbe2400Test.c` | the 2400 bit/s front end ([mbe-2400.md](mbe-2400.md) 6); the density and regenerated-phase options |

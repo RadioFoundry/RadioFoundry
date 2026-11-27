@@ -326,9 +326,11 @@ void mbe_est_bands(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, m
 	int L = p->L, l = 1;
 	int32_t ex = (int32_t)e->exp * 2048, uvd = 0;
 
+#if CONFIG_MBE_OPTS
 	// a density is the band level over the harmonic spacing, against the reference's (the synthesis puts it back)
-	if (MBE_OPTS && (p->flags & MBE_UV_DENSITY))
+	if (p->flags & MBE_UV_DENSITY)
 		uvd = (32 * 2048 - mbe_log2_q11(p->w0)) >> 1;
+#endif
 	for (int k = 0; k < K; k++) {
 		int last = k == K - 1 ? L : per ? (k + 1) * per : (int)(((uint32_t)(k + 1) * wb - 1) / p->w0), v;
 		uint32_t se = 0, sr = 0;
@@ -371,7 +373,6 @@ void mbe_est_bands(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, m
 	s->vprev = voiced;
 	s->period4 = e->period4;
 }
-
 
 // --- the pitch code ---
 

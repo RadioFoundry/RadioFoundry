@@ -106,6 +106,7 @@ static void set_phases(mbe_frame_t *f, uint32_t seed)
 	}
 }
 
+#if CONFIG_MBE_OPTS
 // Regenerated phases (MBE_PHASE_REGEN): the minimum phase the spectral envelope implies, by a short discrete Hilbert
 // transform of the log amplitudes, th_l = -g sum_m (A_{l+m} - A_{l-m}) / m over m = 1..REGEN_TERMS (A held at its
 // first and last harmonic past the ends, floored REGEN_FLOOR under the frame's peak so silent harmonics don't swing
@@ -140,6 +141,7 @@ static void regen_phases(mbe_frame_t *f)
 		f->th[l - 1] = (uint16_t)((uint32_t)(REGEN_DISP * l * l) - (uint32_t)(acc >> 12));
 	}
 }
+#endif
 
 // one sinusoid added into acc[0..N-1]: phase ph, step inc changing by dinc per sample, amplitude from the knots k[0..4]
 // (Q4) linearly over four 40-sample pieces.
@@ -369,12 +371,12 @@ int mbe_synth_conceal(const mbe_mem_t *m, const mbe_conceal_t *c, const mbe_para
 	mbe_state_t *s = m->s;
 	mbe_frame_t *f = m->cur;
 	const mbe_params_t *src = in;
-	int rmax = MBE_OPTS && c ? c->repeat_max : MBE_REPEAT_MAX;
+	int rmax = c ? c->repeat_max : MBE_REPEAT_MAX;
 
 	if (!in)
 		bad = 1;
 	if (bad) {
-		if (s->run <= rmax)
+		if (s->run <= rmax && s->run < INT16_MAX)	// (a policy may ask for any count)
 			s->run++;
 		src = s->have_last && s->run <= rmax ? &s->last : NULL;
 	} else {
@@ -387,7 +389,7 @@ int mbe_synth_conceal(const mbe_mem_t *m, const mbe_conceal_t *c, const mbe_para
 		f->w0 = m->prev->w0;
 	} else {
 		int L = src->L > MBE_MAXL ? MBE_MAXL : src->L;
-		int32_t uvd = 0, fade = MBE_OPTS && bad && c ? c->fade * s->run : 0;
+		int32_t uvd = 0, fade = bad && c ? c->fade * s->run : 0;
 
 		f->L = (int16_t)L;
 		f->w0 = src->w0 < W0_MIN ? W0_MIN : src->w0 > W0_MAX ? W0_MAX : src->w0;
@@ -396,13 +398,17 @@ int mbe_synth_conceal(const mbe_mem_t *m, const mbe_conceal_t *c, const mbe_para
 		else
 			mbe_enhance(f->a, src->a, L, f->w0);
 		memcpy(f->v, src->v, (size_t)L);
-		if (MBE_OPTS && (src->flags & MBE_PHASE_REGEN))
+#if CONFIG_MBE_OPTS
+		if (src->flags & MBE_PHASE_REGEN)
 			regen_phases(f);
 		else
+#endif
 			set_phases(f, s->rng ^ 0x5BD1E995u);
+#if CONFIG_MBE_OPTS
 		// after the enhancement, which works on the envelope as coded: a density to the band level the noise is made at
-		if (MBE_OPTS && (src->flags & MBE_UV_DENSITY))
+		if (src->flags & MBE_UV_DENSITY)
 			uvd = (mbe_log2_q11(f->w0) - 32 * 2048) >> 1;
+#endif
 		if (uvd || fade)
 			for (int l = 0; l < L; l++)
 				if (f->a[l] != MBE_A_SILENT)

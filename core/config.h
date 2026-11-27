@@ -373,6 +373,11 @@
 #ifndef CONFIG_MBE
 #define CONFIG_MBE			(CONFIG_IMBE || CONFIG_MBE2400)
 #endif
+// Derived: the MBE core's per-frame options (core/mbe/mbe.h: MBE_UV_DENSITY, MBE_PHASE_REGEN) are built with a front
+// end that sets them. Another front end that sets them adds its switch here: without it the flags are not defined
+#ifndef CONFIG_MBE_OPTS
+#define CONFIG_MBE_OPTS			CONFIG_MBE2400
+#endif
 // Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
 // mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them
 #ifndef CONFIG_ZONE_SHARE_MODES

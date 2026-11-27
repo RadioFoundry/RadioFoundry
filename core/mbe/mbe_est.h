@@ -42,7 +42,8 @@ void mbe_est_frame(mbe_est_state_t *s, const int16_t pcm[MBE_FRAME_LEN], int32_t
 int mbe_est_mismatch(const int32_t *buf, uint32_t w0);
 // The parameters at p->w0 for p->L harmonics: p->v, by K bands, and p->a, the log2 amplitudes in PCM units as
 // mbe_synth_frame takes them (unvoiced ones as p->flags says: MBE_UV_DENSITY). A band is `per` harmonics, or with per
-// 0 wb wide (as w0) from 0 Hz; the K-th takes the harmonics above. Remembers the voicing for the next frame's decisions
+// 0 wb wide (as w0) from 0 Hz; the K-th takes the harmonics above (K at most 16). Remembers the voicing for the next
+// frame's decisions
 void mbe_est_bands(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per, uint32_t wb,
 		   int K);
 static inline void mbe_est_params(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per,

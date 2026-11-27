@@ -206,8 +206,11 @@ below are for an STM32F4 radio.
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
 `CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` (the
-full-rate voice decoder) follows `CONFIG_P25`, `CONFIG_MBE` (the MBE core) `CONFIG_IMBE` or `CONFIG_MBE2400`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
-(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`, `CONFIG_NXDN` or `CONFIG_DMR_TRUNK`. `CONFIG_LANG_ANY`
+full-rate voice decoder) follows `CONFIG_P25`, `CONFIG_MBE` (the MBE core) `CONFIG_IMBE` or `CONFIG_MBE2400`; a command
+line or a board's `config.mk` that sets one stops the build. `CONFIG_MBE_OPTS` (the MBE core's per-frame options,
+`docs/spec/mbe.md` 1.1) is on with `CONFIG_MBE2400`, derived in `core/config.h`. `CONFIG_ZONE_SHARE_MODES`: zone sharing
+carries channels of a kind and their systems (`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and
+`CONFIG_P25`, `CONFIG_NXDN` or `CONFIG_DMR_TRUNK`. `CONFIG_LANG_ANY`
 (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the fonts' Latin-1 glyphs.
 `CONFIG_RADIO_DETOUR` (`core/config.h`): the radio core's and the settings store's part of the detour, on with
 `CONFIG_DEBUGLINK_DMRIP`.

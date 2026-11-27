@@ -30,16 +30,18 @@
 #define MBE_A_SILENT		(-32768)
 // flags
 #define MBE_NO_ENHANCE		0x0001	// skip the spectral amplitude enhancement (the front end already did it)
+// The next two are built, and defined, only with a front end that sets them (CONFIG_MBE_OPTS, core/config.h), so a
+// build without one leaves their code out, and a front end that sets one without adding its switch there does not
+// compile
+#if CONFIG_MBE_OPTS
 // An unvoiced harmonic's amplitude is a spectral density over the whole band: its noise power is the amplitude's (the
 // default) times the harmonic's share of the spectrum, w0 / 2^32, so it falls with the pitch. Read by the estimator
-// too (mbe_est_params), so a front end's encoder codes the levels its decoder plays
+// too (mbe_est_bands), so a front end's encoder codes the levels its decoder plays
 #define MBE_UV_DENSITY		0x0002
 // Voiced phases regenerated from the amplitudes (the minimum phase the spectral envelope implies, plus a fixed
 // dispersion), not random offsets scaled by the frame's unvoiced share
 #define MBE_PHASE_REGEN		0x0004
-// The two flags above are honored only in a build with a front end that sets them (the 2400 bit/s one, mbe2400.h), so
-// a build with the full-rate front end alone leaves their code out
-#define MBE_OPTS		CONFIG_MBE2400
+#endif
 
 typedef struct {
 	int16_t L;			// harmonics, 0..MBE_MAXL (0: a silent frame)
@@ -70,9 +72,10 @@ typedef struct {
 } mbe_state_t;
 
 // How a stream's bad frames are concealed: the last good frame is repeated up to repeat_max times in a row, each repeat
-// fade (log2 Q11) quieter than the one before, then the output is silent
+// fade (log2 Q11) quieter than the one before, then the output is silent. A front end that conceals another way (a
+// frame of its own making in place of the lost one) passes that frame as a good one
 typedef struct {
-	int16_t repeat_max;
+	int16_t repeat_max;		// 0: no repeats, a bad frame is silent
 	int16_t fade;
 } mbe_conceal_t;
 
@@ -90,8 +93,7 @@ void mbe_enhance(int16_t *out, const int16_t *a, int L, uint32_t w0);
 // One frame. in: the parameters (NULL when bad). bad != 0: the front end could not use the frame; the last good one is
 // repeated MBE_REPEAT_MAX times in a row at full level, then the output fades to silence. Returns the number of bad
 // frames in a row (0 for a good one): above the repeats the front end drops what it predicts from.
-// mbe_synth_conceal: the same with the stream's own concealment (c NULL: as mbe_synth_frame; honored only with
-// MBE_OPTS)
+// mbe_synth_conceal: the same with the stream's own concealment (c NULL: as mbe_synth_frame)
 int mbe_synth_conceal(const mbe_mem_t *m, const mbe_conceal_t *c, const mbe_params_t *in, int bad,
 		      int16_t pcm[MBE_FRAME_LEN]);
 static inline int mbe_synth_frame(const mbe_mem_t *m, const mbe_params_t *in, int bad, int16_t pcm[MBE_FRAME_LEN])
