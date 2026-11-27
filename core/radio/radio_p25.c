@@ -140,9 +140,14 @@ static void conv_keep(void)
 		nogo_add(conv_hz);
 }
 
+// PTT refused: a receive-only provider (opened without AIR_FIT_TX), or a conventional channel on a blocked system
 static bool p25_no_tx(void)
 {
-	if (mem == NULL || radio_p25_trunked())
+	if (mem == NULL)
+		return false;
+	if ((mem->eng.session.fit & AIR_FIT_TX) == 0)
+		return true;
+	if (radio_p25_trunked())
 		return false;
 	conv_keep();
 	return nogo_full || nogo_has(conv_hz);
@@ -910,12 +915,6 @@ void radio_p25_tx_clear(void)
 		voice_tx(false);
 		p25_engine_tx_clear(&mem->eng);
 	}
-}
-
-// A receive-only provider (opened without AIR_FIT_TX): PTT is refused as such
-static bool p25_no_tx(void)
-{
-	return mem != NULL && (mem->eng.session.fit & AIR_FIT_TX) == 0;
 }
 
 const radio_air_ops_t radio_p25_air = {

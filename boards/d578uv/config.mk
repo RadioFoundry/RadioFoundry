@@ -48,10 +48,10 @@ BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (a mobile)
 # Left out of tools/ci.sh's maximal configuration: what doesn't fit the RAM with DMR on (above). The USB network adapter
 # and everything that runs on it (about 30 KB together), zone sharing (about 6 KB there), Tier III trunking, P25
-# trunking, satellite tracking and signaling tones
+# trunking, satellite tracking, signaling tones and voice capture (off by default, a bench tool; about 330 bytes)
 MAXIMAL_SKIP := USB_NETWORK NET_PPP DMR_IP_GATEWAY NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL \
 	NET_APRSIS MDNS TFTP TFTP_IDDB SNMP DMR_CONTROL_STATION ZONE_SHARE APRS_RX APRS_IGATE DMR_TRUNK DMR_TRUNK_TX \
-	DMR_TRUNK_SUPL DMR_TRUNK_GW P25_TRUNK SATELLITE_TLE SIG_TONES
+	DMR_TRUNK_SUPL DMR_TRUNK_GW P25_TRUNK SATELLITE_TLE SIG_TONES VOICE_CAPTURE
 # (those two follow the debug link and beeps by default, so the maximal configuration turns them off by name)
 MAXIMAL_VARS := CONFIG_SATELLITE_TLE=n CONFIG_SIG_TONES=n
 # What the hardware can do but this radio's driver or glue doesn't yet

@@ -822,9 +822,10 @@ room for what the GD32F303 image leaves out:
   APRS-IS) don't fit beside them and are left out, and network audio (AllStarLink, DVSwitch) isn't written: the
   voice stays in the DMR chip.
 
-**RadioFoundry can't be installed on an AT32 radio yet.** Nothing has run on one, and its processor set-up (clock,
-USB) is untested. The installer and `rfoundry` name the radio and refuse it, with
-nothing written. The list above is what the image is built to have once one has been tested.
+**The AT32 image is a test build.** No AT32 radio has run RadioFoundry yet: the image is the GD32 build's code set up
+for the AT32F435, and the list above is what it is built to have. The installer says so before writing. The factory
+update mode is never written, so a radio that doesn't start can still be put back. Please report what works and what
+doesn't.
 
 An AT32 radio can still get its original firmware back: `rfoundry restore-stock FW.CDD --board d578uva`, where the
 `.CDD` is an AT32 build, or the installer's restore task on the AT-D578UV.

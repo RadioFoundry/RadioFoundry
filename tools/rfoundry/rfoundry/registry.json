@@ -1968,7 +1968,7 @@
     "AT": [
      "AT32F43x (built from mid-2022)",
      "d578uva",
-     "no AT32 radio has run RadioFoundry yet"
+     null
     ]
    },
    "anytone_models": {
@@ -4583,7 +4583,7 @@
     "AT": [
      "AT32F43x (built from mid-2022)",
      "d578uva",
-     "no AT32 radio has run RadioFoundry yet"
+     null
     ]
    },
    "anytone_models": {

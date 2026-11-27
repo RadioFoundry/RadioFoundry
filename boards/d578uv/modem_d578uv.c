@@ -22,10 +22,10 @@
 #if CONFIG_DMR
 
 // With P25 or NXDN the task also runs the air tap's poll, and the framer and the mode's receive hooks under it: an
-// NXDN call's start looks its scrambler key up in the codeplug, down to a NAND read's lock, 1520 bytes at worst (make
-// stack-check). With the overhead and margin, 466 words, 8 bytes to spare
+// NXDN call's start looks its scrambler key up in the codeplug, down to a NAND read's lock, 1568 bytes at worst (make
+// stack-check, the AT32 build). With the overhead and margin, 478 words, 8 bytes to spare
 #if CONFIG_AIR
-#define MODEM_TASK_STACK	466
+#define MODEM_TASK_STACK	478
 #else
 #define MODEM_TASK_STACK	288
 #endif
