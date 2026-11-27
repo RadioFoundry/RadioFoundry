@@ -246,7 +246,9 @@ typedef struct {
 	// SETTINGS_T3_KILLED set, no DMR at all until a factory reset
 	uint8_t t3_kill;
 	uint8_t satellite_index;	// reserved10[0]: selected TLE record; older records select the first
-	uint8_t reserved10[1];		// 0
+	uint8_t aprs_cp_freq;		// APRS: the frequency last taken from the codeplug APRS record or written there
+					// (aprs.md 11), as settings_aprs_freq_mark; 0 = none yet (was reserved10[1]: older
+					// records read none), SETTINGS_APRS_FREQ_EMPTY = a record without one seen
 	// Signaling tones (core/radio/sigtone.h), appended at the end so a record written before reads them as 0:
 	// per event (start of a transmission, its end, a reception's end) where it sounds in DMR and in FM (sig_out_t).
 	// 0 = the default output, as an older record reads. The event's chain of steps is only in its codeplug record
@@ -334,6 +336,21 @@ static inline void settings_set_vfo_talk(settings_t *s, uint32_t id, bool privat
 	s->vfo_bw = (uint8_t)((s->vfo_bw & 0x0Fu) | (((id >> 12) & 0x0Fu) << 4));
 	s->vfo_cc = (uint8_t)((s->vfo_cc & 0x0Fu) | (((id >> 16) & 0x0Fu) << 4));
 	s->vfo_ts = (uint8_t)((s->vfo_ts & 0x03u) | (((id >> 20) & 0x0Fu) << 2) | (private_call ? 0x80u : 0));
+}
+
+// settings_t.aprs_cp_freq once a record without a frequency was seen: a frequency a CPS writes there later is a change,
+// not the first take of a record from before the marker
+#define SETTINGS_APRS_FREQ_EMPTY	1u
+
+// settings_t.aprs_cp_freq for a frequency: a hash of its 10 Hz steps, 2-255; 0 for none. Two frequencies with one
+// mark only cost a CPS change to the second one being missed (the radio keeps its own)
+static inline uint8_t settings_aprs_freq_mark(uint32_t hz)
+{
+	if (hz == 0) {
+		return 0;
+	}
+	uint8_t m = (uint8_t)(((hz / 10u) * 2654435761u) >> 24);
+	return m >= 2u ? m : (uint8_t)(m + 2u);
 }
 
 // settings_t.aprs_cp_path: the codeplug APRS record's path (bits 0-2) and SSID (bits 3-7) last taken, each + 1 so 0

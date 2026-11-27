@@ -6818,8 +6818,10 @@ static const tr_id_t n_sfrcwid[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_5_MIN, "5 
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 // Basic privacy key types, named by key size with the key's range (set_range follows the type)
-static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRN(SET_VALUE_KEY_TYPE_8_BIT, "8-bit (1-255)"),
-	TRN(SET_VALUE_KEY_TYPE_16_BIT, "16-bit (0-65535)") };
+// A type's key range drops out where it and the row's label don't both fit: a row keeps its label whole (ui.md)
+static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRN(SET_VALUE_KEY_TYPE_8_BIT,
+	TEXT_ALT_OPEN "8-bit (1-255)" TEXT_ALT_NEXT "8-bit" TEXT_ALT_CLOSE),
+	TRN(SET_VALUE_KEY_TYPE_16_BIT, TEXT_ALT_OPEN "16-bit (0-65535)" TEXT_ALT_NEXT "16-bit" TEXT_ALT_CLOSE) };
 #endif
 
 #if CONFIG_SIG_TONES

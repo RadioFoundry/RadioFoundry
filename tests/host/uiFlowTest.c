@@ -1231,8 +1231,21 @@ static const flow_t flows[] = {
 	{ "A beacons on", "", "ok 6 8 2", "aprs_auto=1 toast=Beacons_on", 4, false },
 	{ "A beacons off again", "ok 6 8 2", "2", "aprs_auto=0 toast=Beacons_off", 1, false },
 	{ "A next region", "", "ok 6 8 3", "aprs_region=1", 4, false },
-	{ "A regions skip an unset custom", "ok 6 8 3 3 3 3 3", "3", "aprs_region=0", 1, false },
-	{ "A regions with a custom frequency", "aprs:custom ok 6 8 3 3 3 3 3", "3", "aprs_region=6", 1, false },
+	// Custom: the step after the last region opens a frequency entry on the row; the region stays until OK
+	{ "A custom opens a frequency entry", "ok 6 8 3 3 3 3 3", "3", "aprs_region=5 hides=China shows=OK_set", 1, false },
+	{ "A custom frequency typed", "ok 6 8 3 3 3 3 3 3", "1 4 5 5 7 ok",
+	  "aprs_region=6 aprs_freq=145570000 shows=145.570", 6, false },
+	{ "A custom entry takes back a digit", "ok 6 8 3 3 3 3 3 3", "1 4 5 5 8 back 7 ok", "aprs_freq=145570000", 8, false },
+	{ "A custom entry needs the MHz digits", "ok 6 8 3 3 3 3 3 3", "1 4 ok", "aprs_region=5 toast=Type_at_least", 3, false },
+	{ "A custom entry, nothing typed, none set", "ok 6 8 3 3 3 3 3 3", "ok", "aprs_region=0", 1, false },
+	{ "A custom entry, nothing typed, keeps the set one", "aprs:custom ok 6 8 3 3 3 3 3 3", "ok",
+	  "aprs_region=6 aprs_freq=144930000", 1, false },
+	{ "A custom entry: Back leaves it", "ok 6 8 3 3 3 3 3 3", "1 back back", "aprs_region=5 screen=aprs", 3, false },
+	{ "A custom entry: Down leaves it", "ok 6 8 3 3 3 3 3 3", "1 4 down", "aprs_region=5 screen=aprs", 3, false },
+	{ "A custom entry shows its hint", "ok 6 8 3 3 3 3 3", "3", "shows=OK_set", 1, false },
+	{ "A custom entry keeps its digits over quick settings", "ok 6 8 3 3 3 3 3 3 1 4", "quick back 5 5 7 ok",
+	  "aprs_region=6 aprs_freq=145570000", 6, false },
+	{ "A custom: the next step wraps", "aprs:custom ok 6 8 3 3 3 3 3 3 ok", "3", "aprs_region=0", 1, false },
 	{ "A power as the channel", "ok 6 8", "down down down", "shows=As_channel aprs_power=0", 3, false },
 	{ "A power of its own", "", "ok 6 8 4", "aprs_power=1", 4, false },
 	{ "A path shows the default", "ok 6 8", "down down down down", "shows=WIDE1-1,WIDE2-1 aprs_path=2", 4, false },
@@ -2673,10 +2686,48 @@ static int check_satellite_path_endpoint_colors(void)
 }
 #endif
 
+#if CONFIG_SPECTRUM
+static int check_spectrum_tuner_text(void)
+{
+	static const struct { const char *name, *script; int center, peak; } cases[] = {
+		{ "free tuner at center", "ok 6 0", 2, 0 },
+		{ "centered tuner", "ok 6 0 quick", 1, 0 },
+		{ "centered carrier", "ok 6 0 quick spectrumrx:48,-55", 1, 0 },
+		{ "captured peak", "ok 6 0 quick spectrumrx:56,-55", 1, 1 },
+		{ "released peak", "ok 6 0 quick spectrumrx:56,-55 spectrumrxend "
+		  "expect:spec_tuner=453625000", 1, 0 },
+		{ "free tuner on peak", "ok 6 0 quick spectrumrx:56,-55 quick", 1, 1 },
+		{ "free tuner restored", "ok 6 0 quick quick", 2, 0 },
+	};
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+			char err[200] = "";
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			if (!sim_run(cases[i].script, err, sizeof err)) {
+				printf("FAIL spectrum tuner text [%s] %s: %s\n", sim_geoms[g].name, cases[i].name, err);
+				return 1;
+			}
+			int center = sim_text_count("453.62500") + sim_text_count("453.62500 MHz");
+			int peak = sim_text_count("453.72500") + sim_text_count("453.72500 MHz");
+			if (center != cases[i].center || peak != cases[i].peak) {
+				printf("FAIL spectrum tuner text [%s] %s: center %d (want %d), peak %d (want %d)\n",
+				       sim_geoms[g].name, cases[i].name, center, cases[i].center, peak, cases[i].peak);
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+#endif
+
 int main(void)
 {
 	if (check_name_is_id() != 0)
 		return 1;
+#if CONFIG_SPECTRUM
+	if (check_spectrum_tuner_text() != 0)
+		return 1;
+#endif
 #if CONFIG_SATELLITE_TLE
 	if (check_satellite_countdowns() != 0)
 		return 1;

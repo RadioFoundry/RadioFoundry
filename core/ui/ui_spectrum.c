@@ -124,11 +124,13 @@ static void spectrum_draw(void)
 	sbuf_t b;
 	sb_init(&b, text, sizeof text);
 	value_text(&b, FIELD_CENTER);
+	bool show_tuner = !s->center_tuner || s->tuner != s->bins / 2u;
 	sb_init(&b, tuner, sizeof tuner);
-	frequency_text(&b, spectrum_view_frequency(s, s->tuner));
-	int number_width = gfx_text_width(f, text) + gfx_text_width(f, tuner) + 5;
+	if (show_tuner)
+		frequency_text(&b, spectrum_view_frequency(s, s->tuner));
+	int number_width = gfx_text_width(f, text) + (show_tuner ? gfx_text_width(f, tuner) + 5 : 0);
 	int unit_width = gfx_text_width(f, " MHz");
-	if (number_width + 2 * unit_width <= gfx_width())
+	if (show_tuner && number_width + 2 * unit_width <= gfx_width())
 		sb_str(&b, " MHz");
 	if (number_width + unit_width <= gfx_width()) {
 		sb_init(&b, text, sizeof text);
@@ -136,7 +138,8 @@ static void spectrum_draw(void)
 		sb_str(&b, " MHz");
 	}
 	center_text(f, y, text);
-	gfx_text(f, gfx_width() - gfx_text_width(f, tuner), y, tuner, ui_col.dim);
+	if (show_tuner)
+		gfx_text(f, gfx_width() - gfx_text_width(f, tuner), y, tuner, ui_col.dim);
 	y += f->h + (compact ? 1 : 3);
 
 	unsigned peak = spectrum_view_strongest(s);

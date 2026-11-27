@@ -20,6 +20,7 @@
 //                       rxaend / rxbend its end
 //   tune:a|b            dual watch: the receiver moves to channel A or B (a call there holds it)
 //   spectrumrx:<bin>,<dBm>  a quiet sweep with one carrier, followed by its tuned confirmation
+//   spectrumrxend       quiet readings through the carrier-release delay
 //   hop:a|b             the same just before the next key, with no UI pass between: the key reads the view as the
 //                       radio left it
 //   busy:a|b|none       dual watch: the radio's mark for a signal found on A / B in the wait after a call
@@ -189,6 +190,14 @@ bool sim_text_has_color(const char *text, uint16_t color)
 					return true;
 	}
 	return false;
+}
+
+int sim_text_count(const char *text)
+{
+	int count = 0;
+	for (int i = 0; i < live_n; i++)
+		count += strcmp(live[i].s, text) == 0;
+	return count;
 }
 
 bool sim_text_bounds(const char *text, int *x, int *y, int *w, int *h)
@@ -3209,6 +3218,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "crash_have") == 0) snprintf(got, sizeof got, "%u", crash_sim.have);
 	else if (strcmp(key, "aprs_auto") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.tx_on);
 	else if (strcmp(key, "aprs_region") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.region);
+	else if (strcmp(key, "aprs_freq") == 0) snprintf(got, sizeof got, "%u", (unsigned)aprs_sim.cfg.freq_hz);
 	else if (strcmp(key, "aprs_interval") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.interval_s);
 	else if (strcmp(key, "aprs_smart") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.smart);
 	else if (strcmp(key, "aprs_via") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.via);
@@ -3564,6 +3574,15 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 #if CONFIG_SPECTRUM
+	if (strcmp(t, "spectrumrxend") == 0 && spectrum.active) {
+		for (unsigned ms = 0; ms <= SPECTRUM_RELEASE_MS; ms += SPECTRUM_SETTLE_MS) {
+			advance(SPECTRUM_SETTLE_MS);
+			spectrum_sample(&spectrum, -120, now_ms);
+		}
+		changed();
+		advance(100);
+		return true;
+	}
 	if (strcmp(t, "spectrumrx") == 0) {
 		unsigned bin;
 		int dbm;

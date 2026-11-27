@@ -910,6 +910,16 @@ msgid "  Sent "
 msgstr "  已发 "
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_TYPING"
+msgid "0-9 type  OK set  Back"
+msgstr "0-9 输入  OK 设定  返回"
+
+#: core/ui/ui_aprs.c
+msgctxt "HINT_0_9_PICK_BACK"
+msgid "0-9 pick  Back"
+msgstr "0-9 选  返回"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_ROW_SEND_NOW"
 msgid "Send position now"
 msgstr "立即发送位置"
@@ -1008,11 +1018,6 @@ msgstr "信标关"
 msgctxt "APRS_WHY_CANT_RECEIVE"
 msgid "This radio can't receive APRS"
 msgstr "本机无法接收 APRS"
-
-#: core/ui/ui_aprs.c
-msgctxt "HINT_0_9_PICK_BACK"
-msgid "0-9 pick  Back"
-msgstr "0-9 选  返回"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_TITLE_HEARD"
@@ -3806,13 +3811,13 @@ msgstr "双路接收"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_VALUE_KEY_TYPE_8_BIT"
-msgid "8-bit (1-255)"
-msgstr "8 位 (1-255)"
+msgid "{8-bit (1-255)|8-bit}"
+msgstr "{8 位 (1-255)|8 位}"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_VALUE_KEY_TYPE_16_BIT"
-msgid "16-bit (0-65535)"
-msgstr "16 位 (0-65535)"
+msgid "{16-bit (0-65535)|16-bit}"
+msgstr "{16 位 (0-65535)|16 位}"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_VALUE_SPEAKER"

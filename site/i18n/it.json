@@ -1721,7 +1721,7 @@
  "editor.col.lat": "Latitudine",
  "editor.col.lon": "Longitudine",
  "editor.col.sfr": "Ripetitore a frequenza singola",
- "editor.aprs.channel_freq": "Canale",
+ "editor.aprs.radio_freq": "Impostazione radio",
  "editor.call.group": "Gruppo",
  "editor.call.private": "Privata",
  "editor.call.all": "Chiamata a tutti",

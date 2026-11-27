@@ -9,6 +9,10 @@
 // 16-bit halves a C-SKY build without HI/LO runs. Both must give the same CRCs, so neither the products from halves nor
 // the decoder's faster loops (fxp_mulshr16, the narrow oscillator, the unfolded cosine table) changed any output. A
 // change that is meant to change the codec's output changes these CRCs: write the new ones down with the reason.
+//
+// And twice more with -DCONFIG_MBE2400=1, the core's per-frame options (CONFIG_MBE_OPTS) built in: the full-rate CRCs
+// are the same ones, so the options change nothing for a front end that does not set them; and the 2400 bit/s codec's
+// own CRCs (the same speech, random frames, lost frames) hold with 64-bit products and with the halves.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +20,9 @@
 #include "mbe/imbe.h"
 #include "mbe/mbe_est.h"
 #include "mbe/mbe_dsp.h"
+#if CONFIG_MBE2400
+#include "mbe/mbe2400.h"
+#endif
 
 static int failures, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
@@ -86,6 +93,53 @@ static void speech(int16_t *out, uint32_t n)
 		out[t] = (int16_t)(yb > 32767 ? 32767 : yb < -32768 ? -32768 : yb);
 	}
 }
+
+#if CONFIG_MBE2400
+// what this test's first build with the codec gave (core/mbe at the commit that added these lines)
+#define GOLD24_ENC	0x5173C97Fu
+#define GOLD24_DEC	0xF39DCA6Bu
+
+// The 2400 bit/s codec the same way: the speech through its encoder, those frames and random bytes through its decoder,
+// then again with frames lost one at a time and in a run past the repeats
+static void test_2400(const int16_t *in)
+{
+	static uint8_t fr[NSP + NRND][MBE2400_BYTES];
+	static struct {
+		mbe2400_state_t es, ds;
+		int32_t ebuf[MBE_BUF_WORDS];
+	} k;
+	int16_t pcm[MBE_FRAME_LEN];
+	uint32_t enc = 0, dec = 0;
+	mbe2400_enc_mem_t em = { &k.es, &m.est, &m.pr, k.ebuf };
+	mbe2400_mem_t dm = { &k.ds, &m.pr, { &m.ms, &m.prev, &m.cur, m.buf } };
+
+	mbe2400_enc_init(&em);
+	for (uint32_t i = 0; i < NSP; i++) {
+		mbe2400_enc_frame(&em, in + i * MBE_FRAME_LEN, fr[i]);
+		enc = crc32(enc, fr[i], MBE2400_BYTES);
+	}
+	for (uint32_t i = NSP; i < NSP + NRND; i++) {
+		for (int j = 0; j < MBE2400_BYTES; j++)
+			fr[i][j] = (uint8_t)rng();
+		if (i % 7u == 0)
+			memcpy(fr[i], mbe2400_silence, MBE2400_BYTES);
+	}
+	mbe2400_dec_init(&dm);
+	for (int pass = 0; pass < 2; pass++) {
+		for (uint32_t i = 0; i < NSP + NRND; i++) {
+			int lost = pass == 1 && (rng() % 16u >= 13u || (i >= 300u && i < 340u));
+			uint8_t errs;
+
+			mbe2400_dec_frame(&dm, lost ? NULL : fr[i], &errs, pcm);
+			dec = crc32(dec, pcm, sizeof pcm);
+			dec = crc32(dec, &errs, 1);
+		}
+	}
+	printf("2400 bit/s encoder: %u frames, CRC %08X; decoder: %u frames, CRC %08X\n", NSP, enc, 2u * (NSP + NRND), dec);
+	CHECK(enc == GOLD24_ENC, "2400 bit/s encoder CRC %08X, was %08X", enc, GOLD24_ENC);
+	CHECK(dec == GOLD24_DEC, "2400 bit/s decoder CRC %08X, was %08X", dec, GOLD24_DEC);
+}
+#endif
 
 // The cosine the oscillators and mbe_cos read, from the unfolded table (built with -DFXP_SPLIT16) or folded: each
 // entry the quarter wave's own value
@@ -161,6 +215,9 @@ int main(void)
 	// Loud enough for the oscillators' wide path (a harmonic over 4,096): an instrumented build counted 2,161 of
 	// 124,080 pieces there
 	CHECK(peak > 8000, "peak %d: the loud frames should reach the oscillators' wide path", peak);
+#if CONFIG_MBE2400
+	test_2400(in);
+#endif
 	printf("mbeExactTest: %d checks, %d failed\n", checks, failures);
 	return failures != 0;
 }

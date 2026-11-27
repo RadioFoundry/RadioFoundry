@@ -387,7 +387,12 @@ in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), wh
 Tools > APRS (`ui_aprs.c`): the body shows the callsign and frequency, why nothing can be sent (no callsign, no
 frequency, not amateur, no AFSK), the position and its source, the next beacon and the count sent. Rows: Send
 position now, Automatic beacons, Frequency (region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand
-144.575, Japan 144.660, China 144.640, Custom), Power (As channel, then each of the board's levels), Path (the
+144.575, Japan 144.660, China 144.640, Custom; OK steps to the next. The step after China opens a frequency entry
+on the row, with the VFO's digit rules (`ui_freq_entry_*`, the board's receive bands) in a buffer of its own (quick
+settings can open over the page, and Split types into the VFO's), and the hint "0-9 type  OK set  Back": OK sets the
+typed frequency and Custom; OK with nothing typed keeps the custom frequency set before, or with none steps on to
+N America; Back takes back a digit, then leaves the entry with the region unchanged; another key leaves the entry
+and does its own job. From Custom, OK wraps to N America), Power (As channel, then each of the board's levels), Path (the
 digipeater path of RF packets: None, WIDE1-1, WIDE1-1,WIDE2-1, WIDE2-1, WIDE2-2; OK steps to the next and WIDE2-2
 wraps to None), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (AFSK, DMR, Both), KISS on USB, Stations
 heard (RX builds: the list, most recent first, dimmed when heard through a digipeater; a station with a position shows
@@ -447,20 +452,30 @@ to APRS-IS, mute), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `
 `aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
 `aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's
 ([position.md](position.md) 5): APRS never changes them, and its save keeps them. The codeplug's APRS record 1 (EEPROM 0x1588,
-64 bytes each) gives the SSID, path, symbol, comment and ambiguity when present; its fixed position and frequency
-encodings are unknown and not used. Of these the radio takes the comment, the path and the SSID.
+64 bytes each) gives the SSID, path, symbol, comment, frequency and ambiguity when present; its fixed position
+encoding is unknown and not used. Of these the radio takes the comment, the path, the SSID and the frequency.
 
-The path and the SSID live in both places, and the one changed last wins, each on its own:
+The path, the SSID and the frequency live in both places, and the one changed last wins, each on its own:
 
 - Codeplug to radio: `aprs_cp_path` holds what was last taken from the record, bits 0-2 the path (`aprs_path_t` + 1)
   and bits 3-7 the SSID (+ 1); 0 = none yet (`settings_aprs_cp_path` / `_ssid`). When the record's path or SSID
   differs from it, it replaces `aprs_path` or `aprs_ssid` and is stored there. Checked at start-up and whenever the
   codeplug serial changes (a CPS write). A path that isn't one of the five (another callsign, a second entry without a
-  first) is left alone.
-- Radio to codeplug: a change of the path or SSID on the APRS page posts a storage job (`aprs_to_codeplug`) that
-  rewrites what differs in the record (the two path entries, callsign space padded with an SSID byte; the SSID byte at
-  0x08) and sets `aprs_cp_path` to match. No record is made when there is none: the radio then keeps them in the
-  settings only. A change over the debug link stays in the settings.
+  first) is left alone. The frequency's marker is `aprs_cp_freq`, an 8-bit hash of the frequency
+  (`settings_aprs_freq_mark`, 2-255; 0 = none yet, 1 = a record without a frequency seen). A frequency in the record (0x37, BCD of 10 Hz units, LE; 0 =
+  none) whose mark differs becomes the region with that frequency, else Custom with the frequency in `aprs_freq_hz`. One outside
+  the ham bands is taken too: the APRS page then says why nothing is sent. Two frequencies with the same mark only
+  cost a CPS change to the second being missed; the radio keeps its own. On the first look (`aprs_cp_freq` 0, a
+  record from before the marker) the radio keeps its region and frequency, N America included, and only marks the
+  record's frequency as taken: the frequency may be a revert channel no one meant for APRS, and firmware before the
+  marker ignored the field. A record without a frequency is marked 1 on the first look, so a frequency a CPS writes
+  there later is taken.
+- Radio to codeplug: a change of the path, SSID or frequency on the APRS page posts a storage job
+  (`aprs_to_codeplug`) that rewrites what differs in the record (the two path entries, callsign space padded with an
+  SSID byte; the SSID byte at 0x08; the frequency in use, a region's too, at 0x37) and sets `aprs_cp_path` and
+  `aprs_cp_freq` to match. No record is made when there is none: the radio then keeps them in the settings only. A
+  change over the debug link stays in the settings. While the job runs, the record and its markers can differ for a
+  moment: the codeplug check waits until the job is done, so a newer change on the page isn't taken back.
 
 The SSID marker uses `aprs_cp_path`'s upper bits, so a record from before it reads "none yet" and the codeplug's SSID
 is taken once at the first start-up, unless it is 0: that first time a 0 is marked as taken and the radio keeps its own
@@ -520,7 +535,7 @@ is still to run on the HR_C7000 boards. Per-radio levels and results are in the 
 - Default triggers: SmartBeaconing on with a 10 min interval fallback, after-PTT and boot off.
 - The LRRP request ID and token for unsolicited reports to BrandMeister; whether LRRP answers should use the APRS
   position when there is no GPS; whether Settings > Location > Send position should drive APRS.
-- The codeplug APRS record's fixed position and frequency encodings.
+- The codeplug APRS record's fixed position encoding.
 - Receive from the HR_C6000's ungated RX RAM (5.3).
 - Settings and debug link section / command numbers may need renumbering when merged with other branches.
 

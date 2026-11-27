@@ -100,7 +100,10 @@ Spectrum analyzer is the tenth Tools entry, with the ordinary dim `0` shortcut. 
 follows it, using Context (`#`) even after its banner is hidden. Without Spectrum it retains `0`.
 
 The main screen keeps center at the left and the read-only tuner in a dim color at the right, followed by Peak,
-the full-width graph and endpoints. All frequencies have five fractional MHz digits, including trailing zeros.
+the full-width graph and endpoints. With Center tuner on, the right-hand frequency is hidden while the tuner is
+at the center. It appears during an automatic capture away from the center and disappears on return. With Center
+tuner off, it remains visible even when both frequencies match.
+All frequencies have five fractional MHz digits, including trailing zeros.
 Narrow displays omit repeated MHz units when needed. It uses the layout's tiny font. Displays at least
 `UI_TALL_PX` (200 px) high keep the title; smaller displays omit it.
 

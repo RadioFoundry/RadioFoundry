@@ -1721,7 +1721,7 @@
  "editor.col.lat": "纬度",
  "editor.col.lon": "经度",
  "editor.col.sfr": "单频中继",
- "editor.aprs.channel_freq": "信道",
+ "editor.aprs.radio_freq": "电台设置",
  "editor.call.group": "组呼",
  "editor.call.private": "个呼",
  "editor.call.all": "全呼",

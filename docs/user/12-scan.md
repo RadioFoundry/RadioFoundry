@@ -211,7 +211,9 @@ The radio core can also scan a VFO range set by two frequencies. There is no men
 ## Spectrum analyzer
 
 Open **Tools > 0 Spectrum analyzer** (**OK**, **6**, **0**). The main screen shows center frequency at the left,
-the listening tuner in a dim color at the right, Peak, and the graph. Frequencies keep five decimal places,
+the listening tuner in a dim color at the right, Peak, and the graph. With **Center tuner** on, the tuner frequency
+is hidden while it matches the center. It appears when Auto peak moves the tuner away and hides again on return.
+With **Center tuner** off, the tuner frequency is always shown. Frequencies keep five decimal places,
 for example 145.06250 MHz. Narrow screens omit repeated MHz units; small screens also omit the title.
 
 Type a new center frequency directly on the keypad, then press **OK** to apply it: `438250` means 438.25000 MHz.
