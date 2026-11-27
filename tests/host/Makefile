@@ -423,6 +423,14 @@ radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CO
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -DCONFIG_DUAL_WATCH=0 -o $@ $(RFTEST) -lm
 
+# The same with CONFIG_RADIO_TUNE: the carrier and battery trims through the radio core (test_tune)
+TESTS   += radioFeaturesTestTune
+radioFeaturesTestTune: $(RFTEST) $(CORE)/radio/radio_tune.c $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) \
+                       $(wildcard $(CORE)/usbaudio/*.h)
+	$(CC) $(filter-out -DCONFIG_RADIO_TUNE=0,$(CFLAGS)) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 \
+		-DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 -DCONFIG_NET_USRP=1 -DCONFIG_RADIO_TUNE=1 -o $@ $(RFTEST) \
+		$(CORE)/radio/radio_tune.c -lm
+
 # A volume potentiometer read on an ADC, as a position
 TESTS   += volumePotTest
 
@@ -518,7 +526,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestNoAm radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestNoAm radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual radioFeaturesTestTune roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest volumePotTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -532,6 +540,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestNoAm radioCoreTestP25
 	./radioCoreTestAprsDmr
 	./radioFeaturesTest
 	./radioFeaturesTestNoDual
+	./radioFeaturesTestTune
 	./roamTest
 	./radioListenBandsTest
 	./inputTest

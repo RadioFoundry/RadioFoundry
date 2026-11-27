@@ -224,7 +224,7 @@ static void empty(void)
 	n_names = 0;
 }
 
-bool radio_tune_put(bool start, const uint8_t *e, uint8_t n)
+void radio_tune_put(bool start, const uint8_t *e, uint8_t n)
 {
 	if (start) {
 		empty();
@@ -232,7 +232,6 @@ bool radio_tune_put(bool start, const uint8_t *e, uint8_t n)
 	for (uint8_t i = 0; i < n; i++) {
 		add(e + i * RADIO_TUNE_ENTRY);
 	}
-	return true;
 }
 
 uint8_t radio_tune_get(uint8_t i, uint8_t *e)

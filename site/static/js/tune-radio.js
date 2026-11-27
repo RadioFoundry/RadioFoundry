@@ -200,17 +200,11 @@ export class TuneRadio {
 
 	// ---- the saved entries (radio-tune.md 4)
 
-	// A STORAGE tuning operation: the entries in the radio's table after it. Busy while a save or a CPS write holds
-	// the radio's storage, so a busy is tried again; unavailable on a radio without a settings ring of its own
+	// A STORAGE tuning operation: the entries in the radio's table after it. The radio waits for its storage itself,
+	// so busy means a save or clear failed to write: never tried again here, so a failing flash isn't written over
+	// and over. Unavailable on a radio without a settings ring of its own
 	async tune(op, bytes = []) {
-		for (let i = 0; ; i++) {
-			try {
-				return (await this.link.request(STORAGE, new Uint8Array([op, ...bytes])))[0];
-			} catch (e) {
-				if (e?.status !== ST.BUSY || i >= 20) throw e;
-				await sleep(100);
-			}
-		}
+		return (await this.link.request(STORAGE, new Uint8Array([op, ...bytes])))[0];
 	}
 
 	// Whether the radio saves trims: false on a radio without a settings ring of its own (live trims only)
@@ -308,7 +302,7 @@ export class TuneRadio {
 		}
 		if (!this.saved) {
 			const ch = await this.view(1);
-			this.saved = { channel: onChannel, hz: c.rxHz, mode: c.mode, power: c.power,
+			this.saved = { channel: onChannel, hz: c.rxHz, txHz: c.txHz, mode: c.mode, power: c.power,
 				tones: [[1, ch["ch.tx_tone"]], [2, ch["ch.rx_tone"]]] };
 		}
 		const want = mode === MODE.DMR ? "dmr" : "fm";
@@ -364,7 +358,8 @@ export class TuneRadio {
 		}
 		const modes = { fm: 0, dmr: 1, p25: 2, nxdn: 3 };
 		if (s.mode in modes) await quiet(() => this.radio(R.MODE, [modes[s.mode], 0xFF, 0]));
-		if (s.hz) await quiet(() => this.radio(R.VFO_SET, le32(s.hz)));
+		// The VFO's own TX frequency too: setup() made it simplex, and a split the owner had must come back
+		if (s.hz) await quiet(() => this.radio(R.VFO_SET, [...le32(s.hz), ...le32(s.txHz === s.hz ? 0 : s.txHz)]));
 		if (s.channel) await quiet(() => this.radio(R.VFO, [0]));
 	}
 }

@@ -738,6 +738,14 @@ static void reboot_now(void)
 // --- the settings / journal region (docs/spec/debuglink.md 3.13) ---
 
 #if CONFIG_RADIO_TUNE
+// The entries in radio tuning's RAM table now
+static uint8_t tune_entries(void)
+{
+	uint8_t nw, nn;
+	radio_tune_counts(&nw, &nn);
+	return (uint8_t)(nw + nn);
+}
+
 // Radio tuning (radio-tune.md 4): the RAM table in and out, saved to and loaded from the settings ring
 static size_t cmd_tune(const uint8_t *req, uint16_t len, uint8_t *out)
 {
@@ -757,7 +765,7 @@ static size_t cmd_tune(const uint8_t *req, uint16_t len, uint8_t *out)
 		if (len != 2u) {
 			return status_only(out, DL_ST_BAD_ARG);
 		}
-		uint8_t e[RADIO_TUNE_ENTRY], n = radio_tune_get(0, e), k = 0;
+		uint8_t n = tune_entries(), k = 0;
 		for (uint8_t i = req[1]; i < n && k < DL_TUNE_GET_MAX; i++, k++) {
 			radio_tune_get(i, out + 2 + k * RADIO_TUNE_ENTRY);
 		}
@@ -777,9 +785,8 @@ static size_t cmd_tune(const uint8_t *req, uint16_t len, uint8_t *out)
 	default:
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	uint8_t e[RADIO_TUNE_ENTRY];
 	out[0] = DL_ST_OK;
-	out[1] = radio_tune_get(0, e);	// the entries in the table now (e: scratch)
+	out[1] = tune_entries();
 	return 2;
 }
 #endif

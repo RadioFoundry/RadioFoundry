@@ -205,7 +205,7 @@ class FakeLink {
 			}
 			const op = p[0];
 			if (op === 4) this.v.vfo = String(p[1]);
-			if (op === 5) this.v.rx_hz = this.v.tx_hz = String(u32(1));
+			if (op === 5) [this.v.rx_hz, this.v.tx_hz] = [String(u32(1)), String(p.length >= 9 && u32(5) ? u32(5) : u32(1))];
 			if (op === 31) this.v.mode = ["fm", "dmr"][p[1]];
 			if (op === 7) this.v.power = String(+this.v.power + (p[1] === 1 ? 1 : -1));
 			if (op === 44) {
@@ -255,13 +255,19 @@ test("a save puts the entries in 7s, saves, reads the table back; load, clear, n
 	link.drop = (e) => e[0] === 0x04;
 	await assert.rejects(radio.save(entries), (e) => e.tuneStep === "verify");
 	link.drop = null;
-	// Busy (a CPS write holds the storage) is tried again
+	// A save that failed to write answers busy: shown, never sent again (the radio waits for its storage itself)
 	const orig = link.request.bind(link);
-	let busy = 2;
+	let saves = 0;
 	link.request = async (cmd, p) => {
-		if (cmd === 0x0F && p[0] === 4 && busy-- > 0) throw Object.assign(new Error("busy"), { status: 3 });
+		if (cmd === 0x0F && p[0] === 5) {
+			saves++;
+			throw Object.assign(new Error("busy"), { status: 3 });
+		}
 		return orig(cmd, p);
 	};
+	await assert.rejects(radio.save(entries), (e) => e.status === 3);
+	assert.equal(saves, 1, "a failed write is not repeated");
+	link.request = orig;
 	assert.equal(await radio.load(), 8, "the record holds the entries the radio kept");
 	assert.equal(await radio.clear(), 0);
 	assert.deepEqual(link.record, []);
@@ -288,6 +294,7 @@ test("live words go in chunks of 15; each request's total is what was written so
 test("a test transmission: the VFO on the frequency, the mode, no tone, the TX limit, the level, PTT with a time-out", async () => {
 	const link = new FakeLink();
 	const radio = new TuneRadio(link);
+	link.v.tx_hz = "466462500";	// the VFO on a split: the page keys simplex and puts the split back
 	const c = await radio.setup(146000, MODE.FM);
 	assert.deepEqual([link.v.vfo, link.v.mode, link.v.rx_hz, link.v.tx_hz], ["1", "fm", "146000000", "146000000"]);
 	assert.deepEqual(c.drives, [400, 900, 2600]);
@@ -310,7 +317,7 @@ test("a test transmission: the VFO on the frequency, the mode, no tone, the TX l
 
 	// Restore: no PTT, no live drive, no TX limit, the VFO's tones, mode and frequency, then back to the channel
 	await radio.restore();
-	assert.deepEqual([link.v.state, link.v.vfo, link.v.rx_hz, link.v.mode], ["rx", "0", "461462500", "dmr"]);
+	assert.deepEqual([link.v.state, link.v.vfo, link.v.rx_hz, link.v.tx_hz, link.v.mode], ["rx", "0", "461462500", "466462500", "dmr"]);
 	assert.ok(link.sent.some((s) => s[0] === 0x0A && s[1] === 36 && s[2] === 0 && s[3] === 0), "live drive off");
 	assert.ok(link.sent.some((s) => s[0] === 0x0A && s[1] === 10 && s[2] === 1 && s[3] === 1 && s[4] === (885 & 0xFF)), "TX tone back");
 });

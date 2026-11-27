@@ -173,7 +173,8 @@ TUNE_PUT with its start flag and TUNE_LOAD empty the table, then add one entry a
 `tests/host/radioTuneTest.c` covers interpolation and the clamps, the band edge, saves and restarts (the newest record,
 the table read back as put, its room, live words not saved until a save, clearing, chunked puts), a record from another
 radio, stale drive trims, names, live words and battery trims. `tests/host/radioFeaturesTest.c` covers the charge curve,
-the moved empty and full and the gain. `tests/host/debuglinkCmdTest.c` covers the STORAGE operations: put in two
+the moved empty and full and the gain; its `radioFeaturesTestTune` build keys with a carrier trim and reads the battery
+with the trims through the radio core. `tests/host/debuglinkCmdTest.c` covers the STORAGE operations: put in two
 requests, read back, save, restart, load, clear, and no ring. `tests/host/settingsTest.c` covers the record in the ring:
 a ring from a firmware without the record, 1000 settings saves round the ring (the record carried, wear even), a factory
 reset that keeps the record, an empty record, and a power cut at every unit of a tune save and of a settings save that

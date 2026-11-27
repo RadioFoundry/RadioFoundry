@@ -441,7 +441,8 @@ static bool save(const settings_t *s)
 
 	storage_lock();
 	// The tune record behind the sector the ring writes in now: copied forward before the pages, so it never pins an
-	// old sector and page 0 stays the newest record. A copy that fails leaves it where it is, still kept
+	// old sector and page 0 stays the newest record. A copy that fails leaves it where it is, still kept. Built
+	// without CONFIG_RADIO_TUNE too: a build without radio tuning keeps the owner's trims for one with it
 	if (have_tune && have_newest && tune_sec != stats.sector) {
 		(void)put_tune(NULL);
 	}

@@ -113,7 +113,7 @@ static void name(uint8_t band, uint8_t level, const char *s)
 static uint8_t store(void)
 {
 	uint8_t nw, nn;
-	CHECK(radio_tune_put(true, ent[0], n_entries));
+	radio_tune_put(true, ent[0], n_entries);
 	CHECK(radio_tune_save());
 	sim_flash_power_on();
 	CHECK(storage_init());
@@ -228,9 +228,11 @@ static void test_saves(void)
 	start();
 	trim(RADIO_TUNE_DRIVE, 2, 446000, 5);
 	trim(RADIO_TUNE_DRIVE, 3, 446000, 6);
-	CHECK(radio_tune_put(true, ent[0], 1) && radio_tune_put(false, ent[1], 1));
+	radio_tune_put(true, ent[0], 1);
+	radio_tune_put(false, ent[1], 1);
 	CHECK(radio_tune_get(0, e) == 2 && tuned(446000, 3) == 6);
-	CHECK(radio_tune_put(true, ent[1], 1) && radio_tune_get(0, e) == 1 && tuned(446000, 2) == 0);
+	radio_tune_put(true, ent[1], 1);
+	CHECK(radio_tune_get(0, e) == 1 && tuned(446000, 2) == 0);
 }
 
 static void test_foreign_and_stale(void)

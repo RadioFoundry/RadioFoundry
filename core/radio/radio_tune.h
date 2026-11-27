@@ -73,7 +73,7 @@ bool radio_tune_save(void);
 bool radio_tune_clear(void);
 // n entries (RADIO_TUNE_ENTRY bytes each, the record's) into the RAM table, live at once; start empties it first.
 // Entries the radio can't use are left out (radio-tune.md 3)
-bool radio_tune_put(bool start, const uint8_t *entries, uint8_t n);
+void radio_tune_put(bool start, const uint8_t *entries, uint8_t n);
 // Entry i of the RAM table as the record keeps it (zeros past the end); returns the entries in the table
 uint8_t radio_tune_get(uint8_t i, uint8_t *entry);
 // The drive for a transmission: the board's drive for level at hz with the trim applied, clamped. 0 stays 0

@@ -12,7 +12,7 @@ The status line shows the battery as an icon and a percentage. On a small screen
 status line, so the battery shows on Home and on the larger screens' pages. The percentage turns to the warning color at the low
 battery warning level and below. The level is set in **Settings > Power saving > Low battery warning** (15 % by default).
 
-The radio reads the battery once a second. It doesn't read the battery while transmitting or for 3 s after, because the
+The radio reads the battery once a second, but not while transmitting or for 3 s after, because the
 voltage sags under transmit.
 
 If the percentage never reaches 100 % after a full charge, or the radio switches off while still showing charge,
@@ -53,7 +53,7 @@ Power levels use the radio's factory calibration. Use the lowest power that reac
 Open **Tools > Radio tuning** on the RadioFoundry site to fine-tune your radio. Connect the radio with its programming
 cable. The page reads the radio's bands, power levels and modes, and shows what this radio can tune.
 
-| Section | What it tunes | You need |
+| Section | Tunes | You need |
 |---|---|---|
 | Power | Each power level's output, per band | A dummy load and a wattmeter |
 | Oscillator | The reference frequency of every mode at once | A frequency counter or a receiver you trust |

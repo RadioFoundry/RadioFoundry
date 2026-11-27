@@ -16,6 +16,7 @@
 #include "radio/vibe.h"
 #include "usbaudio/audio_mux.h"
 #include "radio/battery.h"
+#include "radio/radio_tune.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
 #include "dmr/ambe/ambeVoice.h"
@@ -3678,6 +3679,62 @@ static void test_battery(void)
 	CHECK(!sm.view.power_off && sm.view.battery == RADIO_BATT_OK);
 }
 
+// Radio tuning through the radio core (radio-tune.md 2): the carrier trim of the mode keyed lands on the transmit
+// frequency, and the battery trims move the reading, the level and the percentage. Built with CONFIG_RADIO_TUNE in
+// radioFeaturesTestTune only
+#if CONFIG_RADIO_TUNE
+static void tune_words(const uint32_t *w, uint8_t n)
+{
+	uint8_t b[4 * 4];
+	for (uint8_t i = 0; i < n; i++) {
+		b[4 * i] = (uint8_t)w[i];
+		b[4 * i + 1] = (uint8_t)(w[i] >> 8);
+		b[4 * i + 2] = (uint8_t)(w[i] >> 16);
+		b[4 * i + 3] = (uint8_t)(w[i] >> 24);
+	}
+	CHECK(radio_tune_set(0, n, b, n));
+}
+#endif
+
+static void test_tune(void)
+{
+#if CONFIG_RADIO_TUNE
+	start();
+	// FM +120 Hz, DMR -300 Hz at 146.52 MHz: FM keys with its own trim only
+	const uint32_t freq[] = { RADIO_TUNE_WORD(146500u, RADIO_TUNE_FREQ, RADIO_MODE_FM, 120u),
+				  RADIO_TUNE_WORD(146500u, RADIO_TUNE_FREQ, RADIO_MODE_DMR, (uint32_t)-300) };
+	tune_words(freq, 2);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146520120);
+	req(RREQ_PTT, 0);
+	run(4000);
+
+	// Gain +100 permille: 7000 mV reads 7700, 67 % on the curve; 6300 mV reads 6930, over the low warning (6400)
+	const uint32_t gain[] = { RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, RADIO_TUNE_BATT_GAIN, 100u) };
+	tune_words(gain, 1);
+	hw.battery_mv = 7000;
+	run(1500);
+	CHECK(sm.view.battery_mv == 7700 && sm.view.battery_pct == 67);
+	hw.battery_mv = 6300;
+	run(3500);
+	CHECK(sm.view.battery == RADIO_BATT_OK && sm.view.battery_mv == 6930);
+
+	// Empty +300 mV, full -200 mV, no gain: only the percentage moves
+	const uint32_t ends[] = { RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, RADIO_TUNE_BATT_EMPTY, 300u),
+				  RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, RADIO_TUNE_BATT_FULL, (uint32_t)-200) };
+	tune_words(ends, 2);
+	hw.battery_mv = 8000;
+	run(1500);
+	CHECK(sm.view.battery_mv == 8000 && sm.view.battery_pct == 100);
+	hw.battery_mv = 6700;
+	run(1500);
+	CHECK(sm.view.battery_mv == 6700 && sm.view.battery_pct == 0);
+
+	CHECK(radio_tune_set(0, 0, NULL, 0));	// the table empty again for the tests after
+	hw.battery_mv = 8000;
+#endif
+}
+
 // CAP_NO_BATTERY: the monitor never reads the board, never warns, never refuses a transmission and never asks for
 // power off, whatever the (here absurdly low) reading says
 static void test_no_battery(void)
@@ -4926,6 +4983,7 @@ int main(void)
 	test_vox();
 	test_vox_burst();
 	test_battery();
+	test_tune();
 	test_no_battery();
 	test_supply_voltage();
 	test_battery_save();

@@ -616,7 +616,7 @@ and the claim of a foreign region.
 | 2 CLAIM | token u32: the chip UID's low word (INFO_CHIP offset 7) | reason u8. `DL_ST_REFUSED` with reason 1 (bad token) or 4 (no chip info); `DL_ST_UNAVAILABLE` when the region isn't foreign. On OK the housekeeping task erases the region (10 sector erases, up to about 4 s, during which it does not watch the power knob); poll `storage.region` |
 | 3 TUNE_PUT | flags u8 (bit 0: empty the table first), up to 7 entries of 8 bytes | entries u8: in the table now. Puts radio tuning's entries ([radio-tune.md](radio-tune.md) 3) into the RAM table, live at once; entries the radio can't use, and entries past the table's room, are left out. `DL_ST_BAD_ARG` for a length that isn't whole entries |
 | 4 TUNE_LOAD | none | entries u8. Loads the saved record into the RAM table, replacing live words and puts |
-| 5 TUNE_SAVE | none | entries u8. Saves the RAM table as the tune record in the settings ring ([settings-store.md](settings-store.md) 2.2); `DL_ST_BUSY` when the write failed (the record before stays in force) |
+| 5 TUNE_SAVE | none | entries u8. Saves the RAM table as the tune record in the settings ring ([settings-store.md](settings-store.md) 2.2); `DL_ST_BUSY` when the write failed (the record before stays in force; the radio waits for its storage itself, so a host doesn't repeat a failed save) |
 | 6 TUNE_CLEAR | none | entries u8 (0). Empties the RAM table and saves an empty record; `DL_ST_BUSY` as TUNE_SAVE |
 | 7 TUNE_GET | first u8 | entries u8, then up to 7 entries of the table from first, as a save writes them (a drive entry with the factory drive at its frequency now) |
 
