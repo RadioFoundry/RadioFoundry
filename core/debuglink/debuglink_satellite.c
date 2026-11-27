@@ -11,7 +11,9 @@
 #if CONFIG_SATELLITE_TLE
 #define SAT_MAX_RECORDS SATELLITE_STORE_MAX_RECORDS
 #define SAT_PROFILE_CHUNK_MAX 4u
-#define SAT_PROTOCOL_VERSION 7u
+// INFO's protocol version (docs/spec/satellite.md 6). v8: the store accepts Alpha-5 catalog numbers above 99999 (up to
+// SATELLITE_CATALOG_ID_MAX); a radio reporting 7 or older refuses them, so hosts check before an install
+#define SAT_PROTOCOL_VERSION 8u
 
 static uint16_t get16(const uint8_t *p)
 {

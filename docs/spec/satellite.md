@@ -233,8 +233,11 @@ guessed names.
 `ABORT` takes a transaction ID `u16` and discards an uncommitted batch. Firmware continues to support protocol-v2
 additive TLE transfers for older clients. Schema-v2 replacement bundles require protocol v4. Schema-v3 bundles require protocol v5 and
 stage TLEs and frequency values before one commit; protocol v5 supports up to four selected profiles, while protocol
-v6 and later support the full ten. The host reads both back before reporting success. The standalone
-`profiles` command requires protocol v3 or newer. `PROFILE_GET` returns up to 10 catalog IDs and `PROFILE_SET` accepts
+v6 and later support the full ten. The host reads both back before reporting success. Protocol v8 changes no
+operation: it marks firmware that stores catalog numbers above 99999 (Alpha-5). Firmware reporting v7 or older rejects
+such a record, so the PC utility and the site refuse a selection containing one on that radio before any transaction
+begins and ask for a firmware update.
+The standalone `profiles` command requires protocol v3 or newer. `PROFILE_GET` returns up to 10 catalog IDs and `PROFILE_SET` accepts
 IDs from the built-in catalog for the legacy profile-only workflow. The PC utility uses replacement for every install
 and sync, including schema-v1 bundles, and requires protocol v4 or later. PC TLE synchronization does not invoke
 `SYNC_CHANNELS` and does not create, modify, or remove codeplug zones or channels. The separate `SYNC_CHANNELS`

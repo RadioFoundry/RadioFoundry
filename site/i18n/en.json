@@ -154,6 +154,7 @@
  "tools.satellite.status.done": "Created {name}.",
  "tools.satellite.status.push_failed": "Radio sync failed: {error}",
  "tools.satellite.status.profile_version": "Syncing more than four satellites requires radio satellite protocol version 6 or newer.",
+ "tools.satellite.status.alpha5_version": "Catalog numbers above 99999 ({ids}) require radio satellite protocol version 8 or newer. Update the radio firmware, then sync again.",
  "tools.satellite.status.single_band": "This single-band radio cannot use the selected satellite frequency profiles. Use a dual-band radio, or run satellite_tle.py sync to install TLE data without frequency profiles.",
  "tools.satellite.status.band_error": "The radio's supported bands do not cover the selected satellite frequency profiles.",
  "tools.satellite.status.radio_connecting": "Choose and connect the radio over USB/serial…",

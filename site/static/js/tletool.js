@@ -245,7 +245,8 @@ pushButton.addEventListener("click", async () => {
 	} catch (error) {
 		const browserError = browserErrorKey(error);
 		status.textContent = t("tools.satellite.status.push_failed", {
-			error: error.translationKey ? t(error.translationKey) : browserError ? t(browserError) : error.message,
+			error: error.translationKey ? t(error.translationKey, error.translationParams)
+				: browserError ? t(browserError) : error.message,
 		});
 	} finally {
 		if (stream) await stream.close();

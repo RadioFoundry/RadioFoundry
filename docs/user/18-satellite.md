@@ -62,7 +62,9 @@ python tools/satellite_tle.py profiles --id 25544,27607,43017
 
 The PC utility requires protocol v4 or later for replacement. Schema-v3 frequency bundles require protocol v5.
 Protocol v5 supports up to four selected frequency profiles;
-protocol v6 supports the full ten. Profile-only ID changes require protocol v3 or newer.
+protocol v6 supports the full ten. Profile-only ID changes require protocol v3 or newer. Catalog numbers above 99999
+(Alpha-5) require protocol v8: on older firmware the utility and the site refuse the selection before writing
+anything; update the radio's firmware first.
 
 ## Enter a TLE on the radio
 

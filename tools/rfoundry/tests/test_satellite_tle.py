@@ -221,6 +221,24 @@ class SatelliteTleTest(unittest.TestCase):
                 satellite_tle.install_records(link, [record], profile_ids=[25544])
         self.assertEqual(calls, [satellite_tle.OP_INFO, satellite_tle.OP_INFO])
 
+    def test_install_refuses_alpha5_on_protocol_v7_before_writing(self):
+        alpha5 = {"catalog_id": 101101, "name": "NEW SAT", "line1": tle_line("1 A1101" + self.line1[7:68]),
+                  "line2": tle_line("2 A1101" + self.line2[7:68])}
+        calls = []
+
+        def request(_link, operation, _payload=b""):
+            calls.append(operation)
+            if operation == satellite_tle.OP_INFO:
+                return struct.pack("<BHH", satellite_tle.SYNC_STATUS_PROTOCOL_VERSION, 8, 0)
+            raise AssertionError(f"unexpected operation {operation}")
+
+        with mock.patch.object(satellite_tle, "_utc_now", return_value=self.now), \
+                mock.patch.object(satellite_tle, "_request", side_effect=request):
+            with self.assertRaisesRegex(satellite_tle.SatelliteTleError,
+                                        r"above 99999 \(101101\) require satellite protocol version 8"):
+                satellite_tle.install_records(object(), [self.iss, alpha5])
+        self.assertEqual(calls, [satellite_tle.OP_INFO])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -320,7 +320,7 @@ static bool install_replace_profile_chunks(const uint8_t *data, uint16_t data_le
 static void test_inventory_transactions(void)
 {
 	uint8_t req[9] = { DL_SAT_OP_INFO };
-	CHECK(command(req, 1) == 6 && output[0] == DL_ST_OK && output[1] == 7 && get16(output + 2) == 10 &&
+	CHECK(command(req, 1) == 6 && output[0] == DL_ST_OK && output[1] == 8 && get16(output + 2) == 10 &&
 	      get16(output + 4) == 0);
 	uint8_t profile_req = DL_SAT_OP_PROFILE_GET;
 	CHECK(command(&profile_req, 1u) == 14u && output[0] == DL_ST_OK && output[1] == 3u &&

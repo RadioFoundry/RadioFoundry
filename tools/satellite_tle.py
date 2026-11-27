@@ -28,7 +28,10 @@ SCHEMA_VERSION = 3
 SUPPORTED_SCHEMA_VERSIONS = (1, 2, 3)
 PROFILE_VALUES_PROTOCOL_VERSION = 5
 PROFILE_CHUNK_PROTOCOL_VERSION = 6
-SATELLITE_PROTOCOL_VERSION = 7
+SYNC_STATUS_PROTOCOL_VERSION = 7
+# Firmware that stores Alpha-5 catalog numbers (above 99999); older firmware rejects such a record
+ALPHA5_PROTOCOL_VERSION = 8
+SATELLITE_PROTOCOL_VERSION = 8
 REPLACE_PROTOCOL_MIN_VERSION = 4
 PROFILE_PROTOCOL_MIN_VERSION = 3
 LEGACY_SATELLITE_PROTOCOL_VERSION = 2
@@ -484,7 +487,8 @@ def radio_inventory(link):
     version, capacity, installed_count = struct.unpack("<BHH", info)
     if version not in (LEGACY_SATELLITE_PROTOCOL_VERSION, PROFILE_PROTOCOL_MIN_VERSION,
                        REPLACE_PROTOCOL_MIN_VERSION, PROFILE_VALUES_PROTOCOL_VERSION,
-                       PROFILE_CHUNK_PROTOCOL_VERSION, SATELLITE_PROTOCOL_VERSION) or \
+                       PROFILE_CHUNK_PROTOCOL_VERSION, SYNC_STATUS_PROTOCOL_VERSION,
+                       ALPHA5_PROTOCOL_VERSION) or \
             capacity == 0 or installed_count > capacity:
         raise SatelliteTleError("radio satellite capability is unsupported or invalid")
     entries = list_installed(link, capacity, installed_count)
@@ -747,7 +751,8 @@ def install_records(link, records, profile_ids=None, profiles=None):
     version, capacity, installed_count = struct.unpack("<BHH", info)
     if version not in (LEGACY_SATELLITE_PROTOCOL_VERSION, PROFILE_PROTOCOL_MIN_VERSION,
                        REPLACE_PROTOCOL_MIN_VERSION, PROFILE_VALUES_PROTOCOL_VERSION,
-                       PROFILE_CHUNK_PROTOCOL_VERSION, SATELLITE_PROTOCOL_VERSION) or \
+                       PROFILE_CHUNK_PROTOCOL_VERSION, SYNC_STATUS_PROTOCOL_VERSION,
+                       ALPHA5_PROTOCOL_VERSION) or \
             capacity == 0 or installed_count > capacity:
         raise SatelliteTleError("radio satellite capability is unsupported or invalid")
     if version < REPLACE_PROTOCOL_MIN_VERSION:
@@ -756,6 +761,12 @@ def install_records(link, records, profile_ids=None, profiles=None):
         raise SatelliteTleError("frequency-valued bundles require satellite protocol version 5")
     if full_profiles is not None and len(full_profiles) > 4 and version < PROFILE_CHUNK_PROTOCOL_VERSION:
         raise SatelliteTleError("more than four frequency profiles require satellite protocol version 6")
+    alpha5_ids = [item["catalog_id"] for item in validated if item["catalog_id"] > 99999]
+    if alpha5_ids and version < ALPHA5_PROTOCOL_VERSION:
+        raise SatelliteTleError(
+            f"catalog numbers above 99999 ({', '.join(str(i) for i in alpha5_ids)}) require satellite protocol "
+            f"version {ALPHA5_PROTOCOL_VERSION} or newer; this radio reports version {version}. Update the radio "
+            "firmware, then sync again; nothing was written")
     if full_profiles is not None:
         _check_radio_profile_bands(link, full_profiles)
     elif selected_ids is not None:

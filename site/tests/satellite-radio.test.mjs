@@ -170,6 +170,24 @@ test("rejects ten profiles on protocol-v5 before starting a transaction", async 
 	assert.deepEqual(link.calls.map((call) => call[0]), [0]);
 });
 
+const alpha5Record = { ...record, catalog_id: 101101, name: "Alpha-5 satellite",
+	line1: record.line1.replace("99001", "A1101"), line2: record.line2.replace("99001", "A1101") };
+const alpha5Bundle = { schema_version: 3, records: [record, alpha5Record],
+	profiles: [profile, { ...profile, catalog_id: 101101 }] };
+
+test("rejects Alpha-5 catalog numbers on protocol-v7 before starting a transaction", async () => {
+	const link = new FakeLink(7, alpha5Bundle.records, alpha5Bundle.profiles);
+	await assert.rejects(() => pushSatelliteBundle(link, alpha5Bundle),
+		{ translationKey: "tools.satellite.status.alpha5_version", translationParams: { ids: "101101" } });
+	assert.deepEqual(link.calls.map((call) => call[0]), [0]);
+});
+
+test("installs Alpha-5 catalog numbers on protocol-v8", async () => {
+	const link = new FakeLink(8, alpha5Bundle.records, alpha5Bundle.profiles);
+	await pushSatelliteBundle(link, alpha5Bundle);
+	assert.ok(link.calls.some((call) => call[0] === 4));
+});
+
 test("rejects older firmware before starting a transaction", async () => {
 	const link = new FakeLink(4);
 	await assert.rejects(() => pushSatelliteBundle(link, bundle), /protocol version 5/);
