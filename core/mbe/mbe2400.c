@@ -157,13 +157,50 @@ static int nearest(const int8_t *cb, int n, int dim, int use, int step, const in
 // a Q16 value in the Q of a codebook (2^q), held where its squared differences stay in range
 static int32_t to_cb(int32_t v, int q) { return fxp_clamp((v + (1 << (15 - q))) >> (16 - q), -4096, 4096); }
 
-void mbe2400_pack(mbe2400_state_t *s, int b0, mbe_params_t *p, uint16_t b[MBE2400_FIELDS])
+// the gain code whose level is nearest want (log2 Q16)
+static uint16_t gain_code(int32_t want)
 {
-	int L, pos = 1, nv[4] = { 0, 0, 0, 0 };
-	int32_t x[MBE_MAXL + 1], pr[MBE_MAXL + 1], R[9], C[4][7], amax = -32768, sum = 0, mean, want, best = INT32_MAX;
+	int32_t best = INT32_MAX;
+	uint16_t pick = 0;
 
-	b0 = (int)fxp_clamp(b0, 0, MBE2400_PITCHES - 1);
-	L = mbe2400_L[b0];
+	for (int k = 0; k < 64; k++) {
+		int32_t d = (int32_t)mbe2400_dg[k] * 8 - want;
+
+		if (d < 0)
+			d = -d;
+		if (d < best) {
+			best = d;
+			pick = (uint16_t)k;
+		}
+	}
+	return pick;
+}
+
+// log2 of a frame's energy, Q11: the sum of its harmonics' squared amplitudes
+static int32_t energy(const mbe_params_t *p, int L)
+{
+	int32_t amax = -32768;
+	uint32_t e = 0;
+
+	for (int l = 0; l < L; l++)
+		if (p->a[l] > amax)
+			amax = p->a[l];
+	for (int l = 0; l < L; l++) {
+		int32_t m = mbe_exp2_q11(p->a[l] - amax + 12 * 2048);	// Q12, at most 2^12
+
+		e += (uint32_t)(m * m);					// the loudest adds 2^24; 56 of them stay under 2^30
+	}
+	return 2 * amax + mbe_log2_q11(e | 1u);
+}
+
+// The fields for b0 (in range) and p. noinline: inlined, its arrays (600 B) stay in mbe2400_pack's frame under the
+// dequantizer's (550 B), and the encoder's stack is their sum instead of the larger
+static void __attribute__((noinline)) quantize(mbe2400_state_t *s, int b0, const mbe_params_t *p,
+					       uint16_t b[MBE2400_FIELDS])
+{
+	int L = mbe2400_L[b0], pos = 1, nv[4] = { 0, 0, 0, 0 };
+	int32_t x[MBE_MAXL + 1], pr[MBE_MAXL + 1], R[9], C[4][7], amax = -32768, sum = 0, mean;
+
 	b[0] = (uint16_t)b0;
 
 	// voicing: each 1 kHz band by the count of its voiced harmonics against its unvoiced ones
@@ -189,18 +226,7 @@ void mbe2400_pack(mbe2400_state_t *s, int b0, mbe_params_t *p, uint16_t b[MBE240
 	mean = sum / L;
 
 	// gain: the frame's mean log amplitude is gamma - log2(L) / 2
-	want = mean + mbe_log2_q11((uint32_t)L) * 16 - (s->gamma >> 1);
-	b[2] = 0;
-	for (int k = 0; k < 64; k++) {
-		int32_t d = (int32_t)mbe2400_dg[k] * 8 - want;
-
-		if (d < 0)
-			d = -d;
-		if (d < best) {
-			best = d;
-			b[2] = (uint16_t)k;
-		}
-	}
+	b[2] = gain_code(mean + mbe_log2_q11((uint32_t)L) * 16 - (s->gamma >> 1));
 
 	// the shape: the residual after the prediction, each block's DCT (C_k = 1/J sum r_j cos), and from the first two
 	// terms of each block the pair R_2i-1 = C1 + sqrt 2 C2, R_2i = C1 - sqrt 2 C2. The mean is the gain's
@@ -246,6 +272,25 @@ void mbe2400_pack(mbe2400_state_t *s, int b0, mbe_params_t *p, uint16_t b[MBE240
 			h[k] = to_cb(C[i][k + 3], 7);
 		b[5 + i] = (uint16_t)(n > 0 ? nearest(&mbe2400_hoc[i * 64], 16, 4, n, i == 3 ? 2 : 1, h) : 0);
 	}
+}
+
+void mbe2400_pack(mbe2400_state_t *s, int b0, mbe_params_t *p, uint16_t b[MBE2400_FIELDS])
+{
+	mbe2400_state_t t = *s;
+	int32_t want;
+	int L;
+
+	b0 = (int)fxp_clamp(b0, 0, MBE2400_PITCHES - 1);
+	L = mbe2400_L[b0];
+	want = energy(p, L);
+	quantize(s, b0, p, b);
+	// The gain code again, for the frame's energy. The first one sets the mean of the log amplitudes, and the shape
+	// codebooks cannot follow a spectrum of a few strong harmonics over deep gaps (a tone, a whistle, a hum): they
+	// fill the gaps and cut the peaks, the mean stays right and the frame plays up to 8 dB low, at a level that moves
+	// from frame to frame. The gain shifts every log amplitude alike, so one trial through the dequantizer tells by
+	// how much the receiver's frame misses the energy. Speech moves by about 1 dB
+	(void)mbe2400_unpack(&t, b, p);
+	b[2] = gain_code((int32_t)mbe2400_dg[b[2]] * 8 + (want - energy(p, L)) * 16);
 	// advance the state as the receiver's dequantizer will, and hand back what it reconstructs
 	(void)mbe2400_unpack(s, b, p);
 }

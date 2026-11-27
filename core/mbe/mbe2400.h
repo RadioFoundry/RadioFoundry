@@ -47,8 +47,8 @@ void mbe2400_state_reset(mbe2400_state_t *s);
 // decoded): MBE2400_FRAME_SILENCE, p->L 0 and s reset
 int mbe2400_unpack(mbe2400_state_t *s, const uint16_t b[MBE2400_FIELDS], mbe_params_t *p);
 // The quantizer, its inverse. b0: the pitch code (0..125). p->v and p->a hold the voicing and the log2 model amplitudes
-// of mbe2400_pitch_harmonics(b0) harmonics. Writes the fields, advances s as the receiver's dequantizer will, and leaves
-// in p the parameters the receiver reconstructs
+// of mbe2400_pitch_harmonics(b0) harmonics. Writes the fields (the gain code so that the receiver's frame has p's
+// energy), advances s as the receiver's dequantizer will, and leaves in p the parameters the receiver reconstructs
 void mbe2400_pack(mbe2400_state_t *s, int b0, mbe_params_t *p, uint16_t b[MBE2400_FIELDS]);
 
 // The decoder: kept state 124 B plus the synthesis core's
