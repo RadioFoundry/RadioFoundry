@@ -179,16 +179,20 @@ static uint8_t act_list(uint8_t *out)
 
 static uint16_t act_count(void)
 {
+#if CONFIG_P25_ALIAS
 	if (ui_target.p25)
 		return ui_target.heard_tg ? 3 : 2;
+#endif
 	uint8_t l[12];
 	return act_list(l);
 }
 
 static bool act_target(uint16_t i, ui_target_t *t)
 {
+#if CONFIG_P25_ALIAS
 	if (ui_target.p25)
 		return false;
+#endif
 	uint8_t l[12];
 	uint8_t n = act_list(l);
 	*t = ui_target;
@@ -208,6 +212,7 @@ static bool compose_aprs(void);
 
 static void act_item(uint16_t i, ui_item_t *it)
 {
+#if CONFIG_P25_ALIAS
 	if (ui_target.p25) {
 		sbuf_t b;
 		sb_init(&b, it->label, sizeof it->label);
@@ -223,6 +228,7 @@ static void act_item(uint16_t i, ui_item_t *it)
 		}
 		return;
 	}
+#endif
 	uint8_t l[12];
 	uint8_t n = act_list(l);
 	if (i >= n)
@@ -309,8 +315,10 @@ static bool data_ready(bool packet, char *buf, size_t len)
 
 static void act_select(uint16_t i, bool hold)
 {
+#if CONFIG_P25_ALIAS
 	if (ui_target.p25)
 		return;
+#endif
 	static char msg[40];
 	uint8_t l[12];
 	uint8_t n = act_list(l);
@@ -419,13 +427,20 @@ static const char *act_title(void)
 	return t;
 }
 
+#if CONFIG_P25_ALIAS
 static const char *act_hint(void)
 {
 	return ui_target.p25 ? TR(HINT_BACK, "Back") : TR(ACT_HINT, "1-9 pick  PTT talk  Back");
 }
+#endif
 
 static const ui_scr_def_t actions_screen = {
-	.name = "actions", .flags = SF_LIST | SF_NUMBERED | SF_FIELD | SF_HINT_FN, .hint_fn = act_hint,
+	.name = "actions",
+#if CONFIG_P25_ALIAS
+	.flags = SF_LIST | SF_NUMBERED | SF_FIELD | SF_HINT_FN, .hint_fn = act_hint,
+#else
+	.flags = SF_LIST | SF_NUMBERED | SF_FIELD, .hint = TRN(ACT_HINT, "1-9 pick  PTT talk  Back"),
+#endif
 	.count = act_count, .item = act_item, .select = act_select, .target = act_target, .title = act_title,
 };
 
@@ -1134,8 +1149,10 @@ static bool recent_target(uint16_t i, ui_target_t *t)
 	const ui_recent_t *r = ui_recent_get((uint8_t)i);
 	if (r == NULL)
 		return false;
+#if CONFIG_P25_ALIAS
 	if (r->p25)
 		return false;	// an inspected P25 identity is never a DMR PTT target
+#endif
 	ui_recent_target(r, t);
 	if (!t->group && t->heard_tg) {
 		// PTT on a station heard on a talkgroup: that talkgroup (the same as Talk to in its actions)
@@ -1188,12 +1205,14 @@ static void recent_item(uint16_t i, ui_item_t *it)
 static void recent_select(uint16_t i, bool hold)
 {
 	ui_target_t t;
+#if CONFIG_P25_ALIAS
 	const ui_recent_t *r = ui_recent_get((uint8_t)i);
 	if (r && r->p25) {
 		ui_recent_target(r, &t);
 		ui_open_actions(&t);
 		return;
 	}
+#endif
 	if (recent_target(i, &t))
 		ui_talk(&t, hold);
 }
@@ -1208,15 +1227,22 @@ static void recent_context(uint16_t i)
 	}
 }
 
+#if CONFIG_P25_ALIAS
 static const char *recent_hint(void)
 {
 	const ui_recent_t *r = ui_recent_get((uint8_t)ui_frame()->focus);
 	return r && r->p25 ? TR(HINT_BACK, "Back") : TR(RECENT_HINT, "PTT talk  # more  Back");
 }
+#endif
 
 static const ui_scr_def_t recent_screen = {
-	.name = "recent", .flags = SF_LIST | SF_FIELD | SF_HINT_FN, .prefix = TRN(TITLE_RECENT, "Recent"),
+	.name = "recent", .prefix = TRN(TITLE_RECENT, "Recent"),
+#if CONFIG_P25_ALIAS
+	.flags = SF_LIST | SF_FIELD | SF_HINT_FN,
 	.hint_fn = recent_hint,
+#else
+	.flags = SF_LIST | SF_FIELD, .hint = TRN(RECENT_HINT, "PTT talk  # more  Back"),
+#endif
 	.empty = TRN(EMPTY_NO_CALLS_HEARD, "No calls heard yet"),
 	.count = recent_count, .item = recent_item, .select = recent_select, .context = recent_context,
 	.target = recent_target,
@@ -6719,7 +6745,6 @@ static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYF
 #if CONFIG_DUAL_WATCH
 					     TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
 #endif
-	TRN(TITLE_RECENT, "Recent"),
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
 					KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_SCAN_SKIP, KEYFN_MONITOR_TOGGLE,
@@ -6757,7 +6782,6 @@ static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN
 #if CONFIG_DUAL_WATCH
 					    TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
 #endif
-	TRN(TITLE_RECENT, "Recent"),
 };
 #endif
 static const int16_t v_updown[] = { 0, 1, 2 };
@@ -8041,7 +8065,11 @@ static void picker_enter(void)
 	// Recent talkgroups
 	for (uint8_t i = 0; i < ui_recent_count(); i++) {
 		const ui_recent_t *r = ui_recent_get(i);
-		if (r->group && !r->p25) {
+		if (r->group
+#if CONFIG_P25_ALIAS
+		    && !r->p25
+#endif
+		   ) {
 			memset(&t, 0, sizeof t);
 			t.id = r->dst;
 			t.group = true;

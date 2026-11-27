@@ -3,12 +3,14 @@
 
 # P25 caller history
 
-With `CONFIG_P25`, the UI adds selected P25 calls with a nonzero source ID to
+With `CONFIG_P25_ALIAS`, the UI adds selected P25 calls with a nonzero source ID to
 Recent. It records the source, destination, group/private indication and last
 observed time. With `CONFIG_P25_ALIAS`, the completed current alias updates the
 entry even when it completes just before the call ends. Selected encrypted calls
 can also supply caller metadata; their audio remains muted. Filtered calls do not
-create an entry. Recent remains volatile and is cleared at boot.
+create an entry. Recent remains volatile and is cleared at boot. With the switch
+off, P25 retains its numeric caller display on Home but adds no history or caller
+details; the DMR Recent and Actions paths keep their existing behavior.
 
 P25 and DMR identities are separate even when their numeric source and destination
 IDs match. Received P25 entries open the

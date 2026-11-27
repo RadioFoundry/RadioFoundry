@@ -356,7 +356,7 @@ silent.
   FM?", "Save as DMR?", or "Unsaved Changes" for NXDN), and "No, keep editing" is the default. **Save as new channel** leaves the P25 channel as it is.
 - Scan stops on P25 channels and holds on a call you would hear there. Dual watch takes one as A or B.
 
-Open **Recent** from the menu.
+With P25 talker aliases enabled in the firmware, open **Recent** from the menu.
 No physical key is reserved for history; existing key assignments and caller-context behavior are preserved.
 Select a received call to inspect its unit ID, talkgroup and completed alias. These
 P25 details are read-only and never send a callback or registration.
@@ -369,13 +369,10 @@ returning to the control channel or keep audio open.
 
 ### P25 trunked channels
 
-P25 calls you hear appear in Recent. Open it from the menu;
+With P25 talker aliases enabled, calls you hear appear in Recent. Open it from the menu;
 select a caller to see its alias/ID and talkgroup. A later call without an alias
-keeps that caller's known name within the same receiver session. With the RAM alias
-cache enabled, up to 64 learned trunked names also follow the caller across
-talkgroups and sites on the same system. They appear on Home during calls and in
-Recent. Learning is automatic; nothing is saved to flash, and restarting clears
-the cache. A new decoded alias replaces an older name. These details are
+keeps that caller's known name within the same receiver session and destination.
+A new decoded alias replaces an older name. These details are
 read-only; no callback, radio-check or registration is sent. Recent clears when
 the radio restarts.
 

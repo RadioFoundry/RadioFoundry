@@ -154,13 +154,13 @@ static const flow_t flows[] = {
 	  2, false },
 #if CONFIG_P25
 	// P25 on Home: what PTT calls on the talk line, the NAC in the chips, the caller while a call comes in
+#if CONFIG_P25_ALIAS
 	{ "P25 caller details active", "dlmode:p25 p25rx:7654321,1001", "ctx ok", "screen=actions shows=ID_7654321 shows=TG_1001 shows=P25_RX_only hides=Radio_check hides=PTT_talk focusid=0", 2, false },
 	{ "P25 caller details after call", "dlmode:p25 p25rx:7654321,1001 p25rxend", "ctx ok", "screen=actions shows=ID_7654321 focusid=0", 2, false },
 	{ "P25 context keeps caller action", "dlmode:p25 p25rx:7654321,1001", "ctx", "screen=actions shows=ID_7654321 focusid=0", 1, false },
 	{ "P25 Recent opens details", "dlmode:p25 p25rx:7654321,1001 p25rxend", "ok down down ok ok", "screen=actions shows=ID_7654321 focusid=0", 5, false },
 	{ "P25 filtered excluded from history", "dlmode:p25 p25rx:7654321,1001,o p25rxend", "ok down down ok", "screen=recent hides=7654321", 4, false },
 	{ "P25 encrypted caller retained", "dlmode:p25 p25rx:7654321,1001,e p25rxend", "ok down down ok", "screen=recent shows=7654321 hides=P25_7654321", 4, false },
-#if CONFIG_P25_ALIAS
 	{ "P25 Recent menu opens history", "dlmode:p25 p25rx:7654321,1001 p25rxend", "ok down down ok", "screen=recent shows=7654321 hides=P25_7654321 focusid=0", 4, false },
 	{ "P25 Recent alias without mode prefix", "dlmode:p25 p25rx:7654321,1003 p25alias:TEST-UNIT p25rxend", "ok down down ok", "screen=recent shows=TEST-UNIT hides=P25_TEST focusid=0", 4, false },
 	{ "P25 alias remains readable after return", "dlmode:p25 p25t:3,1001 p25rx:7654321,1001",
@@ -189,6 +189,9 @@ static const flow_t flows[] = {
 	{ "P25 encrypted tail expires", "dlmode:p25 p25rx:7654323,1003,e p25aliastail:UNIT002", "wait:3500", "hides=UNIT002", 0, false },
 	{ "P25 alias retained in history", "dlmode:p25 p25rx:7654321,1001 p25alias:TEST-UNIT p25rxend", "ok down down ok ok", "screen=actions shows=TEST-UNIT shows=ID_7654321 focusid=0", 5, false },
 	{ "P25 alias updates open details", "dlmode:p25 p25rx:7654321,1001 ok down down ok ok", "p25alias:TEST-UNIT", "screen=actions shows=TEST-UNIT shows=ID_7654321 focusid=0", 3, false },
+#else
+	{ "P25 alias disabled: no Recent entry", "dlmode:p25 p25rx:7654321,1001 p25rxend", "ok down down ok",
+	  "screen=recent hides=7654321 shows=No_calls_heard_yet", 4, false },
 #endif
 	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
 	{ "P25 home: the caller", "dlmode:p25", "p25rx:3101234,7", "screen=home shows=ID_3101234 shows=TG_7", 0, false },
