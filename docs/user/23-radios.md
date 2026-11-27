@@ -799,6 +799,12 @@ Both bands on every radio: VHF (136-174 MHz) and UHF (400-480 MHz). Five power l
 shows the level for the channel's band. The radio runs from a vehicle's 13.8 V supply, so it shows the supply voltage
 instead of a battery level and never warns about a low battery. The voltage's scale isn't checked on a radio yet.
 
+### MD-9600 extended reception
+
+Settings > Advanced > RX past bands enables 500–503 MHz for reception only. The range is off
+by default. Transmission remains blocked. Sensitivity in this window is unmeasured;
+see [the hardware record](../spec/hardware-md9600.md#experimental-500503-mhz-reception).
+
 ### MD-9600 display
 
 A 128 x 64 monochrome screen.
@@ -829,9 +835,3 @@ models it covers.
 | BTECH DMR-6X2 PRO | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port. |
 | BridgeCom Maverick | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port. |
 <!-- end generated -->
-
-### MD-9600 extended reception
-
-Settings > Advanced > RX past bands enables 500–503 MHz for reception only, off
-by default. Transmission remains blocked. Sensitivity in this window is unmeasured;
-see [the hardware record](../spec/hardware-md9600.md#experimental-500503-mhz-reception).

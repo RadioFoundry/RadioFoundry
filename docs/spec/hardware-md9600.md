@@ -1232,7 +1232,7 @@ receive I/Q swap there inverts the copy's spectrum), and trunking.
 ## Experimental 500–503 MHz reception
 
 Settings > Advanced > RX past bands enables the 500–503 MHz receive-only range.
-It is off by default. The transmit band table and RF sequencing refuse transmission
+The range is off by default. The transmit band table and RF sequencing refuse transmission
 throughout this window. `CONFIG_RX_EXT=n` removes the extension from the build.
 
 The synthesizer planners represent this window using the existing UHF receive path.

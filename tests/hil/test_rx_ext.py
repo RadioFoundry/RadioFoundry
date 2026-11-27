@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""Receive-only extension admission: enable Settings > Advanced > RX past bands first.
+"""Receive-only extension admission: skips when the extended range is not enabled.
 No live signal is needed. PTT is expected to be refused; --allow-rf is still required
 for any test that presses PTT, following the existing HIL convention.
 """
 import pytest
+from rfoundry_hil import skip
 
 
 @pytest.mark.feature("rx_ext")
@@ -12,7 +13,9 @@ import pytest
 @pytest.mark.radio_tx
 def test_extended_receive_refuses_ptt(radio):
     radio.go_home()
-    radio.skip_out_of_band(501000000)
+    if not radio.in_band(501000000):
+        skip("state", "501 MHz receive range is not enabled; turn on Settings > Advanced > RX past bands "
+             "on a radio that supports this range")
     with radio.vfo_session():
         radio.link.vfo_set(501000000)
         v = radio.wait_for(lambda v: v.get("rx_hz") == "501000000" and v.get("mode") == "fm",
