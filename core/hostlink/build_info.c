@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // What this build is, for VERSION in either listener (see build_info.h)
 #include "config.h"
 #include "hostlink/build_info.h"
@@ -61,6 +62,9 @@ static const char features[] =
 #endif
 #if CONFIG_SATELLITE_TLE
 	"SATELLITE_TLE,"
+#endif
+#if CONFIG_THEME_PACKS
+	"THEME_PACKS,"
 #endif
 #if CONFIG_APRS
 	"APRS,"

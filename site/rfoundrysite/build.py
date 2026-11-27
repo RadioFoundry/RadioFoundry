@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 RadioFoundry Theme Pack contributors
 """Builds the static site into one directory (docs/dev/website.md).
 
 Layout of the output:
@@ -184,8 +185,17 @@ class Site:
 			"c7000-stub.json": repo.c7000_stub(),
 			"f4-stub.json": repo.f4_stub(),
 			"screens.json": self.screens,
+			"theme-pack-presets.json": self.theme_pack_presets(),
 			"releases.json": {"releases": self.release_list()},
 		}
+
+	def theme_pack_presets(self):
+		"""Expose only the stock palette values defined by the firmware's built-in themes."""
+		with open(repo.path("themes", "radio-theme-presets.json"), encoding="utf-8") as f:
+			doc = json.load(f)
+		return {"themes": [{"id": "preset:stock:%d" % i, "name": theme["name"],
+				   "colors": theme["colors"], "source": "Stock theme"}
+				  for i, theme in enumerate(doc["themes"])]}
 
 	def firmware_line(self, lang):
 		"""The footer's firmware release (what the flasher installs) and the changelog: the GitHub releases, or main's
@@ -224,7 +234,8 @@ class Site:
 		with open(p, "w", encoding="utf-8") as f:
 			f.write(text)
 
-	def page(self, lang, rel, title, content, page_class, description="", scripts="", nav="", footer="", styles=""):
+	def page(self, lang, rel, title, content, page_class, description="", scripts="", nav="", footer="", styles="",
+		 layout="base"):
 		"""A page of the site: rel is its path inside the language's tree; footer goes above the site footer's line.
 		styles: stylesheet links ahead of the site's own, so site.css overrides them"""
 		prefix = self.i18n.prefix(lang)
@@ -262,7 +273,7 @@ class Site:
 		       "og_image": SITE_URL + "static/img/social.png?v=" + self.asset_version,
 		       "og_width": social.W * social.ZOOM, "og_height": social.H * social.ZOOM}
 		ctx["nav"] = self.nav(lang, ctx["home"], nav)
-		self.write(full, self.tpl.render("base", ctx, lang).replace("{{root}}", root).replace("{{home}}", root + prefix))
+		self.write(full, self.tpl.render(layout, ctx, lang).replace("{{root}}", root).replace("{{home}}", root + prefix))
 
 	def nav(self, lang, home, current):
 		items = [("radios", "radios/index.html"), ("features", "features/index.html"),
@@ -378,6 +389,9 @@ class Site:
 			self.features_page(lang)
 			self.flash_page(lang)
 			self.tools_page(lang)
+			if lang == self.i18n.default:
+				self.theme_pack_page(lang)
+				self.theme_pack_builder_page(lang)
 			self.satellite_tle_page(lang)
 			self.support_pages(lang)
 			self.codeplug_page(lang)
@@ -767,6 +781,28 @@ class Site:
 			   '<script type="module" src="{{root}}static/js/tools.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "tools/index.html", self.t(lang, "tools.title"), self.tpl.render("tools", {}, lang),
 			  "tools", scripts=scripts, nav="tools")
+
+	def theme_pack_page(self, lang):
+		strings = json.dumps(self.i18n.subset(lang, ("tools.title", "tools.theme_pack.")),
+				     ensure_ascii=False).replace("</", "<\\/")
+		scripts = ('<script type="application/json" id="i18n">%s</script>'
+			   '<script type="module" src="{{root}}static/js/theme-pack-tool.js?v=%s"></script>' %
+			   (strings, self.asset_version))
+		styles = '<link rel="stylesheet" href="{{root}}static/css/theme-pack-pages.css?v=%s">' % self.asset_version
+		self.page(lang, "tools/themes/index.html", self.t(lang, "tools.theme_pack.title"),
+			  self.tpl.render("theme_pack", {}, lang), "theme-tools",
+			  description=self.t(lang, "tools.theme_pack.text"), scripts=scripts, styles=styles,
+			  layout="theme_tools_base")
+
+	def theme_pack_builder_page(self, lang):
+		scripts = '<script type="module" src="{{root}}static/js/theme-pack-builder.js?v=%s"></script>' % self.asset_version
+		styles = ('<link rel="stylesheet" href="{{root}}static/css/theme-pack-pages.css?v=%s">'
+			  '<link rel="stylesheet" href="{{root}}static/css/theme-pack-builder.css?v=%s">' %
+			  (self.asset_version, self.asset_version))
+		self.page(lang, "tools/themes/builder.html", "Theme Pack Builder",
+			  self.tpl.render("theme_pack_builder", {"assets": self.asset_version}, lang), "theme-tools",
+			  description="Choose stock colors or make a theme pack.", scripts=scripts, styles=styles,
+			  layout="theme_tools_base")
 
 	def satellite_tle_page(self, lang):
 		strings = json.dumps(self.i18n.subset(lang, ("tools.title", "tools.satellite.", "flash.err.no_serial")), ensure_ascii=False).replace("</", "<\\/")

@@ -1,4 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
 
 # Feature matrix
 
@@ -298,6 +300,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● | ✕ |
 | `SATELLITE_TLE` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `THEME_PACKS` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● | ● | ✕ |

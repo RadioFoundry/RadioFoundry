@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // The UI task: boot splash, the frame pacing, the backlight, and the glue between the RTOS and the UI's behavior in
 // ui_app.c (which the host simulator runs without an RTOS). Reads the radio view and posts requests; never touches
 // the radio hardware.
@@ -16,6 +17,7 @@
 #include "ui.h"
 #include "ui_app.h"
 #include "ui_screens.h"
+#include "theme_pack.h"
 #include "ui_svc.h"
 #include "input/input.h"
 #include "radio/radio.h"
@@ -106,6 +108,7 @@ static void ui_task(void *arg)
 {
 	(void)arg;
 	bool have_fb = gfx_init(board.display);
+	ui_theme_pack_init();
 	input_event_t ev;
 
 	if (have_fb) {

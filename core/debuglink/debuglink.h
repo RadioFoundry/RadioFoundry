@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // The USB debug link (docs/spec/debuglink.md): framed commands on the host port, beside the MMDVM hotspot and the CPS
 // protocol (core/hostlink), for bench automation: version, diagnostics and counters, the radio view as key=value
 // text, screenshots, key and PTT injection, radio requests, a log ring. CONFIG_DEBUGLINK.
@@ -154,6 +155,8 @@ void debuglink_dmr_data_reset(void);
 size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 // Satellite TLE transaction protocol (debuglink_satellite.c); unavailable without CONFIG_SATELLITE_TLE
 size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+// Data-only theme pack transfer; unavailable when CONFIG_THEME_PACKS or its mapped flash area is unavailable
+size_t debuglink_cmd_theme_pack(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 // The dmr_ext section (debuglink_view_ext.c): emergency state, alert and settings, the ETSI data counters, CW ID
 void debuglink_view_dmr_ext(dl_text_t *t);
 // The roam section (debuglink_view_roam.c); built without CONFIG_DMR_ROAMING it says "roam.built=0"

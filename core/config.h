@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // Feature switches (config/features.mk sets them for firmware builds; everything defaults on here, e.g. for host
 // tests). Always defined to 0 or 1: test with #if CONFIG_X, never #ifdef. See docs/build-config.md.
 #ifndef RFOUNDRY_CONFIG_H
@@ -144,6 +145,9 @@
 #endif
 #ifndef CONFIG_SATELLITE_TLE
 #define CONFIG_SATELLITE_TLE		0
+#endif
+#ifndef CONFIG_THEME_PACKS
+#define CONFIG_THEME_PACKS		0
 #endif
 #ifndef CONFIG_TASK_STACKS
 #define CONFIG_TASK_STACKS		CONFIG_DEBUGLINK
@@ -496,6 +500,12 @@
 #endif
 #if CONFIG_SATELLITE_TLE && !CONFIG_DEBUGLINK
 #error "CONFIG_SATELLITE_TLE needs CONFIG_DEBUGLINK"
+#endif
+#if CONFIG_THEME_PACKS && !CONFIG_DEBUGLINK
+#error "CONFIG_THEME_PACKS needs CONFIG_DEBUGLINK"
+#endif
+#if CONFIG_THEME_PACKS && !CONFIG_UI_COLOR
+#error "CONFIG_THEME_PACKS needs CONFIG_UI_COLOR"
 #endif
 #if CONFIG_TASK_STACKS && !CONFIG_DEBUGLINK
 #error "CONFIG_TASK_STACKS needs CONFIG_DEBUGLINK"

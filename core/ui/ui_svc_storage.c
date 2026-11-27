@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // The ui_svc.h calls storage-cps answers (docs/spec/settings-store.md, core/codeplug editing):
 //   - settings: each UI setting is read from where it is kept across power cycles. The radio core's own settings
 //     (key tones, tone volume, TX timeout, backlight time, battery saver) from radio_get_settings, which the radio
@@ -15,6 +16,8 @@
 #include <string.h>
 #include "board.h"
 #include "ui_svc.h"
+#include "ui_screens.h"
+#include "theme_pack.h"
 #include "i18n.h"
 #include "radio/radio.h"
 #include "settings/settings.h"
@@ -314,6 +317,13 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 	case UI_SET_VIBRATE:
 		return (SETTINGS_FIELD(ui_flags) & SETTINGS_UI_NO_VIBRATE) == 0;
 	case UI_SET_THEME:
+#if CONFIG_THEME_PACKS
+		{
+			uint8_t pack = SETTINGS_FIELD(theme_pack);
+			if (pack != 0u && pack <= ui_theme_pack_count())
+				return UI_THEME_PACK_BASE + pack - 1u;
+		}
+#endif
 		return settings_theme_of(SETTINGS_FIELD(theme));
 	case UI_SET_ACCENT:
 		return SETTINGS_FIELD(accent) & SETTINGS_ACCENT_COLOR;
@@ -495,7 +505,13 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_AUTO_OFF_MIN:
 		st = settings_begin();
 		if (id == UI_SET_THEME) {
-			st->theme = (uint8_t)((st->theme & ~SETTINGS_SMALL_MASK) | clamp16(value, 0, 3));
+			if (CONFIG_THEME_PACKS && value >= UI_THEME_PACK_BASE &&
+			    value < UI_THEME_PACK_BASE + ui_theme_pack_count()) {
+				st->theme_pack = (uint8_t)(value - UI_THEME_PACK_BASE + 1);
+			} else {
+				st->theme_pack = 0;
+				st->theme = (uint8_t)((st->theme & ~SETTINGS_SMALL_MASK) | clamp16(value, 0, 3));
+			}
 		} else if (id == UI_SET_ACCENT) {
 			st->accent = (uint8_t)((st->accent & ~SETTINGS_ACCENT_COLOR) |
 					       clamp16(value, 0, SETTINGS_ACCENT_COLOR));

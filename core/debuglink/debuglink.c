@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // The debug link's commands (docs/spec/debuglink.md). Everything runs in the host link task, between the bytes of the
 // other protocols: each command is short (a reply of at most DL_REPLY_MAX bytes, no waiting on other tasks; radio
 // requests are queued, injected keys are timed by the input task).
@@ -873,6 +874,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_hwopt(req, len, out, cap);
 	case DL_CMD_SATELLITE:
 		return debuglink_cmd_satellite(req, len, out, cap);
+	case DL_CMD_THEME_PACK:
+		return debuglink_cmd_theme_pack(req, len, out, cap);
 #if CONFIG_AIR_RAW
 	case DL_CMD_AIR:
 		return debuglink_cmd_air(req, len, out, cap);

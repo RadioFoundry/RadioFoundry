@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 RadioFoundry Theme Pack contributors
 # DM-32UV feature defaults (config/features.mk lists them all). 880 KB of code space before the codec slot, so RAM is
 # the limit: 211,456 B below the codec's RAM window (boards/dm32/memory.ld, docs/spec/hardware-dm32.md 17.1), the
 # RTOS heap's 33 KB among them (freertos_board.h). Every feature the radio has hardware and glue for is on, and the
@@ -42,3 +43,14 @@ BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q128 class (d
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 BOARD_NOT_WRITTEN += NET_USRP	# USRP's 8 kHz PCM both ways needs more than the host link's 115200 baud
+
+# The theme pack and satellite TLE snapshots share sector 0x71D000. The normal image keeps satellite tracking; a
+# maximal build selects theme packs instead, and a custom theme-pack build defaults TLE storage off. Either feature can
+# still be selected alone.
+ifeq ($(CONFIG_THEME_PACKS),y)
+  ifeq ($(CONFIG_SATELLITE_TLE),y)
+    $(error CONFIG_THEME_PACKS=y and CONFIG_SATELLITE_TLE=y share sector 0x71D000; disable TLE storage)
+  endif
+  CONFIG_SATELLITE_TLE ?= n
+endif
+MAXIMAL_SKIP += SATELLITE_TLE

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // Screen drawing (docs/ux/wireframes): layout from the display size, no task or input code, so host tests and the
 // host simulator can render any screen at any geometry
 #ifndef UI_SCREENS_H
@@ -12,6 +13,7 @@
 #include "gfx.h"
 #include "config.h"
 #include "fmt.h"
+#include "theme_pack.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
@@ -186,9 +188,9 @@ typedef struct {
 	color_t strip_warn;		// warnings on it
 } ui_colors_t;
 extern ui_colors_t ui_col;
-// Color theme on color displays (Settings > Display), the values of settings_t.theme. Night is shades of pure red
-// on black, for eyes adapted to the dark: it has no highlight color of its own choosing
-enum { UI_THEME_DARK, UI_THEME_LIGHT, UI_THEME_HIGH_CONTRAST, UI_THEME_NIGHT, UI_THEME_COUNT };
+// The four stock themes keep their IDs. Installed pack entries follow them and are offered only when enabled.
+enum { UI_THEME_DARK, UI_THEME_LIGHT, UI_THEME_HIGH_CONTRAST, UI_THEME_NIGHT, UI_THEME_PACK_BASE };
+#define UI_THEME_COUNT (CONFIG_THEME_PACKS ? UI_THEME_PACK_BASE + THEME_PACK_MAX_THEMES : UI_THEME_PACK_BASE)
 // After ui_layout_init; a value out of range is the dark theme
 void ui_theme_set(uint8_t theme);
 uint8_t ui_theme_get(void);

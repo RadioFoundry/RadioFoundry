@@ -1,4 +1,24 @@
-# RadioFoundry
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
+
+# RadioFoundry Theme Packs
+
+This project is based on [RadioFoundry](https://github.com/radiofoundry/radiofoundry) and follows its latest source.
+It adds optional theme packs while keeping the four stock themes as the firmware defaults. The theme-pack feature is
+off unless a supported board build enables it.
+
+### Make and install a theme pack
+
+1. Open the [Theme Pack Builder](https://photogdoug.github.io/RadioFoundry-sat-fw-Themes/tools/themes/builder.html).
+   The starter library contains only Dark, Light, High contrast, and Night (red), the themes from RadioFoundry source.
+2. Choose a stock palette or edit its colors. Save your own palettes by name, then add up to 10 themes to the pack.
+3. Download the `.rftheme` file and open the [Theme Pack Uploader](https://photogdoug.github.io/RadioFoundry-sat-fw-Themes/tools/themes/index.html).
+4. Connect to a radio running firmware built with theme-pack support and select the pack file. This transfers theme data;
+   it does not flash firmware or write the codeplug.
+
+For first-time setup, supported radios, and build requirements, see the
+[theme pack guide](docs/user/theme-packs.md).
 
 **English** · [简体中文](README.zh.md)
 

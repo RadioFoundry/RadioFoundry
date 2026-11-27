@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // core/storage (the sector journal) and core/settings (the record ring) on a simulated NOR flash, with power cuts
 // at every point of a save and of a sector rewrite: after the next boot the old or the new content is there, whole,
 // never a mix; wear goes round the ring; old and new record sizes load.
@@ -959,7 +960,8 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, aprs_cp_freq), 399 },
 		{ offsetof(settings_t, sig_dmr), 400 },
 		{ offsetof(settings_t, sig_fm), 403 },
-		{ offsetof(settings_t, reserved11), 406 },
+		{ offsetof(settings_t, theme_pack), 406 },
+		{ offsetof(settings_t, reserved11), 407 },
 		{ offsetof(settings_t, aes_mi_res), 408 },
 	};
 	CHECK(sizeof(settings_t) == 412);

@@ -1,4 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
 
 # The user interface
 
@@ -720,7 +722,9 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
 - Freq trim (Advanced, the last row: Up from the top) is shown only on a radio whose board has `hal_radio_t.ref_trim`
   (`UI_FEAT_REF_TRIM`). The row shows the trim in ppm and opens the Freq Trim page (`freq-trim`, section 2).
 - Voice prompts are dimmed ("Voice prompts aren't built yet: no recorded speech").
-- Theme switches the color palette (dark, light, high contrast, night). Night is four shades of pure red on black
+- Theme switches the color palette (dark, light, high contrast, night). With `CONFIG_THEME_PACKS` and a valid installed
+  pack, its named palettes follow these four stock themes in Settings > Display; up to 10 are available. Pack
+  selection is saved separately from the stock theme setting. Night is four shades of pure red on black
   (red 255, 176, 112, 56; green and blue 0), for eyes adapted to the dark: the meanings other themes give hues take
   brightness and their word instead (P5). Text, TX, warnings, the focus and the filled strip are the brightest red,
   with black text on them; RX, privacy and secondary text the next; separators and dimmed rows the third; the darkest

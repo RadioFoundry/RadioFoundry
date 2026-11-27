@@ -1,4 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
 
 # USB debug link
 
@@ -1090,6 +1092,20 @@ requests answer at once. Bad argument (2) for any other operation or a longer pa
 board map has a dedicated satellite area. It has no raw-address access. The operation layouts, record encoding,
 capacity and atomic commit behavior are specified in [satellite.md](satellite.md) 6. The command returns
 `DL_ST_UNAVAILABLE` when the feature or usable area is absent.
+
+### 3.31 THEME_PACK
+
+`DL_CMD_THEME_PACK` (`0x29`) transfers a bounded data-only theme pack (`CONFIG_THEME_PACKS`, [theme-packs.md](theme-packs.md)).
+It has no raw-address operation and returns `DL_ST_UNAVAILABLE` when the feature or mapped sector is absent. Writes
+are refused while transmitting and use the storage lock.
+
+| Request | Payload after command | Reply after status |
+|---|---|---|
+| INFO (0) | none | format version u8 (1), capacity u16 (4096), installed theme count u8 |
+| BEGIN (1) | total file length u16 | none; erases only the mapped theme-pack sector |
+| DATA (2) | offset u16, then 1..61 bytes | none; offset must equal bytes received so far |
+| COMMIT (3) | none | none; validates the complete pack and CRC before exposing themes |
+| REMOVE (4) | none | none; erases only the mapped theme-pack sector |
 
 ## 4. Safety
 

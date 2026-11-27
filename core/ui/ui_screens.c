@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // Home, quick settings and the boot splash, laid out from the display size (docs/ux/information-architecture.md 3, 5;
 // docs/ux/wireframes). Regions top to bottom: status strip, place, talk target, activity, hint row.
 #include <string.h>
@@ -36,6 +37,8 @@ static bool ui_strip_fill;
 // highlight color, so nothing but red reaches the eye
 static void accent_apply(void)
 {
+	if (CONFIG_THEME_PACKS && ui_theme >= UI_THEME_PACK_BASE && ui_accent == UI_ACCENT_DEFAULT)
+		return;		// a pack's default palette supplies its own highlight colors
 	ui_col.focus_fg = ui_col.fg;
 	ui_col.chnum = ui_col.dim;
 	if (!CONFIG_UI_COLOR)
@@ -90,11 +93,27 @@ static void accent_apply(void)
 
 void ui_theme_set(uint8_t theme)
 {
-	if (!CONFIG_UI_COLOR || theme >= UI_THEME_COUNT)
+	if (!CONFIG_UI_COLOR || theme >= UI_THEME_COUNT ||
+	    (theme >= UI_THEME_PACK_BASE && (!CONFIG_THEME_PACKS || theme - UI_THEME_PACK_BASE >= ui_theme_pack_count())))
 		theme = UI_THEME_DARK;	// without color settings: the dark theme only
 	ui_theme = theme;
 	if (gfx_bpp() == 1)
 		return;		// ink on paper whatever the theme
+	if (theme >= UI_THEME_PACK_BASE) {
+		char name[THEME_PACK_NAME_LEN];
+		uint16_t c[THEME_PACK_COLOR_COUNT];
+		if (!ui_theme_pack_get((uint8_t)(theme - UI_THEME_PACK_BASE), name, c)) {
+			ui_theme = UI_THEME_DARK;
+			return;
+		}
+		ui_col.bg = c[0]; ui_col.fg = c[1]; ui_col.dim = c[2]; ui_col.line = c[3];
+		ui_col.tx = c[4]; ui_col.rx = c[5]; ui_col.warn = c[6]; ui_col.idle = c[7];
+		ui_col.pill_fg = c[8]; ui_col.pill_dark_fg = c[9]; ui_col.focus = c[10]; ui_col.hint_bg = c[11];
+		ui_col.priv = c[12]; ui_col.idle_fg = c[13]; ui_col.focus_fg = c[14]; ui_col.chnum = c[15];
+		ui_col.strip_bg = c[16]; ui_col.strip_warn = c[17];
+		accent_apply();
+		return;
+	}
 	ui_col.pill_fg = RGB565(255, 255, 255);
 	ui_col.pill_dark_fg = RGB565(0, 0, 0);
 	if (theme == UI_THEME_NIGHT) {

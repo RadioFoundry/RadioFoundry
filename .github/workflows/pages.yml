@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 RadioFoundry Theme Pack contributors
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main, codex/theme-builder]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.repository == 'photogdoug/RadioFoundry-sat-fw-Themes'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install site dependencies
+        run: python -m pip install -r site/requirements.txt
+      - name: Build the site for this repository
+        run: python site/build.py --out build/site --repo-url "https://github.com/${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME}"
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: build/site
+
+  deploy:
+    if: github.repository == 'photogdoug/RadioFoundry-sat-fw-Themes'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

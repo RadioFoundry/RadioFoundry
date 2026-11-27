@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // The list screens and the screen table (information-architecture.md 4, 6, 8): the Hub with its six destinations,
 // actions on a station, Contacts, Messages, Recent, Channels, Tools, Settings grouped by intent, the talk target
 // picker, information pages and the one confirmation (factory reset, P7).
@@ -7450,6 +7451,15 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 			}
 		}
 #endif
+		if (CONFIG_THEME_PACKS && s->id == UI_SET_THEME && v >= UI_THEME_PACK_BASE) {
+			char name[THEME_PACK_NAME_LEN];
+			uint16_t colors[THEME_PACK_COLOR_COUNT];
+			if (ui_theme_pack_get((uint8_t)(v - UI_THEME_PACK_BASE), name, colors))
+				sb_str(&b, name);
+			else
+				sb_str(&b, TR(SET_VALUE_THEME_DARK, "Dark"));
+			return;
+		}
 		for (uint8_t k = 0; k < s->n; k++) {
 			if (s->values[k] == v) {
 				sb_str(&b, tr(s->names[k]));
@@ -7640,6 +7650,20 @@ static void group_select(uint16_t i, bool hold)
 		set_store(s, !v);
 		break;
 	case ST_LIST: {
+		if (CONFIG_THEME_PACKS && s->id == UI_SET_THEME) {
+			uint8_t pack_count = ui_theme_pack_count();
+			uint8_t count = (uint8_t)(s->n + pack_count);
+			uint8_t k = 0;
+			while (k < s->n && s->values[k] != v)
+				k++;
+			if (k == s->n && v >= UI_THEME_PACK_BASE && v - UI_THEME_PACK_BASE < pack_count)
+				k = (uint8_t)(s->n + v - UI_THEME_PACK_BASE);
+			else if (k == s->n)
+				k = 0;
+			uint8_t next = (uint8_t)((k + 1u) % count);
+			set_store(s, next < s->n ? s->values[next] : UI_THEME_PACK_BASE + next - s->n);
+			break;
+		}
 		uint8_t k = 0;
 		while (k < s->n && s->values[k] != v)
 			k++;

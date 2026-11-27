@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // The fast codeplug protocol engine (cps_fast.h, docs/spec/cps-fast.md).
 //
 // Addresses on the wire are image offsets: 0 is the open-firmware EEPROM image (hal_flash_map_t.openfw_eeprom), the
@@ -144,7 +145,8 @@ static bool protected_area(const hal_flash_map_t *m, uint32_t a, uint32_t n)
 {
 	return overlaps(a, n, m->settings_addr, m->settings_size) || overlaps(a, n, m->journal_addr, 2u * STORAGE_SECTOR) ||
 	       overlaps(a, n, m->native_addr, m->native_size) || overlaps(a, n, m->staging_addr, m->staging_size) ||
-	       overlaps(a, n, m->calibration_addr, m->calibration_size);
+	       overlaps(a, n, m->calibration_addr, m->calibration_size) ||
+	       overlaps(a, n, m->satellite_addr, m->satellite_size) || overlaps(a, n, m->theme_pack_addr, m->theme_pack_size);
 }
 
 // An image block the protocol may read and write: inside the EEPROM image or the flash image, on the flash, clear of

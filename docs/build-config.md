@@ -1,4 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
 
 # Build configuration
 
@@ -200,6 +202,7 @@ below are for an STM32F4 radio.
 | `CONFIG_LANG_DEFAULT_ZH` | n | The radio starts in Chinese, as `CONFIG_LANG_DEFAULT_ES`. Needs `CONFIG_LANG_ZH` |
 | `CONFIG_CJK_GLYPHS` | `CONFIG_LANG_ZH` | The CJK glyph table (`core/ui/cjk_font_data.c`, built by `tools/cjkfont.py`; the face's ~128 KB rodata). Off while `CONFIG_LANG_ZH` stays on keeps the translated Chinese menus but drops the glyphs, for a board too small to show Chinese (it draws boxes for any Chinese). Needs `CONFIG_LANG_ZH` |
 | `CONFIG_UI_COLOR` | y (n on a monochrome radio) | color screen settings: Theme, Highlight color and Filled status bar in Settings > Display (`docs/spec/ui.md` 5, 8). Off: no such rows, the dark theme's colors. About 600 B; off for radios whose only screen is monochrome |
+| `CONFIG_THEME_PACKS` | n | data-only palettes installed over the debug link (`docs/spec/theme-packs.md`); needs `CONFIG_DEBUGLINK`, `CONFIG_UI_COLOR` and one board-mapped erase unit. On the DM-32UV, also set `CONFIG_SATELLITE_TLE=n` because both features use 0x71D000 |
 | `CONFIG_AUDIO_PROBE` | n | diagnostics: debug link command 0x10 reads / writes the audio chip's registers and measures the PCM stream, for the USB audio bench tests (`docs/spec/debuglink.md` 3.14); needs DEBUGLINK and DMR; about 2 KB RAM and 2.2 KB flash. Never for a release; CI builds it in one board's `audio-probe` configuration (with `LTO=1`: the default image has no room for it without), not in maximal. A bench image without LTO: add `CONFIG_SNMP=n` |
 | `CONFIG_UI_SETTINGS` | y | the Settings menu on the radio; off: settings keep their stored values and are set with qdmr (`docs/spec/ui.md` 5) |
 
