@@ -9403,7 +9403,7 @@ static void spectrum_persist(const spectrum_t *s, uint8_t cmd, uint32_t now_ms)
 	st->spectrum_scale_db = s->scale_db;
 	st->spectrum_narrow = s->narrow;
 	st->spectrum_center_tuner = s->center_tuner;
-	st->spectrum_keys = (uint8_t)(s->hash_key | (((s->star_key + 1u) % SPECTRUM_KEY_COUNT) << 2));
+	st->spectrum_keys = spectrum_keys_pack(s->hash_key, s->star_key);
 	// Automatic capture must not replace the owner's tuning preference or keep postponing the flash save.
 	if (cmd == SPECTRUM_TUNER || cmd == SPECTRUM_CENTER || cmd == SPECTRUM_STEP || cmd == SPECTRUM_BANDWIDTH ||
 	    cmd == SPECTRUM_CENTER_TUNER) {
@@ -9518,9 +9518,7 @@ static void spectrum_request(radio_sm_t *sm, const radio_req_t *req, uint32_t no
 	s->narrow = SETTINGS_FIELD(spectrum_narrow) == 1;
 	s->center_tuner = SETTINGS_FIELD(spectrum_center_tuner) == 1;
 	uint8_t keys = SETTINGS_FIELD(spectrum_keys);
-	if (keys > 15) keys = 0;
-	s->hash_key = keys & 3u;
-	s->star_key = (uint8_t)(((keys >> 2) + SPECTRUM_KEY_COUNT - 1u) % SPECTRUM_KEY_COUNT);
+	spectrum_keys_unpack(keys, &s->hash_key, &s->star_key);
 	uint32_t tuner = SETTINGS_FIELD(spectrum_tuner_hz);
 	uint32_t first = spectrum_frequency(s, 0), last = spectrum_frequency(s, s->bins - 1);
 	if (!s->center_tuner && tuner >= first && tuner <= last)

@@ -1045,6 +1045,36 @@
     "SPECTRUM"
    ]
   },
+  "spectrum_squelch_updated": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_display_settings": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_tuner_header": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_header_off": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
+  "spectrum_squelch_off": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
+  },
   "spectrum_shortcuts": {
    "group": "tools",
    "needs": [

@@ -2427,5 +2427,10 @@
  "editor.sig.empty": "Sin pasos: el sonido estándar",
  "screen.spectrum_center_tuner": "Cursor del espectro centrado",
  "screen.spectrum_panned": "Desplazamiento de la ventana del espectro",
+ "screen.spectrum_squelch_updated": "Ajuste del silenciador del espectro con una tecla",
+ "screen.spectrum_display_settings": "Ajustes de pantalla del espectro",
+ "screen.spectrum_tuner_header": "Señal actual en el sintonizador del espectro",
+ "screen.spectrum_header_off": "Gráfico del espectro sin la fila informativa",
+ "screen.spectrum_squelch_off": "Gráfico del espectro sin el indicador de silenciador",
  "screen.spectrum_shortcuts": "Teclas de acceso del espectro"
 }

@@ -211,9 +211,10 @@ The radio core can also scan a VFO range set by two frequencies. There is no men
 ## Spectrum analyzer
 
 Open **Tools > 0 Spectrum analyzer** (**OK**, **6**, **0**). The main screen shows center frequency at the left,
-the listening tuner in a dim color at the right, Peak, and the graph. With **Center tuner** on, the tuner frequency
-is hidden while it matches the center. It appears when Auto peak moves the tuner away and hides again on return.
-With **Center tuner** off, the tuner frequency is always shown. Frequencies keep five decimal places,
+the listening tuner in a dim color at the right, Peak, and the graph. **Show header: Tuner** always hides the top-right
+tuner frequency because the information row already shows it. In the other header modes, **Center tuner** hides
+it while it matches the center and shows it during an Auto peak capture away from the center. With **Center tuner**
+off, it stays visible in those modes. Frequencies keep five decimal places,
 for example 145.06250 MHz. Narrow screens omit repeated MHz units; small screens also omit the title.
 
 Type a new center frequency directly on the keypad, then press **OK** to apply it: `438250` means 438.25000 MHz.
@@ -224,10 +225,14 @@ either edge scrolls the whole window by one **Sweeping** step. The tuner stays a
 frequency. Reverse direction to move it back inside the window; scrolling stops at the receiver band limits.
 
 On the graph, `#` runs **Bandwidth** and `*` runs **Center tuner** by default. Change either assignment in
-Spectrum Settings with `# key` and `* key`. **OK** cycles **Bandwidth / Auto peak / Filter / Center tuner**;
+Spectrum Settings with `# key` and `* key`. **OK** cycles **Bandwidth / Auto peak / Filter / Center tuner / SQL up / SQL down**;
 both keys may use the same action. Choosing an assignment does not change that parameter until you press the key
 on the graph. A toast shows the result. Assignments and parameter values are remembered. While typing a number,
 # remains the separator and * does not run its assigned action.
+
+**SQL up** raises the squelch threshold by 5 dB (for example, -60 to -55 dBm); **SQL down** lowers it by 5 dB
+(-60 to -65 dBm). The threshold stops at -160 and 0 dBm. A bottom message shows the new value, for example
+`Squelch updated: -65 dBm`. The changed threshold and key assignments are remembered.
 
 These defaults apply to fresh settings. Later openings and power cycles restore your saved choices.
 
@@ -242,6 +247,8 @@ Press **OK** outside frequency entry for **Spectrum Settings**. **Up / Down** ch
 | Filter | OK switches **Wide (25 kHz)** / **Narrow (12.5 kHz)**. Wide by default. It applies to scanning and listening. |
 | Auto peak | OK cycles **After sweep** (default) / **Immediate** / **Off**. |
 | Center tuner | OK switches **Off** (default) / **On**. On keeps the tuner centered and moves the window with Left / Right or the knob. |
+| Show header | OK cycles **Peak** (default) / **Tuner** / **Off**. Tuner shows the arrow frequency and latest signal level, without peak hold; Off gives the row's height to the graph. |
+| Show squelch | OK switches **On** (default) / **Off**. Off hides the small threshold marker; compact screens use its left-hand space for the graph. |
 | * key | OK cycles the action for *. Default **Center tuner**. |
 | # key | OK cycles the action for #. Default **Bandwidth**. |
 
@@ -250,9 +257,9 @@ and scanning running. Back on the graph closes the analyzer; long Back returns H
 
 Without a keypad, OK opens a numeric editor at its current value. Use **Up / Down** or the encoder to change it,
 then **OK** to save or **Back** to cancel. Squelch steps by 1 dB, Sweeping by 0.01 kHz and Dwell time by 1 ms.
-These radios also have **Center** (center frequency) at the end of Spectrum Settings. Its preview moves by the sweep
+These radios have **Center** (center frequency) as the first row in Spectrum Settings. Its preview moves by the sweep
 spacing and skips gaps between available receiver bands. Reception changes only after OK. If a microphone provides
-digits, typing starts direct numeric entry instead. Keypad radios keep the nine-row menu and digit entry above.
+digits, typing starts direct numeric entry instead. Keypad radios keep the eleven-row menu and digit entry above.
 
 With **Center tuner** on, **Left / Right** and the knob move the whole window by the **Sweeping** step.
 The tuner normally stays in the middle and listens at the new center frequency. The graph's overlapping
@@ -271,6 +278,8 @@ active diagnostic detour; wait for it to return or end the detour before opening
 **Up / Down on the graph move the dBm scale**, rather than changing frequency. From -40 / -80 / -120, one Down
 gives -60 / -100 / -140; another gives -80 / -120 / -160. Two Up presses from the default give 0 / -40 / -80. Movement stops at those limits. This changes
 only the displayed scale. The actual signal strength, tuner and frequency endpoints stay the same.
+A small dim arrow at the graph's left edge marks the squelch threshold. It moves with the scale and stays at the
+top or bottom edge when the threshold is outside the visible range.
 
 Squelch uses **-160..0 dBm** directly. More negative opens more easily. **-160 dBm** opens at the receiver floor;
 **0 dBm** is the highest threshold. Type only the number: `80` is shown as `-80 dBm`; zero loses the minus. With

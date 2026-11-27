@@ -660,6 +660,7 @@ static void test_settings_spectrum_upgrade(void)
 	CHECK(s.spectrum_dwell_ms == 10 && s.spectrum_no_peak == 0 && s.spectrum_scale_db == 0);
 	CHECK(s.spectrum_narrow == 0 && s.spectrum_squelch_dbm == INT16_MIN && s.spectrum_peak_immediate == 0);
 	CHECK(s.spectrum_center_tuner == 0 && s.spectrum_keys == 0);
+	CHECK(s.spectrum_display == 0);
 	settings_t *st = settings_begin();
 	st->spectrum_center_hz = 145062500;
 	st->spectrum_tuner_hz = 145068750;
@@ -672,6 +673,7 @@ static void test_settings_spectrum_upgrade(void)
 	st->spectrum_narrow = 1;
 	st->spectrum_center_tuner = 1;
 	st->spectrum_keys = 0x0b;
+	st->spectrum_display = 5;
 	st->spectrum_squelch_dbm = -120;
 	settings_end(1);
 	CHECK(settings_flush());
@@ -683,6 +685,7 @@ static void test_settings_spectrum_upgrade(void)
 	      s.spectrum_step_hz == 6250 && s.spectrum_bins == 129 && s.spectrum_squelch == 42);
 	CHECK(s.spectrum_dwell_ms == 50 && s.spectrum_no_peak == 1 && s.spectrum_scale_db == -20 && s.spectrum_narrow == 1 && s.spectrum_squelch_dbm == -120);
 	CHECK(s.spectrum_center_tuner == 1 && s.spectrum_keys == 0x0b);
+	CHECK(s.spectrum_display == 5);
 	st = settings_begin();
 	st->spectrum_no_peak = 0;
 	st->spectrum_peak_immediate = 1;
@@ -719,6 +722,18 @@ static void test_settings_spectrum_upgrade(void)
 	CHECK(s.spectrum_dwell_ms == 50 && s.spectrum_no_peak == 1 && s.spectrum_scale_db == -20 && s.spectrum_narrow == 0 && s.spectrum_squelch_dbm == INT16_MIN);
 	CHECK(s.spectrum_peak_immediate == 0);
 	CHECK(s.spectrum_center_tuner == 0);
+	// The last 436-byte layout gains default display preferences without changing its shortcuts or threshold.
+	s.spectrum_keys = 0x34;
+	s.spectrum_squelch_dbm = -65;
+	s.spectrum_display = 6;
+	put_record(&map, 0, 2, 40, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT), 436 - SETTINGS_PAGE_BYTES,
+		   (const uint8_t *)&s + SETTINGS_PAGE_BYTES, true, true);
+	put_record(&map, 0, 3, 41, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &s, true, true);
+	boot();
+	settings_read(&s);
+	settings_get_stats(&stats);
+	CHECK(stats.load == SETTINGS_UPGRADED && s.spectrum_display == 0);
+	CHECK(s.spectrum_keys == 0x34 && s.spectrum_squelch_dbm == -65 && s.spectrum_center_hz == 145062500);
 }
 
 // Stored power levels count against the board's level count (power_levels): a record from before it (0), or from a
@@ -1058,8 +1073,9 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, spectrum_narrow), 432 },
 		{ offsetof(settings_t, spectrum_squelch_dbm), 434 },
 		{ offsetof(settings_t, spectrum_peak_immediate), 433 },
+		{ offsetof(settings_t, spectrum_display), 436 },
 	};
-	CHECK(sizeof(settings_t) == 436);
+	CHECK(sizeof(settings_t) == 440);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);

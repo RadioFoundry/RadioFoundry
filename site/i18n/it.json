@@ -2427,5 +2427,10 @@
  "editor.sig.empty": "Nessun passo: il suono standard",
  "screen.spectrum_center_tuner": "Tuner dello spettro centrato",
  "screen.spectrum_panned": "Spostamento della finestra dello spettro",
+ "screen.spectrum_squelch_updated": "Squelch dello spettro regolato con un tasto",
+ "screen.spectrum_display_settings": "Impostazioni del display dello spettro",
+ "screen.spectrum_tuner_header": "Segnale attuale sul sintonizzatore dello spettro",
+ "screen.spectrum_header_off": "Grafico dello spettro senza la riga informativa",
+ "screen.spectrum_squelch_off": "Grafico dello spettro senza indicatore di squelch",
  "screen.spectrum_shortcuts": "Tasti rapidi dello spettro"
 }

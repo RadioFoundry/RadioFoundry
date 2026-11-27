@@ -99,22 +99,37 @@ point-count changes clear it.
 Spectrum analyzer is the tenth Tools entry, with the ordinary dim `0` shortcut. The temporary received-zone entry
 follows it, using Context (`#`) even after its banner is hidden. Without Spectrum it retains `0`.
 
-The main screen keeps center at the left and the read-only tuner in a dim color at the right, followed by Peak,
-the full-width graph and endpoints. With Center tuner on, the right-hand frequency is hidden while the tuner is
-at the center. It appears during an automatic capture away from the center and disappears on return. With Center
-tuner off, it remains visible even when both frequencies match.
+The main screen keeps center at the left and the read-only tuner in a dim color at the right, followed by an information row,
+the full-width graph and endpoints. Show header: Tuner always hides the right-hand frequency: the information row
+already shows it, including during automatic capture and center-frequency entry. Otherwise, with Center tuner on,
+the right-hand frequency is hidden at the center, appears during an automatic capture away from it and disappears
+on return. With Center tuner off, it remains visible even when both frequencies match.
 All frequencies have five fractional MHz digits, including trailing zeros.
 Narrow displays omit repeated MHz units when needed. It uses the layout's tiny font. Displays at least
 `UI_TALL_PX` (200 px) high keep the title; smaller displays omit it.
+
+**Show header** controls only the information row below the two frequencies. Peak retains the recent maximum.
+Tuner shows the current tuner's frequency and latest settled RSSI from `level[tuner]`, including a temporary
+automatic capture. It never reads peak history or adds a display hold. A quiet sweep updates that bin when visited;
+continuous listening updates it on every settled reading. An unread bin shows `--`. Off removes the row and gives
+its height to the plot, preserving the top status, center/tuner frequencies and both endpoint frequencies.
+
+**Show squelch** defaults to On. Off hides only the threshold marker. On compact displays the marker has a six-pixel
+left gutter; hiding it returns those columns to the plot. The dBm labels move left and all frequency labels stay
+visible. Neither display option retunes or changes receiver settings. Both are saved through the normal UI settings
+service, separately from the radio engine's sweep preferences.
 
 Typing a digit starts center-frequency entry immediately. Reception and the window stay unchanged until OK
 confirms it. Entry uses the VFO's positional MHz digits; # is an optional separator after three digits. Back deletes
 one digit, then cancels an empty editor. Back outside entry closes the analyzer; long Back returns Home.
 
 On the graph, short `#` and `*` run their assigned actions. Defaults are Bandwidth for `#` and Center tuner
-for `*`. Each key can independently control Bandwidth, Auto peak, Filter or Center tuner, including the same
+for `*`. Each key can independently control Bandwidth, Auto peak, Filter, Center tuner, SQL up or SQL down, including the same
 action on both keys. A press cycles or toggles the selected parameter and shows its new value in a toast. It uses
-the same range check and radio request as that parameter's menu row. The graph owns these short keys ahead of
+the same range check and radio request as that parameter's menu row. SQL up raises the squelch threshold by 5 dB;
+SQL down lowers it by 5 dB, both clamped to -160..0 dBm. They show `Squelch updated: -65 dBm` with the new threshold
+and persist it through the normal squelch request. Compact screens temporarily reserve the footer for toasts;
+without one, the graph uses that space. The graph owns these short keys ahead of
 quick settings and message banners. During numeric entry, # keeps its separator role and * does not run its
 action. Long-key actions retain their normal meanings.
 
@@ -129,8 +144,10 @@ OK outside entry opens **Spectrum Settings** (`screen=spectrum-settings`), a sta
 | Filter | Toggle | Wide (25 kHz, default) / Narrow (12.5 kHz) |
 | Auto peak | Cycle | After sweep (default) / Immediate / Off |
 | Center tuner | Toggle | Off (default) / On |
-| * key | Cycle the assigned action | Bandwidth / Auto peak / Filter / Center tuner (default) |
-| # key | Cycle the assigned action | Bandwidth (default) / Auto peak / Filter / Center tuner |
+| Show header | Cycle | Peak (default) / Tuner / Off |
+| Show squelch | Toggle the threshold marker | On (default) / Off |
+| * key | Cycle the assigned action | Bandwidth / Auto peak / Filter / Center tuner (default) / SQL up / SQL down |
+| # key | Cycle the assigned action | Bandwidth (default) / Auto peak / Filter / Center tuner / SQL up / SQL down |
 
 Up/down navigate that menu. Squelch entry accepts magnitude 0..160 and adds a minus to every nonzero value, including while editing. Zero displays as `0 dBm`, never `-0 dBm`. Numeric values outside their ranges are refused, never wrapped. Back in an editor
 deletes, then cancels; Back in the menu returns to the running graph. Long Back closes both. Global quick settings
@@ -139,11 +156,11 @@ and banner actions do not consume numeric-editor keys.
 Without `CAP_KEYPAD`, numeric editors start at the current value. Up/Down or encoder steps change the preview;
 OK applies it and Back cancels it without changing reception or stored preferences. Squelch moves by 1 dB,
 spacing by 10 Hz (0.01 kHz), and dwell by 1 ms; all clamp to their supported ranges. Spacing also respects the
-current band's room for the selected point count. The nine shared rows keep their order. Only these radios gain
-a final **Center** (center frequency) row: the preview moves by the selected sweep spacing and crosses gaps to the next
+current band's room for the selected point count. The eleven shared rows keep their order. Only these radios gain
+a first **Center** (center frequency) row: the preview moves by the selected sweep spacing and crosses gaps to the next
 active board band that can hold the window, excluding the separate broadcast receiver. It stops at the outer
 limits. Optional mic digits switch the editor to direct numeric entry. Radios with a keypad retain their empty
-digit editors and the nine-row settings menu.
+digit editors and the eleven-row settings menu.
 
 With **Center tuner** off (default), left/right and the encoder move the tuner one bin inside the window. At an
 endpoint, the next outward step pans the window by one sweep spacing and leaves the tuner at that same endpoint,
@@ -175,7 +192,10 @@ On the graph, Up raises and Down lowers the dBm window by 20 dB, clamped to -40.
 labels are -40, -80, -120 dBm. One Down gives -60, -100, -140; a second gives -80, -120, -160. Two Up presses from the default give 0, -40, -80. The plot
 always spans 100 dB (`-130 + offset` to `-30 + offset`), clips readings outside it and keeps their actual Peak values.
 This changes neither frequency nor the listening state. Labels sit over the grid lines, with only the middle label
-on plots too short for three. A white marker follows the tuner below the plot; there is no center line or sweep cursor.
+on plots too short for three. A small right-pointing marker in the dim text color at the plot's left edge shows the
+squelch threshold. It follows the dBm offset and clips to the top or bottom edge for a threshold outside the visible
+range. Labels leave room for it without narrowing the plot. A white marker follows the tuner below the plot;
+there is no center line or sweep cursor.
 
 ## Preferences and diagnostics
 
@@ -196,11 +216,16 @@ to the older build's 0..100 range, for a downgrade. `spectrum_peak_immediate` us
 offset 433: zero retains After sweep, one selects Immediate. `spectrum_no_peak == 1` takes precedence and keeps
 Off. `spectrum_center_tuner` uses the zeroed byte at offset 426 (formerly `reserved12[0]`): only 1 enables it;
 zero and invalid values retain the independent tuner. `spectrum_keys` uses offset 427 (formerly `reserved12[1]`).
-Bits 0..1 store the # action (0 Bandwidth, 1 Auto peak, 2 Filter, 3 Center tuner). Bits 2..3 store the * action
-with 0 Center tuner, 1 Bandwidth, 2 Auto peak and 3 Filter, so an old zero byte restores both defaults. Upper bits
-are reserved; a nonzero upper bit restores both defaults. Assignment edits do not retune, mute, or activate the
+Bits 0..1 and bit 4 store the # action (0 Bandwidth, 1 Auto peak, 2 Filter, 3 Center tuner, 4 SQL up, 5 SQL down).
+Bits 2..3 and bit 5 store the * action with 0 Center tuner, 1 Bandwidth, 2 Auto peak, 3 Filter, 4 SQL up and 5 SQL down.
+The original low four bits keep their meaning, so all earlier assignments and the zero-byte defaults are unchanged.
+Bits 6..7 are reserved; either nonzero bit or an action code 6 or 7 restores both defaults. An older build reading
+a SQL assignment restores its default shortcuts. Assignment edits do not retune, mute, or activate the
 chosen action. Center, spacing, point-count and filter changes preserve the assignments. Earlier records and existing Off preferences retain their
-behavior; the record size stays 436 bytes.
+behavior. The appended `spectrum_display` byte at offset 436 stores Show header in bits 0..1 (0 Peak, 1 Tuner,
+2 Off) and hides the squelch marker with bit 2. Zero preserves the Peak / On defaults; invalid values restore
+both defaults. The previous 436-byte record upgrades without changing other preferences. The record is now 440
+bytes including tail padding; all earlier field offsets stay unchanged.
 
 Invalid frequencies fall back to the current channel; invalid spacing or count to 12.50 kHz / 97 points; invalid
 dwell to 10 ms, automatic mode to After sweep, filter to Wide and offset to zero. The saved tuner rounds to the nearest bin

@@ -2795,6 +2795,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	spectrum_preferences.dwell_ms = 10;
 	spectrum_preferences.auto_peak = SPECTRUM_AUTO_SWEEP;
 	spectrum_preferences.star_key = SPECTRUM_KEY_CENTER_TUNER;
+	ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, 0);
 #endif
 #if CONFIG_DMR_AES
 	sim_aes_keys = false;
@@ -3193,6 +3194,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "count") == 0) snprintf(got, sizeof got, "%u", s.count);
 	else if (strcmp(key, "depth") == 0) snprintf(got, sizeof got, "%u", s.depth);
 #if CONFIG_SPECTRUM
+	else if (strcmp(key, "spec_header") == 0) snprintf(got, sizeof got, "%u", (unsigned)ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) & UI_SPECTRUM_HEADER_MASK);
+	else if (strcmp(key, "spec_show_squelch") == 0) snprintf(got, sizeof got, "%u", !(ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) & UI_SPECTRUM_HIDE_SQUELCH));
 	else if (strcmp(key, "spec_active") == 0) snprintf(got, sizeof got, "%u", view.spectrum.active);
 	else if (strcmp(key, "spec_bins") == 0) snprintf(got, sizeof got, "%u", view.spectrum.bins);
 	else if (strcmp(key, "spec_center") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.spectrum.center_hz);

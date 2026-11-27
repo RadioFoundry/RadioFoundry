@@ -2427,5 +2427,10 @@
  "editor.sig.empty": "无步骤:使用标准声音",
  "screen.spectrum_center_tuner": "频谱调谐器居中",
  "screen.spectrum_panned": "平移频谱窗口",
+ "screen.spectrum_squelch_updated": "频谱静噪快捷调整",
+ "screen.spectrum_display_settings": "频谱显示设置",
+ "screen.spectrum_tuner_header": "频谱调谐器实时信号",
+ "screen.spectrum_header_off": "隐藏信息行的频谱图",
+ "screen.spectrum_squelch_off": "隐藏静噪标记的频谱图",
  "screen.spectrum_shortcuts": "频谱快捷键设置"
 }

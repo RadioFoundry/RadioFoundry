@@ -5693,6 +5693,16 @@ msgid "After sweep"
 msgstr "Après balayage"
 
 #: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_VALUE_TUNER"
+msgid "Tuner"
+msgstr "Accordeur"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_LABEL_PEAK"
+msgid "Peak"
+msgstr "Pic"
+
+#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_BANDWIDTH"
 msgid "Bandwidth"
 msgstr "Largeur de bande"
@@ -5706,6 +5716,16 @@ msgstr "Pic automatique"
 msgctxt "SPECTRUM_ROW_FILTER"
 msgid "Filter"
 msgstr "Filtre"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_KEY_SQL_UP"
+msgid "SQL up"
+msgstr "SQL +"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_KEY_SQL_DOWN"
+msgid "SQL down"
+msgstr "SQL -"
 
 #: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_CENTER_TUNER"
@@ -5733,11 +5753,6 @@ msgid "Unavailable on this channel or radio busy"
 msgstr "Indisponible sur ce canal ou radio occupée"
 
 #: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_LABEL_PEAK"
-msgid "Peak "
-msgstr "Pic "
-
-#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_HINT_ENTRY"
 msgid "Digits  # .  OK save  Back"
 msgstr "Chiffres  # .  OK sauver  Retour"
@@ -5758,6 +5773,16 @@ msgid "Value out of range"
 msgstr "Valeur hors plage"
 
 #: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_TOAST_SQUELCH_UPDATED"
+msgid "Squelch updated"
+msgstr "Squelch modifié"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_CENTER"
+msgid "Center"
+msgstr "Centre"
+
+#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_SQUELCH"
 msgid "Squelch"
 msgstr "Squelch"
@@ -5773,6 +5798,16 @@ msgid "Dwell time"
 msgstr "Temps de pause"
 
 #: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_HEADER"
+msgid "Show header"
+msgstr "Afficher l'en-tête"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_SHOW_SQUELCH"
+msgid "Show squelch"
+msgstr "Afficher SQL"
+
+#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_STAR_KEY"
 msgid "* key"
 msgstr "Touche *"
@@ -5781,11 +5816,6 @@ msgstr "Touche *"
 msgctxt "SPECTRUM_ROW_HASH_KEY"
 msgid "# key"
 msgstr "Touche #"
-
-#: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_CENTER"
-msgid "Center"
-msgstr "Centre"
 
 #: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_HINT_ADJUST"

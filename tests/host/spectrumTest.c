@@ -70,6 +70,34 @@ static void test_key_assignments(void)
 	CHECK(s.hash_key == SPECTRUM_KEY_FILTER && s.star_key == SPECTRUM_KEY_AUTO_PEAK);
 }
 
+static void test_key_storage(void)
+{
+	// Every byte written by the original four-action version keeps its meaning.
+	static const uint8_t old_star[] = { SPECTRUM_KEY_CENTER_TUNER, SPECTRUM_KEY_BANDWIDTH,
+		SPECTRUM_KEY_AUTO_PEAK, SPECTRUM_KEY_FILTER };
+	for (unsigned keys = 0; keys < 16; keys++) {
+		uint8_t hash, star;
+		spectrum_keys_unpack((uint8_t)keys, &hash, &star);
+		CHECK(hash == (keys & 3u) && star == old_star[keys >> 2]);
+		CHECK(spectrum_keys_pack(hash, star) == keys);
+	}
+	for (unsigned h = 0; h < SPECTRUM_KEY_COUNT; h++) {
+		for (unsigned s = 0; s < SPECTRUM_KEY_COUNT; s++) {
+			uint8_t hash, star;
+			spectrum_keys_unpack(spectrum_keys_pack((uint8_t)h, (uint8_t)s), &hash, &star);
+			CHECK(hash == h && star == s);
+		}
+	}
+	CHECK(spectrum_keys_pack(SPECTRUM_KEY_SQL_UP, SPECTRUM_KEY_SQL_DOWN) == 0x34);
+	CHECK(spectrum_keys_pack(SPECTRUM_KEY_SQL_DOWN, SPECTRUM_KEY_SQL_UP) == 0x31);
+	static const uint8_t invalid[] = { 0x12, 0x28, 0x40, 0x80, 0xff };
+	for (unsigned i = 0; i < sizeof invalid; i++) {
+		uint8_t hash, star;
+		spectrum_keys_unpack(invalid[i], &hash, &star);
+		CHECK(hash == SPECTRUM_KEY_BANDWIDTH && star == SPECTRUM_KEY_CENTER_TUNER);
+	}
+}
+
 static void test_edge_pan(void)
 {
 	static const unsigned counts[] = { 65, 97, 129 };
@@ -204,6 +232,7 @@ int main(void)
 {
 	test_view_snapshot();
 	test_key_assignments();
+	test_key_storage();
 	test_edge_pan();
 	test_center_tuner();
 	_Static_assert(sizeof(spectrum_t) <= 824, "recent peaks must stay within their RAM budget");

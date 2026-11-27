@@ -21,7 +21,7 @@ enum { SPECTRUM_STOP, SPECTRUM_START, SPECTRUM_TUNER, SPECTRUM_CENTER, SPECTRUM_
 enum { SPECTRUM_AUTO_OFF, SPECTRUM_AUTO_SWEEP, SPECTRUM_AUTO_IMMEDIATE, SPECTRUM_AUTO_COUNT };
 // Stored key action IDs; keep their order when adding UI options.
 enum { SPECTRUM_KEY_BANDWIDTH, SPECTRUM_KEY_AUTO_PEAK, SPECTRUM_KEY_FILTER, SPECTRUM_KEY_CENTER_TUNER,
-	SPECTRUM_KEY_COUNT };
+	SPECTRUM_KEY_SQL_UP, SPECTRUM_KEY_SQL_DOWN, SPECTRUM_KEY_COUNT };
 
 // One narrowband RSSI reading per bin, not an FFT. Owned only by the radio task.
 typedef struct {
@@ -53,7 +53,26 @@ typedef struct {
 } spectrum_view_t;
 
 _Static_assert(SPECTRUM_BINS <= UINT8_MAX && SPECTRUM_BINS % 2 == 1, "spectrum bin indices fit and have a center");
-_Static_assert(SPECTRUM_KEY_COUNT == 4, "settings key actions occupy two bits each");
+_Static_assert(SPECTRUM_KEY_COUNT <= 8, "settings key actions occupy three bits each");
+
+// Keep the original low four bits, including the star key's zero = Center tuner default.
+static inline uint8_t spectrum_keys_pack(uint8_t hash, uint8_t star)
+{
+	uint8_t code = star == SPECTRUM_KEY_CENTER_TUNER ? 0 : star < SPECTRUM_KEY_CENTER_TUNER ? star + 1u : star;
+	return (uint8_t)((hash & 3u) | ((code & 3u) << 2) | ((hash & 4u) << 2) | ((code & 4u) << 3));
+}
+
+static inline void spectrum_keys_unpack(uint8_t keys, uint8_t *hash, uint8_t *star)
+{
+	*hash = SPECTRUM_KEY_BANDWIDTH;
+	*star = SPECTRUM_KEY_CENTER_TUNER;
+	uint8_t h = (keys & 3u) | ((keys >> 2) & 4u);
+	uint8_t code = ((keys >> 2) & 3u) | ((keys >> 3) & 4u);
+	if ((keys & 0xc0u) || h >= SPECTRUM_KEY_COUNT || code >= SPECTRUM_KEY_COUNT)
+		return;
+	*hash = h;
+	*star = code == 0 ? SPECTRUM_KEY_CENTER_TUNER : code <= SPECTRUM_KEY_CENTER_TUNER ? code - 1u : code;
+}
 
 static inline int16_t spectrum_level_dbm(uint8_t level)
 {

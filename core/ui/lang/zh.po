@@ -5695,6 +5695,16 @@ msgid "After sweep"
 msgstr "扫描后"
 
 #: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_VALUE_TUNER"
+msgid "Tuner"
+msgstr "调谐"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_LABEL_PEAK"
+msgid "Peak"
+msgstr "峰值"
+
+#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_BANDWIDTH"
 msgid "Bandwidth"
 msgstr "带宽"
@@ -5708,6 +5718,16 @@ msgstr "自动峰值"
 msgctxt "SPECTRUM_ROW_FILTER"
 msgid "Filter"
 msgstr "滤波器"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_KEY_SQL_UP"
+msgid "SQL up"
+msgstr "SQL +"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_KEY_SQL_DOWN"
+msgid "SQL down"
+msgstr "SQL -"
 
 #: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_CENTER_TUNER"
@@ -5735,11 +5755,6 @@ msgid "Unavailable on this channel or radio busy"
 msgstr "此信道不可用或电台忙"
 
 #: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_LABEL_PEAK"
-msgid "Peak "
-msgstr "峰值 "
-
-#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_HINT_ENTRY"
 msgid "Digits  # .  OK save  Back"
 msgstr "数字  # .  OK 保存  返回"
@@ -5760,6 +5775,16 @@ msgid "Value out of range"
 msgstr "数值超出范围"
 
 #: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_TOAST_SQUELCH_UPDATED"
+msgid "Squelch updated"
+msgstr "静噪更新"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_CENTER"
+msgid "Center"
+msgstr "中心"
+
+#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_SQUELCH"
 msgid "Squelch"
 msgstr "静噪"
@@ -5775,6 +5800,16 @@ msgid "Dwell time"
 msgstr "停留时间"
 
 #: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_HEADER"
+msgid "Show header"
+msgstr "显示信息"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_SHOW_SQUELCH"
+msgid "Show squelch"
+msgstr "显示静噪"
+
+#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_STAR_KEY"
 msgid "* key"
 msgstr "*键"
@@ -5783,11 +5818,6 @@ msgstr "*键"
 msgctxt "SPECTRUM_ROW_HASH_KEY"
 msgid "# key"
 msgstr "#键"
-
-#: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_CENTER"
-msgid "Center"
-msgstr "中心"
 
 #: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_HINT_ADJUST"

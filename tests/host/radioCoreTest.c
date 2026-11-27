@@ -2416,6 +2416,26 @@ static void test_spectrum_edge_pan(void)
 	spectrum_cmd(SPECTRUM_STOP, 0);
 }
 
+static void test_spectrum_display_preferences(void)
+{
+	dmr_start(true);
+	CHECK(ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) == 0);
+	for (int value = 0; value <= 6; value++) {
+		if (value == 3) continue;
+		CHECK(ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, value));
+		boot();
+		CHECK(ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) == value);
+	}
+	CHECK(!ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, -1));
+	CHECK(!ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, 3));
+	CHECK(!ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, 7));
+	CHECK(!ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, 255));
+	settings_t *st = settings_begin();
+	st->spectrum_display = 0xff;
+	settings_end(now);
+	CHECK(ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) == 0);
+}
+
 static void test_spectrum_key_preferences(void)
 {
 	dmr_start(true);
@@ -2445,6 +2465,10 @@ static void test_spectrum_key_preferences(void)
 			CHECK(s->hash_key == hash && s->star_key == star);
 		}
 	}
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	boot();
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(s->hash_key == SPECTRUM_KEY_SQL_DOWN && s->star_key == SPECTRUM_KEY_SQL_DOWN);
 	spectrum_cmd(SPECTRUM_STOP, 0);
 	settings_t *st = settings_begin();
 	st->spectrum_keys = 0xff;
@@ -12545,6 +12569,7 @@ int main(void)
 	test_spectrum_center_tuner();
 	test_spectrum_edge_pan();
 	test_spectrum_key_preferences();
+	test_spectrum_display_preferences();
 #if CONFIG_SCAN && CONFIG_DUAL_WATCH
 	test_spectrum_dual_restore();
 #endif

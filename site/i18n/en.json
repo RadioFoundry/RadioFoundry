@@ -2427,5 +2427,10 @@
  "editor.sig.empty": "No steps: the standard sound",
  "screen.spectrum_center_tuner": "Centered spectrum tuner",
  "screen.spectrum_panned": "Panning the spectrum window",
+ "screen.spectrum_squelch_updated": "Updating spectrum squelch with a shortcut",
+ "screen.spectrum_display_settings": "Spectrum display settings",
+ "screen.spectrum_tuner_header": "Live signal at the spectrum tuner",
+ "screen.spectrum_header_off": "Spectrum graph without the information row",
+ "screen.spectrum_squelch_off": "Spectrum graph without the squelch marker",
  "screen.spectrum_shortcuts": "Configurable spectrum shortcut keys"
 }

@@ -9,7 +9,8 @@
 #include "radio/radio_bands.h"
 
 enum { FIELD_CENTER, FIELD_SQUELCH, FIELD_STEP, FIELD_BANDWIDTH, FIELD_DWELL, FIELD_FILTER, FIELD_AUTO,
-	FIELD_CENTER_TUNER, FIELD_STAR_KEY, FIELD_HASH_KEY, FIELD_COUNT };
+	FIELD_CENTER_TUNER, FIELD_HEADER, FIELD_SHOW_SQUELCH, FIELD_STAR_KEY, FIELD_HASH_KEY, FIELD_COUNT };
+enum { FIELD_SQL_UP = FIELD_COUNT, FIELD_SQL_DOWN }; // shortcut actions only, not settings rows
 static uint8_t selected, length;
 static bool editing, stepping;
 static int32_t stepped_value;
@@ -55,9 +56,16 @@ static const char *auto_peak_name(unsigned mode)
 		mode == SPECTRUM_AUTO_SWEEP ? TR(SPECTRUM_VALUE_AFTER_SWEEP, "After sweep") : TR(VALUE_OFF, "Off");
 }
 
+static const char *header_name(unsigned mode)
+{
+	return mode == UI_SPECTRUM_TUNER ? TR(SPECTRUM_VALUE_TUNER, "Tuner") :
+		mode == UI_SPECTRUM_OFF ? TR(VALUE_OFF, "Off") : TR(SPECTRUM_LABEL_PEAK, "Peak");
+}
+
 static unsigned shortcut_field(uint8_t action)
 {
-	static const uint8_t fields[] = { FIELD_BANDWIDTH, FIELD_AUTO, FIELD_FILTER, FIELD_CENTER_TUNER };
+	static const uint8_t fields[] = { FIELD_BANDWIDTH, FIELD_AUTO, FIELD_FILTER, FIELD_CENTER_TUNER,
+		FIELD_SQL_UP, FIELD_SQL_DOWN };
 	return fields[action < SPECTRUM_KEY_COUNT ? action : SPECTRUM_KEY_BANDWIDTH];
 }
 
@@ -66,6 +74,8 @@ static const char *choice_name(unsigned field)
 	if (field == FIELD_BANDWIDTH) return TR(SPECTRUM_ROW_BANDWIDTH, "Bandwidth");
 	if (field == FIELD_AUTO) return TR(SPECTRUM_ROW_AUTO_PEAK, "Auto peak");
 	if (field == FIELD_FILTER) return TR(SPECTRUM_ROW_FILTER, "Filter");
+	if (field == FIELD_SQL_UP) return TR(SPECTRUM_KEY_SQL_UP, "SQL up");
+	if (field == FIELD_SQL_DOWN) return TR(SPECTRUM_KEY_SQL_DOWN, "SQL down");
 	return TR(SPECTRUM_ROW_CENTER_TUNER, "Center tuner");
 }
 
@@ -98,6 +108,11 @@ static void value_text(sbuf_t *b, unsigned field)
 		sb_str(b, s->narrow ? TR(SPECTRUM_VALUE_NARROW, "Narrow") : TR(SPECTRUM_VALUE_WIDE, "Wide"));
 	} else if (field == FIELD_CENTER_TUNER) {
 		sb_str(b, s->center_tuner ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
+	} else if (field == FIELD_HEADER) {
+		sb_str(b, header_name((unsigned)ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) & UI_SPECTRUM_HEADER_MASK));
+	} else if (field == FIELD_SHOW_SQUELCH) {
+		sb_str(b, (ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY) & UI_SPECTRUM_HIDE_SQUELCH) ?
+			TR(VALUE_OFF, "Off") : TR(VALUE_ON, "On"));
 	} else if (field == FIELD_HASH_KEY || field == FIELD_STAR_KEY) {
 		sb_str(b, choice_name(shortcut_field(field == FIELD_HASH_KEY ? s->hash_key : s->star_key)));
 	} else {
@@ -109,7 +124,11 @@ static void spectrum_draw(void)
 {
 	const spectrum_view_t *s = &ui_view()->spectrum;
 	const font_t *f = ui_layout.tiny;
+	uint8_t display = (uint8_t)ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY);
+	unsigned header = display & UI_SPECTRUM_HEADER_MASK;
+	bool show_squelch = !(display & UI_SPECTRUM_HIDE_SQUELCH);
 	bool compact = gfx_height() < 100;
+	bool footer = !compact || ui_st.toast != NULL;
 	gfx_clear(ui_col.bg);
 	const char *title = gfx_height() >= UI_TALL_PX ? TR(SPECTRUM_TITLE_ANALYZER, "Spectrum Analyzer") : NULL;
 	int y = ui_draw_top_font(ui_view(), &ui_st, title, NULL, f) + (compact ? 1 : 2);
@@ -124,7 +143,7 @@ static void spectrum_draw(void)
 	sbuf_t b;
 	sb_init(&b, text, sizeof text);
 	value_text(&b, FIELD_CENTER);
-	bool show_tuner = !s->center_tuner || s->tuner != s->bins / 2u;
+	bool show_tuner = header != UI_SPECTRUM_TUNER && (!s->center_tuner || s->tuner != s->bins / 2u);
 	sb_init(&b, tuner, sizeof tuner);
 	if (show_tuner)
 		frequency_text(&b, spectrum_view_frequency(s, s->tuner));
@@ -142,19 +161,22 @@ static void spectrum_draw(void)
 		gfx_text(f, gfx_width() - gfx_text_width(f, tuner), y, tuner, ui_col.dim);
 	y += f->h + (compact ? 1 : 3);
 
-	unsigned peak = spectrum_view_strongest(s);
-	if (spectrum_view_peak_level(s, peak) != SPECTRUM_EMPTY) {
+	unsigned peak = header == UI_SPECTRUM_PEAK ? spectrum_view_strongest(s) : s->tuner;
+	uint8_t header_level = header == UI_SPECTRUM_TUNER ? s->level[peak] : spectrum_view_peak_level(s, peak);
+	if (header != UI_SPECTRUM_OFF && (header == UI_SPECTRUM_TUNER || header_level != SPECTRUM_EMPTY)) {
 		sb_init(&b, text, sizeof text);
-		sb_str(&b, TR(SPECTRUM_LABEL_PEAK, "Peak "));
+		sb_str(&b, header_name(header));
+		sb_chr(&b, ' ');
 		frequency_text(&b, spectrum_view_frequency(s, peak));
 		sb_chr(&b, ' ');
-		sb_i32(&b, spectrum_level_dbm(spectrum_view_peak_level(s, peak)));
+		if (header_level == SPECTRUM_EMPTY) sb_str(&b, "--");
+		else sb_i32(&b, spectrum_level_dbm(header_level));
 		if (gfx_text_width(f, text) + gfx_text_width(f, " dBm") <= gfx_width()) sb_str(&b, " dBm");
 		gfx_text(f, 0, y, text, ui_col.dim);
 		y += f->h + (compact ? 1 : 2);
 	}
-	int bottom = (compact ? gfx_height() : ui_layout.hint_y) - f->h - 5;
-	int left = 0;
+	int bottom = (footer ? ui_layout.hint_y : gfx_height()) - f->h - 5;
+	int left = compact && show_squelch ? 6 : 0;
 	int right = gfx_width() - 1;
 	if (bottom > y + 4) {
 		for (int dbm = -120 + s->scale_db; dbm <= -40 + s->scale_db; dbm += 40) {
@@ -180,8 +202,15 @@ static void spectrum_draw(void)
 			int label_y = level_y((int16_t)dbm, y, bottom) - f->h / 2;
 			if (label_y < y) label_y = y;
 			if (label_y > bottom - f->h + 1) label_y = bottom - f->h + 1;
-			gfx_fill(0, label_y, gfx_text_width(f, text) + 4, f->h, ui_col.bg);
-			gfx_text(f, 2, label_y, text, ui_col.dim);
+			int label_x = show_squelch ? 8 : 2;
+			gfx_fill(0, label_y, gfx_text_width(f, text) + label_x + 2, f->h, ui_col.bg);
+			gfx_text(f, label_x, label_y, text, ui_col.dim);
+		}
+		int sy = level_y(s->squelch_dbm, y, bottom);
+		for (int d = -2; show_squelch && d <= 2; d++) {
+			if (sy + d < y || sy + d > bottom) continue;
+			gfx_hline(0, sy + d, 6, ui_col.bg);
+			gfx_hline(0, sy + d, 5 - 2 * (d < 0 ? -d : d), ui_col.dim);
 		}
 		int x = left + s->tuner * (right - left) / (s->bins - 1);
 		for (int d = 0; d < 3; d++)
@@ -189,11 +218,11 @@ static void spectrum_draw(void)
 	}
 	sb_init(&b, text, sizeof text);
 	frequency_text(&b, spectrum_view_frequency(s, 0));
-	gfx_text(f, left, bottom + 4, text, ui_col.dim);
+	gfx_text(f, 0, bottom + 4, text, ui_col.dim);
 	sb_init(&b, text, sizeof text);
 	frequency_text(&b, spectrum_view_frequency(s, s->bins - 1));
 	gfx_text(f, right - gfx_text_width(f, text), bottom + 4, text, ui_col.dim);
-	if (!compact)
+	if (footer)
 		ui_draw_bottom_font(&ui_st, editing ? TR(SPECTRUM_HINT_ENTRY, "Digits  # .  OK save  Back") :
 				(board.caps & CAP_KEYPAD) ? TR(SPECTRUM_HINT_MAIN, "OK settings  Type freq  Back") :
 				TR(SPECTRUM_HINT_NO_KEYPAD, "OK settings  Back"), f);
@@ -323,6 +352,7 @@ static void change_choice(unsigned field, bool feedback)
 	const spectrum_view_t *s = &ui_view()->spectrum;
 	uint8_t cmd;
 	int32_t value;
+	bool squelch = field == FIELD_SQL_UP || field == FIELD_SQL_DOWN;
 	if (field == FIELD_BANDWIDTH) {
 		cmd = SPECTRUM_BANDWIDTH;
 		value = s->bins == 65 ? 97 : s->bins == 97 ? 129 : 65;
@@ -339,6 +369,11 @@ static void change_choice(unsigned field, bool feedback)
 	} else if (field == FIELD_CENTER_TUNER) {
 		cmd = SPECTRUM_CENTER_TUNER;
 		value = !s->center_tuner;
+	} else if (squelch) {
+		cmd = SPECTRUM_SQUELCH;
+		value = s->squelch_dbm + (field == FIELD_SQL_UP ? 5 : -5);
+		if (value < -160) value = -160;
+		if (value > 0) value = 0;
 	} else {
 		return;
 	}
@@ -347,9 +382,12 @@ static void change_choice(unsigned field, bool feedback)
 	static char text[64];	// ui_toast keeps the pointer until the message expires
 	sbuf_t b;
 	sb_init(&b, text, sizeof text);
-	sb_str(&b, choice_name(field));
+	sb_str(&b, squelch ? TR(SPECTRUM_TOAST_SQUELCH_UPDATED, "Squelch updated") : choice_name(field));
 	sb_str(&b, ": ");
-	if (field == FIELD_BANDWIDTH) {
+	if (squelch) {
+		sb_i32(&b, value);
+		sb_str(&b, " dBm");
+	} else if (field == FIELD_BANDWIDTH) {
 		bandwidth_text(&b, s->step_hz * (value - 1u));
 		sb_str(&b, " MHz");
 	} else if (field == FIELD_AUTO) {
@@ -402,19 +440,20 @@ static bool spectrum_key(const input_event_t *ev)
 }
 
 static uint16_t settings_count(void) { return FIELD_COUNT - 1u + !(board.caps & CAP_KEYPAD); }
-static unsigned settings_field(uint16_t i) { return i == FIELD_COUNT - 1u ? FIELD_CENTER : i + 1u; }
+static unsigned settings_field(uint16_t i) { return i + ((board.caps & CAP_KEYPAD) != 0); }
 
 static void settings_item(uint16_t i, ui_item_t *it)
 {
-	static const tr_id_t labels[] = { TRN(SPECTRUM_ROW_SQUELCH, "Squelch"), TRN(SPECTRUM_VALUE_SWEEPING, "Sweeping"),
+	static const tr_id_t labels[] = { TRN(SPECTRUM_ROW_CENTER, "Center"),
+		TRN(SPECTRUM_ROW_SQUELCH, "Squelch"), TRN(SPECTRUM_VALUE_SWEEPING, "Sweeping"),
 		TRN(SPECTRUM_ROW_BANDWIDTH, "Bandwidth"), TRN(SPECTRUM_ROW_DWELL, "Dwell time"),
 		TRN(SPECTRUM_ROW_FILTER, "Filter"), TRN(SPECTRUM_ROW_AUTO_PEAK, "Auto peak"),
 		TRN(SPECTRUM_ROW_CENTER_TUNER, "Center tuner"),
-		TRN(SPECTRUM_ROW_STAR_KEY, "* key"), TRN(SPECTRUM_ROW_HASH_KEY, "# key"),
-		TRN(SPECTRUM_ROW_CENTER, "Center") };
+		TRN(SPECTRUM_ROW_HEADER, "Show header"), TRN(SPECTRUM_ROW_SHOW_SQUELCH, "Show squelch"),
+		TRN(SPECTRUM_ROW_STAR_KEY, "* key"), TRN(SPECTRUM_ROW_HASH_KEY, "# key") };
 	if (i >= settings_count()) return;
-	str_copy(it->label, sizeof it->label, tr(labels[i]));
 	unsigned field = settings_field(i);
+	str_copy(it->label, sizeof it->label, tr(labels[field]));
 	if (editing && selected == field)
 		it->flags |= UI_ITEM_EDIT;
 	sbuf_t b;
@@ -432,7 +471,14 @@ static void settings_select(uint16_t i, bool hold)
 	if (hold || i >= settings_count()) return;
 	unsigned field = settings_field(i);
 	const spectrum_view_t *s = &ui_view()->spectrum;
-	if (field == FIELD_HASH_KEY || field == FIELD_STAR_KEY) {
+	if (field == FIELD_HEADER || field == FIELD_SHOW_SQUELCH) {
+		uint8_t display = (uint8_t)ui_svc_setting_get(UI_SET_SPECTRUM_DISPLAY);
+		if (field == FIELD_HEADER)
+			display = (uint8_t)((display & ~UI_SPECTRUM_HEADER_MASK) |
+				(((display & UI_SPECTRUM_HEADER_MASK) + 1u) % 3u));
+		else display ^= UI_SPECTRUM_HIDE_SQUELCH;
+		ui_svc_setting_set(UI_SET_SPECTRUM_DISPLAY, display);
+	} else if (field == FIELD_HASH_KEY || field == FIELD_STAR_KEY) {
 		ui_svc_spectrum(field == FIELD_HASH_KEY ? SPECTRUM_HASH_KEY : SPECTRUM_STAR_KEY,
 			((field == FIELD_HASH_KEY ? s->hash_key : s->star_key) + 1u) % SPECTRUM_KEY_COUNT);
 	} else if (field == FIELD_BANDWIDTH || field == FIELD_AUTO || field == FIELD_FILTER || field == FIELD_CENTER_TUNER) {
