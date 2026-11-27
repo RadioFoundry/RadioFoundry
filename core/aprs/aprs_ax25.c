@@ -124,6 +124,10 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 	// says why nothing is sent
 	uint8_t mark = settings_aprs_freq_mark(cp->tx_hz);
 	bool new_freq = mark != 0 && st->aprs_cp_freq != mark;
+	// None taken yet (a record from before the marker) while the radio has a region other than the default: the
+	// record's frequency may be one no one meant for APRS (a CPS's revert channel). Mark it taken and keep ours; a
+	// radio still on the default takes it, and a later CPS write of another frequency is taken as usual
+	bool keep_freq = new_freq && st->aprs_cp_freq == 0 && st->aprs_stored == 1 && st->aprs_region != APRS_REGION_NA;
 	uint8_t region = APRS_REGION_CUSTOM;
 	for (uint8_t r = 0; r < APRS_REGION_CUSTOM; r++) {
 		if (region_hz[r] == cp->tx_hz) {
@@ -148,15 +152,17 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 		settings_set_aprs_cp_ssid(s, (uint8_t)(cp->ssid + 1u));
 	}
 	if (new_freq) {
-		s->aprs_region = region;
-		if (region == APRS_REGION_CUSTOM) {
-			s->aprs_freq_hz = cp->tx_hz;
+		if (!keep_freq) {
+			s->aprs_region = region;
+			if (region == APRS_REGION_CUSTOM) {
+				s->aprs_freq_hz = cp->tx_hz;
+			}
 		}
 		s->aprs_cp_freq = mark;
 	}
 	settings_end(aprs_s.now);
 	LOCK();
-	if (new_freq) {
+	if (new_freq && !keep_freq) {
 		aprs_s.cfg.region = region;
 		if (region == APRS_REGION_CUSTOM) {
 			aprs_s.cfg.freq_hz = cp->tx_hz;
@@ -198,6 +204,9 @@ static bool write_codeplug(uint8_t path, uint8_t ssid, uint32_t hz)
 	if (cp.ssid != ssid && !codeplug_set_aprs_ssid(1, ssid)) {
 		return false;
 	}
+	if (hz >= 1000000000u) {
+		hz = 0;		// past the record's 8 BCD digits of 10 Hz: the record keeps its own
+	}
 	if (hz != 0 && cp.tx_hz != hz && !codeplug_set_aprs_freq(1, hz)) {
 		return false;
 	}
@@ -213,8 +222,14 @@ static bool write_codeplug(uint8_t path, uint8_t ssid, uint32_t hz)
 
 bool aprs_to_codeplug(void)
 {
+	// Between a record write and its marker's, take_codeplug would see a CPS change and take back what was just
+	// written over a newer change on the page: it waits for the job (aprs_ax25_identity)
+	LOCK();
+	aprs_s.cp_writing = true;
+	UNLOCK();
 	// A change that came while the job waited or ran couldn't post a job of its own: write again until the
 	// codeplug holds the path, SSID and frequency in use (a few times at most)
+	bool ok = true;
 	for (uint8_t tries = 0; tries < 3u; tries++) {
 		LOCK();
 		uint8_t path = aprs_s.cfg.path < APRS_PATH_COUNT ? aprs_s.cfg.path : APRS_PATH_WIDE1_WIDE2;
@@ -222,16 +237,20 @@ bool aprs_to_codeplug(void)
 		uint32_t hz = aprs_cfg_freq(&aprs_s.cfg);
 		UNLOCK();
 		if (!write_codeplug(path, ssid, hz)) {
-			return false;
+			ok = false;
+			break;
 		}
 		LOCK();
 		bool same = aprs_s.cfg.path == path && aprs_s.cfg.ssid == ssid && aprs_cfg_freq(&aprs_s.cfg) == hz;
 		UNLOCK();
 		if (same) {
-			return true;
+			break;
 		}
 	}
-	return true;
+	LOCK();
+	aprs_s.cp_writing = false;
+	UNLOCK();
+	return ok;
 }
 
 // Who we are: the debug link's test call, the settings' radio name, the codeplug's callsign; its first word, upper
@@ -278,9 +297,13 @@ void aprs_ax25_identity(void)
 	}
 	aprs_s.block = rf_block();
 	aprs_changed();
+	bool writing = aprs_s.cp_writing;
 	UNLOCK();
-	aprs_s.cp_serial = codeplug_serial();
 	aprs_s.ident_ms = aprs_s.now;
+	if (writing) {
+		return;		// the serial stays unseen: the next service tick looks again, after the job
+	}
+	aprs_s.cp_serial = codeplug_serial();
 	if (have_cp) {
 		take_codeplug(&st, &cp);
 	}
@@ -529,6 +552,12 @@ void aprs_ax25_init(uint32_t now_ms)
 
 void aprs_ax25_poll(uint32_t now_ms)
 {
+	LOCK();
+	bool writing = aprs_s.cp_writing;
+	UNLOCK();
+	if (writing) {
+		return;		// the serial it moves is looked at once the job is done
+	}
 	if (codeplug_serial() != aprs_s.cp_serial || now_ms - aprs_s.ident_ms >= IDENT_CHECK_MS * 12u) {
 		aprs_ax25_identity();
 	}

@@ -388,7 +388,8 @@ Tools > APRS (`ui_aprs.c`): the body shows the callsign and frequency, why nothi
 frequency, not amateur, no AFSK), the position and its source, the next beacon and the count sent. Rows: Send
 position now, Automatic beacons, Frequency (region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand
 144.575, Japan 144.660, China 144.640, Custom; OK steps to the next. The step after China opens a frequency entry
-on the row, in the VFO's digits (`ui_freq_entry_*`, the board's receive bands) in `ui_st.entry_digits`: OK sets the
+on the row, with the VFO's digit rules (`ui_freq_entry_*`, the board's receive bands) in a buffer of its own (quick
+settings can open over the page, and Split types into the VFO's), and the hint "0-9 type  OK set  Back": OK sets the
 typed frequency and Custom; OK with nothing typed keeps the custom frequency set before, or with none steps on to
 N America; Back takes back a digit, then leaves the entry with the region unchanged; another key leaves the entry
 and does its own job. From Custom, OK wraps to N America), Power (As channel, then each of the board's levels), Path (the
@@ -462,13 +463,17 @@ The path, the SSID and the frequency live in both places, and the one changed la
   codeplug serial changes (a CPS write). A path that isn't one of the five (another callsign, a second entry without a
   first) is left alone. The frequency's marker is `aprs_cp_freq`, an 8-bit hash of the frequency
   (`settings_aprs_freq_mark`, 1-255; 0 = none yet). A frequency in the record (0x37, BCD of 10 Hz units, LE; 0 =
-  none) whose mark differs becomes the region with that frequency, else Custom with it in `aprs_freq_hz`. One outside
+  none) whose mark differs becomes the region with that frequency, else Custom with the frequency in `aprs_freq_hz`. One outside
   the ham bands is taken too: the APRS page then says why nothing is sent. Two frequencies with the same mark only
-  cost a CPS change to the second being missed; the radio keeps its own.
-- Radio to codeplug: a change of the path, SSID or frequency on the APRS page posts a storage job (`aprs_to_codeplug`) that
-  rewrites what differs in the record (the two path entries, callsign space padded with an SSID byte; the SSID byte at
-  0x08; the frequency in use, a region's too, at 0x37) and sets `aprs_cp_path` and `aprs_cp_freq` to match. No record is made when there is none: the radio then keeps them in the
-  settings only. A change over the debug link stays in the settings.
+  cost a CPS change to the second being missed; the radio keeps its own. On the first take (`aprs_cp_freq` 0, a record from before the
+  marker) a radio already set to a region other than N America keeps that region and only marks the record's
+  frequency as taken: the frequency may be a revert channel no one meant for APRS.
+- Radio to codeplug: a change of the path, SSID or frequency on the APRS page posts a storage job
+  (`aprs_to_codeplug`) that rewrites what differs in the record (the two path entries, callsign space padded with an
+  SSID byte; the SSID byte at 0x08; the frequency in use, a region's too, at 0x37) and sets `aprs_cp_path` and
+  `aprs_cp_freq` to match. No record is made when there is none: the radio then keeps them in the settings only. A
+  change over the debug link stays in the settings. While the job runs, the record and its markers can differ for a
+  moment: the codeplug check waits until the job is done, so a newer change on the page isn't taken back.
 
 The SSID marker uses `aprs_cp_path`'s upper bits, so a record from before it reads "none yet" and the codeplug's SSID
 is taken once at the first start-up, unless it is 0: that first time a 0 is marked as taken and the radio keeps its own

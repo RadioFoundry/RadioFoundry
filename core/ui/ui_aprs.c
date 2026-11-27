@@ -153,15 +153,17 @@ static const char *aprs_body(void)
 
 static uint16_t aprs_count(void) { return N_ROWS; }
 
-// The custom frequency typed on the Frequency row (aprs.md 10). The digits go in ui_st.entry_digits, as the VFO's
-// and Split's: neither entry is open while this page is up, and each clears the buffer when it opens
+// The custom frequency typed on the Frequency row (aprs.md 10). Its own digits, not the VFO's buffer: quick settings
+// open over this page (Split types into that buffer) and return to it with the entry still open
 static bool freq_typing;
+static char freq_digits[UI_ENTRY_MAX + 1];
+static uint8_t freq_len;
 
 static void freq_start(void)
 {
 	freq_typing = true;
-	ui_st.entry_len = 0;
-	ui_st.entry_digits[0] = '\0';
+	freq_len = 0;
+	freq_digits[0] = '\0';
 	ui_toast(TR(APRS_TOAST_TYPE_FREQUENCY, "Type the frequency, then press OK"));
 }
 
@@ -171,8 +173,8 @@ static void freq_done(void)
 {
 	aprs_cfg_t c;
 	ui_svc_aprs_cfg(&c);
-	if (ui_st.entry_len > 0) {
-		uint32_t hz = ui_freq_entry_hz(ui_st.entry_digits, ui_st.entry_len);
+	if (freq_len > 0) {
+		uint32_t hz = ui_freq_entry_hz(freq_digits, freq_len);
 		if (hz == 0) {
 			return;		// the toast says why; still typing
 		}
@@ -192,13 +194,13 @@ static bool aprs_key(const input_event_t *ev)
 	bool digit = ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9;
 	if (digit || ev->action == ACT_SELECT || ev->action == ACT_BACK) {
 		if (digit && press) {
-			(void)ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len,
+			(void)ui_freq_entry_digit(freq_digits, &freq_len,
 				(char)('0' + (ev->action - ACT_DIGIT_0)));
 		} else if (ev->action == ACT_SELECT && press) {
 			freq_done();
 		} else if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
-			if (ui_st.entry_len > 0) {
-				ui_st.entry_digits[--ui_st.entry_len] = '\0';	// takes the last digit back
+			if (freq_len > 0) {
+				freq_digits[--freq_len] = '\0';	// takes the last digit back
 			} else {
 				freq_typing = false;	// leaves the entry, the frequency unchanged
 			}
@@ -217,6 +219,11 @@ static bool aprs_key(const input_event_t *ev)
 static void aprs_enter(void)
 {
 	freq_typing = false;
+}
+
+static const char *aprs_hint(void)
+{
+	return freq_typing ? TR(APRS_HINT_TYPING, "0-9 type  OK set  Back") : TR(HINT_0_9_PICK_BACK, "0-9 pick  Back");
 }
 
 static uint8_t interval_index(uint16_t s)
@@ -268,11 +275,11 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 			it->flags |= UI_ITEM_DIM;	// no APRS on RF here
 		} else if (freq_typing) {
 			// What has been typed so far: "145.57_"
-			for (uint8_t k = 0; k < ui_st.entry_len; k++) {
+			for (uint8_t k = 0; k < freq_len; k++) {
 				if (k == UI_ENTRY_MHZ) {
 					sb_chr(&b, '.');
 				}
-				sb_chr(&b, ui_st.entry_digits[k]);
+				sb_chr(&b, freq_digits[k]);
 			}
 			sb_chr(&b, '_');
 		} else if (c.region == APRS_REGION_CUSTOM) {
@@ -390,8 +397,8 @@ static void aprs_select(uint16_t i, bool hold)
 }
 
 const ui_scr_def_t ui_aprs_screen = {
-	.name = "aprs", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = TRX(WORD_APRS, "APRS"),
-	.hint = TRN(HINT_0_9_PICK_BACK, "0-9 pick  Back"),
+	.name = "aprs", .flags = SF_LIST | SF_NUMBERED | SF_FIELD | SF_HINT_FN, .prefix = TRX(WORD_APRS, "APRS"),
+	.hint_fn = aprs_hint,
 	.count = aprs_count, .item = aprs_item, .select = aprs_select, .key = aprs_key, .enter = aprs_enter,
 	.body = aprs_body,
 };

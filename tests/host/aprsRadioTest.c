@@ -354,6 +354,7 @@ bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid)
 	return true;
 }
 static unsigned cp_hz_writes;
+static void (*cp_hz_hook)(void);	// once, after a frequency write: what another task does meanwhile
 bool codeplug_set_aprs_freq(uint8_t n, uint32_t hz)
 {
 	if (n != 1) {
@@ -362,6 +363,11 @@ bool codeplug_set_aprs_freq(uint8_t n, uint32_t hz)
 	cp_hz = hz;
 	cp_hz_writes++;
 	cp_serial++;
+	void (*hook)(void) = cp_hz_hook;
+	cp_hz_hook = NULL;
+	if (hook != NULL) {
+		hook();
+	}
 	return true;
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1])
@@ -437,6 +443,7 @@ static void reset(void)
 	cp_ssid_writes = 0;
 	cp_hz = 0;
 	cp_hz_writes = 0;
+	cp_hz_hook = NULL;
 	settings_init();
 	radio_sm_init(&sm, now);
 	aprs_set_test_call("");
@@ -1649,6 +1656,15 @@ static void test_codeplug_ssid(void)
 	CHECK(c.path == APRS_PATH_WIDE2 && c.ssid == 0);
 }
 
+// The page picks Australia, as the UI task does while the storage job runs
+static void pick_australia(void)
+{
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.region = APRS_REGION_AU;
+	aprs_set_cfg(&c, now);
+}
+
 // The APRS frequency lives in the codeplug record too (aprs.md 11): a CPS's new one is taken (a region's becomes that
 // region, any other Custom), the radio's own change isn't taken back and is written into the record
 static void test_codeplug_freq(void)
@@ -1705,6 +1721,48 @@ static void test_codeplug_freq(void)
 	run(200);
 	aprs_get_cfg(&c);
 	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 151000000u);
+	// A page change while the job writes the one before (the record holds it, its marker not yet) isn't taken back
+	c.region = APRS_REGION_EU;
+	aprs_set_cfg(&c, now);
+	cp_hz_hook = pick_australia;
+	CHECK(aprs_to_codeplug() && cp_hz == 145175000u);
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_AU && st.aprs_cp_freq == settings_aprs_freq_mark(145175000u));
+}
+
+// The first take after an upgrade (no frequency marker yet) leaves a region picked on the radio alone: the record's
+// frequency may be a revert channel no one meant for APRS. A radio on the default takes it (test_codeplug_freq)
+static void test_codeplug_freq_first_take(void)
+{
+	aprs_cfg_t c;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	aprs_get_cfg(&c);
+	c.region = APRS_REGION_EU;		// picked on the radio
+	aprs_set_cfg(&c, now);
+	run(200);
+	settings_read(&st);
+	CHECK(st.aprs_stored == 1 && st.aprs_region == APRS_REGION_EU && st.aprs_cp_freq == 0);
+	cp_hz = 145570000u;			// a record from before the marker holds a frequency
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_EU && st.aprs_region == APRS_REGION_EU);
+	CHECK(st.aprs_cp_freq == settings_aprs_freq_mark(145570000u));	// marked as taken: not looked at again
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_EU);
+	cp_hz = 146520000u;			// a later CPS write is taken
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 146520000u);
 }
 
 // The first take after an upgrade (no SSID marker yet) leaves a codeplug SSID of 0 alone: the radio keeps sending
@@ -2179,6 +2237,7 @@ int main(void)
 	test_codeplug_ssid();
 	test_codeplug_ssid_first_zero();
 	test_codeplug_freq();
+	test_codeplug_freq_first_take();
 	test_rf_failures();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();

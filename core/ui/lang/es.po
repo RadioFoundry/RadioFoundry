@@ -913,6 +913,16 @@ msgid "Type the frequency, then press OK"
 msgstr "Teclea la frecuencia y pulsa OK"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_TYPING"
+msgid "0-9 type  OK set  Back"
+msgstr "0-9 teclear  OK fijar  Atrás"
+
+#: core/ui/ui_aprs.c
+msgctxt "HINT_0_9_PICK_BACK"
+msgid "0-9 pick  Back"
+msgstr "0-9 elegir  Atrás"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_ROW_SEND_NOW"
 msgid "Send position now"
 msgstr "Enviar posición ya"
@@ -1011,11 +1021,6 @@ msgstr "Balizas off"
 msgctxt "APRS_WHY_CANT_RECEIVE"
 msgid "This radio can't receive APRS"
 msgstr "Esta radio no recibe APRS"
-
-#: core/ui/ui_aprs.c
-msgctxt "HINT_0_9_PICK_BACK"
-msgid "0-9 pick  Back"
-msgstr "0-9 elegir  Atrás"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_TITLE_HEARD"

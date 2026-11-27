@@ -1411,7 +1411,8 @@ static void put_aprs_path(uint8_t *p, const char *text)
 	}
 }
 
-bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
+// Rewrite len bytes at off of configuration n's record, after checking it holds a configuration
+static bool aprs_patch(uint8_t n, uint8_t off, const uint8_t *bytes, uint8_t len)
 {
 	uint8_t b[APRS_SIZE];
 	if (n < 1 || n > CODEPLUG_APRS_CONFIGS) {
@@ -1421,61 +1422,33 @@ bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
 	storage_lock();
 	bool ok = source == CODEPLUG_OPENFW && flash_read(addr, b, sizeof(b));
 	uint16_t magic = le16(&b[0x3E]);
-	ok = ok && b[0] != 0xFF && b[0] != 0x00 && (magic == APRS_MAGIC || magic == APRS_MAGIC - 1u);
-	if (ok) {
-		put_aprs_path(&b[0x0F], path1);
-		put_aprs_path(&b[0x16], path2);
-		ok = flash_write(addr + 0x0Fu, &b[0x0F], 14);
-	}
+	ok = ok && b[0] != 0xFF && b[0] != 0x00 && (magic == APRS_MAGIC || magic == APRS_MAGIC - 1u) &&
+	     flash_write(addr + off, bytes, len);
 	if (ok) {
 		serial++;
 	}
 	storage_unlock();
 	return ok;
+}
+
+bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
+{
+	uint8_t p[14];
+	put_aprs_path(&p[0], path1);
+	put_aprs_path(&p[7], path2);
+	return aprs_patch(n, 0x0Fu, p, sizeof(p));
 }
 
 bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid)
 {
-	uint8_t b[APRS_SIZE];
-	if (n < 1 || n > CODEPLUG_APRS_CONFIGS || ssid > 15) {
-		return false;
-	}
-	uint32_t addr = APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE;
-	storage_lock();
-	bool ok = source == CODEPLUG_OPENFW && flash_read(addr, b, sizeof(b));
-	uint16_t magic = le16(&b[0x3E]);
-	ok = ok && b[0] != 0xFF && b[0] != 0x00 && (magic == APRS_MAGIC || magic == APRS_MAGIC - 1u);
-	if (ok) {
-		b[0x08] = ssid;
-		ok = flash_write(addr + 0x08u, &b[0x08], 1);
-	}
-	if (ok) {
-		serial++;
-	}
-	storage_unlock();
-	return ok;
+	return ssid <= 15 && aprs_patch(n, 0x08u, &ssid, 1);
 }
 
 bool codeplug_set_aprs_freq(uint8_t n, uint32_t hz)
 {
-	uint8_t b[APRS_SIZE];
-	if (n < 1 || n > CODEPLUG_APRS_CONFIGS) {
-		return false;
-	}
-	uint32_t addr = APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE;
-	storage_lock();
-	bool ok = source == CODEPLUG_OPENFW && flash_read(addr, b, sizeof(b));
-	uint16_t magic = le16(&b[0x3E]);
-	ok = ok && b[0] != 0xFF && b[0] != 0x00 && (magic == APRS_MAGIC || magic == APRS_MAGIC - 1u);
-	if (ok) {
-		put_freq(&b[0x37], hz);
-		ok = flash_write(addr + 0x37u, &b[0x37], 4);
-	}
-	if (ok) {
-		serial++;
-	}
-	storage_unlock();
-	return ok;
+	uint8_t f[4];
+	put_freq(f, hz);
+	return aprs_patch(n, 0x37u, f, sizeof(f));
 }
 #endif
 
