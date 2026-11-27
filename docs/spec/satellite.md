@@ -193,7 +193,10 @@ with `catalog_id`, `rx_hz`, `tx_hz`, and `tx_tone_tenths`. Each record has `cata
 caller-selected limit. Older elements are shown and require explicit acceptance (or the command is cancelled); a
 future epoch more than one day ahead of the PC's UTC clock is invalid.
 
-TLE text is exactly the two 69-character lines, without line endings. Validation checks the standard line number,
+TLE text is exactly the two 69-character lines, without line endings. The catalog ID in columns 3-7 is five digits
+(1-99999) or, for the newer six-digit NORAD numbers, Alpha-5: a capital letter stands for the first two digits, A = 10
+to Z = 33 without I and O, so `A1101` is 101101 and `Z9999` (339999) is the highest. The firmware, the PC utility and
+the site read both forms and use the number everywhere else. Validation checks the standard line number,
 catalog-ID columns, checksum column, epoch syntax and calendar day, and finite/ranged orbital fields used by propagation.
 Every entry is validated before any install begins. Duplicate IDs, malformed entries, or a provider response that
 omits or adds an ID reject the complete batch.
@@ -230,8 +233,11 @@ guessed names.
 `ABORT` takes a transaction ID `u16` and discards an uncommitted batch. Firmware continues to support protocol-v2
 additive TLE transfers for older clients. Schema-v2 replacement bundles require protocol v4. Schema-v3 bundles require protocol v5 and
 stage TLEs and frequency values before one commit; protocol v5 supports up to four selected profiles, while protocol
-v6 and later support the full ten. The host reads both back before reporting success. The standalone
-`profiles` command requires protocol v3 or newer. `PROFILE_GET` returns up to 10 catalog IDs and `PROFILE_SET` accepts
+v6 and later support the full ten. The host reads both back before reporting success. Protocol v8 changes no
+operation: it marks firmware that stores catalog numbers above 99999 (Alpha-5). Firmware reporting v7 or older rejects
+such a record, so the PC utility and the site refuse a selection containing one on that radio before any transaction
+begins and ask for a firmware update.
+The standalone `profiles` command requires protocol v3 or newer. `PROFILE_GET` returns up to 10 catalog IDs and `PROFILE_SET` accepts
 IDs from the built-in catalog for the legacy profile-only workflow. The PC utility uses replacement for every install
 and sync, including schema-v1 bundles, and requires protocol v4 or later. PC TLE synchronization does not invoke
 `SYNC_CHANNELS` and does not create, modify, or remove codeplug zones or channels. The separate `SYNC_CHANNELS`

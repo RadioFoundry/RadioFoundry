@@ -22,7 +22,8 @@ TLEs and verifies their epochs. The page can push directly over USB/serial or cr
 Direct push requires a supported browser and a secure context (HTTPS or localhost).
 After an install or update, the web flasher offers this page when the installed build reports satellite support.
 
-Install only the catalog IDs you choose. Repeat `--id` or separate IDs with commas:
+Install only the catalog IDs you choose. Repeat `--id` or separate IDs with commas. Newer satellites have six-digit
+numbers, which TLE files write in the Alpha-5 form (`A1101` for 101101); either form works with `--id`:
 
 ```sh
 python tools/satellite_tle.py sync --source amsat --id 25544,43017
@@ -61,7 +62,9 @@ python tools/satellite_tle.py profiles --id 25544,27607,43017
 
 The PC utility requires protocol v4 or later for replacement. Schema-v3 frequency bundles require protocol v5.
 Protocol v5 supports up to four selected frequency profiles;
-protocol v6 supports the full ten. Profile-only ID changes require protocol v3 or newer.
+protocol v6 supports the full ten. Profile-only ID changes require protocol v3 or newer. Catalog numbers above 99999
+(Alpha-5) require protocol v8: on older firmware the utility and the site refuse the selection before writing
+anything; update the radio's firmware first.
 
 ## Enter a TLE on the radio
 

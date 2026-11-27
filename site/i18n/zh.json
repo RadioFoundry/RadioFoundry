@@ -154,6 +154,7 @@
  "tools.satellite.status.done": "已创建 {name}。",
  "tools.satellite.status.push_failed": "电台同步失败：{error}",
  "tools.satellite.status.profile_version": "同步超过四颗卫星需要电台卫星协议版本 6 或更高版本。",
+ "tools.satellite.status.alpha5_version": "大于 99999 的目录编号（{ids}）需要电台卫星协议版本 8 或更高版本。请先更新电台固件，然后重新同步。",
  "tools.satellite.status.single_band": "这台单频段电台无法使用所选的卫星频率配置。请使用双频段电台，或运行 satellite_tle.py sync 以安装不含频率配置的 TLE 数据。",
  "tools.satellite.status.band_error": "电台支持的频段不包含所选的卫星频率配置。",
  "tools.satellite.status.radio_connecting": "请选择并通过 USB/串口连接电台…",

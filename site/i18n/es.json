@@ -154,6 +154,7 @@
  "tools.satellite.status.done": "Creado {name}.",
  "tools.satellite.status.push_failed": "Falló la sincronización con la radio: {error}",
  "tools.satellite.status.profile_version": "Para sincronizar más de cuatro satélites se requiere la versión 6 o posterior del protocolo satelital de la radio.",
+ "tools.satellite.status.alpha5_version": "Los números de catálogo superiores a 99999 ({ids}) requieren la versión 8 o posterior del protocolo satelital de la radio. Actualiza el firmware de la radio y vuelve a sincronizar.",
  "tools.satellite.status.single_band": "Esta radio de una sola banda no puede usar los perfiles de frecuencia satelital seleccionados. Usa una radio de doble banda o ejecuta satellite_tle.py sync para instalar TLE sin perfiles de frecuencia.",
  "tools.satellite.status.band_error": "Las bandas admitidas por la radio no cubren los perfiles de frecuencia satelital seleccionados.",
  "tools.satellite.status.radio_connecting": "Elige y conecta la radio por USB/serial…",

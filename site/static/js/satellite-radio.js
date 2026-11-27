@@ -114,6 +114,13 @@ export async function pushSatelliteBundle(link, bundle, onProgress = () => {}) {
 	if (bundle.profiles.length > 4 && info[0] < 6)
 		throw Object.assign(new Error("Radio firmware needs satellite protocol version 6 or newer for more than four profiles"),
 			{ translationKey: "tools.satellite.status.profile_version" });
+	// Alpha-5 catalog numbers (above 99999): firmware before protocol 8 rejects the whole install
+	const alpha5 = bundle.records.map(({ catalog_id }) => catalog_id).filter((id) => id > 99999);
+	if (alpha5.length && info[0] < 8) {
+		const ids = alpha5.join(", ");
+		throw Object.assign(new Error(`Radio firmware needs satellite protocol version 8 or newer for catalog numbers above 99999 (${ids})`),
+			{ translationKey: "tools.satellite.status.alpha5_version", translationParams: { ids } });
+	}
 	if (get16(new DataView(info.buffer, info.byteOffset, info.byteLength), 1) < bundle.records.length)
 		throw new Error("The radio cannot store this many satellites");
 	await checkProfileBands(link, bundle.profiles);

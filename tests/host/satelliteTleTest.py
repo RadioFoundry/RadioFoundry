@@ -39,8 +39,9 @@ def make_record(catalog_id, name=None, day=None):
     now = dt.datetime.now(dt.timezone.utc)
     day = now.timetuple().tm_yday if day is None else day
     epoch = f"{now.year % 100:02d}{day:03d}.00000000"
-    line1 = f"1 {catalog_id:05d}U 98067A   {epoch}  .00000000  00000-0  00000-0 0 0999"
-    line2 = f"2 {catalog_id:05d}  51.6400 120.0000 0005000  10.0000  20.0000 15.5000000012345"
+    field = tle.catalog_field(catalog_id)
+    line1 = f"1 {field}U 98067A   {epoch}  .00000000  00000-0  00000-0 0 0999"
+    line2 = f"2 {field}  51.6400 120.0000 0005000  10.0000  20.0000 15.5000000012345"
     if len(line1) != 68 or len(line2) != 68:
         raise AssertionError((len(line1), len(line2), line1, line2))
     return {"catalog_id": catalog_id, "name": name or f"SAT-{catalog_id}",
@@ -379,19 +380,43 @@ def test_protocol_versions():
     records = tle.validate_records([make_record(catalog_id) for catalog_id in ids])
     profiles = [{"catalog_id": catalog_id, "rx_hz": 145900000, "tx_hz": 435100000,
                  "tx_tone_tenths": 885} for catalog_id in ids]
-    for version in (6, 7):
+    for version in (6, 7, 8):
         radio = FakeRadio(capacity=10, protocol_version=version)
         result = tle.install_records(radio, records, ids, profiles)
         capacity, entries = tle.radio_inventory(radio)
         chunks = [payload for _, payload in radio.calls if payload[0] == tle.OP_PROFILE_STAGE_CHUNK]
         check(result["frequency_profiles"] == profiles and capacity == 10 and len(entries) == 10 and len(chunks) == 3,
               f"protocol-v{version} installs and reads ten profiles using chunks")
-    radio = FakeRadio(protocol_version=8)
+    radio = FakeRadio(protocol_version=9)
     try:
         tle.radio_inventory(radio)
         check(False, "unknown protocol is rejected")
     except tle.SatelliteTleError:
         check(True, "unknown protocol is rejected")
+    alpha5 = tle.validate_records([make_record(25544), make_record(101101), make_record(339999)])
+    alpha5_ids = [item["catalog_id"] for item in alpha5]
+    alpha5_profiles = [{"catalog_id": catalog_id, "rx_hz": 145900000, "tx_hz": 435100000,
+                        "tx_tone_tenths": 885} for catalog_id in alpha5_ids]
+    for version, profiles in ((tle.SYNC_STATUS_PROTOCOL_VERSION, None), (tle.SYNC_STATUS_PROTOCOL_VERSION, alpha5_profiles),
+                              (tle.REPLACE_PROTOCOL_MIN_VERSION, None)):
+        old_radio = FakeRadio({25544: 1_794_398_402}, protocol_version=version)
+        try:
+            tle.install_records(old_radio, alpha5, None, profiles)
+            check(False, f"protocol-v{version} radio refuses Alpha-5 catalog numbers")
+        except tle.SatelliteTleError as exc:
+            check("above 99999 (101101, 339999)" in str(exc) and "version 8" in str(exc) and
+                  "Update the radio firmware" in str(exc) and
+                  all(payload[0] not in (tle.OP_BEGIN, tle.OP_REPLACE_BEGIN, tle.OP_DATA)
+                      for _, payload in old_radio.calls) and old_radio.installed == {25544: 1_794_398_402},
+                  f"protocol-v{version} radio refuses Alpha-5 IDs by name before writing anything")
+    old_radio = FakeRadio(protocol_version=tle.SYNC_STATUS_PROTOCOL_VERSION)
+    five_digit = tle.validate_records([make_record(25544), make_record(99999)])
+    check(tle.install_records(old_radio, five_digit)["installed"] == [25544, 99999],
+          "protocol-v7 radio still installs five-digit catalog numbers")
+    new_radio = FakeRadio(capacity=10)
+    result = tle.install_records(new_radio, alpha5, None, alpha5_profiles)
+    check(result["installed"] == alpha5_ids and result["frequency_profiles"] == alpha5_profiles,
+          "protocol-v8 radio installs Alpha-5 catalog numbers with their profiles")
 
 
 def test_install_transaction():
