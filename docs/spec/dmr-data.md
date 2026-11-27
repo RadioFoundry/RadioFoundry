@@ -894,7 +894,7 @@ builds there.
 |---|---|
 | Algorithm | AES-256, privacy header algorithm 5 (`DMR_DATA_ALG_AES256`) |
 | Key | The channel's traffic key; its ID in octet 3. A receiver decrypts with its key of that ID on the channel, else drops the packet |
-| Keystream | OFB: block 1 = AES(K, IV), block n = AES(K, block n-1), XORed over the user data from octet 0 (as BP, 13.2). IV = the 128-bit IV of the MI at superframe 0 (`dmrAesIv`: the MI and the next three words of the LFSR) |
+| Keystream | OFB: block 1 = AES(K, IV), block n = AES(K, block n-1). Block 1 is not used: blocks 2, 3, ... are XORed over the user data from octet 0, not over the pad octets or the CRC-32. IV = the 128-bit IV of the MI at superframe 0 (`dmrAesIv`: the MI and the next three words of the LFSR). This is how DSD-FME decrypts MOTOTRBO AES data (its keystream from octet 16, none over pad and CRC); checked on air: DSD-FME, given the key, decrypts our text messages to the right IP header and text, and with block 1 used it did not. DSD-FME makes only (user data octets / 16) + 1 keystream blocks, so it leaves the last (length mod 16) octets undecrypted; decrypted with the whole keystream, they are the rest of the text |
 | MI | A new position of the radio's one MI sequence for every packet (`dmrAesDataMi`): used at once, so it is never the start of an over's superframe or another packet's. One position per packet, from the same saved reservation as voice |
 | Confirmed retries | A selective retry sends the first try's blocks again under the first try's MI and header (the receiver keeps that header, 12.3): the same ciphertext, no new keystream |
 | CRCs | As BP: the CRC-32 and CRC-9s over the ciphertext |
@@ -904,9 +904,9 @@ A packet is built only when it can be encrypted: without an MI or the key, `dmrD
 
 ### 13.5 Open
 
-- AES data is checked only between our radios (host tests, and on air between two of our radios). Whether a commercial
-  radio's AES data uses this keystream (its IV from the MI, from octet 0) is not known: a capture of a stock radio's
-  encrypted text message would settle it.
+- AES data is checked between our radios and against DSD-FME (13.4), whose AES data decryption follows MOTOTRBO
+  captures. Not yet checked against a commercial radio directly: a stock radio's encrypted text message read by ours
+  would settle it.
 
 - Not yet checked against a commercial portable on air: whether its first header carries SAP 9 or the real SAP, and
   octets 4-5.

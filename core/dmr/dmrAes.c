@@ -381,6 +381,9 @@ bool dmrAesDataCrypt(const void *ctx, uint8_t alg, uint8_t keyId, uint32_t mi, u
 
 	aes256Init(&aes, st->keys[slot].key);
 	dmrAesIv(mi, 0, ks);
+	// The first keystream block is not used: data starts on the second, as DSD-FME decrypts MOTOTRBO AES data
+	// (dmr-data.md 13.4); a decoder that used it would not read ours
+	aes256Encrypt(&aes, ks, ks);
 	for (int i = 0; i < length; i += 16) {
 		aes256Encrypt(&aes, ks, ks);	// OFB: each block of keystream is the cipher of the one before
 		for (int j = 0; j < 16 && i + j < length; j++)

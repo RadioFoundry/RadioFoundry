@@ -523,16 +523,19 @@ static void test_data(void)
 	q.tx_used = 1;
 	CHECK(dmrAesDataMi(&st) == 0, "the reservation used up: no MI, the packet isn't sent");
 
-	// The keystream: AES(K, IV(mi)), then AES of each block before (OFB)
+	// The keystream: OFB from IV(mi), its first block AES(K, IV) not used (dmr-data.md 13.4); data starts on the
+	// second, AES(K, AES(K, IV))
 	memset(zero, 0, sizeof zero);
 	memcpy(ks, zero, sizeof ks);
 	CHECK(dmrAesDataCrypt(&st, DMR_AES_DATA_ALG, 7, m1, ks, sizeof ks), "crypt");
 	aes256Init(&aes, key);
 	dmrAesIv(m1, 0, iv);
 	aes256Encrypt(&aes, iv, blk);
-	CHECK(memcmp(ks, blk, 16) == 0, "first block AES(K, IV)");
+	CHECK(memcmp(ks, blk, 16) != 0, "the first block AES(K, IV) isn't used");
 	aes256Encrypt(&aes, blk, blk);
-	CHECK(memcmp(ks + 16, blk, 16) == 0, "second block AES(K, first)");
+	CHECK(memcmp(ks, blk, 16) == 0, "data starts on the second block, AES(K, first)");
+	aes256Encrypt(&aes, blk, blk);
+	CHECK(memcmp(ks + 16, blk, 16) == 0, "then the third");
 	aes256Encrypt(&aes, blk, blk);
 	CHECK(memcmp(ks + 32, blk, 8) == 0, "a short last block");
 
