@@ -449,19 +449,11 @@ void md9600_c6000_init(void)
 	speaker_apply();
 }
 
-// The debug link's CHIP_REG (board.chip_reg, hardware-md9600.md 4.1): chip 1 is the HR_C6000, pages 1 and 4, one
-// byte, as on the other HR_C6000 radios (2 and 3 are the data and vocoder FIFOs, which a read would drain). Each
-// access is one masked transaction (hrc_bus.c), so the radio task's and the modem ISRs' accesses don't mix with it.
-// No driver follows a write: its next set-up of that register overwrites it
+// The debug link's CHIP_REG (board.chip_reg, hardware-md9600.md 4.1): chip 1 is the HR_C6000 (hrc_chip_reg). Each
+// access is one masked transaction (hrc_bus.c), so the radio task's and the modem ISRs' accesses don't mix with it
 bool md9600_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
 {
-	if (chip != 1 || modem.bus == NULL || (page != HRC_PAGE_AUX && page != HRC_PAGE_SYS) || (write && *val > 0xFFu)) {
-		return false;	// modem.bus: not attached yet (md9600_c6000_init)
-	}
-	uint8_t v = (uint8_t)*val;
-	bool ok = (!write || hrc_write(&modem, page, reg, v)) && hrc_read(&modem, page, reg, &v);
-	*val = v;
-	return ok;
+	return chip == 1 && hrc_chip_reg(&modem, page, reg, val, write);
 }
 
 #if CONFIG_DMR

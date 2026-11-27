@@ -14,6 +14,18 @@ void rfbus_write_table(rfbus_t *bus, const rfbus_regval_t *t, size_t n)
 	}
 }
 
+bool rfbus_chip_reg(rfbus_t *bus, uint8_t reg, uint32_t *val, bool write, bool paged)
+{
+	if (bus == NULL || reg > 0x7Fu || (write && (*val > 0xFFFFu || (paged && reg == RFBUS_REG_PAGE)))) {
+		return false;
+	}
+	if (write) {
+		rfbus_write(bus, reg, (uint16_t)*val);
+	}
+	*val = rfbus_read(bus, reg);
+	return true;
+}
+
 static uint32_t enter(const rfbus_3w_pins_t *p)
 {
 	return p->crit_enter != NULL ? p->crit_enter() : 0;

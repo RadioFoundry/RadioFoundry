@@ -1399,11 +1399,11 @@ void uvf_radio_diag(uvf_radio_diag_t *d)
 }
 
 // The debug link's CHIP_REG (board.chip_reg, hardware-dm1701.md 5.12): chip 0 is the AT1846S, page 0, registers
-// 0x00-0x7E (0x7F selects the page, which the driver owns); chip 1 is the HR_C6000, pages 1 and 4 (2 and 3 are the
-// data and vocoder FIFOs, which a read would drain). Straight on the bus, as the probe's access: a write goes into the
-// AT1846S driver's cache, so its own cached writes don't skip the register, but its next set-up overwrites it. From
-// the debug link's task: each AT1846S transfer takes the I2C lock (i2c_xfer), and the driver stays on page 0 after
-// init, so the page select is a no-op; each HR_C6000 access is one masked transaction
+// 0x00-0x7E (0x7F selects the page, which the driver owns); chip 1 is the HR_C6000 (hrc_chip_reg). Straight on the
+// bus, as the probe's access: a write goes into the AT1846S driver's cache, so its own cached writes don't skip the
+// register, but its next set-up overwrites it. From the debug link's task: each AT1846S transfer takes the I2C lock
+// (i2c_xfer), and the driver stays on page 0 after init, so the page select is a no-op; each HR_C6000 access is one
+// masked transaction
 bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
 {
 	if (chip == 0 && page == 0 && reg < 0x7Fu && (!write || *val <= 0xFFFFu)) {
@@ -1412,13 +1412,7 @@ bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool w
 		*val = v;
 		return ok;
 	}
-	if (chip == 1 && (page == HRC_PAGE_AUX || page == HRC_PAGE_SYS) && (!write || *val <= 0xFFu)) {
-		uint8_t v = (uint8_t)*val;
-		bool ok = (!write || hrc_write(&r.modem, page, reg, v)) && hrc_read(&r.modem, page, reg, &v);
-		*val = v;
-		return ok;
-	}
-	return false;
+	return chip == 1 && hrc_chip_reg(&r.modem, page, reg, val, write);
 }
 
 #if CONFIG_AUDIO_PROBE
