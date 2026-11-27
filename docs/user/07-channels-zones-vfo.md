@@ -484,7 +484,7 @@ network): it asks the node where it is, connects it to a room, disconnects it, a
 | Connect | Connects the node to the room ID typed |
 | Disconnect | Takes the node out of its room |
 | Rooms | The node's list of rooms, 20 a page: **OK** on a room connects to it, **Next page** asks for the next 20 |
-| Search | Type a name or its start: the rooms that match, as a list |
+| Search | Type a name or its start: the rooms that match, as a list, 20 a page; the last row asks for the next page |
 
 Each command is a short transmission (about half a second) with your callsign and radio ID, refused where PTT would be
 (receive only, no callsign, outside the bands). The node answers on its own; the page shows the answer as it comes.

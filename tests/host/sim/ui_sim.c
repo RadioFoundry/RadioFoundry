@@ -1018,8 +1018,8 @@ bool ui_svc_ysf_wx(uint8_t cmd, uint32_t arg, const char *text)
 	sim_wx_arg = arg;
 	sim_wx.asked++;
 	sim_wx.asked_cmd = cmd;
-	if (cmd == YSF_WX_ALL)
-		sim_wx.rooms_first = (uint16_t)arg;
+	if (cmd == YSF_WX_ALL || cmd == YSF_WX_SEARCH)
+		sim_wx.rooms_first = (uint16_t)(arg ? arg : 1);
 	return true;
 }
 void ui_svc_ysf_wx_state(radio_ysf_wx_t *out) { *out = sim_wx; }
@@ -3649,13 +3649,14 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
-	if (strcmp(t, "wxrooms") == 0 && arg != NULL) {	// the node answers a list of N rooms (of 40)
+	// The node answers a list of N rooms (of 40), or a search's result of N (of 25 matches)
+	if ((strcmp(t, "wxrooms") == 0 || strcmp(t, "wxsearch") == 0) && arg != NULL) {
 		unsigned n = (unsigned)atoi(arg);
 		sim_wx.serial++;
 		sim_wx.kind = YSF_WX_ALL;
-		sim_wx.search = false;
+		sim_wx.search = t[2] == 's';
 		sim_wx.rooms = (uint8_t)(n > YSF_WX_ROOMS ? YSF_WX_ROOMS : n);
-		sim_wx.rooms_total = 40;
+		sim_wx.rooms_total = sim_wx.search ? 25 : 40;
 		for (unsigned i = 0; i < sim_wx.rooms; i++) {
 			snprintf(sim_wx_rooms[i].id, sizeof sim_wx_rooms[i].id, "%05u", 20000 + i);
 			snprintf(sim_wx_rooms[i].name, sizeof sim_wx_rooms[i].name, "ROOM%u", i);

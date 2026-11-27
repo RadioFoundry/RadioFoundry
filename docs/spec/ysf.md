@@ -386,7 +386,7 @@ before the sum:
 | Connect | `5D 23 5F` | the room's 5 digits and a space |
 | Disconnect | `5D 2A 5F` | none |
 | Room list | `5D 66 5F` | `01` and the first entry in 3 digits |
-| Search | `5D 66 5F` | `11001` and the text in 16 characters, upper case, space padded |
+| Search | `5D 66 5F` | `11`, the first entry in 3 digits, and the text in 16 characters, upper case, space padded |
 
 ### 9.3 Replies
 
@@ -397,14 +397,14 @@ with no buffer for a whole list:
 | Reply | Bytes 1-4 | Fields |
 |---|---|---|
 | Status, connect, disconnect | `5D 51 5F 26` (status), `5D 41 5F 26` (connect and disconnect) | [5..9] the node's ID, [10..19] its callsign, [20..33] its name, [34..35] `15` in a room (`12` not), [36..40] the room's ID, [41..56] its name |
-| Room list, search | `5D 46 5F 26` | [5] `0` for a search's result; [7..11] the node's ID, [12..21] its callsign; a list: [22..24] rooms on the page, [25..27] in all; a search: [23..24] the matches; from [29], 50 bytes a room: [1..5] its ID, [6..21] its name, [22..24] its users |
+| Room list, search | `5D 46 5F 26` | [5] `0` for a search's result; [7..11] the node's ID, [12..21] its callsign; [22..24] rooms on the page, [25..27] in all (a search: the matches); from [29], 50 bytes a room: [1..5] its ID, [6..21] its name, [22..24] its users. A node may pad the page to 20 with blank entries: the page ends at the first entry without an ID, and at the count |
 
 ### 9.4 On the radio
 
 | Item | Rule |
 |---|---|
 | Where | Tools > Rooms (key 0 there, while no zone offer waits), # on Home and quick settings tile 3 on a YSF channel (Tone's place: YSF has no tones), a key set to Rooms (`KEYFN_YSF_ROOMS`). Off a YSF channel: "Rooms: on a YSF channel" |
-| The page | TX DG-ID (as quick settings tile 8: OK, two digits, OK sets it; BACK leaves it), RX DG-ID (as tile 2), Node (OK asks for the status), Room, Room ID (digits type it anywhere on the page, kept while the radio runs), Connect, Disconnect, Rooms (the list, 20 a page), Search (text entry) |
+| The page | TX DG-ID (as quick settings tile 8: OK, two digits, OK sets it; BACK leaves it), RX DG-ID (as tile 2), Node (OK asks for the status), Room, Room ID (digits type it anywhere on the page, kept while the radio runs), Connect, Disconnect, Rooms (the list, 20 a page), Search (text entry; its result pages like the list) |
 | Waiting | Until the node answers what was asked: "Waiting..."; "No answer" after 8 s |
 | State | `radio_ysf_wx`: the last reply's fields, what was asked; `radio_ysf_wx_room`: the page of rooms. The provider's task writes them, the screens read them under a sequence count |
 | Memory | The reply's parser runs in the engine's memory (about 0.7 KB); the published state and page of rooms in the radio core (about 0.6 KB) |

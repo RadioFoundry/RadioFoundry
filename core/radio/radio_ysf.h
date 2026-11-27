@@ -85,6 +85,10 @@ void radio_ysf_wx_disarm(void);
 // Any task: the state, and room i of the page held (false past it)
 void radio_ysf_wx(radio_ysf_wx_t *out);
 bool radio_ysf_wx_room(uint8_t i, ysf_wx_room_t *out);
+// Debug link: the first bytes of the last data transmission heard (the engine's parser holds them until the next
+// header; read unlocked, so one taken while a reply comes in can be torn), into out; the bytes it held, and in *end
+// where the checked end marker was + 1 (0: none). 0 without the engine
+uint16_t radio_ysf_wx_raw(uint8_t out[YSF_WX_HDR], uint16_t *end);
 
 extern const radio_air_ops_t radio_ysf_air;
 

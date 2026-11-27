@@ -15,8 +15,9 @@ enum { YSF_WX_DX, YSF_WX_CONNECT, YSF_WX_DISCONNECT, YSF_WX_ALL, YSF_WX_SEARCH, 
 #define YSF_WX_TEXT_LEN		16	// a search's text
 #define YSF_WX_ROOMS		20	// rooms on one page of a list
 #define YSF_WX_ROOM_ID_MAX	99999u
+#define YSF_WX_HDR		64	// a reply's first bytes kept: the status reply's fields and a list's header
 
-// cmd's bytes for arg (CONNECT: the room ID; ALL: the first entry, 1-based; SEARCH: text) into out; their count, 0
+// cmd's bytes for arg (CONNECT: the room ID; ALL and SEARCH: the first entry, 1-based; SEARCH: text) into out; their count, 0
 // for no such command
 uint8_t ysf_wx_command(uint8_t cmd, uint32_t arg, const char *text, uint8_t out[YSF_WX_CMD_MAX]);
 
@@ -48,7 +49,7 @@ typedef struct {
 	uint16_t pos;			// bytes taken so far
 	uint8_t sum, prev;		// their byte sum, the last one
 	uint16_t end;			// where a checked end marker was, + 1; 0 none
-	uint8_t hdr[64];		// the reply's first bytes
+	uint8_t hdr[YSF_WX_HDR];	// the reply's first bytes
 	uint8_t rec[50];		// the room entry being filled
 	ysf_wx_t out;			// what it is being parsed into; it keeps the last reply taken, the room list too
 } ysf_wx_rx_t;

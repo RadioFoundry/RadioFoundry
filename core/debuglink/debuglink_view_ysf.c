@@ -57,6 +57,17 @@ void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 		(unsigned)w.asked, w.asked_cmd, (unsigned)w.serial, w.kind, w.connected);
 	dl_text(t, "ysf.wx_node=%s\nysf.wx_node_call=%s\nysf.wx_room=%s %s\nysf.wx_rooms=%u\nysf.wx_rooms_total=%u\n",
 		w.node_name, w.node_call, w.room_id, w.room_name, w.rooms, w.rooms_total);
+	// The last data transmission's first bytes in hex, how many it had, and its end marker + 1 (0 none): a node's
+	// reply as it came, to check its layout against ysf.md 9.3
+	{
+		uint8_t raw[YSF_WX_HDR];
+		uint16_t end, n = radio_ysf_wx_raw(raw, &end);
+
+		dl_text(t, "ysf.wx_raw_len=%u\nysf.wx_raw_end=%u\nysf.wx_raw=", (unsigned)n, (unsigned)end);
+		for (uint16_t i = 0; i < n && i < YSF_WX_HDR; i++)
+			dl_text(t, "%02x", raw[i]);
+		dl_text(t, "\n");
+	}
 #if CONFIG_AIR_RX_ADAPT
 	// The soft modem's equalizer and tone notch (ysf.md 5.4): running now (rx_eq, rx_tone_on), the tone notched in
 	// Hz (0.0 none), the center tap, and what the bench turned off (op 44's third byte)

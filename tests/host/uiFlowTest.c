@@ -203,6 +203,10 @@ static const flow_t flows[] = {
 	{ "W Rooms: the room list", "dlmode:ysf quick 3", "down down down down down down down ok wxrooms:3", "screen=room-list wxcmd=3 wxarg=1 shows=ROOM0 shows=ROOM2 shows=Next_page", 8, false },
 	{ "W Rooms: a room picked connects", "dlmode:ysf quick 3 down down down down down down down ok wxrooms:3", "down ok", "screen=rooms wxcmd=1 wxarg=20001", 2, false },
 	{ "W Rooms: the next page", "dlmode:ysf quick 3 down down down down down down down ok wxrooms:3", "down down down ok", "wxcmd=3 wxarg=4", 4, false },
+#if CONFIG_CHANNEL_EDIT
+	{ "W Rooms: a search's next page", "dlmode:ysf quick 3 down down down down down down down ok wxsearch:20", "down down down down down down down down down down down down down down down down down down down down ok", "wxcmd=4 wxarg=21", 21, false },
+	{ "W Rooms: a search's page counted", "dlmode:ysf quick 3 down down down down down down down ok wxsearch:20", "", "screen=room-list shows=1-20_of_25", 0, false },
+#endif
 	{ "E YSF DG-ID: saved with the channel", "ysf ok 5 ok down down ok down ok 4 2 ok", "long:ok",
 	  "screen=channel writes=1 shows=42", 1, true },
 #endif

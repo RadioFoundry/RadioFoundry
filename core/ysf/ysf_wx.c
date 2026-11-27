@@ -58,8 +58,10 @@ uint8_t ysf_wx_command(uint8_t cmd, uint32_t arg, const char *text, uint8_t out[
 		n += 3;
 		break;
 	case YSF_WX_SEARCH:
-		memcpy(out + n, "11001", 5);		// "11": a search from the first entry; the text in 16, upper case
-		n += 5;
+		out[n++] = '1';				// "11": a search; the first entry in three digits; the text in 16,
+		out[n++] = '1';				// upper case
+		digits(out + n, arg >= 1 && arg <= 999 ? arg : 1, 3);
+		n += 3;
 		for (uint8_t i = 0; i < YSF_WX_TEXT_LEN; i++) {
 			char c = text && *text ? *text++ : ' ';
 
@@ -192,8 +194,9 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 		return false;
 	end = r->end - 1u;		// the 0x03
 	if (is_list(h) && end >= ROOMS_AT) {
-		// The list: [7..11] the node's ID, [12..21] its callsign, [22..24] rooms on the page, [25..27] in all; a
-		// search's result has '0' at [5], '1' at [22] and its count at [23..24]
+		// The list and a search's result alike: [7..11] the node's ID, [12..21] its callsign, [22..24] rooms on the
+		// page, [25..27] in all; a search's result has '0' at [5]. A node may fill the page up to 20 with blank
+		// entries (a search with one match came as 20 rows): the first entry without an ID ends the page
 		unsigned n, k = 0;
 		char call[sizeof w->node_call];
 
@@ -204,8 +207,8 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 			w->connected = false;
 		}
 		w->search = h[5] == '0';
-		n = w->search ? num_of(h + 23, 2) : num_of(h + 22, 3);
-		while (k < n && k < YSF_WX_ROOMS && ROOMS_AT + (k + 1u) * ROOM_LEN <= end)
+		n = num_of(h + 22, 3);
+		while (k < n && k < YSF_WX_ROOMS && ROOMS_AT + (k + 1u) * ROOM_LEN <= end && w->room[k].id[0] != '\0')
 			k++;
 		w->rooms = (uint8_t)k;
 		w->rooms_total = (uint16_t)num_of(h + 25, 3);

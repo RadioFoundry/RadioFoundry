@@ -173,6 +173,10 @@ static void v_wx(const ysf_wx_t *w, void *ctx)
 		wx_state.search = w->search;
 		wx_state.rooms = w->rooms;
 		wx_state.rooms_total = w->rooms_total;
+		// A page past the node's count holds only what the count leaves (a node may pad the page)
+		if (w->rooms_total >= wx_state.rooms_first &&
+		    wx_state.rooms > w->rooms_total - wx_state.rooms_first + 1u)
+			wx_state.rooms = (uint8_t)(w->rooms_total - wx_state.rooms_first + 1u);
 	}
 	// The parser keeps the node and room of the last replies, and drops them when another node answers
 	wx_state.connected = w->connected;
@@ -224,6 +228,20 @@ bool radio_ysf_wx_room(uint8_t i, ysf_wx_room_t *out)
 			*out = e->rx.wx.out.room[i];
 	} while ((s & 1) || s != wx_seq);
 	return ok;
+}
+
+uint16_t radio_ysf_wx_raw(uint8_t out[YSF_WX_HDR], uint16_t *end)
+{
+	const ysf_engine_t *e = eng;
+	uint16_t n;
+
+	*end = 0;
+	if (e == NULL)
+		return 0;
+	n = e->rx.wx.pos < YSF_WX_HDR ? e->rx.wx.pos : YSF_WX_HDR;
+	memcpy(out, e->rx.wx.hdr, n);
+	*end = e->rx.wx.end;
+	return e->rx.wx.pos;
 }
 
 bool radio_ysf_begin(const channel_t *ch, uint16_t number)
@@ -369,7 +387,7 @@ static bool ysf_tx_prepare(void)
 		wx_state.asked++;
 		wx_state.asked_cmd = cmd;
 		if (cmd == YSF_WX_ALL || cmd == YSF_WX_SEARCH)
-			wx_state.rooms_first = (uint16_t)(cmd == YSF_WX_ALL && wx_arg >= 1 ? wx_arg : 1);
+			wx_state.rooms_first = (uint16_t)(wx_arg >= 1 && wx_arg <= 999 ? wx_arg : 1);
 		wx_seq++;
 		return true;
 	}

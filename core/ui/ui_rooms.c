@@ -287,7 +287,7 @@ const ui_scr_def_t ui_rooms_screen = {
 // ── The room list: a page of the node's list or a search's result; OK connects; the last row asks for the next page ──
 static bool more(void)
 {
-	return !wx.search && wx.rooms && wx.rooms_first + wx.rooms - 1u < wx.rooms_total;
+	return wx.rooms && wx.rooms_first + wx.rooms - 1u < wx.rooms_total;
 }
 
 static uint16_t rooms_count(void)
@@ -323,6 +323,13 @@ static void rooms_select(uint16_t i, bool hold)
 
 	(void)hold;
 	if (i >= wx.rooms) {
+		// A search's next page asks for the same text again (a search exists only with text entry)
+#if CONFIG_CHANNEL_EDIT
+		if (wx.search) {
+			send(YSF_WX_SEARCH, (uint32_t)wx.rooms_first + wx.rooms, search_text);
+			return;
+		}
+#endif
 		send(YSF_WX_ALL, (uint32_t)wx.rooms_first + wx.rooms, NULL);
 		return;
 	}
@@ -346,7 +353,7 @@ static const char *rooms_body(void)
 		sb_str(&b, TR(WX_VALUE_NO_ANSWER, "No answer"));
 	else if (!wx.rooms)
 		sb_str(&b, wx.search ? TR(WX_BODY_NOTHING_FOUND, "Nothing found") : TR(WX_BODY_NO_LIST, "No list yet"));
-	else if (!wx.search) {
+	else {
 		sb_u32(&b, wx.rooms_first, 1);
 		sb_chr(&b, '-');
 		sb_u32(&b, (uint32_t)wx.rooms_first + wx.rooms - 1u, 1);

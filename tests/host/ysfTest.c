@@ -732,6 +732,8 @@ static void testRooms(void)
 	CHECK(n == 12 && !memcmp(cmd + 4, "\x26" "01021\x03", 7), "ALL from 21");
 	n = ysf_wx_command(YSF_WX_SEARCH, 0, "test", cmd);
 	CHECK(n == 28 && !memcmp(cmd + 5, "11001TEST            \x03", 22), "SEARCH");
+	n = ysf_wx_command(YSF_WX_SEARCH, 21, "xx", cmd);
+	CHECK(n == 28 && !memcmp(cmd + 5, "11021XX              \x03", 22), "SEARCH from 21");
 	CHECK(ysf_wx_command(9, 0, NULL, cmd) == 0, "no such command");
 
 	memset(&s, 0, sizeof s);
@@ -839,6 +841,28 @@ static void testRooms(void)
 	CHECK(wx_n == 1 && !strcmp(wx_got.node_call, "N9XYZ") && wx_got.node_name[0] == '\0' && !wx_got.connected &&
 	      wx_got.room_name[0] == '\0' && wx_got.rooms == 1 && !strcmp(wx_got.room[0].name, "OTHER-ROOM"),
 	      "a list from another node: '%s' name '%s' connected %d", wx_got.node_call, wx_got.node_name, wx_got.connected);
+	// A search's result laid out as the list, the page padded to 20 with blank entries: one match is one room
+	memset(d, ' ', sizeof d);
+	d[0] = 0x00;
+	memcpy(d + 1, "\x5D\x46\x5F\x26", 4);
+	d[5] = '0';
+	put_text(d + 7, "22222", 5);
+	put_text(d + 12, "N9XYZ", 10);
+	put_text(d + 22, "020", 3);
+	put_text(d + 25, "001", 3);
+	d[28] = 0x0D;
+	for (unsigned j = 0; j < 20; j++) {
+		d[29 + j * 50] = '5';
+		d[29 + j * 50 + 49] = 0x0D;
+	}
+	put_text(d + 30, "90002", 5);
+	put_text(d + 35, "LAB-ROOM", 16);
+	len = reply_end(d, 29 + 20 * 50);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && wx_got.search && wx_got.rooms == 1 && wx_got.rooms_total == 1 &&
+	      !strcmp(wx_got.room[0].id, "90002"), "a padded search result: search %d rooms %u total %u", wx_got.search,
+	      wx_got.rooms, wx_got.rooms_total);
 }
 
 int main(void)
