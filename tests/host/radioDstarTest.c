@@ -372,13 +372,13 @@ static void test_repeater_as_typed(void)
 
 // The key-up. A carrier is not usable for the first part of an over when FM transmit keys without waiting for the
 // synthesizer and the PA: on our Pluto recordings of the first board, its frequency swings up to +770 Hz for the first
-// 80-100 ms (gain-21nov-1) and its power starts 15-30 dB under its level and climbs for 100-200 ms (19 Nov capture).
-// Icom radios cover that with about 130 ms of preamble: the IC-9700 and the ID-51 recorded on the same bench send
-// 620-650 bits of 1010 before the frame sync, which comes 136-147 ms after their carrier. We sent 128 bits, so our
-// frame sync and the first half of the header went out inside the transient: our own Pluto decoder still read them,
-// a hotspot's modem missed them, ran the over as a late entry and kept the routing of the last header it had (field
-// report on PR #809). Here a receiver can't use the first 100 ms of the over at all (noise in their place, as a
-// modem hears a carrier still moving): the header must still come from the header itself, not the slow data
+// 80-100 ms (gain-21nov-1) and its power starts 15-30 dB under its level and climbs for 100-200 ms (the Pluto capture
+// of its first FM over). Icom radios cover that with about 130 ms of preamble: the IC-9700 and the ID-51 recorded on
+// the same bench send 620-650 bits of 1010 before the frame sync, which comes 136-147 ms after their carrier. We sent
+// 128 bits, so our frame sync and the first half of the header went out inside the transient: our own Pluto decoder
+// still read them, a hotspot's modem missed them, ran the over as a late entry and kept the routing of the last header
+// it had (field report on PR #809). Here a receiver can't use the first 100 ms of the over at all (noise in their
+// place, as a modem hears a carrier still moving): the header must still come from the header itself, not the slow data
 static void test_keyup_settle(void)
 {
 	reset();

@@ -561,8 +561,8 @@ static void test_field_text(void)
 // --- against Icom radios on air ---
 
 // Two headers as Icom radios sent them, from the bench's Pluto recordings (its captures directory; decoded by
-// bench/dstar_rx.py, an independent receiver, with no bit errors in the 660): an IC-9700 (ic9700-dv-4-001, 18 Nov
-// 2026) and an ID-51 (dstar-level/gain-21nov-1 at 78.3 s). Each is the 41 header bytes and the 660 bits on air, packed
+// bench/dstar_rx.py, an independent receiver, with no bit errors in the 660): an IC-9700 (ic9700-dv-4-001) and an
+// ID-51 (dstar-level/gain-21nov-1 at 78.3 s). Each is the 41 header bytes and the 660 bits on air, packed
 // least significant bit first. The vectors file is tools/dstar_ref.py's, written from the standard by us: if the
 // reference and the coder shared a misreading (the CRC's byte order, the interleaver's direction, the scrambler's
 // seed), both would agree and still differ from every Icom radio. A strict receiver - a hotspot's modem - would then

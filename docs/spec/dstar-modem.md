@@ -133,7 +133,8 @@ turned off, measured by building with it off and comparing the linker's RAM tota
 use by tasks a feature starts isn't in it, so a feature with its own task frees more than shown). Sub-features follow
 their parent ([build-config.md](../build-config.md)).
 
-Measured 2026-11-16 on the default image (208,736 B RAM, 581,644 B flash), each switch off alone:
+Measured on that radio's default image as main had it before D-STAR (208,736 B RAM, 581,644 B flash), each switch
+off alone:
 
 | Switch off | RAM freed (B) | Flash freed (B) | For a multimode amateur build |
 |---|---:|---:|---|
