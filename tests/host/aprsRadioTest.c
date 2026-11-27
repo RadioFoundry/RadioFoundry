@@ -1733,7 +1733,8 @@ static void test_codeplug_freq(void)
 }
 
 // The first take after an upgrade (no frequency marker yet) leaves a region picked on the radio alone: the record's
-// frequency may be a revert channel no one meant for APRS. A radio on the default takes it (test_codeplug_freq)
+// frequency may be a revert channel no one meant for APRS. A radio on the default keeps it too
+// (test_codeplug_freq_first_take_default)
 static void test_codeplug_freq_first_take(void)
 {
 	aprs_cfg_t c;
@@ -1781,7 +1782,6 @@ static void test_codeplug_freq_first_take_default(void)
 	c.ssid = 9;				// something else set on the radio: the settings are stored, the region not touched
 	aprs_set_cfg(&c, now);
 	run(200);
-	settings_read(&st);
 	settings_t *s = settings_begin();	// settings from before the marker
 	s->aprs_cp_freq = 0;
 	settings_end(now);
