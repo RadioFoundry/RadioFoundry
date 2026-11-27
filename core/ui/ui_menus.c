@@ -432,6 +432,7 @@ static uint16_t compose_count(void) { return CANNED_N + 1u + (compose_aprs() ? 3
 
 static void compose_item(uint16_t i, ui_item_t *it)
 {
+	item_num(it, (uint16_t)(i + 1u));
 	if (compose_aprs()) {
 		if (i == 0) {
 			str_copy(it->label, sizeof it->label, TR(MSG_LABEL_TO_CALLSIGN, "To callsign"));
@@ -538,7 +539,7 @@ static void compose_enter(void)
 }
 
 static const ui_scr_def_t compose_screen = {
-	.name = "compose", .flags = SF_LIST | SF_FIELD, .prefix = TRN(MSG_TITLE_TO, "To"),
+	.name = "compose", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = TRN(MSG_TITLE_TO, "To"),
 	.hint = TRN(MSG_HINT_COMPOSE, "OK send  Back"),
 	.count = compose_count, .item = compose_item, .select = compose_select, .title = compose_title, .enter = compose_enter,
 };
@@ -608,7 +609,8 @@ static bool contact_target_raw(uint16_t raw, ui_target_t *t)
 	return true;
 }
 
-#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT	// the lists that use these: Share To, the crash report's Send To
+// The lists that use these: Share To, the crash report's Send To, a new message's To
+#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT || CONFIG_DMR_SMS
 // Share To's rows: raw rows are the contacts
 static bool contacts_target(uint16_t i, ui_target_t *t)
 {
@@ -638,12 +640,91 @@ static void contact_row(const ui_target_t *tp, ui_item_t *it)
 	}
 }
 
-#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT
+#if CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT || CONFIG_DMR_SMS
 static void contacts_item(uint16_t i, ui_item_t *it)
 {
 	ui_target_t t;
 	if (contacts_target(i, &t))
 		contact_row(&t, it);
+}
+#endif
+
+#if CONFIG_ZONE_SHARE || CONFIG_DMR_SMS
+// A To list (Share To, a new message's To): the codeplug's contacts, private or group (type to find, as Contacts).
+// Digits that make an ID add two rows after them, the ID as a private call and as a talkgroup, so a station that isn't
+// a contact can be picked
+#define TO_TYPED	CODEPLUG_CONTACTS_MAX	// raw rows past the contacts: the typed ID, private then talkgroup
+
+// The digits typed as an ID, 0 when they aren't one (letters typed by name match the contacts only)
+static uint32_t to_typed_id(void)
+{
+	const char *k = ui_filter_text();
+	uint32_t id = 0;
+	for (; *k; k++) {
+		if (id > 1677721u)
+			return 0;
+		id = id * 10u + (uint32_t)(*k - '0');
+	}
+	return id <= 0xFFFFFEu ? id : 0;
+}
+
+static uint16_t to_raw_count(void) { return TO_TYPED + 2u; }
+
+static bool to_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+	if (raw < TO_TYPED)
+		return contacts_raw_label(raw, buf, len);
+	uint32_t id = to_typed_id();
+	if (id == 0 || (raw == TO_TYPED && id > CODEPLUG_DMR_ID_MAX))
+		return false;
+	strncpy(buf, ui_filter_text(), len - 1u);	// matches the keys typed
+	buf[len - 1u] = 0;
+	return true;
+}
+
+static void to_raw_each(ui_raw_fn fn, void *ctx, bool labels)
+{
+	(void)labels;
+	if (!contacts_rows(0, fn, ctx, true))
+		return;
+	char label[40];
+	for (uint16_t raw = TO_TYPED; raw < to_raw_count(); raw++) {
+		if (!fn(raw, to_raw_label(raw, label, sizeof label) ? label : NULL, ctx))
+			return;
+	}
+}
+
+static const ui_filter_def_t to_filter = { .raw_count = to_raw_count, .raw_label = to_raw_label,
+	.raw_each = to_raw_each };
+
+static bool to_target(uint16_t i, ui_target_t *t)
+{
+	if (i >= ui_filter_count())
+		return false;
+	uint16_t raw = ui_filter_raw(i);
+	if (raw < TO_TYPED)
+		return contacts_target(i, t);
+	memset(t, 0, sizeof *t);
+	t->id = to_typed_id();
+	t->group = raw != TO_TYPED;
+	return t->id != 0;
+}
+
+static void to_item(uint16_t i, ui_item_t *it)
+{
+	ui_target_t t;
+	if (ui_filter_raw(i) < TO_TYPED) {
+		contacts_item(i, it);
+		return;
+	}
+	if (!to_target(i, &t))
+		return;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, t.group ? "TG " : TR(SHARE_ROW_PRIVATE_ID, "Private ID "));
+	sb_u32(&b, t.id, 1);
+	str_copy(it->value, sizeof it->value,
+		TR(CHIP_NOT_SAVED, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
 }
 #endif
 
@@ -768,9 +849,33 @@ static bool aprs_new_available(void)
 #endif
 }
 
-static uint16_t msgs_count(void)
+// The rows of the inboxes, and New APRS message after them
+static uint16_t msgs_rows(void)
 {
 	return ui_svc_msg_count() + ui_svc_aprs_msg_count() + (aprs_new_available() ? 1u : 0u);
+}
+
+// New message, the first row where DMR text can be sent: an empty inbox has somewhere to go
+static uint16_t msgs_new(void)
+{
+	return CONFIG_DMR && CONFIG_DMR_SMS && (feats() & UI_FEAT_SMS) ? 1u : 0u;
+}
+
+static uint16_t msgs_held(void) { return ui_svc_msg_count() + ui_svc_aprs_msg_count(); }
+
+// The rows before the inboxes: New message, then "No messages yet" as a text row while there are none
+static uint16_t msgs_lead(void)
+{
+	return (uint16_t)(msgs_new() && msgs_held() == 0 ? 2u : msgs_new());
+}
+
+static uint16_t msgs_count(void) { return (uint16_t)(msgs_lead() + msgs_rows()); }
+
+// The newest message keeps the focus; New message has it while there are none
+static void msgs_enter(void)
+{
+	if (msgs_held() > 0)
+		ui_frame()->focus = msgs_new();
 }
 
 // Both inboxes are newest first. Merge their small RAM lists by age for the shared Messages screen.
@@ -804,6 +909,16 @@ static bool msg_row(uint16_t row, bool *aprs, uint16_t *index)
 
 static void msgs_item(uint16_t i, ui_item_t *it)
 {
+	if (i < msgs_new()) {
+		str_copy(it->label, sizeof it->label, TR(MSG_ROW_NEW, "New message"));
+		return;
+	}
+	if (i < msgs_lead()) {
+		str_copy(it->label, sizeof it->label, TR(MSG_EMPTY, "No messages yet"));
+		it->flags |= UI_ITEM_INFO;
+		return;
+	}
+	i = (uint16_t)(i - msgs_lead());
 	uint16_t dmr_count = ui_svc_msg_count();
 	uint16_t aprs_count = ui_svc_aprs_msg_count();
 	if (aprs_new_available() && i == dmr_count + aprs_count) {
@@ -851,6 +966,13 @@ static void msgs_item(uint16_t i, ui_item_t *it)
 static void msgs_select(uint16_t i, bool hold)
 {
 	(void)hold;
+	if (i < msgs_new()) {
+		ui_push(SCR_MSG_NEW, 0);
+		return;
+	}
+	if (i < msgs_lead())
+		return;
+	i = (uint16_t)(i - msgs_lead());
 	if (aprs_new_available() && i == ui_svc_msg_count() + ui_svc_aprs_msg_count())
 		ui_aprs_compose("");
 	else {
@@ -876,7 +998,11 @@ static void msgs_context(uint16_t i)
 {
 	bool aprs;
 	uint16_t index;
-	if (!msg_row(i, &aprs, &index))
+	if (i < msgs_new()) {
+		ui_toast(TR(TOAST_NO_ACTIONS_HERE, "No actions here"));
+		return;
+	}
+	if (i < msgs_lead() || !msg_row((uint16_t)(i - msgs_lead()), &aprs, &index))
 		return;
 	if (aprs) {
 		aprs_msg_t m;
@@ -889,15 +1015,27 @@ static void msgs_context(uint16_t i)
 	ui_open_actions(&t);
 }
 
+// # replies on a message only: New message, New APRS message and an empty list have nobody to reply to
+static const char *msgs_hint(void)
+{
+	uint16_t i = ui_frame()->focus;
+	bool aprs;
+	uint16_t index;
+	if (msgs_count() == 0)
+		return TR(HINT_BACK, "Back");
+	return i >= msgs_lead() && msg_row((uint16_t)(i - msgs_lead()), &aprs, &index) ?
+		TR(MSG_HINT_LIST, "OK open  # reply  Back") : TR(MSG_HINT_OPEN, "OK open  Back");
+}
+
 static const ui_scr_def_t messages_screen = {
-	.name = "messages", .flags = SF_LIST | SF_FIELD, .prefix = TRN(TITLE_MESSAGES, "Messages"),
-	.hint = TRN(MSG_HINT_LIST, "OK open  # reply  Back"),
+	.name = "messages", .flags = SF_LIST | SF_FIELD | SF_HINT_FN, .prefix = TRN(TITLE_MESSAGES, "Messages"),
+	.hint_fn = msgs_hint,
 	.empty = TRN(MSG_EMPTY, "No messages yet"),
-	.count = msgs_count, .item = msgs_item, .select = msgs_select, .context = msgs_context,
+	.count = msgs_count, .item = msgs_item, .select = msgs_select, .context = msgs_context, .enter = msgs_enter,
 };
 
-// One message: the text, then canned replies first, call, delete. A text the screen shortens gets a Full message row
-// first, which shows all of it on a page of its own
+// One message: the text, then canned replies first, call, delete, numbered 1-4. A text the screen shortens gets a Full
+// message row first, with no number, which shows all of it on a page of its own
 
 enum { MV_READ, MV_REPLY_OK, MV_REPLY_WAY, MV_CALL, MV_DELETE, MV_COUNT };
 
@@ -942,6 +1080,7 @@ static void msg_item(uint16_t i, ui_item_t *it)
 		TRN(MSG_ROW_CALL, "Call"), TRN(MSG_ROW_DELETE, "Delete") };
 	uint8_t a = msg_action(i);
 	str_copy(it->label, sizeof it->label, tr(names[a]));
+	item_num(it, a);	// by action, so Delete is 4 with or without Full message (which has none)
 	if ((a == MV_REPLY_OK || a == MV_REPLY_WAY) && !message_aprs() && !(feats() & UI_FEAT_SMS))
 		it->flags |= UI_ITEM_DIM;
 	if (a == MV_CALL && message_aprs())
@@ -1065,7 +1204,7 @@ static const char *msg_body(void)
 }
 
 static const ui_scr_def_t message_screen = {
-	.name = "message", .flags = SF_LIST | SF_FIELD, .prefix = TRN(WORD_MESSAGE, "Message"),
+	.name = "message", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = TRN(WORD_MESSAGE, "Message"),
 	.hint = TRN(HINT_OK_CHOOSE_MORE_BACK, "OK choose  # more  Back"),
 	.count = msg_count, .item = msg_item, .select = msg_select, .context = msg_context, .target = msg_target,
 	.title = msg_title, .body = msg_body, .enter = msg_enter,
@@ -1098,6 +1237,112 @@ static const ui_scr_def_t message_read_screen = {
 	.name = "message-read", .flags = SF_FIELD | SF_NO_STRIP, .key = msg_read_key, .draw = msg_read_draw,
 	.enter = msg_read_enter, .count = msg_read_count, .target = msg_target,
 };
+
+#if CONFIG_DMR && CONFIG_DMR_SMS
+// ======================= New message: whom to, then the composer =======================
+// Messages' first row: the last caller, the talk target or a contact (or a typed ID, as Share To). The composer opens
+// in place of these screens, so BACK there returns to Messages
+
+enum { MN_CALLER, MN_TALK, MN_CONTACT, MN_COUNT };
+
+// Where PTT goes now on a DMR channel (false: none, or not a DMR channel)
+static bool mn_talk_target(ui_target_t *t)
+{
+	const radio_view_t *v = ui_view();
+	if (v->ch.mode != RADIO_MODE_DMR || v->dmr.target_id == 0)
+		return false;
+	memset(t, 0, sizeof *t);
+	t->id = v->dmr.target_id;
+	t->group = !v->dmr.target_private;
+	strcpy(t->name, v->dmr.target_name);
+	return true;
+}
+
+// The composer for t, in place of the pops screens above Messages. A channel that can't send text says why and stays
+static void mn_compose(const ui_target_t *t, uint8_t pops)
+{
+	static char why[40];	// the toast keeps the pointer
+	if (!data_ready(true, why, sizeof why))
+		return;
+	ui_target = *t;
+	ui_filter_reset();	// the keys typed in To aren't for the screens under it
+	while (pops-- > 0)
+		ui_pop();
+	ui_push(SCR_COMPOSE, 0);
+}
+
+static uint16_t mn_count(void) { return MN_COUNT; }
+
+static void mn_item(uint16_t i, ui_item_t *it)
+{
+	static const tr_id_t names[] = { TRN(HUB_ROW_LAST_CALLER, "Last caller"),
+		TRN(KEYFN_VALUE_TALK_TARGET, "Talk target"), TRN(MSG_ROW_CONTACT_OR_ID, "Contact or ID...") };
+	str_copy(it->label, sizeof it->label, tr(names[i]));
+	item_num(it, (uint16_t)(i + 1u));
+	ui_target_t t;
+	if (i == MN_CONTACT)
+		return;
+	if (!(i == MN_CALLER ? ui_caller_target(&t) : mn_talk_target(&t))) {
+		it->flags |= UI_ITEM_DIM;
+		return;
+	}
+	// Whom it goes to, the first that fits beside the label: "TG 42001 Ops North", then the talkgroup's number or the
+	// person's name ("TG 42001", "Joe Smith"), then the number alone, else nothing
+	char to[32];
+	ui_sb_target(to, sizeof to, &t);
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	sb_str(&b, TEXT_ALT_OPEN);
+	sb_str(&b, to);
+	sb_str(&b, TEXT_ALT_NEXT);
+	if (t.group)
+		sb_str(&b, "TG ");
+	if (!t.group && t.name[0] != '\0')
+		sb_str(&b, t.name);
+	else
+		sb_u32(&b, t.id, 1);
+	sb_str(&b, TEXT_ALT_NEXT);
+	sb_u32(&b, t.id, 1);
+	sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+}
+
+static void mn_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_target_t t;
+	if (i == MN_CONTACT)
+		ui_push(SCR_MSG_TO, 0);
+	else if (i == MN_CALLER && !ui_caller_target(&t))
+		ui_toast(TR(EMPTY_NO_CALLS_HEARD, "No calls heard yet"));
+	else if (i == MN_TALK && !mn_talk_target(&t))
+		ui_toast(TR(TALK_WHY_DMR_CHANNELS_ONLY, "Talk target: DMR channels only"));
+	else
+		mn_compose(&t, 1);
+}
+
+static const ui_scr_def_t msg_new_screen = {
+	.name = "message-new", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = TRN(MSG_TITLE_NEW, "New Message"),
+	.hint = TRN(HINT_1_3_PICK_BACK, "1-3 pick  Back"),
+	.count = mn_count, .item = mn_item, .select = mn_select,
+};
+
+// To: a To list (to_target); OK opens the composer for the one picked
+static void mn_to_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_target_t t;
+	if (to_target(i, &t))
+		mn_compose(&t, 2);
+}
+
+static const ui_scr_def_t msg_to_screen = {
+	.name = "message-to", .flags = SF_LIST | SF_FILTER, .prefix = TRN(MSG_TITLE_NEW, "New Message"),
+	.hint = TRN(MSG_HINT_TO, TEXT_ALT_OPEN "0-9 find or ID  OK pick  Back"
+		TEXT_ALT_NEXT "0-9 find or ID  OK pick" TEXT_ALT_CLOSE),
+	.empty = TRN(SHARE_EMPTY_TYPE_AN_ID, "No contacts: type an ID"),
+	.count = ui_filter_count, .item = to_item, .select = mn_to_select, .filter = &to_filter,
+};
+#endif
 
 // ======================= Recent =======================
 
@@ -1724,86 +1969,14 @@ static const ui_scr_def_t share_screen = {
 };
 #endif
 
-// Share To: the codeplug's contacts, private or group (type to find, as Contacts). Digits that make an ID add two rows
-// after them, the ID as a private call and as a talkgroup, so a station that isn't a contact can be sent to
-#define SHARE_TYPED	CODEPLUG_CONTACTS_MAX	// raw rows past the contacts: the typed ID, private then talkgroup
-
-// The digits typed as an ID, 0 when they aren't one (letters typed by name match the contacts only)
-static uint32_t share_typed_id(void)
-{
-	const char *k = ui_filter_text();
-	uint32_t id = 0;
-	for (; *k; k++) {
-		if (id > 1677721u)
-			return 0;
-		id = id * 10u + (uint32_t)(*k - '0');
-	}
-	return id <= 0xFFFFFEu ? id : 0;
-}
-
-static uint16_t share_raw_count(void) { return SHARE_TYPED + 2u; }
-
-static bool share_raw_label(uint16_t raw, char *buf, uint8_t len)
-{
-	if (raw < SHARE_TYPED)
-		return contacts_raw_label(raw, buf, len);
-	uint32_t id = share_typed_id();
-	if (id == 0 || (raw == SHARE_TYPED && id > CODEPLUG_DMR_ID_MAX))
-		return false;
-	strncpy(buf, ui_filter_text(), len - 1u);	// matches the keys typed
-	buf[len - 1u] = 0;
-	return true;
-}
-
-static void share_raw_each(ui_raw_fn fn, void *ctx, bool labels)
-{
-	(void)labels;
-	if (!contacts_rows(0, fn, ctx, true))
-		return;
-	char label[40];
-	for (uint16_t raw = SHARE_TYPED; raw < share_raw_count(); raw++) {
-		if (!fn(raw, share_raw_label(raw, label, sizeof label) ? label : NULL, ctx))
-			return;
-	}
-}
-
-static bool share_target(uint16_t i, ui_target_t *t)
-{
-	if (i >= ui_filter_count())
-		return false;
-	uint16_t raw = ui_filter_raw(i);
-	if (raw < SHARE_TYPED)
-		return contacts_target(i, t);
-	memset(t, 0, sizeof *t);
-	t->id = share_typed_id();
-	t->group = raw != SHARE_TYPED;
-	return t->id != 0;
-}
-
-static void share_to_item(uint16_t i, ui_item_t *it)
-{
-	ui_target_t t;
-	if (ui_filter_raw(i) < SHARE_TYPED) {
-		contacts_item(i, it);
-		return;
-	}
-	if (!share_target(i, &t))
-		return;
-	sbuf_t b;
-	sb_init(&b, it->label, sizeof it->label);
-	sb_str(&b, t.group ? "TG " : TR(SHARE_ROW_PRIVATE_ID, "Private ID "));
-	sb_u32(&b, t.id, 1);
-	str_copy(it->value, sizeof it->value,
-		TR(CHIP_NOT_SAVED, TEXT_ALT_OPEN "Not saved" TEXT_ALT_NEXT TEXT_ALT_CLOSE));
-}
-
+// Share To: a To list (to_target); OK sends
 static void share_to_select(uint16_t i, bool hold)
 {
 	(void)hold;
 	ui_target_t t;
 	uint8_t total = 0;
 	const radio_view_t *v = ui_view();
-	if (!share_target(i, &t))
+	if (!to_target(i, &t))
 		return;
 	if (v->ch.mode != RADIO_MODE_DMR) {
 		// it goes as DMR data on the channel in use (zone-share.md 7)
@@ -1855,9 +2028,7 @@ static const ui_scr_def_t share_to_screen = {
 	.hint = TRN(SHARE_HINT_TO, TEXT_ALT_OPEN "0-9 find or ID  OK send  Back"
 		TEXT_ALT_NEXT "0-9 find or ID  OK send" TEXT_ALT_CLOSE),
 	.empty = TRN(SHARE_EMPTY_TYPE_AN_ID, "No contacts: type an ID"),
-	.count = ui_filter_count, .item = share_to_item, .select = share_to_select,
-	.filter = &(const ui_filter_def_t){ .raw_count = share_raw_count, .raw_label = share_raw_label,
-		.raw_each = share_raw_each },
+	.count = ui_filter_count, .item = to_item, .select = share_to_select, .filter = &to_filter,
 };
 
 // --- An offer from another radio ---
@@ -8230,6 +8401,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_FIND] = &ui_find_screen, [SCR_ACTIONS] = &actions_screen, [SCR_CONTACTS] = &contacts_screen,
 	[SCR_MESSAGES] = &messages_screen, [SCR_MESSAGE] = &message_screen, [SCR_COMPOSE] = &compose_screen,
 	[SCR_MESSAGE_READ] = &message_read_screen,
+#if CONFIG_DMR && CONFIG_DMR_SMS
+	[SCR_MSG_NEW] = &msg_new_screen, [SCR_MSG_TO] = &msg_to_screen,
+#endif
 	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,

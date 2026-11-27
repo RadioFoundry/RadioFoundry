@@ -525,7 +525,7 @@ void ui_open_actions(const ui_target_t *t)
 }
 
 // The station Home's CONTEXT acts on: the current caller, else the last one heard
-static bool caller_target(ui_target_t *t)
+bool ui_caller_target(ui_target_t *t)
 {
 #if CONFIG_DMR
 	const radio_dmr_view_t *d = &view->dmr;
@@ -550,7 +550,7 @@ static bool caller_target(ui_target_t *t)
 static void open_caller_actions(void)
 {
 	ui_target_t t;
-	if (caller_target(&t))
+	if (ui_caller_target(&t))
 		ui_open_actions(&t);
 	else
 		ui_toast(TR(EMPTY_NO_CALLS_HEARD, "No calls heard yet"));
@@ -1912,12 +1912,41 @@ static const char *list_title_name(const ui_scr_def_t *d)
 	return d->title != NULL ? d->title() : NULL;
 }
 
+// A focused row that went (a message deleted, the list shorter) leaves the focus on a row that can take it: the last
+// row, or from a text row the nearest one above, else below
+static bool list_focusable(const ui_scr_def_t *d, uint16_t i)
+{
+	ui_item_t it;
+	list_item(d, i, &it);
+	return !(it.flags & UI_ITEM_INFO);
+}
+
+static void list_focus_fix(const ui_scr_def_t *d)
+{
+	ui_frame_t *f = &stack[sp];
+	uint16_t n = d->count();
+	if (n == 0)
+		return;
+	uint16_t was = f->focus;
+	if (f->focus >= n)
+		f->focus = (uint16_t)(n - 1u);
+	for (uint16_t k = 1, at = f->focus; k < n && !list_focusable(d, f->focus); k++) {
+		if (at >= k && list_focusable(d, (uint16_t)(at - k)))
+			f->focus = (uint16_t)(at - k);
+		else if (at + k < n && list_focusable(d, (uint16_t)(at + k)))
+			f->focus = (uint16_t)(at + k);
+	}
+	if (f->focus != was)
+		update_focus_target();
+}
+
 static void list_draw(const ui_scr_def_t *d)
 {
 	ui_frame_t *f = &stack[sp];
 	static char header[24];
 	ui_list_t l;
 	memset(&l, 0, sizeof l);
+	list_focus_fix(d);
 	l.prefix = tr(d->prefix);	// a screen definition's text is a key (TRN): translated here
 	l.name = list_title_name(d);
 	l.count = d->count();
@@ -2740,7 +2769,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	sbuf_t b;
 	sb_init(&b, home_hint, sizeof home_hint);
 	sb_str(&b, home_hint_keys());
-	if (has_context_key && recent_n && caller_target(&t)) {
+	if (has_context_key && recent_n && ui_caller_target(&t)) {
 		sb_str(&b, "  # ");
 		if (t.name[0]) {
 			memcpy(name, t.name, sizeof name - 1);
