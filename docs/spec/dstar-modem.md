@@ -82,7 +82,7 @@ sides of the engine (without it the switch adds nothing: gc-sections drops the u
 | Stack | about 500 B at the deepest: the header decoder (268 B) called from the demodulator through the deframer |
 | Sample buffers | none new: receive reads the RX RAM halves the APRS ring already copies (one consumer runs at a time), transmit writes the TX RAM halves in modem memory |
 | CPU | estimated from operation counts, not measured: about 1-2 % of 168 MHz receiving (a 64-bit divide per bit for the interpolation and one per zero crossing; the deframer's pattern checks are an XOR and a bit count), under 1 % transmitting, plus an interrupt every 32 ms each way. The header's Viterbi decoder is about 40 k cycles once per transmission |
-| Voice codec | not counted. A software AMBE codec needs memory of the order of the DMR vocoder's (13 KB on the fork this was measured on, 7 KB on main since its encoder and decoder share one block) and only one mode runs at a time, so the two can share it |
+| Voice codec | not counted here (below): a software codec needs memory of the order of the DMR vocoder's state, and only one mode runs at a time, so the two share it |
 
 The default image of that radio uses 98.71 % of its RAM; with the engine 99.01 % (2,088 B left). A voice codec does not
 fit without reclaiming RAM: 1.5 lists what could go.
@@ -243,7 +243,7 @@ locked to by their header (4 x 500 frames a point); in brackets the headers deco
 | RX high-pass 300 Hz | (0/4) | 6.8e-2 (1/4) | 5.3e-2 (3/4) | 4.3e-2 (3/4) | 3.5e-2 (3/4) | 2.8e-2 (3/4) | 1.9e-2 (3/4) | 1.4e-2 (3/4) |
 | RX high-pass 300 Hz, restored | 6.3e-2 (1/4) | 2.3e-2 (2/4) | 1.3e-2 | 7.0e-3 | 3.7e-3 | 1.9e-3 | 6.3e-4 | 2.6e-4 |
 
-Unmarked cells decoded 4 of 4 headers. AMBE voice with its own FEC stays clean to about 2e-2. Offset and clock error
+Unmarked cells decoded 4 of 4 headers. The voice frames, with their own FEC, stay clean to about 2e-2. Offset and clock error
 cost under 0.3 dB; the 8 kHz modulator (held samples and an interpolation filter, as a radio's DAC does) about 1 dB; a
 restored high-pass about 2 dB and a floor near 3e-4 at a 60 Hz restorer floor. The host test asserts margins under
 these at 14 dB.
