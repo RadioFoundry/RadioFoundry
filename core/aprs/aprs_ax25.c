@@ -124,17 +124,19 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 	// says why nothing is sent
 	uint8_t mark = settings_aprs_freq_mark(cp->tx_hz);
 	bool new_freq = mark != 0 && st->aprs_cp_freq != mark;
-	// None taken yet (a record from before the marker) while the radio has a region other than the default: the
-	// record's frequency may be one no one meant for APRS (a CPS's revert channel). Mark it taken and keep ours; a
-	// radio still on the default takes it, and a later CPS write of another frequency is taken as usual
-	bool keep_freq = new_freq && st->aprs_cp_freq == 0 && st->aprs_stored == 1 && st->aprs_region != APRS_REGION_NA;
+	// None seen yet (a record from before the marker): the record's frequency may be one no one meant for APRS (a
+	// CPS's revert channel; the radio ignored the field before). The radio keeps its own, the default region too (a
+	// radio left on N America took a stray frequency and went deaf on 144.390), and marks the record's taken. A
+	// record seen without a frequency is marked too, so a frequency a CPS writes there later is taken as a change
+	bool keep_freq = new_freq && st->aprs_cp_freq == 0;
+	bool empty_seen = cp->tx_hz == 0 && st->aprs_cp_freq == 0;
 	uint8_t region = APRS_REGION_CUSTOM;
 	for (uint8_t r = 0; r < APRS_REGION_CUSTOM; r++) {
 		if (region_hz[r] == cp->tx_hz) {
 			region = r;
 		}
 	}
-	if (!new_path && !new_ssid && !new_freq) {
+	if (!new_path && !new_ssid && !new_freq && !empty_seen) {
 		return;
 	}
 	settings_t *s = settings_begin();
@@ -159,6 +161,9 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 			}
 		}
 		s->aprs_cp_freq = mark;
+	}
+	if (empty_seen) {
+		s->aprs_cp_freq = SETTINGS_APRS_FREQ_EMPTY;
 	}
 	settings_end(aprs_s.now);
 	LOCK();
