@@ -7,7 +7,8 @@ id = "dm1801pro"
 name = "Baofeng DM-1801 Pro"
 maker = "Baofeng"
 model = "DM-1801 Pro"
-also = ["Baofeng DM-1801"]
+# Only the DM-1801 sold new today: the DM-1801 v1 (GD-77 family) is another radio (docs/spec/radios.md)
+also = ["Baofeng DM-1801 (current, not v1)"]
 kind = "handheld"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 3

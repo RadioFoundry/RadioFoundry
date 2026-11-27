@@ -11,7 +11,7 @@ and what has been checked on it.
 |---|---|---|
 | [Baofeng DM-32UV](#baofeng-dm-32uv) |  | FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. Open: FM deviation at 12.5 kHz and an outdoor GPS fix. |
 | [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | FM, DMR voice and data, text messages, alerts, emergency, scan, the hotspot, single frequency repeating, each split duplex half and the USB network services work on air. Open: standalone SFR and a two-radio split duplex pair. |
-| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | Baofeng DM-1801 | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
+| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | Baofeng DM-1801 (current, not v1) | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
@@ -634,6 +634,17 @@ earlier batches.
 
 A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and a 128 x 64 monochrome screen. FM and DMR
 work on air: voice calls both ways, CTCSS and DCS, text messages and the other DMR data, and hotspot mode.
+
+**Which DM-1801.** This build is for the DM-1801 Pro and the DM-1801 sold new today: Baofeng's FCC filing says the
+two are the same hardware, an HR_C7000 radio. Only the Pro has been run on a bench. Two radios share the name or the
+case and are not this one, so don't install this build on them:
+
+- The **DM-1801 v1** (also sold as the DM-860): the older GD-77 family radio, with an HR_C6000. It isn't supported
+  yet ([Planned radios](#planned-radios)).
+- The **DR-1801**: the same case around unrelated hardware, not planned.
+
+The model and FCC ID label under the battery tells them apart (2AJGM-DM1801PRO on the Pro); the case alone doesn't
+([radios.md](../spec/radios.md#baofeng-dm-1801-pro-and-dm-1801-current)).
 
 Builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
 the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/serial_loader.py --model dm1801pro IMAGE` over
