@@ -220,3 +220,21 @@ uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level)
 	}
 	return at(hz, OFF_SQUELCH)[1 + 18u * seg + 2u * (level - 1u)];
 }
+
+bool db25d_cal_squelch_open_dbm(uint32_t hz, bool fd6818, int16_t open_dbm[RADIO_SQUELCH_MAX])
+{
+	if (!valid) {
+		return false;
+	}
+	for (uint8_t n = 1; n <= RADIO_SQUELCH_MAX; n++) {
+		uint8_t v = db25d_cal_squelch_db(hz, n);
+		if (v == 0 || v == 0xFFu) {
+			return false;	// an empty entry
+		}
+		// The FD6818's register takes 2 x (169 - v), the BK4819's 2 x (160 - v): it opens 9 dB higher. The FD6818's
+		// register stops at 255, -33 dBm
+		int16_t dbm = (int16_t)((fd6818 ? 9 : 0) - (int16_t)v);
+		open_dbm[n - 1] = fd6818 && dbm > -33 ? -33 : dbm;
+	}
+	return radio_sql_rssi_levels(open_dbm);
+}
