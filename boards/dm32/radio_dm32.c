@@ -548,6 +548,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	hrc_dac_b_power(true);
 	transmitting = true;
+	rx_gate();	// closed before the FD6818 switches to TX
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for each burst's sequence. Between bursts the radio
 		// receives: the FD6818 in RX and the LNA on until the RF task switches to the first burst (burst_on). In TX
@@ -576,7 +577,6 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		hrc_pin_write(PIN_MIC_PATH, true);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		fd6818_set_state(&fd, FD6818_STATE_TX);
-		rx_gate();
 		fd6818_tx_audio(&fd, true);
 		if (rf_b) {
 			hal_delay_ms(1);
@@ -735,8 +735,9 @@ static void speaker_source(void)
 // APRS listens (hrc_afsk.c): the FD6818's audio stays on the HR_C7000's input, which also plays it to the speaker
 static void aprs_listen_route(bool on)
 {
-	uint32_t s = hrc_irq_save();	// dm32_speaker_pcm runs speaker_source from the audio task
 	aprs_listen = on;
+	rx_gate();	// before the source switch, as in audio()
+	uint32_t s = hrc_irq_save();	// dm32_speaker_pcm runs speaker_source from the audio task
 	if (rx_audio) {
 		amp(AMP_RADIO, false);	// the source changes under an open squelch: no click
 	}
@@ -745,7 +746,6 @@ static void aprs_listen_route(bool on)
 		amp(AMP_RADIO, true);
 	}
 	hrc_irq_restore(s);
-	rx_gate();
 }
 #endif
 
@@ -764,8 +764,9 @@ uint8_t dm32_amp_users(void)
 
 // Set-up B's 0x28 receive gate: open while the squelch is open or APRS listens. The APRS demodulator needs the FM
 // audio with the squelch closed too, and with Mute APRS audio on the speaker never opens on the APRS frequency at all
-// (speaker_source). Closed in transmit. Worked out from the state at each change, and again after every tune: the
-// set-up B DMR table writes 0x28 closed
+// (speaker_source). Closed in transmit. Worked out from the state at each change, and again after every FM tune: the
+// first FM tune after DMR finds the DMR table's closed word (the FM table doesn't write 0x28), and the tune after a
+// transmission finds the gate closed
 static void rx_gate(void)
 {
 	if (rf_b && mode == RADIO_MODE_FM) {
