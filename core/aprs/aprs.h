@@ -39,7 +39,10 @@
 
 typedef enum {
 	APRS_REGION_NA, APRS_REGION_EU, APRS_REGION_AU, APRS_REGION_NZ, APRS_REGION_JP, APRS_REGION_CN,
-	APRS_REGION_CUSTOM, APRS_REGION_COUNT,
+	APRS_REGION_CUSTOM,
+	// Settings store the number (aprs_region): a new region goes after Custom so a stored Custom stays Custom
+	APRS_REGION_BR,
+	APRS_REGION_COUNT,
 } aprs_region_t;
 
 typedef enum {

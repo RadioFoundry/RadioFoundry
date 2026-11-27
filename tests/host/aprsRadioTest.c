@@ -1678,17 +1678,17 @@ static void test_codeplug_freq(void)
 	aprs_get_cfg(&c);
 	settings_read(&st);
 	CHECK(c.region == APRS_REGION_NA && st.aprs_cp_freq == SETTINGS_APRS_FREQ_EMPTY);	// none in the record: seen
-	cp_hz = 145570000u;			// a CPS writes 145.570 (Brazil)
+	cp_hz = 144930000u;			// a CPS writes 144.930 (Argentina: no region of its own)
 	cp_serial++;
 	run(200);
 	aprs_get_cfg(&c);
 	aprs_get_view(&v);
 	settings_read(&st);
-	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 145570000u && aprs_cfg_freq(&c) == 145570000u);
-	CHECK(st.aprs_region == APRS_REGION_CUSTOM && st.aprs_freq_hz == 145570000u);
-	CHECK(st.aprs_cp_freq == settings_aprs_freq_mark(145570000u) && v.block == APRS_OK);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 144930000u && aprs_cfg_freq(&c) == 144930000u);
+	CHECK(st.aprs_region == APRS_REGION_CUSTOM && st.aprs_freq_hz == 144930000u);
+	CHECK(st.aprs_cp_freq == settings_aprs_freq_mark(144930000u) && v.block == APRS_OK);
 	CHECK(c.ssid == APRS_SSID_DEFAULT && c.path == APRS_PATH_WIDE1_WIDE2);	// the rest unchanged
-	// The menu picks Europe: the record's unchanged 145.570 doesn't take it back
+	// The menu picks Europe: the record's unchanged 144.930 doesn't take it back
 	c.region = APRS_REGION_EU;
 	aprs_set_cfg(&c, now);
 	aprs_reload();
@@ -1707,7 +1707,15 @@ static void test_codeplug_freq(void)
 	cp_serial++;
 	run(200);
 	aprs_get_cfg(&c);
-	CHECK(c.region == APRS_REGION_NA && c.freq_hz == 145570000u);
+	CHECK(c.region == APRS_REGION_NA && c.freq_hz == 144930000u);
+	// Brazil's 145.570 becomes Brazil (stored after Custom, aprs.h), not Custom, and the custom frequency stays
+	cp_hz = 145570000u;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_BR && aprs_cfg_freq(&c) == 145570000u && c.freq_hz == 144930000u);
+	CHECK(st.aprs_region == APRS_REGION_BR && aprs_region_hz(APRS_REGION_BR) == 145570000u);
 	// One outside the ham bands is taken, and the page says why nothing goes out
 	cp_hz = 151000000u;
 	cp_serial++;

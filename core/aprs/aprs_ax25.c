@@ -36,10 +36,10 @@ static uint8_t rf_block(void);
 // --- Configuration ---
 
 static const uint32_t region_hz[APRS_REGION_COUNT] = {
-	144390000u, 144800000u, 145175000u, 144575000u, 144660000u, 144640000u, 0u,
+	144390000u, 144800000u, 145175000u, 144575000u, 144660000u, 144640000u, 0u, 145570000u,
 };
 static const char *const region_names[APRS_REGION_COUNT] = { "N America", "Europe", "Australia", "New Zealand",
-							      "Japan", "China", "Custom" };
+							      "Japan", "China", "Custom", "Brazil" };
 static const char *const path_texts[APRS_PATH_COUNT] = { "", "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1", "WIDE2-2" };
 
 uint32_t aprs_region_hz(uint8_t region)
@@ -131,8 +131,8 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 	bool keep_freq = new_freq && st->aprs_cp_freq == 0;
 	bool empty_seen = cp->tx_hz == 0 && st->aprs_cp_freq == 0;
 	uint8_t region = APRS_REGION_CUSTOM;
-	for (uint8_t r = 0; r < APRS_REGION_CUSTOM; r++) {
-		if (region_hz[r] == cp->tx_hz) {
+	for (uint8_t r = 0; r < APRS_REGION_COUNT; r++) {
+		if (r != APRS_REGION_CUSTOM && region_hz[r] == cp->tx_hz) {
 			region = r;
 		}
 	}
