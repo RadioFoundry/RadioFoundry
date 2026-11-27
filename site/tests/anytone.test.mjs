@@ -104,16 +104,14 @@ test("anytone: a variant that takes another board's image is refused for the ins
 	}
 });
 
-test("anytone: a blocked variant is refused for the install, on every board that lists it; its own firmware set restores", () => {
-	const blocked = RADIOS.filter((r) => r.flash.backend === "anytone-update").flatMap((r) => (r.variants || []).filter((v) => v.blocked).map((v) => [r, v]));
-	assert.ok(blocked.length, "the check needs a blocked variant");
-	for (const [radio, v] of blocked) {
-		const board = FB.boards[radio.flash.board], m = board.anytone_models[v.code][0];
-		const got = at.judge({ board, radio, model: m, task: "install" });
-		assert.deepEqual([got.ok, got.why, got.code], [false, "blocked", v.code]);
-		assert.ok(got.text.includes(v.blocked));
-		assert.equal(at.judge({ board, radio, model: m, task: "restore", spiModels: board.anytone_models[v.code] }).ok, true);
-	}
+test("anytone: a blocked variant is refused for the install; its own firmware set restores", () => {
+	// no variant is blocked today: block one by hand, as board.toml's "blocked" would
+	const code = runs[0], m = models[code][0];
+	const radio = { ...RADIO, variants: RADIO.variants.map((v) => (v.code === code ? { ...v, blocked: "not ready" } : v)) };
+	const got = at.judge({ board: BOARD, radio, model: m, task: "install" });
+	assert.deepEqual([got.ok, got.why, got.code], [false, "blocked", code]);
+	assert.ok(got.text.includes("not ready"));
+	assert.equal(at.judge({ board: BOARD, radio, model: m, task: "restore", spiModels: models[code] }).ok, true);
 });
 
 test("anytone: a variant's image of its own is one radio, not a second card", () => {
