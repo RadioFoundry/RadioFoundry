@@ -908,11 +908,6 @@ msgid "  Sent "
 msgstr "  Envoyé "
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_TOAST_TYPE_FREQUENCY"
-msgid "Type the frequency, then press OK"
-msgstr "Saisir la fréquence, puis OK"
-
-#: core/ui/ui_aprs.c
 msgctxt "APRS_HINT_TYPING"
 msgid "0-9 type  OK set  Back"
 msgstr "0-9 saisir  OK val.  Retour"

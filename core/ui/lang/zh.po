@@ -910,11 +910,6 @@ msgid "  Sent "
 msgstr "  已发 "
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_TOAST_TYPE_FREQUENCY"
-msgid "Type the frequency, then press OK"
-msgstr "输入频率，然后按 OK"
-
-#: core/ui/ui_aprs.c
 msgctxt "APRS_HINT_TYPING"
 msgid "0-9 type  OK set  Back"
 msgstr "0-9 输入  OK 设定  返回"

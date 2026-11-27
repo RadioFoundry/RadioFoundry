@@ -1045,7 +1045,7 @@ static const flow_t flows[] = {
 	{ "A beacons off again", "ok 6 8 2", "2", "aprs_auto=0 toast=Beacons_off", 1, false },
 	{ "A next region", "", "ok 6 8 3", "aprs_region=1", 4, false },
 	// Custom: the step after the last region opens a frequency entry on the row; the region stays until OK
-	{ "A custom opens a frequency entry", "ok 6 8 3 3 3 3 3", "3", "aprs_region=5 toast=Type_the_frequency", 1, false },
+	{ "A custom opens a frequency entry", "ok 6 8 3 3 3 3 3", "3", "aprs_region=5 hides=China shows=OK_set", 1, false },
 	{ "A custom frequency typed", "ok 6 8 3 3 3 3 3 3", "1 4 5 5 7 ok",
 	  "aprs_region=6 aprs_freq=145570000 shows=145.570", 6, false },
 	{ "A custom entry takes back a digit", "ok 6 8 3 3 3 3 3 3", "1 4 5 5 8 back 7 ok", "aprs_freq=145570000", 8, false },
@@ -1055,7 +1055,7 @@ static const flow_t flows[] = {
 	  "aprs_region=6 aprs_freq=144930000", 1, false },
 	{ "A custom entry: Back leaves it", "ok 6 8 3 3 3 3 3 3", "1 back back", "aprs_region=5 screen=aprs", 3, false },
 	{ "A custom entry: Down leaves it", "ok 6 8 3 3 3 3 3 3", "1 4 down", "aprs_region=5 screen=aprs", 3, false },
-	{ "A custom entry shows its hint", "ok 6 8 3 3 3 3 3", "3 wait:5000", "shows=OK_set", 1, false },
+	{ "A custom entry shows its hint", "ok 6 8 3 3 3 3 3", "3", "shows=OK_set", 1, false },
 	{ "A custom entry keeps its digits over quick settings", "ok 6 8 3 3 3 3 3 3 1 4", "quick back 5 5 7 ok",
 	  "aprs_region=6 aprs_freq=145570000", 6, false },
 	{ "A custom: the next step wraps", "aprs:custom ok 6 8 3 3 3 3 3 3 ok", "3", "aprs_region=0", 1, false },

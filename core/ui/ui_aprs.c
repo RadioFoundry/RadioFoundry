@@ -164,7 +164,6 @@ static void freq_start(void)
 	freq_typing = true;
 	freq_len = 0;
 	freq_digits[0] = '\0';
-	ui_toast(TR(APRS_TOAST_TYPE_FREQUENCY, "Type the frequency, then press OK"));
 }
 
 // OK: the typed frequency becomes the custom one. With nothing typed, the custom frequency set before stays, or,
