@@ -619,6 +619,8 @@ map, [hardware-dm32.md](hardware-dm32.md) 8). Page select 0x7F (1 = page 1).
 | 0x7813 | 0x3A = 0x00E0, 0x40 = 0x38D0, 0x43 = 0x5009, 0x4D = 0x347D, page 1 0x16 = 0x02FE; a VCO section (below); `38` / `39`; 0x40 = 0; `03` = 0, 0xC1FA | `03` = 0 | `03` = 0, 0xC1FA |
 | AT1141 | Band split and PLL words (`at1141.h`), 0x30 = 0x4006, 0x4046 | 0x30 = 0x4006 | 0x30 = 0x4006, 0x4046, no wait |
 
+The AT1141 LO's output level is 0x26 = 0x7F40 (`at1141_level` 0), set once after its init, not the driver's default level 2 (0x4140).
+
 The 0x7813's section is the first of 32 44 63 88 126 176 251 353 at or above the LO's integer MHz (else 8); each
 writes 0x3C, 0x3D, 0x40, 0x1A, 0x2A:
 

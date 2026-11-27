@@ -139,6 +139,7 @@ bool db25d_rf_init(void)
 	case CHIP_AT1141:
 		at1141_attach(&at_lo, &bus_lo.bus);
 		at1141_init(&at_lo);
+		at1141_level(&at_lo, 0);	// 0x26 = 0x7F40 on this radio's LO, not the driver's level 2 (hardware-db25d.md 4.8)
 		at1141_disable(&at_lo);
 		sh_lo = (superhet_lo_t){ &at1141_superhet_lo, &at_lo };
 		break;
