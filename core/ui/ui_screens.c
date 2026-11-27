@@ -3787,7 +3787,9 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_SQUELCH)
 		kind = QT_RX_DGID;	// the squelch doesn't gate YSF (ysf.md 5): tile 2 is the receive DG-ID
 	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && (kind == QT_VOX || (kind == QT_MONITOR && !v->vfo)))
-		return QT_NONE;		// VOX and the monitor open FM's audio only; the VFO's tile 5 stays TX freq
+		return QT_NONE;		// VOX and the monitor open FM's audio only; the VFO's tile 5 stays TX freq.
+					// Left empty, not greyed out: a tile that can never work there only confuses, and these
+					// two are kept for Send GPS and Group Monitor (ysf.md 8)
 	if (v->vfo && (kind == QT_MONITOR || kind == QT_PRIVACY))
 		return QT_SPLIT;	// the VFO's TX frequency; Monitor stays on its key, privacy on channels
 	return kind;

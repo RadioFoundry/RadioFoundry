@@ -348,9 +348,10 @@ repeaters with callsign, radio ID and DG-ID, and the room basics (9). Not suppor
 | News, voice messages and pictures from a repeater or node | Not written |
 | V/D mode 1, data at full rate other than the room commands | Not written |
 
-Planned next, once this is in the main line:
+Planned next, once this is in the main line (the first two get quick settings tiles 5 and 6, left empty on a YSF
+channel until then):
 
-1. Positions from the GPS in the frames sent to a repeater.
+1. Positions from the GPS in the frames sent to a repeater (Send GPS).
 2. Group Monitor.
 3. A repeater's or node's news: voice messages and pictures.
 4. VW, if its voice can be carried (above).

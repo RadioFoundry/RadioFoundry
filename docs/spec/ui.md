@@ -235,7 +235,8 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   Own ID or Talkaround (YSF names the radio by callsign and radio ID). OK opens a row, digits type 0-99, Up and Down
   step through 0-99, and OK sets it.
 - On YSF the quick settings are: 2 RX DG-ID (the squelch doesn't gate YSF), 3 Rooms (no tones), 5 and 6 empty on a
-  channel (`QT_NONE`: Monitor and VOX open FM's audio only; the VFO's 5 stays TX freq), 8 TX DG-ID (no width). A
+  channel (`QT_NONE`: Monitor and VOX open FM's audio only; kept for Send GPS and Group Monitor, ysf.md 8; the VFO's 5
+  stays TX freq), 8 TX DG-ID (no width). A
   DG-ID tile: Up/Down step 0-99, digits type two, OK sets it, the other one stays (`ui_svc_ysf_dgid`). The Rooms
   page's TX DG-ID and RX DG-ID rows do the same. In the VFO they stay; on a stored channel they last until another channel is taken
   (`radio_ysf_settings_t.temp_chan`). # on Home opens Rooms (a YSF call has no

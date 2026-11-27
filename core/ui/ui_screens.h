@@ -154,7 +154,8 @@ enum {
 	QT_YSF_ROOMS,		// YSF, in place of FM's Tone: the Rooms page
 	QT_DGID,		// YSF, in place of FM's Width: the transmit DG-ID
 	QT_RX_DGID,		// YSF, in place of the squelch (it doesn't gate YSF): the receive DG-ID
-	QT_NONE,		// an empty tile (YSF's 5 and 6 on a channel: Monitor and VOX are FM's)
+	QT_NONE,		// an empty tile: YSF's 5 and 6 on a channel (Monitor and VOX are FM's), kept for Send GPS
+				// and Group Monitor (ysf.md 8)
 
 };
 // The tile kind at position 0..8 (keys 1..9) for this channel or the VFO

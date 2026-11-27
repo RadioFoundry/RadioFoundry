@@ -444,7 +444,8 @@ and room nodes hear it as they hear a commercial portable.
   room data transmission from a repeater shows its callsign and "Data" and goes into Recent.
 - **TX DG-ID**: quick settings tile **8**, or the first row of the Rooms page (# on Home), sets the DG-ID PTT sends.
   **RX DG-ID**: quick settings tile **2**, or the second row of the Rooms page, sets the one heard: 00 hears every
-  DG-ID, another value only calls with that DG-ID. Type two digits or step with Up/Down, **OK** sets it. In the VFO they stay until the radio is
+  DG-ID, another value only calls with that DG-ID. Tiles 5 and 6 are empty on a YSF channel: they are kept for
+  sending your GPS position and Group Monitor, planned for a later version. Type two digits or step with Up/Down, **OK** sets it. In the VFO they stay until the radio is
   switched off; on a stored channel they last until you change channel. To keep a channel's DG-IDs, set them in the
   channel editor.
 - Through a hotspot or a gateway, leave RX DG-ID at 00: many answer on DG-ID 00 whatever DG-ID called them, and an
