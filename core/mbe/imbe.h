@@ -26,11 +26,8 @@
 // the pitch codes 208..215 and 220..255 are not used; 216..219 mark a silence frame
 enum { IMBE_FRAME_INVALID = -1, IMBE_FRAME_OK = 0, IMBE_FRAME_SILENCE = 1 };
 
-// what the quantizer predicts the next frame's amplitudes from: 120 B
-typedef struct {
-	int16_t L;
-	int16_t lg[MBE_MAXL + 2];	// log2 of the last frame's harmonic amplitudes, Q11, [0] = 0
-} imbe_state_t;
+// what the quantizer predicts the next frame's amplitudes from (lg[0] = 0): 118 B
+typedef mbe_pred_t imbe_state_t;
 
 // the decoder's: that, and its view of the channel: 132 B
 typedef struct {

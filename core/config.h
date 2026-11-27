@@ -366,8 +366,12 @@
 #ifndef CONFIG_IMBE
 #define CONFIG_IMBE			CONFIG_P25
 #endif
+// The 2400 bit/s MBE voice codec (core/mbe/mbe2400.h), compatible with D-STAR's voice frames; MBE is on with it too
+#ifndef CONFIG_MBE2400
+#define CONFIG_MBE2400			0
+#endif
 #ifndef CONFIG_MBE
-#define CONFIG_MBE			CONFIG_IMBE
+#define CONFIG_MBE			(CONFIG_IMBE || CONFIG_MBE2400)
 #endif
 // Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
 // mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them

@@ -144,6 +144,7 @@ below are for an STM32F4 radio.
 | `CONFIG_P25_TRUNK` | = P25 | P25 trunked: the codec of its systems and channels (`docs/spec/p25-codeplug.md` 3), the control channel's signaling decoded, its control channel hunted and held, voice channel grants for the chosen talk groups followed, and where the system allows transmit: registration, affiliation, voice requests and transmit on the granted channel (`docs/spec/p25-trunking.md`). The radio core runs it on a trunked channel. Host tested, and run on a radio against a control channel the SDR bench plays, not on a live system. Needs P25 |
 | `CONFIG_NXDN` | = DMR | NXDN conventional voice at 4800 and 9600 bit/s (`docs/spec/nxdn.md`): the frame codec, receive, the call layer and its engine, and the air interface under them. The radio core's NXDN mode (the VFO's mode tile, a temporary mode change, the debug link), RAM settings, the home screen; NXDN conventional channels in the codeplug (`docs/spec/nxdn-codeplug.md`); voice through the DMR side's vocoder path. Needs `DMR`. With P25 on and no lending vocoder it shares P25's engine memory |
 | `CONFIG_NXDN_SCRAMBLER` | = NXDN | 15-bit NXDN Scrambler for conventional voice calls. Needs `NXDN`. |
+| `CONFIG_MBE2400` | n | the 2400 bit/s MBE voice codec, compatible with D-STAR's voice frames (`core/mbe/mbe2400.h`, `docs/spec/mbe-2400.md`): the encoder, the decoder and the frame's FEC on the MBE core. No mode uses the codec yet |
 | `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs P25 or NXDN (an air-framed mode) and DEBUGLINK |
 | `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX) and Standalone SFR (the repeater and user roles of a channel, `docs/spec/sfr.md`) |
 | `CONFIG_SFR_CWID` | = SFR | the standalone SFR repeater's periodic CW ID: the callsign from the radio name in Morse, in FM on the channel (`sfr.md` 4). Off: the setting isn't offered |
@@ -204,8 +205,8 @@ below are for an STM32F4 radio.
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` and `CONFIG_MBE`
-(the full-rate voice decoder, the MBE core) follow `CONFIG_P25`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
+`CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` (the
+full-rate voice decoder) follows `CONFIG_P25`, `CONFIG_MBE` (the MBE core) `CONFIG_IMBE` or `CONFIG_MBE2400`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
 (`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`, `CONFIG_NXDN` or `CONFIG_DMR_TRUNK`. `CONFIG_LANG_ANY`
 (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the fonts' Latin-1 glyphs.
 `CONFIG_RADIO_DETOUR` (`core/config.h`): the radio core's and the settings store's part of the detour, on with

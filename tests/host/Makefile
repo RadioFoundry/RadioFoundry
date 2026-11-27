@@ -148,10 +148,16 @@ nxdnEngineTest: nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn
 	$(CC) $(CFLAGS) -DCONFIG_NXDN_SCRAMBLER=1 -I$(ROOT)/hal -Wshadow -o $@ nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC) -lm
 
 # The MBE synthesis core and the full-rate voice decoder on it (core/mbe), against golden vectors
-MBE     := $(wildcard $(CORE)/mbe/*.c)
+MBE2400 := $(wildcard $(CORE)/mbe/mbe2400*.c)
+MBE     := $(filter-out $(MBE2400),$(wildcard $(CORE)/mbe/*.c))
 TESTS   += mbeTest
 mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ mbeTest.c $(MBE) -lm
+
+# The 2400 bit/s front end (core/mbe/mbe2400*): its frame, FEC and quantizer, and the test voice set through it
+TESTS   += mbe2400Test
+mbe2400Test: mbe2400Test.c $(MBE) $(MBE2400) $(FEC) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -DCONFIG_MBE2400=1 -o $@ mbe2400Test.c $(MBE) $(MBE2400) $(FEC) -lm
 
 # The full-rate voice encoder (core/mbe): the quantizer against the dequantizer
 TESTS   += imbeEncTest
@@ -264,6 +270,7 @@ run: $(TESTS)
 	./fxpTest
 	./mbeTest | tail -1
 	./imbeEncTest | tail -1
+	./mbe2400Test | tail -1
 	for v in $(VOICE_SETS); do ./imbeVoiceGen --check $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe || exit 1; done
 	./airSoftmodemTest | tail -1
 	./p25EngineTest

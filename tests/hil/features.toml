@@ -98,6 +98,11 @@ switch = "NXDN_SCRAMBLER"
 spec = "docs/spec/nxdn.md"
 source = ["core/nxdn/nxdn_scramble.c", "core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c"]
 
+[feature.mbe2400]
+switch = "MBE2400"
+spec = "docs/spec/mbe-2400.md"
+source = ["core/mbe", "core/fec/golay.c", "core/fec/golay.h"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
