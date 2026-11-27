@@ -85,41 +85,7 @@
 .radio-preview { position: relative; container-type: inline-size; overflow: hidden; width: min(100%, var(--radio-preview-max-width, 15rem)); aspect-ratio: var(--radio-preview-aspect, 342 / 455); margin: var(--space-3) auto; }
 .radio-preview-canvas { position: absolute; inset: 0; transform: scale(var(--radio-zoom, 1.3)); transform-origin: 50% 53.1%; }
 .radio-preview-image { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: fill; }
-.radio-screen { position: absolute; top: var(--screen-top, 27.7%); left: var(--screen-left, 25.7%); display: flex; width: var(--screen-width, 48.5%); height: var(--screen-height, 50.8%); flex-direction: column; overflow: hidden; box-sizing: border-box; border-radius: 0.75em; color: var(--pv-fg); background: var(--pv-bg); font-family: var(--font-mono); font-size: var(--screen-font, 3.2cqw); line-height: 1; }
-.radio-preview[data-display="mono"] .radio-screen { filter: grayscale(1); }
-.rf-statusbar { display: flex; flex: 0 0 6%; align-items: center; justify-content: space-between; gap: 0.3em; box-sizing: border-box; padding: 0 2.5%; color: var(--pv-pill-dark-fg); background: var(--pv-strip); font-size: 1em; }
-.rf-status-mode, .rf-status-indicators, .rf-signal, .rf-battery { display: flex; align-items: center; }
-.rf-status-mode, .rf-status-indicators { gap: 0.35em; }
-.rf-idle { display: inline-flex; align-items: center; padding: 0 0.2em; border-radius: 0.12em; color: var(--pv-idle-fg); background: var(--pv-idle); font-weight: 700; }
-.rf-protocol { font-weight: 700; }
-.rf-signal { height: 0.95em; align-items: end; gap: 1px; }
-.rf-signal i { display: block; width: 0.15em; min-width: 1px; background: var(--pv-rx); }
-.rf-signal i:nth-child(1) { height: 30%; }
-.rf-signal i:nth-child(2) { height: 52%; }
-.rf-signal i:nth-child(3) { height: 74%; }
-.rf-signal i:nth-child(4) { height: 100%; }
-.rf-battery { gap: 0.25em; white-space: nowrap; }
-.rf-battery-icon { position: relative; display: inline-flex; width: 1.4em; height: 0.7em; flex: none; box-sizing: border-box; padding: 1px; border: 1px solid currentColor; }
-.rf-battery-icon::after { position: absolute; top: 25%; right: -0.22em; width: 0.14em; height: 50%; background: currentColor; content: ""; }
-.rf-battery-icon i { display: block; width: 84%; background: var(--pv-idle); }
-.rf-zone-row { display: flex; flex: 0 0 7%; align-items: center; justify-content: space-between; gap: 0.3em; padding: 0 2.5%; color: var(--pv-dim); font-size: 1.09em; white-space: nowrap; }
-.rf-channel-count { color: var(--pv-chnum); }
-.rf-home-channel { display: flex; flex: 0 0 10%; align-items: center; gap: 0.3em; overflow: hidden; padding: 0 1.5%; color: var(--pv-fg); font-size: 1.47em; font-weight: 700; white-space: nowrap; }
-.rf-channel-number { color: var(--pv-chnum); }
-.rf-channel-name { overflow: hidden; text-overflow: clip; }
-.rf-talkgroup { display: flex; flex: 0 0 8%; align-items: center; gap: 0.2em; padding: 0 2.5%; color: var(--pv-fg); font-size: 1.19em; white-space: nowrap; }
-.rf-talkgroup-arrow { color: var(--pv-rx); }
-.rf-channel-details { display: flex; flex: 0 0 6%; align-items: center; gap: 0.7em; padding: 0 2.5%; color: var(--pv-dim); font-size: 1.09em; }
-.rf-divider { flex: 0 0 1px; margin: 0 1.5%; background: var(--pv-line); }
-.rf-home-empty { display: flex; flex: 1; align-items: center; padding: 0 2.5%; color: var(--pv-dim); font-size: 1em; white-space: nowrap; }
-.rf-softkeys { display: flex; flex: 0 0 6%; align-items: center; justify-content: space-between; padding: 0 2.5%; color: var(--pv-dim); background: var(--pv-hint-bg); font-size: 0.97em; }
-.radio-screen[data-layout="landscape"] .rf-statusbar { flex-basis: 18%; font-size: 0.9em; }
-.radio-screen[data-layout="landscape"] .rf-zone-row { flex-basis: 15%; font-size: 0.85em; }
-.radio-screen[data-layout="landscape"] .rf-home-channel { flex-basis: 29%; font-size: 1.35em; }
-.radio-screen[data-layout="landscape"] .rf-talkgroup { flex-basis: 15%; font-size: 0.88em; }
-.radio-screen[data-layout="landscape"] .rf-channel-details { flex-basis: 14%; font-size: 0.85em; }
-.radio-screen[data-layout="landscape"] .rf-home-empty { display: none; }
-.radio-screen[data-layout="landscape"] .rf-softkeys { flex-basis: 9%; font-size: 0.78em; }
+.radio-screen-image { position: absolute; top: var(--screen-top, 27.7%); left: var(--screen-left, 25.7%); display: block; width: var(--screen-width, 48.5%); height: var(--screen-height, 50.8%); object-fit: fill; }
 .pack-heading { display: flex; justify-content: space-between; align-items: start; gap: var(--space-2); }
 .pack-heading p { margin-bottom: 0; }
 .pack-card > label { display: block; margin: var(--space-3) 0 var(--space-1); font-weight: 600; }

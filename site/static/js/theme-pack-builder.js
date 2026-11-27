@@ -7,6 +7,16 @@ const MAX_NAME_BYTES = 23;
 const STORE_THEMES = "rfoundry-theme-builder.themes.v1";
 const STORE_PACK = "rfoundry-theme-builder.pack.v1";
 const encoder = new TextEncoder();
+const PREVIEW_SCREENS = [
+	["home_dmr", "Home · DMR"],
+	["home_plain", "Home · DMR, simple"],
+	["settings_display", "Settings · Display"],
+	["rx_group", "Receiving · group call"],
+	["tx", "Transmitting"],
+];
+const PREVIEW_VARIANTS = [
+	["Dark", ""], ["Light", "__light"], ["High contrast", "__high_contrast"], ["Night (red)", "__night"],
+];
 
 const FIELDS = [
 	["bg", "Screen background", "Main background behind menus and screens."],
@@ -74,6 +84,7 @@ const downloadJsonButton = byId("download-json");
 const previewZoom = byId("preview-zoom");
 const previewZoomValue = byId("preview-zoom-value");
 const radioSelect = byId("radio-model");
+const radioScreenSelect = byId("radio-screen-select");
 const radioPreview = byId("theme-preview");
 const radioFrame = byId("radio-preview-image");
 const radioScreen = byId("radio-screen");
@@ -86,6 +97,10 @@ let editingId = null;
 let radioModels = [];
 let activeRadio = null;
 let activePreviewGeometry = null;
+let activeScreenName = "home_dmr";
+let radioDrawVersion = 0;
+let radioDrawQueued = false;
+const screenRenderCache = new Map();
 
 function readStore(key, fallback) {
 	try {
@@ -245,6 +260,7 @@ function renderPreview(colors = null) {
 		const screen = colorGrid.querySelector(`.color-preview[data-field="${key}"] .color-preview-screen`);
 		if (screen) setPreviewPalette(screen, { ...DEFAULT_COLORS, [key]: palette[key] });
 	}
+	queueRadioScreenRender();
 }
 
 function renderPreviewZoom() {
@@ -264,37 +280,189 @@ function sizeRadioPreview(geometry) {
 	radioPreview.style.setProperty("--radio-preview-max-width", `${Math.min(maxWidth, maxHeight * aspect)}px`);
 }
 
+function screenOptionNames(radio) {
+	const available = new Set(Array.isArray(radio.screens) ? radio.screens : []);
+	const isColor = /\bcolor\b/i.test(radio.display);
+	return PREVIEW_SCREENS.filter(([name]) => available.has(name) && (!isColor ||
+		PREVIEW_VARIANTS.slice(1).every(([, suffix]) => available.has(`${name}${suffix}`))));
+}
+
+function configureScreenChoices(radio) {
+	const available = new Set(Array.isArray(radio.screens) ? radio.screens : []);
+	let options = screenOptionNames(radio);
+	if (!options.length && available.has("home_dmr")) options = [["home_dmr", "Home · DMR"]];
+	if (!options.length) options = [["boot", "Boot screen"]].filter(([name]) => available.has(name));
+	radioScreenSelect.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+	radioScreenSelect.disabled = options.length < 2;
+	activeScreenName = options.some(([value]) => value === activeScreenName) ? activeScreenName : options[0]?.[0] || "boot";
+	radioScreenSelect.value = activeScreenName;
+}
+
+// The radio stores colors as RGB565; compare the screenshots at the same channel precision as the display.
+function rgb565Pixel(hex) {
+	const value = Number.parseInt(hex.slice(1), 16);
+	const r = (value >> 16) & 255, g = (value >> 8) & 255, b = value & 255;
+	return [Math.floor(((r & 0xF8) >> 3) * 255 / 31), Math.floor(((g & 0xFC) >> 2) * 255 / 63),
+		Math.floor(((b & 0xF8) >> 3) * 255 / 31)];
+}
+
+function paletteSignatureHash(colors) {
+	let hash = 2166136261;
+	for (const color of colors) {
+		const [r, g, b] = rgb565Pixel(color);
+		hash = Math.imul(hash ^ ((r << 16) | (g << 8) | b), 16777619);
+	}
+	return hash >>> 0;
+}
+
+function paletteSignature(key) {
+	// The four stock captures distinguish roles that share a color in the dark theme.
+	const colors = PREVIEW_VARIANTS.map(([name]) => {
+		const theme = presets.find((item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+		return theme?.colors[key] || "";
+	});
+	return colors.every(Boolean) ? paletteSignatureHash(colors) : null;
+}
+
+function imageSignatureHash(images, offset) {
+	let hash = 2166136261;
+	for (const image of images) {
+		const data = image.pixels.data;
+		hash = Math.imul(hash ^ ((data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2]), 16777619);
+	}
+	return hash >>> 0;
+}
+
+function imagePixels(url) {
+	return new Promise((resolve, reject) => {
+		const image = new Image();
+		image.decoding = "async";
+		image.onload = () => {
+			const canvas = document.createElement("canvas");
+			canvas.width = image.naturalWidth;
+			canvas.height = image.naturalHeight;
+			const context = canvas.getContext("2d", { willReadFrequently: true });
+			if (!context) { reject(new Error("Canvas is unavailable.")); return; }
+			context.drawImage(image, 0, 0);
+			try {
+				resolve({ width: canvas.width, height: canvas.height, pixels: context.getImageData(0, 0, canvas.width, canvas.height) });
+			} catch (error) {
+				reject(new Error(`Could not read firmware screen image: ${error.message}`));
+			}
+		};
+		image.onerror = () => reject(new Error("Firmware screen image could not be loaded."));
+		image.src = url;
+	});
+}
+
+async function screenRenderData(radio, screenName) {
+	const cacheKey = `${radio.gallery}/${screenName}`;
+	if (screenRenderCache.has(cacheKey)) return screenRenderCache.get(cacheKey);
+	const app = byId("theme-builder");
+	const root = app.dataset.radioRoot;
+	const asset = (suffix) => `${root}static/img/screens/${radio.gallery}/${screenName}${suffix}.png?v=${encodeURIComponent(app.dataset.assets || "")}`;
+	const base = await imagePixels(asset(""));
+	const isColor = /\bcolor\b/i.test(radio.display);
+	let labels = null;
+	if (isColor && presets.length >= PREVIEW_VARIANTS.length) {
+		try {
+			const themed = await Promise.all(PREVIEW_VARIANTS.map(([, suffix]) => imagePixels(asset(suffix))));
+			if (themed.every((image) => image.width === base.width && image.height === base.height)) {
+				const fields = new Map();
+				for (const [key] of FIELDS) {
+					const signature = paletteSignature(key);
+					if (signature !== null && !fields.has(signature)) fields.set(signature, FIELDS.findIndex(([field]) => field === key) + 1);
+				}
+				labels = new Uint8Array(base.width * base.height);
+				for (let pixel = 0, offset = 0; pixel < labels.length; pixel++, offset += 4) {
+					labels[pixel] = fields.get(imageSignatureHash(themed, offset)) || 0;
+				}
+			}
+		} catch (error) {
+			console.warn("Could not prepare a recolorable firmware capture:", error);
+		}
+	}
+	const result = { width: base.width, height: base.height, pixels: base.pixels, labels };
+	screenRenderCache.set(cacheKey, result);
+	if (screenRenderCache.size > 4) screenRenderCache.delete(screenRenderCache.keys().next().value);
+	return result;
+}
+
+function queueRadioScreenRender() {
+	if (radioDrawQueued || !activeRadio) return;
+	radioDrawQueued = true;
+	requestAnimationFrame(() => {
+		radioDrawQueued = false;
+		renderRadioScreen();
+	});
+}
+
+async function renderRadioScreen() {
+	const version = ++radioDrawVersion;
+	const radio = activeRadio;
+	if (!radio) return;
+	try {
+		const screen = await screenRenderData(radio, activeScreenName);
+		if (version !== radioDrawVersion || radio !== activeRadio) return;
+		radioScreen.width = screen.width;
+		radioScreen.height = screen.height;
+		const context = radioScreen.getContext("2d");
+		const image = new ImageData(new Uint8ClampedArray(screen.pixels.data), screen.width, screen.height);
+		const palette = Object.fromEntries(FIELDS.map(([key]) => [key,
+			normalizeColor(byId(`hex-${key}`)?.value) || DEFAULT_COLORS[key]]));
+		if (screen.labels && /\bcolor\b/i.test(radio.display)) {
+			for (let pixel = 0, offset = 0; pixel < screen.labels.length; pixel++, offset += 4) {
+				const field = screen.labels[pixel];
+				if (!field) continue;
+				const color = rgb565Pixel(palette[FIELDS[field - 1][0]]);
+				image.data[offset] = color[0];
+				image.data[offset + 1] = color[1];
+				image.data[offset + 2] = color[2];
+			}
+		}
+		context.putImageData(image, 0, 0);
+		const screenLabel = PREVIEW_SCREENS.find(([name]) => name === activeScreenName)?.[1] || "firmware";
+		if (!/\bcolor\b/i.test(radio.display)) {
+			radioPreviewDetail.textContent = `${radio.name} · ${radio.display}. Showing the actual monochrome ${screenLabel} screen from the firmware UI simulator.`;
+		} else if (screen.labels) {
+			radioPreviewDetail.textContent = `${radio.name} · ${radio.display}. Showing the actual ${screenLabel} layout from the firmware UI simulator, recolored with your palette.`;
+		} else {
+			radioPreviewDetail.textContent = `${radio.name} · ${radio.display}. Showing the actual ${screenLabel} firmware capture in its built-in dark palette.`;
+		}
+	} catch (error) {
+		if (version === radioDrawVersion) {
+			radioPreviewDetail.textContent = `${radio.name} · ${radio.display}. The firmware screen capture could not be loaded.`;
+			console.warn("Could not render the firmware screen capture:", error);
+		}
+	}
+}
+
 function showRadioPreview(radio) {
 	activeRadio = radio;
-	const geometry = radio.id === "dm32" ? {
-		aspect: 342 / 455,
-		screen: { w: 240, h: 320 },
-		screen_pct: { left: 25.7, top: 27.7, width: 48.5, height: 50.8 },
-	} : radio.frame_geometry;
+	const geometry = radio.frame_geometry;
 	activePreviewGeometry = geometry;
 	const screen = geometry.screen_pct;
-	const screenSize = geometry.screen;
 	const color = /\bcolor\b/i.test(radio.display) &&
 		(radio.config?.full ? radio.config.full.includes("UI_COLOR") : true);
-	const screenAspect = screenSize ? screenSize.w / screenSize.h : 1;
-	const frameImage = radio.id === "dm32" ? "static/img/radio-preview.jpg" : radio.frame_image;
-	radioFrame.src = `${byId("theme-builder").dataset.radioRoot}${frameImage}?v=${encodeURIComponent(byId("theme-builder").dataset.assets || "")}`;
+	const app = byId("theme-builder");
+	radioFrame.src = `${app.dataset.radioRoot}${radio.frame_image}?v=${encodeURIComponent(app.dataset.assets || "")}`;
 	radioScreen.style.setProperty("--screen-left", `${screen.left}%`);
 	radioScreen.style.setProperty("--screen-top", `${screen.top}%`);
 	radioScreen.style.setProperty("--screen-width", `${screen.width}%`);
 	radioScreen.style.setProperty("--screen-height", `${screen.height}%`);
-	radioScreen.style.setProperty("--screen-font", `${screen.width * 0.066}cqw`);
-	radioScreen.dataset.layout = screenAspect > 1.1 ? "landscape" : "portrait";
 	radioPreview.dataset.display = color ? "color" : "mono";
 	radioPreview.style.aspectRatio = `${geometry.aspect} / 1`;
 	const screenCenterX = screen.left + screen.width / 2;
 	const screenCenterY = screen.top + screen.height / 2;
 	byId("radio-preview-canvas").style.transformOrigin = `${screenCenterX}% ${screenCenterY}%`;
-	radioPreview.setAttribute("aria-label", `${radio.name} with a live RadioFoundry theme preview on its display`);
+	radioPreview.setAttribute("aria-label", `${radio.name} showing the ${activeScreenName.replaceAll("_", " ")} firmware screen`);
+	configureScreenChoices(radio);
+	const screenLabel = PREVIEW_SCREENS.find(([name]) => name === activeScreenName)?.[1] || "firmware";
 	radioPreviewDetail.textContent = color
-		? `${radio.name} · ${radio.display}. This mockup previews color themes.`
-		: `${radio.name} · ${radio.display}. This monochrome display is shown in grayscale.`;
+		? `${radio.name} · ${radio.display}. Showing the actual ${screenLabel} layout from the firmware UI simulator, recolored with your palette.`
+		: `${radio.name} · ${radio.display}. Showing the actual monochrome ${screenLabel} screen from the firmware UI simulator.`;
 	sizeRadioPreview(geometry);
+	queueRadioScreenRender();
 }
 
 async function loadRadioModels() {
@@ -320,6 +488,13 @@ async function loadRadioModels() {
 		radioSelect.addEventListener("change", () => {
 			const selected = radioModels.find((radio) => radio.id === radioSelect.value);
 			if (selected) showRadioPreview(selected);
+		});
+		radioScreenSelect.addEventListener("change", () => {
+			activeScreenName = radioScreenSelect.value;
+			if (activeRadio) {
+				radioPreview.setAttribute("aria-label", `${activeRadio.name} showing the ${activeScreenName.replaceAll("_", " ")} firmware screen`);
+				queueRadioScreenRender();
+			}
 		});
 		showRadioPreview(initial);
 	} catch (error) {
@@ -734,6 +909,8 @@ async function loadPresets() {
 		seen.add(key);
 		return true;
 	});
+	screenRenderCache.clear();
+	if (activeRadio) queueRadioScreenRender();
 	const packValid = packIds.every((id) => customThemes.some((theme) => theme.id === id) || presets.some((theme) => theme.id === id));
 	if (!packValid) packIds = packIds.filter((id) => customThemes.some((theme) => theme.id === id) || presets.some((theme) => theme.id === id));
 	renderAll();

@@ -40,35 +40,24 @@
 						<span>Radio model</span>
 						<select id="radio-model" aria-describedby="radio-preview-detail"><option>Loading supported radios…</option></select>
 					</label>
+					<label class="preview-model-control" for="radio-screen-select">
+						<span>Firmware screen</span>
+						<select id="radio-screen-select" aria-describedby="radio-preview-detail" disabled><option>Loading screens…</option></select>
+					</label>
 					<label class="preview-zoom-control" for="preview-zoom">
 						<span>Zoom</span>
 						<input id="preview-zoom" type="range" min="1" max="1.8" step="0.1" value="1.3" aria-label="Radio screen zoom">
 						<output id="preview-zoom-value" for="preview-zoom">130%</output>
 					</label>
 				</div>
-				<p class="radio-preview-detail small muted" id="radio-preview-detail">Loading radio display mockups…</p>
-				<div id="theme-preview" class="radio-preview" role="img" aria-label="Radio with a live theme preview on its display">
+				<p class="radio-preview-detail small muted" id="radio-preview-detail">Loading firmware screen captures…</p>
+				<div id="theme-preview" class="radio-preview" role="img" aria-label="Radio with its firmware display preview">
 					<div class="radio-preview-canvas" id="radio-preview-canvas">
 						<img class="radio-preview-image" id="radio-preview-image" src="" alt="" aria-hidden="true" decoding="async">
-						<div class="radio-screen" id="radio-screen" aria-hidden="true" data-layout="portrait">
-							<div class="rf-statusbar">
-								<div class="rf-status-mode"><span class="rf-idle">IDLE</span><span class="rf-protocol">DMR</span></div>
-								<div class="rf-status-indicators">
-									<span class="rf-signal" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-									<span class="rf-battery"><span class="rf-battery-icon"><i></i></span><span>84%</span></span>
-								</div>
-							</div>
-							<div class="rf-zone-row"><span>Local repeaters</span><span class="rf-channel-count">3/16</span></div>
-							<div class="rf-home-channel"><span class="rf-channel-number">3</span><span class="rf-channel-name">COUNTY DMR</span></div>
-							<div class="rf-talkgroup"><span class="rf-talkgroup-arrow">→</span><span>TG 3100 USA</span></div>
-							<div class="rf-channel-details"><span>TS1</span><span>CC1</span><span>1W</span></div>
-							<div class="rf-divider"></div>
-							<div class="rf-home-empty">No calls heard yet</div>
-							<div class="rf-softkeys"><span>OK Menu</span><span>* Quick</span></div>
-						</div>
+						<canvas class="radio-screen-image" id="radio-screen" aria-hidden="true"></canvas>
 					</div>
 				</div>
-				<p class="radio-preview-note small muted">The DM-32UV keeps the close-up view; other models use RadioFoundry’s radio drawings. Monochrome models appear in grayscale; color displays may render RGB565 colors differently.</p>
+				<p class="radio-preview-note small muted">Each preview uses a screen captured from RadioFoundry’s firmware UI simulator at that model’s display geometry, placed in its radio drawing. Color models recolor the captured UI with your palette; monochrome models show their actual grayscale screen.</p>
 			</section>
 		</aside>
 	</div>
