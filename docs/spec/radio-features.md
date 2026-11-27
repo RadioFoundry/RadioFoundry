@@ -435,6 +435,7 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (Settings > Sound > Emergency tone, `dmr-emergency.md`) |
 | message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
 | system back | 1000 Hz, 1400 Hz, 60 ms each | a trunked system found again from its fallback channel ([dmr-trunking.md](dmr-trunking.md) 12.5) |
+| call alert | 1400 / 1100 Hz trill, 40 ms steps, twice with 200 ms between (680 ms) | DMR: a call alert received: the UI asks for the ring (`radio_req_beep(BEEP_CALL_ALERT)`) with the banner; also every 2 s while a Tier III individual call rings this radio ([dmr-trunking.md](dmr-trunking.md)). No setting of its own: only Tone volume 0 (or a volume of 0, where beeps follow the volume) silences the ring, so a setting meant for messages never hides a page |
 | sweep | 400 ms silence, then 150 Hz to 3.8 kHz over 4 s, phase continuous | the speaker test, from the debug link only (op 22, which can delay it); `test_speaker_sweep` measures the speaker's response and whether the audio path plays it whole |
 
 The four tones with a settings area key (`radio_tone_rows` in `core/radio/radio_keys.h`,

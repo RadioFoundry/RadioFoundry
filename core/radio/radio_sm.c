@@ -4553,7 +4553,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (t3m.ring_src == 0) {
 		t3_ring_next = 0;
 	} else if (t3_ring_next == 0 || (int32_t)(now_ms - t3_ring_next) >= 0) {
-		beep(sm, BEEP_MESSAGE);
+		beep(sm, BEEP_CALL_ALERT);	// the ring a call alert plays: one sound for a page
 		t3_ring_next = now_ms + 2000u;
 	}
 	// Our grant came while PTT is held: talk now

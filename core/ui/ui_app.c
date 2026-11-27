@@ -673,6 +673,7 @@ static void handle_event(const ui_event_t *ev)
 		sb_str(&b, TR(ALERT_BANNER_FROM, "Call alert from "));
 		station(&b, ev);
 		banner(UI_BANNER_CALL_ALERT, false, ev->id, title, TR(HINT_PTT_REPLIES, "PTT replies"));
+		ui_svc_beep(UI_BEEP_CALL_ALERT);	// always: a page that rings nowhere is missed (no setting of its own)
 		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_PRIVATE_CALL:

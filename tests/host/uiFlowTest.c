@@ -914,6 +914,10 @@ static const flow_t flows[] = {
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
 	{ "S vibrate on a message", "", "msg:9991234,Hi", "vibes=1 vibe=0", 0, false },
 	{ "S vibrate on a call alert", "", "alert:91", "vibes=1 vibe=1", 0, false },
+	// A call alert rings (ui_beep_t 4), with no setting of its own: Message tone off doesn't silence it
+	{ "S call alert tone", "", "alert:91", "beeps=1 beep=4", 0, false },
+	{ "S call alert tone, message tone off", "ok 7 1 down down down down down down down down down down ok long:back",
+	  "alert:91", "set4=0 beep=4", 0, false },
 	{ "S vibrate on a private call", "", "privcall:91", "vibes=1 vibe=1", 0, false },
 	{ "S vibrate on an emergency", "", "emergency:91", "vibes=1 vibe=2", 0, false },
 	{ "S vibrate off", "ok 7 1 down down down down down down down down down down down ok long:back", "msg:9991234,Hi", "vibes=0 beep=2", 0,
