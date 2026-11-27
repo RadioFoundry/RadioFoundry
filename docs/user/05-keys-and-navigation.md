@@ -66,8 +66,9 @@ Home
  '-- Talk target  Talk target picker
 ```
 
-In numbered lists (the hub, Tools, Settings, actions, quick settings) a number key picks the row with that number
-directly. For example, **OK**, **6** opens Tools.
+In numbered lists (the hub, Tools, Settings, actions, a message's actions, the message composer, quick settings) a
+number key picks the row with that number directly. For example, **OK**, **6** opens Tools. Confirmations of a step
+that can't be undone, such as Factory reset, have no numbers: move to the answer and press **OK**.
 
 In long lists (Contacts, Channels, a zone's channels) the number keys filter the list by name, the way a phone
 keypad spells words. **2** is ABC, **3** is DEF, and so on to **9** (WXYZ). Each key narrows the list to names with a

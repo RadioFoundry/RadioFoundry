@@ -98,6 +98,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "contact_actions", "ok 1 5 6 ctx" },
 	{ "messages", "msg:9991234,Meet_at_the_north_lot msg:9995678,On_my_way wait:9000 ok 2" },
 	{ "messages_empty", "ok 2" },
+	{ "message_new", "call:9991234,91,g wait:11000 ok 2 ok" },
+	{ "message_to", "ok 2 ok 3 9 9 9" },
 	{ "recent", "call:9991234,91,g call:9995678,3100,g call:9992222,0,p ok 3" },
 	{ "zones", "ok 4" },
 	{ "channels", "ok 5" },

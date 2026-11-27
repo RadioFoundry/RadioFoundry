@@ -117,9 +117,10 @@ By ID: type the ID (`3`,`1`,`0`,`1`,`2`,`3`,`4`); Find shows "Private call 99912
 
 ## 6. Send a text message
 
-1. Pick the recipient: `CONTEXT` (last caller) or Find by name, then `CONTEXT`.
+1. Pick the recipient: `CONTEXT` (last caller) or Find by name, then `CONTEXT`. Or from Messages: `SELECT`, `2`,
+   `SELECT` (New message), then `1` last caller, `2` talk target or `3` a contact by name or a typed ID, then `SELECT`.
 2. `3` (Message): the composer opens with Canned messages listed first ("OK", "On my way", "Call me", "QSY TG 91", user-defined), then "Write…".
-3. Canned: `NAV_DOWN` to it, `SELECT` = Send. Written: `NAV_DOWN` to "Write…", `SELECT`, type (T9), `SELECT` = Send.
+3. Canned: its number, or `NAV_DOWN` to it and `SELECT` = Send. Written: `NAV_DOWN` to "Write…", `SELECT`, type (T9), `SELECT` = Send.
 4. Status strip shows "Sending…", then "Delivered" (if confirmed data) or "Sent, no confirmation" with what to do on failure ("No answer from Q1AAA. Retry with Select, or Back to keep in Drafts").
 
 Long `BACK` from the composer keeps the text as a draft (P4).
@@ -128,6 +129,7 @@ Long `BACK` from the composer keeps the text as a draft (P4).
 |---|---|---|---|---|---|
 | Canned reply to last caller | 4 (`#`,`3`,`↓`,`SELECT`) | 4 | 4 | 5 | 4 |
 | Canned to contact by name | 6 (3 letters, `#`,`3`,`SELECT`) | 6 | 6 (driving: canned only) | 3+n | 6 |
+| New message to a contact by name, canned | 9 (`SELECT`,`2`,`SELECT`,`3`, 3 letters, `SELECT`, `1`) | 9 | 9 | n/a | 9 |
 | Written, 10 letters | 15 | 15 | locked while driving | n/a | - |
 
 ## 7. Read a new message

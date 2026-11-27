@@ -237,7 +237,7 @@ def test_delete_message_checks_the_combined_inbox(monkeypatch):
         (1, 1, test_sms, []),                            # the first row could be APRS
         (0, 1, test_sms, ["ok", "2", "ok"]),             # arrival while navigating
         (0, 0, {"text": "personal"}, ["ok", "2", "ok"]),  # another DMR message is now first
-        (0, 0, dict(test_sms, unread=False), ["ok", "2", "ok", "ok"]),
+        (0, 0, dict(test_sms, unread=False), ["ok", "2", "ok", "4"]),
     ):
         radio = Mock()
         radio.data_view.return_value = {"data.built": 1}
@@ -246,7 +246,7 @@ def test_delete_message_checks_the_combined_inbox(monkeypatch):
             {"aprs.built": "1", "aprs.messages": str(next(aprs_counts))}
             if "aprs" in sections else {"data.inbox_count": "1"})
         radio.link.inbox.side_effect = [test_sms, last_sms]
-        radio.wait_for.return_value = {"ui.count": "1", "ui.focus": "0"}
+        radio.wait_for.return_value = {"ui.count": "2", "ui.focus": "1"}
         request, config = Mock(), Mock()
         config.getoption.return_value = False
         if len(expected_keys) == 4:

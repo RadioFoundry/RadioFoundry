@@ -21,18 +21,22 @@ Messages.
 
 ## Reading messages
 
-1. Press **OK**, **2** (Messages). The newest message is first. Unread messages are highlighted.
+1. Press **OK**, **2** (Messages). The first row is **New message** (see [Sending a message](#sending-a-message)).
+   The newest message is under it and has the focus. Unread messages are highlighted. With no messages, the list
+   shows "No messages yet" and **New message** has the focus.
 2. Focus a message and press **OK**. The radio shows the sender, how long ago it arrived and the text. It marks the
    message read.
-3. Below the text:
+3. Below the text are the actions. Press a row's number, or focus the row and press **OK**:
 
-   | Row | Does |
-   |---|---|
-   | Full message | Shows the whole text on its own page. **Up** and **Down** scroll it, **Back** returns. Only when the text is too long for the screen, which ends it with "…" |
-   | Reply "OK" | Sends "OK" to the sender |
-   | Reply "On my way" | Sends "On my way" to the sender |
-   | Call | Makes the sender the talk target for now |
-   | Delete | Deletes the message. There is no undo |
+   | Key | Row | Does |
+   |---|---|---|
+   | | Full message | Shows the whole text on its own page. **Up** and **Down** scroll it, **Back** returns. Only when the text is too long for the screen, which ends it with "…" |
+   | **1** | Reply "OK" | Sends "OK" to the sender |
+   | **2** | Reply "On my way" | Sends "On my way" to the sender |
+   | **3** | Call | Makes the sender the talk target for now |
+   | **4** | Delete | Deletes the message. There is no undo |
+
+   For example, **OK**, **2**, **OK**, **4** deletes the newest message.
 
 **#** on a DMR message opens the actions for its sender. **PTT** in an open DMR message calls the sender. The Call
 action is unavailable for APRS messages, whose sender is a callsign. **#** on an APRS message opens a composer addressed
@@ -47,10 +51,29 @@ The radio keeps DMR and APRS messages in memory. They are lost when the radio tu
 
 ## Sending a message
 
+From Messages:
+
+1. Press **OK**, **2** (Messages), then **OK** on **New message**.
+2. Choose who gets the message:
+
+   | Key | Row | Sends to |
+   |---|---|---|
+   | **1** | Last caller | The station heard last, by name or ID. Unavailable until a call is heard |
+   | **2** | Talk target | Where **PTT** talks now, such as the channel's talkgroup. DMR channels only |
+   | **3** | Contact or ID... | A contact: type letters to find it by name, as in Contacts. To send to a station that isn't a contact, type its ID and pick "Private ID ..." or "TG ..." |
+
+3. The composer opens. Continue at step 3 below. **Back** in the composer returns to Messages.
+
+<img src="../ux/screens/160x120i5/message_new.png" width="200" alt="New message: who gets it">
+<img src="../ux/screens/160x120i5/message_to.png" width="200" alt="New message: a contact or a typed ID">
+
+From a person or talkgroup:
+
 1. Open the actions for the person or talkgroup. Press **#** on Home for the last caller, or **#** on a contact.
 2. Press **3** (Message).
-3. Pick a preset ("OK", "On my way", "Call me" or "Can't talk now"), or choose **Write...** to type your own text.
-   Press **OK** to send. Presets are sent in the radio's language (Settings > Display > Language).
+3. Pick a preset ("OK", "On my way", "Call me" or "Can't talk now") by its number, or focus it and press **OK**. To
+   type your own text, choose **Write...** (**5**), type the text and press **OK** to send. Presets are sent in the
+   radio's language (Settings > Display > Language).
 
 <img src="../ux/screens/160x120i5/compose.png" width="200" alt="The message composer">
 

@@ -752,7 +752,7 @@ def test_zone_editor_moves_a_channel(home):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_delete_message(home, request, pytestconfig):
-    """Hub 2 (Messages), OK on the newest, Delete (the last action): the inbox has one message less. Only a message
+    """Hub 2 (Messages), OK on the newest, 4 (Delete): the inbox has one message less. Only a message
     from an isolated bench (RFOUNDRY_HIL_DELETE_MESSAGE=hil) or a disposable inbox
     (RFOUNDRY_HIL_DELETE_MESSAGE=1) can be deleted. On the isolated bench the selected text must start with
     HIL_SMS_PREFIX. With --allow-rf the bench can supply that message."""
@@ -783,20 +783,17 @@ def test_delete_message(home, request, pytestconfig):
     r.press("ok")
     wait_screen(r, "hub")
     r.press("2")
-    if as_int(wait_screen(r, "messages").get("ui.focus")) != 0:
-        skip("state", "the first Messages row is not selected")
+    # New message is the first row; the newest message, under it, has the focus
+    if as_int(wait_screen(r, "messages").get("ui.focus")) != 1:
+        skip("state", "the newest message is not selected")
     r.press("ok")
-    s = wait_screen(r, "message")
-    last = as_int(s.get("ui.count")) - 1     # Delete is the last row: a long message has Full message first
-    for _ in range(last):
-        r.press("down")
-    r.wait_for(lambda v: as_int(v.get("ui.focus")) == last, sections=("link",), what="Delete (the last row)")
+    wait_screen(r, "message")
     require_dmr_rows()
     current = r.link.inbox(0)
     # Opening the message marks it read. Its addresses, format and text must still match before Delete.
     if not current or any(current.get(k) != newest.get(k) for k in ("src", "dst", "group", "format", "text")):
         skip("state", "the selected DMR message changed before Delete")
-    r.press("ok")
+    r.press("4")    # Delete by its number, with or without Full message first
     r.wait_for(lambda x: as_int(x.get("data.inbox_count")) == n - 1, sections=("dmr_data",), what="one message less")
     # The toast shows a UI tick after the inbox changes
     r.wait_for(lambda v: "deleted" in v.get("ui.toast", ""), sections=("link",), what="the Message deleted toast")

@@ -46,6 +46,7 @@ typedef enum {
 	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
 	SCR_SATELLITE_TEXT,		// one 69-character TLE line
 	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
+	SCR_MSG_NEW, SCR_MSG_TO,	// Messages > New message: whom to (CONFIG_DMR_SMS); a contact or a typed ID
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
@@ -146,6 +147,8 @@ bool ui_about_busy(void);	// About is still working out the image hash: redraw i
 void ui_focus_changed(void);
 // Open the actions for a target (SCR_ACTIONS)
 void ui_open_actions(const ui_target_t *t);
+// The station Home's CONTEXT acts on: the current caller, else the last one heard (false: none)
+bool ui_caller_target(ui_target_t *t);
 void ui_aprs_compose(const char *call);
 #if CONFIG_CONTACT_EDIT
 // The contact editor on a new contact for t: its ID, type and name (a talkgroup or ID as its name when it has none)

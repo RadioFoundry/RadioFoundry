@@ -607,7 +607,7 @@ msgctxt "QUICK_TOAST_TONE_RX_ONLY"
 msgid "Tone for RX only"
 msgstr "Tono solo en RX"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "TOAST_NO_ACTIONS_HERE"
 msgid "No actions here"
 msgstr "Sin acciones aquí"
@@ -697,7 +697,7 @@ msgctxt "LOCK_TOAST_UNLOCKED"
 msgid "Keys unlocked"
 msgstr "Teclas desbloq."
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "TALK_WHY_DMR_CHANNELS_ONLY"
 msgid "Talk target: DMR channels only"
 msgstr "Destino: solo canales DMR"
@@ -1758,6 +1758,11 @@ msgid "(no name)"
 msgstr "(sin nombre)"
 
 #: core/ui/ui_menus.c
+msgctxt "SHARE_ROW_PRIVATE_ID"
+msgid "Private ID "
+msgstr "ID privado "
+
+#: core/ui/ui_menus.c
 msgctxt "CONTACT_ROW_NEW"
 msgid "New contact"
 msgstr "Contacto nuevo"
@@ -1783,6 +1788,16 @@ msgid "Contacts: not in this build"
 msgstr "Contactos: no disponible"
 
 #: core/ui/ui_menus.c
+msgctxt "MSG_ROW_NEW"
+msgid "New message"
+msgstr "Nuevo mensaje"
+
+#: core/ui/ui_menus.c
+msgctxt "MSG_EMPTY"
+msgid "No messages yet"
+msgstr "Sin mensajes aún"
+
+#: core/ui/ui_menus.c
 msgctxt "MSG_ROW_NEW_APRS"
 msgid "New APRS message"
 msgstr "Nuevo mensaje APRS"
@@ -1791,11 +1806,6 @@ msgstr "Nuevo mensaje APRS"
 msgctxt "MSG_HINT_LIST"
 msgid "OK open  # reply  Back"
 msgstr "OK abrir  # responder  Atrás"
-
-#: core/ui/ui_menus.c
-msgctxt "MSG_EMPTY"
-msgid "No messages yet"
-msgstr "Sin mensajes aún"
 
 #: core/ui/ui_menus.c
 msgctxt "MSG_ROW_FULL_MESSAGE"
@@ -1846,6 +1856,36 @@ msgstr "A "
 msgctxt "HINT_OK_CHOOSE_MORE_BACK"
 msgid "OK choose  # more  Back"
 msgstr "OK elegir  # más  Atrás"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_TALK_TARGET"
+msgid "Talk target"
+msgstr "Destino"
+
+#: core/ui/ui_menus.c
+msgctxt "MSG_ROW_CONTACT_OR_ID"
+msgid "Contact or ID..."
+msgstr "Contacto o ID..."
+
+#: core/ui/ui_menus.c
+msgctxt "MSG_TITLE_NEW"
+msgid "New Message"
+msgstr "Nuevo mensaje"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_1_3_PICK_BACK"
+msgid "1-3 pick  Back"
+msgstr "1-3 elegir  Atrás"
+
+#: core/ui/ui_menus.c
+msgctxt "MSG_HINT_TO"
+msgid "{0-9 find or ID  OK pick  Back|0-9 find or ID  OK pick}"
+msgstr "{0-9 buscar o ID  OK elegir  Atrás|0-9 buscar o ID  OK elegir}"
+
+#: core/ui/ui_menus.c
+msgctxt "SHARE_EMPTY_TYPE_AN_ID"
+msgid "No contacts: type an ID"
+msgstr "Sin contactos: teclea un ID"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "CALL_VALUE_TO_YOU"
@@ -1953,11 +1993,6 @@ msgid "Saving the zone: try again"
 msgstr "Guardando la zona: reintenta"
 
 #: core/ui/ui_menus.c
-msgctxt "SHARE_ROW_PRIVATE_ID"
-msgid "Private ID "
-msgstr "ID privado "
-
-#: core/ui/ui_menus.c
 msgctxt "SHARE_TOAST_GO_TO_DMR_CHANNEL"
 msgid "Go to a DMR channel to send"
 msgstr "Ve a un canal DMR para enviar"
@@ -1991,11 +2026,6 @@ msgstr "Compartir con"
 msgctxt "SHARE_HINT_TO"
 msgid "{0-9 find or ID  OK send  Back|0-9 find or ID  OK send}"
 msgstr "{0-9 buscar o ID  OK enviar  Atrás|0-9 buscar o ID  OK enviar}"
-
-#: core/ui/ui_menus.c
-msgctxt "SHARE_EMPTY_TYPE_AN_ID"
-msgid "No contacts: type an ID"
-msgstr "Sin contactos: teclea un ID"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_ROW_IMPORT"
@@ -2731,11 +2761,6 @@ msgstr "Tiene todos los canales: se queda"
 msgctxt "HINT_1_4_PICK_BACK"
 msgid "1-4 pick  Back"
 msgstr "1-4 elegir  Atrás"
-
-#: core/ui/ui_menus.c
-msgctxt "HINT_1_3_PICK_BACK"
-msgid "1-3 pick  Back"
-msgstr "1-3 elegir  Atrás"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_ROW_KEEP"
@@ -3706,11 +3731,6 @@ msgstr "Nada"
 msgctxt "KEYFN_VALUE_MONITOR"
 msgid "Monitor"
 msgstr "Monitor"
-
-#: core/ui/ui_menus.c
-msgctxt "KEYFN_VALUE_TALK_TARGET"
-msgid "Talk target"
-msgstr "Destino"
 
 #: core/ui/ui_menus.c
 msgctxt "KEYFN_VALUE_POWER_LEVEL"
