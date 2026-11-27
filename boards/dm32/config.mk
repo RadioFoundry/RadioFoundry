@@ -32,10 +32,10 @@ MCU_DEFS += -DGFX_FB_BYTES=$(DM32_FB_BYTES)u
 # more than the programming cable's 115200 baud PPP link carries (about 11.5 KB/s each way)
 CONFIG_NET_USRP ?= n
 # D-STAR DV (docs/spec/dstar-modem.md; the flat FM paths in flat_dm32.c): on only where the build leaves the IP gateway
-# out, as the multimode variant does. The default image keeps its RAM for the features it has (about 1.2 KB free), and
-# the gateway's 17 KB is the room D-STAR's engine, buffers and screens take; its codec borrows the DMR vocoder's state
-# RAM. Tested on the switch that makes the room rather than on the variant's name, so a hand-made build without the
-# gateway gets it too (docs/build-config.md, Variants)
+# out (CONFIG_DMR_IP_GATEWAY=n; the multimode variant, proposed on its own, does that). The default image keeps its RAM
+# for the features it has (about 1.2 KB free), and the gateway's 17 KB is the room D-STAR's engine, buffers and screens
+# take; its codec borrows the DMR vocoder's state RAM. Tested on the switch that makes the room rather than on a
+# variant's name, so any build without the gateway gets it (docs/build-config.md, Variants)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),n)
 CONFIG_DSTAR ?= y
 endif

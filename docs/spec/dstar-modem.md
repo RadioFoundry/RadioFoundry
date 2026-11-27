@@ -87,8 +87,9 @@ sides of the engine (without it the switch adds nothing: gc-sections drops the u
 The default image of that radio uses 98.71 % of its RAM; with the engine 99.01 % (2,088 B left). A voice codec does not
 fit without reclaiming RAM: 1.5 lists what could go.
 
-All of D-STAR as built for that radio's multimode variant (the engine, the codec, the channel kind, the radio core's
-part, the screens, the debug link and the board's flat paths), against the same build with `CONFIG_DSTAR=n`:
+All of D-STAR as built for that radio without the IP gateway, with the switches of 1.5's multimode preset (the engine,
+the codec, the channel kind, the radio core's part, the screens, the debug link and the board's flat paths), against
+the same build with `CONFIG_DSTAR=n`:
 
 | Item | Cost |
 |---|---|

@@ -19,7 +19,7 @@ Status words as in `docs/spec/gotchas.md`. Every command here is `tools/dstar_be
 
 | Part | What |
 |---|---|
-| Radio under test | DM-32UV, `make BOARD=dm32 VARIANT=multimode` (D-STAR is on only there: [build-config.md](../build-config.md), Variants), flashed by the owner; programming cable for the debug link |
+| Radio under test | DM-32UV, `make BOARD=dm32` with the IP gateway left out (`CONFIG_DMR_IP_GATEWAY=n`: D-STAR is on only then, [build-config.md](../build-config.md), Variants), flashed by the owner; programming cable for the debug link |
 | RF | Dummy load with a tap or a small pick-up antenna for the SDR; lowest power level; a simplex DV frequency your licence and band plan allow, the same on every radio (`--mhz`) |
 | SDR | The shack's RTL-SDR (`rtl_sdr` on the path, or `--capture` with your receiver's command), tuned 25 kHz below the channel by default (off its DC spike); its ppm known ([sdr_fm_check.py](../../tools/sdr_fm_check.py)) |
 | D-STAR radios | Icom ID-51 or IC-705 (step 2), IC-9700 (step 4); each with MY set, UR CQCQCQ, simplex (DUP off), a TX message set for step 2b |
@@ -145,7 +145,7 @@ One directory per session (the scripts write into `$TMPDIR/dstar-bench`; copy it
 
 | Item | Where from |
 |---|---|
-| Date, firmware commit, build (`VARIANT=multimode`) | `rfoundry_debug.py version` |
+| Date, firmware commit, build (its switches, e.g. `CONFIG_DMR_IP_GATEWAY=n`) | `rfoundry_debug.py version` |
 | The radio's RF set-up (A or B) and board revision | hardware-dm32.md 8.10; Settings > Advanced > Hardware |
 | Frequency, power level, attenuation, SDR and its ppm | by hand |
 | The other radio: model, firmware, its settings (MY, UR, RPT1/2, message, DUP) | by hand |
