@@ -20,9 +20,12 @@
 // The line can also latch low: the radio starting to send while the host still sends clamps it until a power cycle, and
 // a chip reset doesn't release it (docs/spec/gotchas.md 16.5). It reads just like a held key, but it starts differently:
 // a key goes down on a line that has idled high, a latch at the end of the traffic. So a new press needs the pin to
-// have idled high since start-up and to have read high since the last good byte, and not to have gone low right after
-// the radio's own serial send. A line that stays low that way is stuck (shared_ptt_stuck): no press, until the pin
-// reads high. A key held from power-on reads the same way, and counts once it has been released.
+// have idled high since start-up and to have read high since the last exchange (a good byte and a send of the radio's
+// own, both after the last high read), and not to have gone low right after the radio's own serial send. A good byte
+// alone doesn't count: a key's bounce as it closes can frame one (a short low pulse is a start bit followed by ones),
+// and a hand mic can send one as its key goes down. Taken for a latch, such a press never keyed the radio and flashed
+// the stuck LEDs 2 s later (hardware-db25d.md 3.3). A line that stays low that way is stuck (shared_ptt_stuck): no
+// press, until the pin reads high. A key held from power-on reads the same way, and counts once it has been released.
 //
 // Idled high since start-up means read high for SHARED_PTT_IDLE_MS on end, counted only after SHARED_PTT_START_MS from
 // the first call. The line is often on a connector: with a cable or a mic in, it can read high while the pads and what
@@ -66,6 +69,7 @@ typedef struct {
 	uint32_t ignored;	// scans with the pin low inside the quiet time or while the radio transmitted (diagnostics)
 	uint32_t low_ms;	// LOW: when the pin was first read low outside the quiet time; PRESSED: when it was reported
 	uint32_t high_rx_ms;	// the line's rx_ms at the last scan that read the pin high
+	uint32_t high_tx_ms;	// the line's tx_ms at the same scan
 	uint32_t stuck_ms;	// when the pin was first read low unable to count as a press (stuck_timing)
 	uint32_t start_ms;	// the first call
 	uint32_t idle_ms;	// when the pin was first read high in the current run, before high is set (idle_run)
@@ -78,6 +82,7 @@ typedef struct {
 	bool idle_run;		// idle_ms is running
 	bool high;		// the pin has idled high since start-up (SHARED_PTT_IDLE_MS, after SHARED_PTT_START_MS)
 	bool high_rx_seen;	// the line's rx_seen at the last scan that read the pin high
+	bool high_tx_seen;	// the line's tx_seen at the same scan
 	bool after_send;	// went low right after the radio's own serial send: no press until it reads high
 	bool stuck_timing;	// stuck_ms is running
 } shared_ptt_t;

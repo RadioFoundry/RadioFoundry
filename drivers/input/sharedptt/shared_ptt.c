@@ -36,6 +36,8 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 		idle_high(s, now_ms);
 		s->high_rx_seen = line->rx_seen;
 		s->high_rx_ms = line->rx_ms;
+		s->high_tx_seen = line->tx_seen;
+		s->high_tx_ms = line->tx_ms;
 		s->after_send = false;
 		s->stuck_timing = false;
 		return false;
@@ -75,7 +77,10 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 		return false;
 	}
 	if (s->state == SHARED_PTT_UP) {
-		bool high_since = s->high && (!line->rx_seen || (s->high_rx_seen && s->high_rx_ms == line->rx_ms));
+		// Both directions since the last high read: the clamp's start (shared_ptt.h). A byte alone is the key's bounce
+		bool rx_since = line->rx_seen && !(s->high_rx_seen && s->high_rx_ms == line->rx_ms);
+		bool tx_since = line->tx_seen && !(s->high_tx_seen && s->high_tx_ms == line->tx_ms);
+		bool high_since = s->high && !(rx_since && tx_since);
 		if (!high_since || s->after_send) {
 			if (!s->stuck_timing) {
 				s->stuck_timing = true;

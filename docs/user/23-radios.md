@@ -565,8 +565,7 @@ aren't decoded yet, so there are no number keys.
 
 The microphone's PTT counts once the radio has seen a microphone in the front jack. The radio can run without one and
 doesn't transmit, and a microphone plugged in later works from then on. A PTT held while the radio switches on doesn't
-transmit: release PTT, then press it again. Unplugging the microphone while the radio is
-on reads as a held PTT: the radio transmits until the [transmit timeout](08-fm.md#transmit-timeout), or with TX
+transmit: release PTT, then press PTT again. Unplugging the microphone while the radio is on reads as a held PTT: the radio transmits until the [transmit timeout](08-fm.md#transmit-timeout), or with TX
 timeout Off until it is switched off. Switch the radio off before unplugging the microphone.
 
 ### DB25-D PRO power and supply

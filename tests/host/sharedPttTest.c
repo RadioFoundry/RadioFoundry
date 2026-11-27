@@ -256,9 +256,13 @@ int main(void)
 	CHECK(press_after(&b, false, 0, 601200, 10, 100) == SHARED_PTT_HOLD_MS);
 	CHECK(!shared_ptt_stuck(&b, 601400));
 
-	// Latched at the end of host traffic: low from the last good byte on, past the quiet time
+	// Latched at the end of host traffic: the host's last byte and the radio's answer both after the last high read,
+	// low from then on, past the quiet time
 	shared_ptt_t e = { 0 };
+	idle(&e, false, 0, 0, IDLE_FROM_START);
 	CHECK(!gate(&e, false, true, 1000, 1005));
+	tx_seen = true;
+	tx_ms = 1500;
 	for (uint32_t t = 2000; t < 62000; t += 10) {
 		CHECK(!gate(&e, true, true, 1995, t));
 	}
@@ -266,6 +270,22 @@ int main(void)
 	// A good byte: the line is alive after all
 	CHECK(!gate(&e, true, true, 62001, 62010));
 	CHECK(!shared_ptt_stuck(&e, 62010));
+	tx_seen = false;
+
+	// A key's bounce frames a good byte as it closes (or a hand mic sends one), with no send of the radio's own since
+	// the line last read high: a press, never the latch (field reports: nothing for 2 s, then the stuck LEDs)
+	shared_ptt_t m = { 0 };
+	idle(&m, false, 0, 9600, IDLE_FROM_START);
+	CHECK(!gate(&m, false, false, 0, 10000));
+	CHECK(press_after(&m, true, 10003, 10003 + SHARED_PTT_QUIET_MS, 10, 100) == SHARED_PTT_HOLD_MS);
+	CHECK(!shared_ptt_stuck(&m, 13000));
+	CHECK(!gate(&m, false, true, 10003, 13010));
+	// The same after the radio answered a host long ago: its old send is from before the high read
+	tx_seen = true;
+	tx_ms = 12000;
+	CHECK(!gate(&m, false, true, 10003, 13020));
+	CHECK(press_after(&m, true, 13023, 13023 + SHARED_PTT_QUIET_MS, 10, 100) == SHARED_PTT_HOLD_MS);
+	tx_seen = false;
 
 	// The clamp lands just after a scan saw the line high: low within the guard of the radio's own send. Never a press
 	shared_ptt_t c = { 0 };
