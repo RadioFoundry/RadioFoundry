@@ -46,7 +46,10 @@
 
 #define C6000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first access (as the other HR_C6000 radios)
 #define DMR_MIC_GAIN		7	// the other HR_C6000 radios' value (unverified here)
-#define RX_GAIN_DB		2	// 4:0x37 = 0xC2 (unverified)
+#ifndef MD9600_RX_GAIN_DB
+#define MD9600_RX_GAIN_DB	4	// 4:0x37 = 0xC4: DMR, NXDN and P25 voice at the FM level (hardware-md9600.md 6.1)
+#endif
+#define RX_GAIN_DB		MD9600_RX_GAIN_DB
 #define SAFE_GAIN		0x80u	// modulation gain without a calibration value
 #define VOICE_SPI_PINS		(GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5)	// PB3 SCK, PB4 MISO, PB5 MOSI (AF5)
 
