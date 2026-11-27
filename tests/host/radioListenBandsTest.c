@@ -543,6 +543,16 @@ static void test_bcast_channel(void)
 	ptt(false);
 	run(100);
 	CHECK(sm.view.state == RS_RX && bc.audio && !hw.audio);
+	// ... but Monitor keeps it playing through the refusal, as it keeps an FM channel's squelch open
+	req(RREQ_MONITOR, 1);
+	run(50);
+	ptt(true);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BCAST && hw.tx_calls == 0);
+	CHECK(bc.audio && !hw.audio);
+	ptt(false);
+	req(RREQ_MONITOR, 0);
+	run(100);
+	CHECK(sm.view.state == RS_RX && bc.audio && !hw.audio);
 
 	// A 2 m channel: the receiver is switched off and the channel receiver tuned again
 	req(RREQ_ZONE_POS, 2);
