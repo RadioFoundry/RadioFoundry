@@ -1,0 +1,583 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!--
+	Rig control over the radio's /ws (docs/spec/tcp-services.md 5.1), one file, no libraries: a demo of every request
+	the WebSocket takes, and a reference for writing a client. /ws takes pages served on the host (localhost,
+	127.0.0.1) but not a file opened from disk (Origin: null is 403). It must be served from a simple web server on
+	the computer the radio is plugged into, never double-clicked:
+		python3 -m http.server 8000      (in this file's folder)
+		http://localhost:8000/ws_rig_control.html
+	For a computer on the radio's programming cable: over USB network the radio is 12.255.255.254; over serial (PPP)
+	use the radio's address on that link. The radio takes one /ws client: close its own page and takRF first.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RadioFoundry Rig Control Demo</title>
+<script>try{var t=localStorage.getItem("rfoundry-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<style>
+/* the site's tokens (site/static/css/tokens.css), the ones this page uses */
+:root {
+	--font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+	--radius: 10px; --radius-sm: 7px;
+	--bg: #f7f7f5; --surface: #ffffff; --surface-2: #efefeb; --text: #15171a; --muted: #555a62; --border: #d9dad5;
+	--accent: #b8431f; --accent-text: #ffffff; --accent-soft: #fbe9e2; --link: #0f5d8c; --focus: #1d7bd1;
+	--ok: #1f7a3a; --ok-soft: #e1f3e6; --warn: #8a5a00; --warn-soft: #fbf0d6; --bad: #a8261b; --bad-soft: #fbe3e0;
+	--shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 4px 14px rgb(0 0 0 / 6%);
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+		--bg: #121417; --surface: #1b1e22; --surface-2: #23272c; --text: #eceef0; --muted: #a6adb6; --border: #343a41;
+		--accent: #ef7a50; --accent-text: #15171a; --accent-soft: #3a2219; --link: #7cc0f0; --focus: #7cc0f0;
+		--ok: #6fd08d; --ok-soft: #173322; --warn: #f0c060; --warn-soft: #3a2f14; --bad: #ff8a7a; --bad-soft: #3d1a17;
+		--shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 14px rgb(0 0 0 / 30%);
+	}
+}
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--bg: #121417; --surface: #1b1e22; --surface-2: #23272c; --text: #eceef0; --muted: #a6adb6; --border: #343a41;
+	--accent: #ef7a50; --accent-text: #15171a; --accent-soft: #3a2219; --link: #7cc0f0; --focus: #7cc0f0;
+	--ok: #6fd08d; --ok-soft: #173322; --warn: #f0c060; --warn-soft: #3a2f14; --bad: #ff8a7a; --bad-soft: #3d1a17;
+	--shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 14px rgb(0 0 0 / 30%);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 var(--font-sans); }
+header { background: var(--surface); border-bottom: 1px solid var(--border); }
+.row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+header .wrap { min-height: 52px; display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: .5rem; font-size: 1.1rem; font-weight: 500; }
+.brand b { color: var(--accent); font-weight: 700; }
+.brand small { color: var(--muted); font-weight: 400; margin-left: .5rem; }
+main { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; padding: 1rem 16px; }
+section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+	padding: .75rem 1rem 1rem; min-width: 0; }
+h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
+.wide { grid-column: 1 / -1; }
+button, input, select { font: inherit; color: inherit; }
+button { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .3rem .7rem;
+	cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+#ptt { width: 100%; padding: 1rem; font-size: 1.2rem; font-weight: 700; margin-top: .5rem; }
+#ptt.down { background: var(--bad); color: var(--accent-text); border-color: var(--bad); }
+input { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .3rem .5rem; }
+input[type=number] { width: 5rem; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+td { padding: .15rem .4rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+td:first-child { color: var(--muted); width: 40%; }
+.pill { font-size: .8rem; padding: .1rem .5rem; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.note { font-size: .875rem; color: var(--muted); margin: .5rem 0 0; }
+.note.bad { color: var(--bad); }
+code, #log { font-family: var(--font-mono); font-size: .8rem; }
+#log { height: 14rem; overflow: auto; background: var(--surface-2); border-radius: var(--radius-sm); padding: .5rem; margin: .5rem 0 0;
+	white-space: pre-wrap; word-break: break-all; }
+#screen { image-rendering: pixelated; width: 100%; max-width: 480px; background: #000; border-radius: var(--radius-sm); display: block; }
+#keys button { min-width: 3.2rem; }
+.lbl { min-width: 4.5rem; }
+a { color: var(--link); }
+.callout { grid-column: 1 / -1; background: var(--warn-soft); border: 1px solid var(--warn); border-radius: var(--radius);
+	padding: .75rem 1rem; }
+.callout.bad { background: var(--bad-soft); border-color: var(--bad); }
+.callout p { margin: .25rem 0; }
+</style>
+</head>
+<body>
+<header>
+	<div class="wrap">
+		<div class="brand">
+			<svg width="28" height="28" viewBox="30 30 964 964" aria-hidden="true"><defs><clipPath id="h"><path d="M512 30L929.4 271L929.4 753L512 994L94.6 753L94.6 271Z"/></clipPath></defs><path d="M512 30L929.4 271L929.4 753L512 994L94.6 753L94.6 271Z" fill="#f2601f"/><g clip-path="url(#h)"><g fill="#cb4a18"><path d="M30 1060V490L271 370V490L512 370V490L753 370V490L994 370V490V1060Z"/><rect x="690" y="250" width="60" height="250"/><rect x="678" y="230" width="84" height="30" rx="5"/><rect x="222.8" y="270" width="44" height="130"/></g></g><path d="M541.4 205.3A120 120 0 0 1 541.4 365.9" fill="none" stroke="#ffd9a8" stroke-width="44" stroke-linecap="round"/><path d="M363 365.9A120 120 0 0 1 363 205.3" fill="none" stroke="#ffd9a8" stroke-width="44" stroke-linecap="round"/><rect x="433.8" y="193.4" width="36.8" height="310.8" rx="18.4" fill="#fff3dc"/><rect x="553.4" y="441.3" width="46" height="74" rx="13.8" fill="#fff3dc"/><rect x="397" y="482" width="230" height="370" rx="46" fill="#fff3dc"/><rect x="436.1" y="519" width="151.8" height="88.8" rx="11.5" fill="#3b1709"/><rect x="447.6" y="531.95" width="128.8" height="62.9" rx="6.9" fill="#ffb347"/><rect x="436.1" y="652.2" width="151.8" height="14.8" rx="7.4" fill="#3b1709"/><rect x="436.1" y="689.2" width="151.8" height="14.8" rx="7.4" fill="#3b1709"/><rect x="436.1" y="726.2" width="151.8" height="14.8" rx="7.4" fill="#3b1709"/><circle cx="512" cy="800.2" r="23" fill="#3b1709"/></svg>
+			<span>Radio<b>Foundry</b><small>Rig Control Demo</small></span>
+		</div>
+		<button id="theme" type="button" title="Theme">◐</button>
+	</div>
+</header>
+
+<main>
+<div class="callout" id="howto">
+	<p><b>Serve this page from a web server on this computer. Opening the file directly (double-clicking it) does not
+	work:</b> the radio refuses a page opened from disk.</p>
+	<p>In the folder with this file, run <code>python3 -m http.server 8000</code>, then open
+	<code>http://localhost:8000/ws_rig_control.html</code>. Any simple web server on this computer works the same way.</p>
+</div>
+<section class="wide">
+	<h2>Radio</h2>
+	<div class="row">
+		<label>Address <input id="addr" value="12.255.255.254" size="16" autocomplete="off"></label>
+		<button id="conn" class="primary">Connect</button>
+		<span id="st" class="pill">Not connected</span>
+	</div>
+	<p class="note">On the radio's programming cable: USB network, the radio is 12.255.255.254. Serial (PPP), the radio's
+	address on that link (no audio there).</p>
+	<p id="where" class="note"></p>
+</section>
+
+<section>
+	<h2>Status</h2>
+	<div class="row">
+		<button id="chg" aria-pressed="false" data-need="status" title="status?changes: only on a zone, channel, VFO, codeplug, frequency, mode, timeslot or talk target change">Changes only</button>
+		<span class="note" id="nstat">0 status frames</span>
+	</div>
+	<table id="status"></table>
+</section>
+
+<section>
+	<h2>Zone and channel</h2>
+	<div class="row">
+		<span class="lbl">Channel</span>
+		<button data-cmd="step?channel=-1" data-need="step">Down</button>
+		<button data-cmd="step?channel=1" data-need="step">Up</button>
+	</div>
+	<div class="row" style="margin-top:.5rem">
+		<span class="lbl">Zone</span>
+		<button data-cmd="step?zone=-1" data-need="step">Down</button>
+		<button data-cmd="step?zone=1" data-need="step">Up</button>
+	</div>
+	<div class="row" style="margin-top:.5rem">
+		<label>Zone <input id="zone" type="number" min="0" value="0"></label>
+		<label>Position <input id="pos" type="number" min="0" placeholder="first"></label>
+		<button id="select" data-need="select">Select</button>
+	</div>
+	<p class="note">Zones and positions count from 0. Steps wrap at the zone's ends.</p>
+	<p id="err" class="note bad"></p>
+
+	<h2 style="margin-top:1rem">Keys</h2>
+	<div id="keys" class="row"></div>
+	<p class="note">For information only: keys show their bit in the radio's keymap, as its hello lists them. Names
+	(Green, Side 1, ...) are a possible future addition: the radio already has them in its <code>/keys.json</code>,
+	but doesn't yet let other pages read it.</p>
+	<div class="row" style="margin-top:.5rem" id="enc" hidden>
+		<span class="lbl">Knob</span><button data-cmd="e-1" data-ctl>Down</button><button data-cmd="e1" data-ctl>Up</button>
+	</div>
+	<button id="ptt" data-ctl disabled>PTT (hold)</button>
+	<p class="note">Keys and PTT work only from the computer the radio is plugged into. PTT transmits: only on a channel you may use, with your own ID.</p>
+</section>
+
+<section>
+	<h2>GPS</h2>
+	<button id="gps" aria-pressed="false" data-need="gps">Enable</button>
+	<span id="gpsst" class="note"></span>
+	<table id="fix"></table>
+	<p id="map" class="note"></p>
+</section>
+
+<section>
+	<h2>Screen and audio</h2>
+	<div class="row">
+		<button id="scr" aria-pressed="false" disabled>Screen</button>
+		<button id="aud" aria-pressed="false" disabled>Listen</button>
+		<label>Volume <input id="vol" type="range" min="0" max="2" step="0.05" value="1"></label>
+	</div>
+	<canvas id="screen" width="160" height="128" style="margin-top:.5rem"></canvas>
+	<p id="audnote" class="note"></p>
+</section>
+
+<section class="wide" id="infobox" hidden>
+	<h2>Radio information</h2>
+	<table id="info"></table>
+</section>
+
+<section class="wide">
+	<h2>Raw</h2>
+	<div class="row">
+		<input id="raw" size="32" placeholder="any text frame, e.g. status or d3">
+		<button id="send">Send</button>
+		<label><input id="logbin" type="checkbox"> log binary frames</label>
+		<button id="clear">Clear</button>
+	</div>
+	<pre id="log"></pre>
+</section>
+</main>
+
+<script>
+'use strict';
+/*
+ * How it works
+ *
+ * One WebSocket to ws://<radio>/ws. The radio speaks first with a "hello" (what it can do), then sends:
+ *   text frames    JSON: the status (on every change, or only on zone/channel changes after status?changes),
+ *                  a GPS fix ({"gps":1,...}) after "gps", or {"err":N} when a request is refused
+ *   binary frames  'S' screen rows after "s1", 'A' receive audio after "a1"
+ * The page sends short text frames: requests in words (select?..., step?..., gps, status?changes) and the front
+ * panel's commands (d<bit>/u<bit> key down/up, e<n> knob, a1/a0, s1/s0). The full protocol is in
+ * docs/spec/tcp-services.md 5.1.
+ */
+
+/* ---- Page state ---------------------------------------------------------------------------------------- */
+
+const $ = id => document.getElementById(id);
+let ws = null;		// the WebSocket, null when not connected
+let hi = null;		// the radio's hello (caps, control, audio, keys, ptt, encoder, screen), null until it comes
+let about = {};		// what the Radio information card shows
+let helloTimer = 0;	// gives up on an address that never answers
+let gpsTimer = 0;	// asks for the next GPS fix a minute after the last
+let gpsWait = false;	// "gps" sent, no fix back yet
+let nstat = 0;		// status frames since connecting, to show what "Changes only" saves
+let img = null;		// the radio's whole frame buffer as pixels; the canvas shows its visible part
+let cv = null;		// that canvas
+let raf = 0;		// a canvas update is queued for the next display frame
+let au = null;		// Web Audio context while Listen is on
+let gn = null;		// its volume
+let next = 0;		// when the next audio frame is due to play
+let pttTimer = 0;	// repeats PTT while the button is held
+
+/* ---- Small helpers ----------------------------------------------------------------------------------- */
+
+// localStorage can throw (private windows, blocked storage): the page works without it
+const store = (k, v) => { try { return v === undefined ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch (e) { return null; } };
+$('addr').value = store('rfoundry-ws-addr') || $('addr').value;
+
+// The theme toggle, saved under the same key as the site's
+$('theme').onclick = () => {
+	const dark = getComputedStyle(document.documentElement).colorScheme === 'dark';
+	document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+	store('rfoundry-theme', document.documentElement.dataset.theme);
+};
+
+// A file opened from disk sends "Origin: null", which /ws refuses (403). The callout at the top says how to serve
+// the page; opened from disk it turns red and Connect is off. Served, the callout has done its job and goes
+if (location.protocol === 'file:') {
+	$('howto').classList.add('bad');
+	$('howto').firstElementChild.firstElementChild.textContent = 'This page was opened from disk, so the radio will refuse it.';
+	$('conn').disabled = true;
+} else {
+	$('howto').hidden = true;
+	$('where').textContent = 'Close the radio\'s own page and takRF first: the radio takes one /ws client.';
+}
+
+// One line in the log: time, direction (→ sent, ← received, × closed), text. Keeps the last 400 lines
+function log(dir, text) {
+	const l = $('log'), atEnd = l.scrollTop + l.clientHeight >= l.scrollHeight - 4;
+	l.append(new Date().toTimeString().slice(0, 8) + ' ' + dir + ' ' + text + '\n');
+	while (l.childNodes.length > 400) l.firstChild.remove();
+	if (atEnd) l.scrollTop = l.scrollHeight;
+}
+
+// Send one text frame to the radio, and log it
+function send(t) {
+	if (!ws || ws.readyState !== 1) return;
+	ws.send(t);
+	log('→', t);
+}
+
+// Fill a <table> with [label, value] rows
+function table(t, rows) {
+	t.replaceChildren(...rows.map(([k, v]) => {
+		const tr = document.createElement('tr');
+		tr.append(Object.assign(document.createElement('td'), {textContent: k}), Object.assign(document.createElement('td'), {textContent: v}));
+		return tr;
+	}));
+}
+const shown = r => r[1] !== undefined && r[1] !== '';	// rows whose value the radio sent
+
+// Toggle buttons keep their state in aria-pressed
+const press = (b, on) => b.setAttribute('aria-pressed', on);
+const pressed = b => b.getAttribute('aria-pressed') === 'true';
+
+/* ---- What the radio allows ----------------------------------------------------------------------------- */
+
+// Buttons follow the hello: data-need="<cap>" needs that request in caps; data-ctl needs control, which the
+// radio gives only to the computer it is plugged into. Screen and audio need the hello to offer them
+function enable() {
+	const on = !!hi, caps = on && hi.caps || [];
+	document.querySelectorAll('[data-need]').forEach(b => b.disabled = !on || !caps.includes(b.dataset.need));
+	document.querySelectorAll('[data-ctl]').forEach(b => b.disabled = !on || !hi.control);
+	$('scr').disabled = !on || !hi.screen;
+	$('aud').disabled = !on || !hi.audio;
+	$('audnote').textContent = on && !hi.audio ? 'No audio on this link (PPP is too slow for it).' : '';
+	$('enc').hidden = !(on && hi.encoder);
+}
+
+// Requests in words get no answer when they work (the next status shows the result), only {"err":N} when not
+const ERR = {400: 'malformed request', 403: 'not from the host the radio is plugged into', 409: 'refused now (transmitting, a hotspot, or no GPS)'};
+
+/* ---- Radio information ------------------------------------------------------------------------------- */
+
+// Seconds as "1d 2h 3m 4s"
+const dur = s => s == null ? '' : [[86400, 'd'], [3600, 'h'], [60, 'm']].reduce((t, [n, u]) => s >= n ?
+	(t += Math.floor(s / n) + u + ' ', s %= n, t) : t, '') + s + 's';
+
+// The card below the others: model, firmware and uptime from the status, the rest from the hello and two debug link
+// view sections. The radio sends no build date over HTTP
+function info() {
+	const h = hi || {};
+	$('infobox').hidden = !hi && !about.radio;
+	table($('info'), [['Radio', about.radio], ['Board', about.board], ['Firmware', about.version],
+		['Build date', about.version ? 'not reported by the radio' : ''], ['Codeplug', about.codeplug],
+		['Uptime', dur(about.uptime_s)], ['Protocol', h.proto ?? (hi ? 'none (firmware before /ws control)' : '')],
+		['Takes', (h.caps || []).join(', ')],
+		['Control', hi ? (h.control ? 'yes (this computer is the radio\'s host)' : 'view only (not the host)') : ''],
+		['Audio', hi ? (h.audio ? 'yes' : 'no (not on PPP)') : ''],
+		['Screen', h.screen ? `${h.screen[0]}×${h.screen[1]}, ${h.screen[2]} bpp` : '']].filter(shown));
+}
+
+// Board name and codeplug source from /api/view (only in builds with the debug link; skipped quietly without)
+function viewInfo(a) {
+	const v = sec => fetch(`http://${a}/api/view?section=${sec}`).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+	v('board').then(j => { if (j['board.name']) { about.board = j['board.name']; info(); } });
+	v('storage').then(j => { if (j['codeplug.source']) { about.codeplug = j['codeplug.source']; info(); } });
+}
+
+/* ---- Status ------------------------------------------------------------------------------------------ */
+
+const mhz = hz => hz ? (hz / 1e6).toFixed(5) + ' MHz' : '';
+
+// A status frame: the same JSON as GET /status. Fields the radio leaves out (no battery, not DMR) are skipped
+function status(j) {
+	$('nstat').textContent = ++nstat + ' status frames';
+	const rows = [
+		['State', j.state], ['Zone', (j.zone ?? '') + (j.zone_name ? ' ' + j.zone_name : '') + (j.vfo ? ' (VFO)' : '')],
+		['Position', j.pos], ['Channel', (j.channel_number ?? '') + ' ' + (j.channel ?? '')],
+		['RX', mhz(j.rx_hz)], ['TX', mhz(j.tx_hz)], ['Mode', (j.mode || '') + (j.bw ? ' ' + j.bw + ' kHz' : '')],
+		['Power', j.power], ['Signal', j.rssi_dbm != null ? j.rssi_dbm + ' dBm' : ''], ['Squelch', j.squelch],
+		['Battery', j.battery_pct != null ? j.battery_pct + '% ' + (j.battery_mv / 1000).toFixed(2) + ' V' : ''],
+		['Codeplug edits', j.codeplug], ['Hotspot', j.hotspot],
+	];
+	if (j.dmr) rows.push(['DMR', `ID ${j.dmr.own_id} CC${j.dmr.cc} TS${j.dmr.ts} to ${j.dmr.target}` +
+		(j.dmr.private ? ' (private)' : '') + (j.dmr.heard ? `, heard ${j.dmr.heard}` : '')]);
+	table($('status'), rows.filter(shown));
+	Object.assign(about, {radio: j.radio, version: j.version, uptime_s: j.uptime_s});
+	info();
+	$('st').textContent = j.state === 'tx' ? 'Transmitting' : hi.control ? 'Connected' : 'View only';
+	$('st').className = 'pill ' + (j.state === 'tx' ? 'bad' : hi.control ? 'ok' : 'warn');
+}
+
+/* ---- GPS --------------------------------------------------------------------------------------------- */
+
+// The radio sends a fix every second after "gps". This page wants one a minute, so it asks ("gps"), takes the
+// first fix, stops them ("gps?off") and asks again a minute later. No fix (no satellites yet): it keeps waiting
+function gpsAsk() {
+	gpsWait = true;
+	send('gps');
+	if (!$('gpsst').textContent.startsWith('Updated')) $('gpsst').textContent = 'Waiting for a fix';
+}
+
+// A fix: {"gps":1,"lat","lon","alt_m","kmh","course","hdop","sats","utc"}; fields the GPS didn't give are left out
+function fix(j) {
+	const hms = j.utc != null ? String(j.utc).padStart(6, '0').replace(/(..)(..)(..)/, '$1:$2:$3') + ' UTC' : '';
+	table($('fix'), [['Latitude', j.lat], ['Longitude', j.lon], ['Altitude', j.alt_m != null ? j.alt_m + ' m' : ''],
+		['Speed', j.kmh != null ? j.kmh + ' km/h' : ''], ['Course', j.course != null ? j.course + '°' : ''],
+		['Satellites', j.sats], ['HDOP', j.hdop], ['Time', hms]].filter(shown));
+	$('map').innerHTML = `<a href="https://www.openstreetmap.org/?mlat=${j.lat}&mlon=${j.lon}#map=16/${j.lat}/${j.lon}" target="_blank" rel="noopener">Open on a map</a>`;
+	$('gpsst').textContent = 'Updated ' + new Date().toTimeString().slice(0, 8) + ', next in 1 minute';
+	gpsWait = false;
+	send('gps?off');
+	clearTimeout(gpsTimer);
+	gpsTimer = setTimeout(gpsAsk, 60000);
+}
+
+/* ---- Screen ------------------------------------------------------------------------------------------ */
+
+// An RGB565 color as [r, g, b]
+const rgb = c => [(c >> 11) * 255 / 31, (c >> 5 & 63) * 255 / 63, (c & 31) * 255 / 31];
+
+// A screen frame, as the radio's own page draws it (core/net/webctl_assets/index.html):
+//   'S', n, n palette colors (RGB565 little-endian), then rows: y (u16 little-endian) and either
+//   bit 15 set:   the row raw, as the frame buffer holds it (1, 4 or 16 bits a pixel)
+//   bit 15 clear: runs, each a byte c<<4 | color index: c+1 pixels, or for c = 15, 16 + the next byte
+// Only changed rows come after the first frame, so img keeps the whole screen between frames
+function frame(d) {
+	const [W, , bpp, l, t] = hi.screen, px = img.data, pal = [], put = (o, c) => { px.set(c, o); px[o + 3] = 255; };
+	for (let i = 0; i < d[1]; i++) pal.push(rgb(d[2 + 2 * i] | d[3 + 2 * i] << 8));
+	for (let i = 2 + 2 * d[1]; i < d.length;) {
+		const y = d[i] | d[i + 1] << 8;
+		let o = (y & 0x7fff) * W * 4, x = 0;
+		i += 2;
+		if (y & 0x8000) {
+			for (; x < W; x++, o += 4) put(o, bpp > 4 ? rgb(d[i + 2 * x] | d[i + 2 * x + 1] << 8) :
+				pal[bpp > 1 ? d[i + (x >> 1)] >> (x & 1 ? 0 : 4) & 15 : d[i + (x >> 3)] >> 7 - (x & 7) & 1]);
+			i += Math.ceil(W * bpp / 8);
+		} else while (x < W) {
+			const c = d[i] >> 4, col = pal[d[i] & 15];
+			for (let n = c < 15 ? c + 1 : 16 + d[i + 1]; n--; x++, o += 4) put(o, col);
+			i += c < 15 ? 1 : 2;
+		}
+	}
+	// Draw at most once a display frame, the visible part only (the hello's left/top insets)
+	raf = raf || requestAnimationFrame(() => { raf = 0; cv.getContext('2d').putImageData(img, -l, -t); });
+}
+
+/* ---- Audio ------------------------------------------------------------------------------------------- */
+
+// Receive audio: 20 ms frames of 8 kHz PCM16 little-endian, queued back to back. If playback falls behind or
+// runs too far ahead, it restarts 80 ms from now
+function play(buf) {
+	if (!au) return;
+	const p = new Int16Array(buf), b = au.createBuffer(1, p.length, 8000), s = au.createBufferSource();
+	b.getChannelData(0).set(Array.from(p, x => x / 32768));
+	s.buffer = b;
+	s.connect(gn);
+	if (next < au.currentTime + .02 || next > au.currentTime + .5) next = au.currentTime + .08;
+	s.start(next);
+	next += b.duration;
+}
+
+/* ---- Keys, knob and PTT ------------------------------------------------------------------------------ */
+
+// One button per key in the hello's keymap (PTT has its own). Press sends d<bit>, release u<bit>; the radio lets a
+// key go by itself after 10 s if the release never comes. Labeled by bit: each radio numbers its keys its own way,
+// and the names (its /keys.json) are not readable by this page yet
+function keys() {
+	const k = $('keys');
+	k.replaceChildren();
+	for (const bit of hi.keys || []) {
+		if (bit === hi.ptt) continue;
+		const b = Object.assign(document.createElement('button'), {textContent: 'key ' + bit, disabled: !hi.control});
+		b.dataset.ctl = '';
+		b.onpointerdown = () => { b.setPointerCapture?.(0); send('d' + bit); };
+		b.onpointerup = b.onpointercancel = () => send('u' + bit);
+		k.append(b);
+	}
+}
+
+// PTT: each d<ptt> keys the radio for 4 s, so it is sent again every 2 s while the button is held; u<ptt> unkeys
+function ptt(down) {
+	if (!hi || hi.ptt < 0) return;
+	clearInterval(pttTimer);
+	$('ptt').classList.toggle('down', down);
+	if (down) { send('d' + hi.ptt); pttTimer = setInterval(() => ws && ws.readyState === 1 && ws.send('d' + hi.ptt), 2000); }
+	else send('u' + hi.ptt);
+}
+$('ptt').onpointerdown = () => ptt(true);
+$('ptt').onpointerup = $('ptt').onpointerleave = $('ptt').onpointercancel = () => { if ($('ptt').classList.contains('down')) ptt(false); };
+
+/* ---- Connection -------------------------------------------------------------------------------------- */
+
+// A new connection may be another radio: nothing of the last one stays on the page. The log and the toggles stay
+function clearRadio() {
+	about = {}; nstat = 0; img = null;
+	['status', 'fix', 'info', 'keys'].forEach(id => $(id).replaceChildren());
+	['where', 'err', 'gpsst', 'map', 'audnote'].forEach(id => $(id).textContent = '');
+	$('nstat').textContent = '0 status frames';
+	$('infobox').hidden = true;
+	const c = $('screen');
+	c.getContext('2d').clearRect(0, 0, c.width, c.height);
+}
+
+function connect() {
+	const a = $('addr').value.trim();
+	clearRadio();
+	// The radio answers only at its IPv4 address or its .local name (it checks the Host header, tcp-services.md 5)
+	if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(a) && !/^[a-z0-9-]+\.local$/i.test(a) || a.split('.').some(n => +n > 255)) {
+		$('st').textContent = 'Not an address'; $('st').className = 'pill bad';
+		$('where').textContent = 'Give the radio\'s IPv4 address (12.255.255.254 on USB network) or its .local name.';
+		return;
+	}
+	store('rfoundry-ws-addr', a);
+	ws = new WebSocket('ws://' + a + '/ws');
+	ws.binaryType = 'arraybuffer';
+	// An address nothing answers at can take a minute to fail: give up when no hello comes in 6 s
+	helloTimer = setTimeout(() => { if (ws && !hi) { $('where').textContent = `No answer from ${a}: check the address and ` +
+		'the cable (USB network or PPP up?).'; ws.close(); } }, 6000);
+	$('st').textContent = 'Connecting'; $('st').className = 'pill';
+	$('conn').textContent = 'Disconnect';
+
+	ws.onmessage = ev => {
+		// Binary: 'A' (65) audio, 'S' (83) screen
+		if (typeof ev.data !== 'string') {
+			const d = new Uint8Array(ev.data);
+			if ($('logbin').checked) log('←', (d[0] === 65 ? 'audio ' : 'screen ') + d.length + ' bytes');
+			return d[0] === 65 ? play(ev.data.slice(2)) : d[0] === 83 && img && pressed($('scr')) && frame(d);
+		}
+		// Text: the hello first, then status frames, GPS fixes and errors
+		const j = JSON.parse(ev.data);
+		if (!j.gps || !$('logbin').checked) log('←', ev.data.length > 300 ? ev.data.slice(0, 300) + '…' : ev.data);
+		if (j.hello) {
+			hi = j;
+			clearTimeout(helloTimer);
+			$('where').textContent = '';
+			info(); viewInfo(a);
+			if (j.screen) {		// [width, height, bpp, left, top, visible width, visible height]
+				img = new ImageData(j.screen[0], j.screen[1]);
+				cv = $('screen'); cv.width = j.screen[5]; cv.height = j.screen[6];
+			}
+			keys(); enable();
+			// Toggles left on from the last connection are asked for again
+			if (pressed($('chg'))) send('status?changes');
+			if (pressed($('gps'))) gpsAsk();
+			if (pressed($('scr'))) send('s1');
+			if (pressed($('aud')) && j.audio) send('a1');
+		} else if (j.err) $('err').textContent = `Error ${j.err}: ${ERR[j.err] || 'unknown'}`;
+		else if (j.gps) fix(j);
+		else { $('err').textContent = ''; status(j); }
+	};
+
+	// Closed by us, the radio, or a failed connect. The radio lets go of held keys and PTT by itself when the
+	// connection ends. A browser hides the HTTP answer, so a refusal (403, 503) looks like no radio at all
+	ws.onclose = ev => {
+		ptt(false); clearInterval(pttTimer); clearTimeout(helloTimer); clearTimeout(gpsTimer);
+		const was = !!hi;
+		ws = null; hi = null; enable();
+		$('conn').textContent = 'Connect';
+		$('st').className = 'pill bad';
+		$('st').textContent = was ? 'Disconnected' : 'No answer';
+		if (!was && !$('where').textContent.startsWith('No answer')) $('where').textContent = `No /ws at ${$('addr').value.trim()}: ` +
+			'a wrong address, another client holding it (the radio\'s own page, takRF), or this page not served from localhost.';
+		log('×', 'closed ' + ev.code);
+	};
+}
+
+/* ---- Buttons ----------------------------------------------------------------------------------------- */
+
+$('conn').onclick = () => ws ? ws.close() : connect();
+// Block bodies on key handlers: one that returns false cancels the key, and the box can't be typed in
+$('addr').onkeydown = e => { if (e.key === 'Enter' && !ws) connect(); };
+
+// Buttons with data-cmd send it as it is: step?channel=±1, step?zone=±1, e±1 (the knob)
+document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => send(b.dataset.cmd));
+
+// select?zone=Z, or select?zone=Z&pos=P for a position in it (both from 0)
+$('select').onclick = () => {
+	const p = $('pos').value;
+	send('select?zone=' + ($('zone').value | 0) + (p === '' ? '' : '&pos=' + (p | 0)));
+};
+
+// "Changes only": status?changes sends the status only on a zone, channel, VFO, codeplug, frequency, mode,
+// timeslot or talk target change; "status" goes back to every change (the clock, the signal)
+$('chg').onclick = () => { const on = !pressed($('chg')); press($('chg'), on); nstat = 0; send(on ? 'status?changes' : 'status'); };
+
+$('gps').onclick = () => {
+	const on = !pressed($('gps'));
+	press($('gps'), on);
+	$('gps').textContent = on ? 'Disable' : 'Enable';
+	clearTimeout(gpsTimer);
+	$('gpsst').textContent = '';
+	if (on) gpsAsk();
+	else { if (gpsWait) send('gps?off'); gpsWait = false; }
+};
+
+$('scr').onclick = () => { const on = !pressed($('scr')); press($('scr'), on); send(on ? 's1' : 's0'); };
+
+// Audio needs a user's click to start in a browser, so the context is made here
+$('aud').onclick = () => {
+	const on = !pressed($('aud'));
+	press($('aud'), on);
+	if (on) {
+		au = new AudioContext();
+		gn = au.createGain();
+		gn.gain.value = $('vol').value;
+		gn.connect(au.destination);
+	} else { au.close(); au = null; }
+	send(on ? 'a1' : 'a0');
+};
+$('vol').oninput = () => { if (gn) gn.gain.value = $('vol').value; };
+
+// Raw: any text frame, for trying the protocol by hand
+$('send').onclick = () => { const t = $('raw').value.trim(); if (t) send(t); };
+$('raw').onkeydown = e => { if (e.key === 'Enter') $('send').onclick(); };
+$('clear').onclick = () => $('log').replaceChildren();
+
+enable();
+</script>
+</body>
+</html>
