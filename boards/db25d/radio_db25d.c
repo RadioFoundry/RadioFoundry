@@ -702,8 +702,11 @@ static uint8_t sql_noise(int16_t rssi_dbm)
 	// Signal strength alone opens on what an antenna picks up on an empty channel: the chip's noise and glitch
 	// verdict has to say carrier too (hardware-db25d.md, squelch). The BK4819's own squelch makes that verdict, its
 	// RSSI threshold (0x78) left at the reset value far below the page's
-	bool carrier = fd ? fd6818_sql_carrier(last_noise_raw, db25d_main_glitch(), rssi_dbm, rx_bw == RADIO_BW_25K)
-			  : mode != RADIO_MODE_FM || (last_css_raw & BK4819_CSS_SQ_LINK) != 0u;
+	// FM only: in DMR the noise reading doesn't follow the signal (gotchas 17.3), and the hotspot's listen-before-talk
+	// reads this squelch
+	bool carrier = mode != RADIO_MODE_FM
+		       || (fd ? fd6818_sql_carrier(last_noise_raw, db25d_main_glitch(), last_rssi_raw, rx_bw == RADIO_BW_25K)
+			      : (last_css_raw & BK4819_CSS_SQ_LINK) != 0u);
 	return carrier ? n : RADIO_SQL_NO_CARRIER;	// no carrier: over every level's close line, level 1's too
 }
 

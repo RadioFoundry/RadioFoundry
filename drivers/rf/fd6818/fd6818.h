@@ -171,7 +171,7 @@ static inline uint8_t fd6818_noise(uint16_t r65) { return fd6818_noise_plus(r65,
 // 140 on a 12.5 kHz or digital channel, 120 on a 25 kHz one, and the noise (0x65 low byte) at most
 // 82.5 - 0.38 x the RSSI raw value (0x67 bits 8:0), capped at 45 and floored at 41 (narrow) or 39 (wide). False: no
 // carrier, however strong the signal (docs/spec/hardware-db25d.md, squelch)
-bool fd6818_sql_carrier(uint16_t r65, uint16_t r6a, int16_t rssi_dbm, bool wide);
+bool fd6818_sql_carrier(uint16_t r65, uint16_t r6a, uint16_t r67, bool wide);
 
 // --- Register access (one frame each, inside the critical section) ---
 

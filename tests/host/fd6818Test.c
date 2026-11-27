@@ -196,22 +196,26 @@ static void test_helpers(void)
 	CHECK(fd6818_noise(43) >= 64 && fd6818_noise(8) < 40);
 
 	// The carrier limits: glitch over 140 narrow / 120 wide is no carrier
-	CHECK(fd6818_sql_carrier(30, 140, -110, false));
-	CHECK(!fd6818_sql_carrier(30, 141, -110, false));
-	CHECK(!fd6818_sql_carrier(30, 121, -110, true));
-	CHECK(fd6818_sql_carrier(30, 0xAB78, -110, true));	// the glitch count's low byte only
-	// Noise: 82.5 - 0.38 x raw (raw 100 at -110 dBm: 44), at most 45, at least 41 narrow / 39 wide
-	CHECK(fd6818_sql_carrier(44, 0, -110, false));
-	CHECK(!fd6818_sql_carrier(45, 0, -110, false));
-	CHECK(fd6818_sql_carrier(45, 0, -140, false));
-	CHECK(!fd6818_sql_carrier(46, 0, -140, false));
-	CHECK(fd6818_sql_carrier(41, 0, -50, false));
-	CHECK(!fd6818_sql_carrier(42, 0, -50, false));
-	CHECK(fd6818_sql_carrier(39, 0, -50, true));
-	CHECK(!fd6818_sql_carrier(40, 0, -50, true));
+	CHECK(fd6818_sql_carrier(30, 140, 100, false));
+	CHECK(!fd6818_sql_carrier(30, 141, 100, false));
+	CHECK(!fd6818_sql_carrier(30, 121, 100, true));
+	CHECK(fd6818_sql_carrier(30, 0xAB78, 100, true));	// the glitch count's low byte only
+	// Noise: 82.5 - 0.38 x raw (raw 100, -110 dBm: 44), at most 45, at least 41 narrow / 39 wide
+	CHECK(fd6818_sql_carrier(44, 0, 100, false));
+	CHECK(!fd6818_sql_carrier(45, 0, 100, false));
+	// Raw 104: 42.98, so 43 is over. Raw 105 (an odd raw, half a dB): 42.6
+	CHECK(fd6818_sql_carrier(42, 0, 104, false));
+	CHECK(!fd6818_sql_carrier(43, 0, 104, false));
+	CHECK(!fd6818_sql_carrier(43, 0, 105, false));
+	CHECK(fd6818_sql_carrier(45, 0, 40, false));
+	CHECK(!fd6818_sql_carrier(46, 0, 40, false));
+	CHECK(fd6818_sql_carrier(41, 0, 220, false));
+	CHECK(!fd6818_sql_carrier(42, 0, 220, false));
+	CHECK(fd6818_sql_carrier(39, 0, 220, true));
+	CHECK(!fd6818_sql_carrier(40, 0, 220, true));
 	// All 8 bits of the noise: a reading of 136 is noise, not 8
-	CHECK(!fd6818_sql_carrier(136, 0, -110, false));
-	CHECK(fd6818_sql_carrier(0xFF08, 0, -110, false));
+	CHECK(!fd6818_sql_carrier(136, 0, 100, false));
+	CHECK(fd6818_sql_carrier(0xFF08, 0, 100, false));
 }
 
 static void test_frames(void)

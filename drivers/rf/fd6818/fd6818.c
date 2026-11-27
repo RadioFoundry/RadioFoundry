@@ -352,14 +352,14 @@ void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value)
 	}
 }
 
-bool fd6818_sql_carrier(uint16_t r65, uint16_t r6a, int16_t rssi_dbm, bool wide)
+bool fd6818_sql_carrier(uint16_t r65, uint16_t r6a, uint16_t r67, bool wide)
 {
 	if ((r6a & 0xFFu) > (wide ? 120u : 140u)) {
 		return false;
 	}
-	// In the raw value's half-dB units (dBm x 2 + 320), in tenths
-	int32_t raw = (int32_t)rssi_dbm * 2 + 320;
-	int32_t limit = (825 - 38 * raw / 10) / 10;
+	// 82.5 - 0.38 x raw in hundredths, one division: rounding 0.38 x raw first would let a noise 1 over the limit pass
+	int32_t raw = (int32_t)(r67 & 0x1FFu);
+	int32_t limit = (8250 - 38 * raw) / 100;
 	if (limit > 45) {
 		limit = 45;
 	}

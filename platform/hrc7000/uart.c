@@ -311,24 +311,11 @@ static void note_tx(void)
 	tx_last_seen = true;
 }
 
-static size_t wr_body(const uint8_t *buf, size_t len);
-
-// The whole write counts as the radio sending, from its first byte to its last, so a host that sends meanwhile and
-// then clamps the line is still seen as a clamp after the radio's send (shared_ptt.h)
 static size_t wr(const uint8_t *buf, size_t len)
 {
 	if (len == 0) {
 		return 0;
 	}
-	tx_busy = true;
-	size_t sent = wr_body(buf, len);
-	note_tx();
-	tx_busy = false;
-	return sent;
-}
-
-static size_t wr_body(const uint8_t *buf, size_t len)
-{
 	bool rtos = xTaskGetSchedulerState() == taskSCHEDULER_RUNNING && !hrc_in_isr() && rx_sem != NULL;
 	if (HRC_HOST_TX_IDLE_MS != 0u && rtos) {
 		uint32_t since = hal_millis();
@@ -343,17 +330,23 @@ static size_t wr_body(const uint8_t *buf, size_t len)
 			vTaskDelay(1);
 		}
 	}
+	// The whole write counts as the radio sending, from its first byte to its last, so a host that sends meanwhile and
+	// then clamps the line is still seen as a clamp after the radio's send (shared_ptt.h)
+	tx_busy = true;
 	note_tx();
+	size_t sent = 0;
+	bool done = false;
 	if (rtos && tx_irq) {
-		size_t sent = 0;
-		if (wr_irq(buf, len, &sent)) {
-			note_tx();
-			return sent;
+		done = wr_irq(buf, len, &sent);
+		if (!done) {
+			tx_irq = false;		// no byte went: this UART doesn't interrupt as expected, poll from now on
 		}
-		tx_irq = false;		// no byte went: this UART doesn't interrupt as expected, poll from now on
 	}
-	size_t sent = put(buf, len, rtos);
+	if (!done) {
+		sent = put(buf, len, rtos);
+	}
 	note_tx();
+	tx_busy = false;
 	return sent;
 }
 

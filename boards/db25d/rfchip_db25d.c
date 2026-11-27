@@ -31,7 +31,6 @@
 #define REG_ID		0x00
 #define REG_PAGE	0x7F		// the FD6818 family's page select: page 0 before the reset
 
-
 typedef enum { CHIP_NONE, CHIP_BK4819, CHIP_FD6818, CHIP_7813, CHIP_AT1141 } chip_t;
 
 static rfbus_3w_t bus_main, bus_lo;
@@ -265,6 +264,9 @@ bool db25d_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool
 	chip_t k = chip == 0 ? main_chip : chip == 1 ? lo_chip : CHIP_NONE;
 	if (k == CHIP_NONE || page != 0 || reg > 0x7Fu || (write && *val > 0xFFFFu)) {
 		return false;	// CHIP_NONE also before db25d_rf_init identified the chips
+	}
+	if (write && reg == REG_PAGE && (k == CHIP_FD6818 || k == CHIP_7813)) {
+		return false;	// a page select would leave the radio task's page 0 accesses on another page
 	}
 	rfbus_t *bus = chip == 0 ? &bus_main.bus : &bus_lo.bus;
 	if (write) {
