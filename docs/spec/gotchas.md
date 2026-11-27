@@ -886,15 +886,15 @@ as held, and the transmit time-out ends it.
 Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the PTT pin's
 pad pull-up was left off, so with nothing in the jack the line floated and read low from power-on, which is a press. A
 floating line also picks up levels from a cable, and a mic without its own pull-up never reads high, so its PTT never
-keys. Rule: turn on the pad pull-up of every PTT input that comes through a connector, in the board's pin set-up. Also
-count a low on such a line as a press only once the line has idled high for 100 ms, something plugged in
-(`drivers/input/plugptt`; `drivers/input/sharedptt` for a line shared with the cable's serial data). Highs read while
-the lines settle at start-up don't count: radios that counted them still keyed at power-on with a mic or a cable in
-(issue #716), since a line that reads high on the first scans and then falls to rest low reads as a press held from
-power-on. A press is a fall from idle high, the edge a pin interrupt sees, never a level found at start-up. Pulling
-the plug while armed still reads as a held press; the transmit timeout ends it, and with TX timeout Off nothing does
-until power-off. Radios: one confirmed. Check every radio with a mic jack: power on with the jack empty and watch the
-raw PTT pin (adding-a-radio.md, bring-up order).
+keys. Rule: turn on the pad pull-up of every PTT input that comes through a connector, in the board's pin set-up.
+Where a board can't, or as a second guard, count a low as a press only once the line has idled high for 100 ms
+(`drivers/input/plugptt`, which `drivers/input/sharedptt` uses for a line shared with the cable's serial data). Highs
+read while the lines settle at start-up don't count: radios that counted them still keyed at power-on with a mic or a
+cable in (issue #716), since a line that reads high on the first scans and then falls to rest low reads as a press
+held from power-on. A press is a fall from idle high, the edge a pin interrupt sees, never a level found at start-up.
+Without a pull-up, pulling the plug while armed reads as a held press, which only the transmit timeout ends. Radios:
+one confirmed. Check every radio with a mic jack: power on with the jack empty and watch the raw PTT pin
+(adding-a-radio.md, bring-up order).
 
 **16.4 Encoder interrupt lost for good.**
 Symptom: the encoder stopped after a while; every key still worked (RadioFoundry, 2026-10-30). Cause: not found. The

@@ -145,15 +145,14 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		uint8_t lv = db25d_mic_lines(&a9, &c11);
 		// The arm bits first: the counters grow, and a line past 32 characters is cut off on the screen
 		uint8_t armed = db25d_input_ptt_armed();	// a low counts as PTT: a9/c11 (hardware-db25d.md 3.3)
-		put(&o, "mic arm ");
+		put(&o, "mic ");
 		put_u(&o, armed & 1u);
-		put(&o, "/");
 		put_u(&o, (armed >> 1) & 1u);
-		put(&o, " a9 ");
+		put(&o, " a ");
 		put_u(&o, lv & 1u);
 		put(&o, "/");
 		put_u(&o, a9);
-		put(&o, " c11 ");
+		put(&o, " c ");
 		put_u(&o, (lv >> 1) & 1u);
 		put(&o, "/");
 		put_u(&o, c11);

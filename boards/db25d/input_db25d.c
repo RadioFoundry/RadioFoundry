@@ -158,7 +158,7 @@ uint32_t db25d_input_ptt_ignored(void)
 
 uint8_t db25d_input_ptt_armed(void)
 {
-	return (uint8_t)((ptt_gate.high ? 1u : 0u) | (mic_ptt.armed ? 2u : 0u));
+	return (uint8_t)((ptt_gate.arm.armed ? 1u : 0u) | (mic_ptt.armed ? 2u : 0u));
 }
 
 void db25d_mic_lines_reset(void)

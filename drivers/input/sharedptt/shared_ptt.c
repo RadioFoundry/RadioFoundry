@@ -3,37 +3,11 @@
 // PTT on a pin shared with the serial line (shared_ptt.h)
 #include "input/sharedptt/shared_ptt.h"
 
-// The pin read high: it has idled high once it has stayed so for SHARED_PTT_IDLE_MS after the start-up settle
-static void idle_high(shared_ptt_t *s, uint32_t now_ms)
-{
-	if (s->high) {
-		return;
-	}
-	if (!s->settled) {
-		s->idle_run = false;
-		return;
-	}
-	if (!s->idle_run) {
-		s->idle_run = true;
-		s->idle_ms = now_ms;
-	}
-	if ((uint32_t)(now_ms - s->idle_ms) >= SHARED_PTT_IDLE_MS) {
-		s->high = true;
-	}
-}
-
 bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *line, uint32_t now_ms)
 {
-	if (!s->started) {
-		s->started = true;
-		s->start_ms = now_ms;
-	}
-	if (!s->settled && (uint32_t)(now_ms - s->start_ms) >= SHARED_PTT_START_MS) {
-		s->settled = true;
-	}
+	(void)plug_ptt_pressed(&s->arm, pin_low, now_ms);	// only its arm: the idle high since start-up
 	if (!pin_low) {
 		s->state = SHARED_PTT_UP;
-		idle_high(s, now_ms);
 		s->high_rx_seen = line->rx_seen;
 		s->high_rx_ms = line->rx_ms;
 		s->high_tx_seen = line->tx_seen;
@@ -42,7 +16,6 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 		s->stuck_timing = false;
 		return false;
 	}
-	s->idle_run = false;
 	if (s->state == SHARED_PTT_UP && line->tx_seen && (uint32_t)(now_ms - line->tx_ms) < SHARED_PTT_TX_GUARD_MS) {
 		s->after_send = true;
 	}
@@ -80,7 +53,7 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 		// Both directions since the last high read: the clamp's start (shared_ptt.h). A byte alone is the key's bounce
 		bool rx_since = line->rx_seen && !(s->high_rx_seen && s->high_rx_ms == line->rx_ms);
 		bool tx_since = line->tx_seen && !(s->high_tx_seen && s->high_tx_ms == line->tx_ms);
-		bool high_since = s->high && !(rx_since && tx_since);
+		bool high_since = s->arm.armed && !(rx_since && tx_since);
 		if (!high_since || s->after_send) {
 			if (!s->stuck_timing) {
 				s->stuck_timing = true;

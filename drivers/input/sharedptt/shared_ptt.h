@@ -27,15 +27,17 @@
 // the stuck LEDs 2 s later (hardware-db25d.md 3.3). A line that stays low that way is stuck (shared_ptt_stuck): no
 // press, until the pin reads high. A key held from power-on reads the same way, and counts once it has been released.
 //
-// Idled high since start-up means read high for SHARED_PTT_IDLE_MS on end, counted only after SHARED_PTT_START_MS from
-// the first call. The line is often on a connector: with a cable or a mic in, it can read high while the pads and what
-// is plugged in come up, then rest low. A press is a fall from idle high, never a level found at start-up
-// (docs/spec/gotchas.md 16.3).
+// Idled high since start-up is the arm of drivers/input/plugptt (PLUG_PTT_ARM_MS high, after PLUG_PTT_SETTLE_MS): the
+// line is often on a connector, and with a cable or a mic in it can read high while the pads and what is plugged in
+// come up, then rest low. A press is a fall from idle high, never a level found at start-up (docs/spec/gotchas.md
+// 16.3).
 #ifndef SHARED_PTT_H
 #define SHARED_PTT_H
 
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "input/plugptt/plug_ptt.h"
 
 // Longer than the gap between the debug link's requests while a host polls, short against a press
 #define SHARED_PTT_QUIET_MS	50u
@@ -47,11 +49,6 @@
 #define SHARED_PTT_TX_GUARD_MS	20u
 // Low this long without being able to count as a press: the line is stuck. Longer than a key held across a power-on
 #define SHARED_PTT_STUCK_MS	2000u
-// Highs read this soon after the first call don't count as idle: longer than the lines take to settle after the key
-// scan starts (not measured: a margin), short against reaching for the PTT after power-on
-#define SHARED_PTT_START_MS	250u
-// High this long, after SHARED_PTT_START_MS, is idle: longer than a glitch on a line that rests low
-#define SHARED_PTT_IDLE_MS	100u
 
 // What the serial line has received, and whether the radio transmits, as of the scan
 typedef struct {
@@ -66,21 +63,16 @@ typedef struct {
 enum { SHARED_PTT_UP, SHARED_PTT_LOW, SHARED_PTT_PRESSED, SHARED_PTT_NOISE };
 
 typedef struct {
+	plug_ptt_t arm;		// armed: the pin has idled high since start-up
 	uint32_t ignored;	// scans with the pin low inside the quiet time or while the radio transmitted (diagnostics)
 	uint32_t low_ms;	// LOW: when the pin was first read low outside the quiet time; PRESSED: when it was reported
 	uint32_t high_rx_ms;	// the line's rx_ms at the last scan that read the pin high
 	uint32_t high_tx_ms;	// the line's tx_ms at the same scan
 	uint32_t stuck_ms;	// when the pin was first read low unable to count as a press (stuck_timing)
-	uint32_t start_ms;	// the first call
-	uint32_t idle_ms;	// when the pin was first read high in the current run, before high is set (idle_run)
 	uint16_t flagged;	// the line's flagged count (its low half) at the press, moved on while it settles
 	uint8_t state;		// UP; LOW (held, not yet SHARED_PTT_HOLD_MS); PRESSED; NOISE (a held press ended by noise:
 				// released until the pin reads high)
 	uint8_t noise_releases;	// held presses ended by a flagged character, up to 255 (diagnostics)
-	bool started;		// start_ms is set
-	bool settled;		// SHARED_PTT_START_MS have passed since the first call
-	bool idle_run;		// idle_ms is running
-	bool high;		// the pin has idled high since start-up (SHARED_PTT_IDLE_MS, after SHARED_PTT_START_MS)
 	bool high_rx_seen;	// the line's rx_seen at the last scan that read the pin high
 	bool high_tx_seen;	// the line's tx_seen at the same scan
 	bool after_send;	// went low right after the radio's own serial send: no press until it reads high
