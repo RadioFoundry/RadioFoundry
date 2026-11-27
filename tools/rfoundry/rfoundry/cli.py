@@ -196,10 +196,20 @@ def resolve_options(args, board, probe, need_all=False):
 
 
 def check_options(board, man, opts):
-    """Refuse an image built for other hardware than the radio's (its manifest's build_options against opts)."""
+    """Refuse an image built for other hardware than the radio's (its manifest's build_options against opts). A local
+    build has no manifest; for_dev_build reads its options from the board name in the image (#941). An option whose
+    values share a board name can't be read there: the radio's value (--option, or its board name) is taken as the
+    image's, and the user is told so."""
     if not board.build_options or not opts:
         return
-    have = board.full_options((man or {}).get("build_options"))
+    man = man or {}
+    if man.get("dev_build"):
+        given = {k: v for k, v in opts.items() if k not in man.get("build_options", {})}
+        if given:
+            say("options  %s: taken as given; the image's board name doesn't say which it was built for"
+                % ", ".join("%s=%s" % kv for kv in sorted(given.items())))
+        opts = {k: v for k, v in opts.items() if k not in given}
+    have = board.full_options(man.get("build_options"))
     for k, v in opts.items():
         if have.get(k) != v:
             raise UsageError("the image is the %s=%s build, the radio needs %s=%s: refusing" % (k, have.get(k), k, v))

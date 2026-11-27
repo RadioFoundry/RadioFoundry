@@ -150,6 +150,31 @@ class BuildOptions(unittest.TestCase):
         with self.assertRaises(cli.UsageError):
             cli.check_options(self.b, {}, want)		# no build_options: the default build
 
+    def test_a_local_build_is_read_from_its_board_name(self):
+        """#941: make BOARD=<b> <OPTION>=<other> writes no manifest. The image's board_t .name says which build it
+        is: the other value's name makes it that build, no such name the default, and a mismatch is refused"""
+        want = {self.o["name"]: self.other["id"]}
+        other = mf.for_dev_build(self.b, b"\0" * 16 + self.other["board_name"].encode() + b"\0" + b"\0" * 16)
+        self.assertEqual(other["build_options"], want)
+        cli.check_options(self.b, other, want)
+        dflt = mf.for_dev_build(self.b, b"\0" * 16 + self.default["board_name"].encode() + b"\0" + b"\0" * 16)
+        self.assertEqual(dflt["build_options"], {self.o["name"]: self.default["id"]})
+        with self.assertRaises(cli.UsageError):
+            cli.check_options(self.b, dflt, want)
+        # the other name as a prefix of a longer string isn't the board name
+        part = mf.for_dev_build(self.b, self.other["board_name"].encode() + b"X\0")
+        self.assertEqual(part["build_options"], {self.o["name"]: self.default["id"]})
+
+    def test_a_local_build_whose_names_dont_differ_takes_the_given_options(self):
+        o = dict(self.o, values=[dict(v, board_name=self.default["board_name"]) for v in self.o["values"]])
+        with mock.patch.object(self.b, "build_options", [o]):
+            want = {o["name"]: self.other["id"]}
+            dev = mf.for_dev_build(self.b, b"\0" * 64)
+            self.assertNotIn("build_options", dev)
+            with mock.patch.object(cli, "say") as said:
+                cli.check_options(self.b, dev, want)
+            self.assertIn("%s=%s" % (o["name"], self.other["id"]), said.call_args[0][0])
+
 
 class StockPlacement(unittest.TestCase):
     """The registry's stock-file boards ([codec] stock): tools/boards.py leaves their codec windows to stockfw, so the

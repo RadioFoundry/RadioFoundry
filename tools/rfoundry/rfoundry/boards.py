@@ -152,6 +152,18 @@ class Board:
                 out[o["name"]] = v["id"]
         return out
 
+    def options_in_image(self, image):
+        """The build option values an image says it was built with: each value's board_name is the image's board_t
+        .name, stored NUL-terminated, so a non-default value's name found in the image is that build and none found is
+        the default. Only the options whose values have names of their own: one whose names don't differ isn't here."""
+        out = {}
+        for o in self.build_options:
+            if len({v["board_name"] for v in o["values"]}) < len(o["values"]):
+                continue
+            hit = next((v for v in o["values"][1:] if v["board_name"].encode() + b"\0" in image), None)
+            out[o["name"]] = (hit or o["values"][0])["id"]
+        return out
+
     def option_values(self):
         """[(name, [value, ...])], each option's default first: what names.py takes."""
         return [(o["name"], [v["id"] for v in o["values"]]) for o in self.build_options]

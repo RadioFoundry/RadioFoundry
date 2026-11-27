@@ -173,10 +173,14 @@ def verify(manifest, image, board_id=None):
 
 
 def for_dev_build(board, image, version="dev"):
-    """A manifest for a local build without one (rfoundry flash build/dm1701/rfoundry_dm1701.bin --board dm1701)"""
+    """A manifest for a local build without one (rfoundry flash build/dm1701/rfoundry_dm1701.bin --board dm1701). Its
+    build_options are the ones the image's board name gives (#941)."""
     m = generate(board, image, version, "0" * 40)
     m["git"] = "unknown"
     m["dev_build"] = True
+    opts = board.options_in_image(image)
+    if opts:
+        m["build_options"] = opts
     return m
 
 
