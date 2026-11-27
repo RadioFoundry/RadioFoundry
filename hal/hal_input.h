@@ -46,6 +46,7 @@ typedef struct {
 	uint8_t action;		// input_action_t
 	uint8_t gesture;	// input_gesture_t
 	int8_t value;		// encoder steps
+	uint8_t slot;		// 1-based physical slot, zero for relative steps
 } input_event_t;
 
 // One physical key: its bit in the scan mask and its short / long logical actions.
@@ -96,8 +97,11 @@ typedef struct {
 	bool encoder_limited;
 	// A channel switch read as an absolute position (drivers/input/chswitch), on a radio whose knob picks the zone's
 	// channel by where it points: 0-based, -1 while it hasn't settled. The core selects that position in the zone
-	// (docs/spec/ui.md 3). NULL: the knob, if any, steps through the channels (encoder)
+	// (docs/spec/ui.md 3). NULL: the knob, if any, steps through the channels (encoder). Only in a build whose
+	// board.mk says BOARD_CHANNEL_SWITCH := y (RFOUNDRY_CHANNEL_SWITCH, board_channel_switch())
+#if RFOUNDRY_CHANNEL_SWITCH
 	int8_t (*position)(void);
+#endif
 	// The PTT line is stuck low and only a power cycle can release it (docs/spec/gotchas.md 16.5). The core flashes the
 	// LEDs to ask for one. NULL: the board can't tell
 	bool (*ptt_line_stuck)(void);

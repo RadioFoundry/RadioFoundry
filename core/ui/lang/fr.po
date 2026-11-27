@@ -4773,6 +4773,11 @@ msgid "ROAM"
 msgstr "RMNG"
 
 #: core/ui/ui_screens.c
+msgctxt "CHANNEL_UNPROGRAMMED"
+msgid "Unprogrammed"
+msgstr "Non programmé"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "Recherche système"

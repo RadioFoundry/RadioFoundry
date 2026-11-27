@@ -575,19 +575,24 @@ radio_state_t radio_get_state(void)
 	return st;
 }
 
-bool radio_get_zone_pos(uint16_t *zone, uint16_t *pos, uint16_t *size)
+bool radio_get_zone_pos(uint16_t *zone, uint16_t *pos, uint16_t *size, bool *detached)
 {
 	if (view_lock == NULL) {
 		*zone = 0;
 		*pos = 0;
 		*size = 0;
+		*detached = false;
 		return false;
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	*zone = shared_view.zone_index;
 	*pos = shared_view.zone_pos;
 	*size = shared_view.zone_size;
-	bool ready = shared_view.state != RS_TX && !shared_view.hotspot;	// radio_sm_request's busy
+	*detached = shared_view.vfo;
+#if CONFIG_SCAN
+	*detached = *detached || shared_dual_on;
+#endif
+	bool ready = shared_view.state != RS_TX && !shared_view.hotspot && !*detached;
 	xSemaphoreGive(view_lock);
 	return ready;
 }
@@ -693,6 +698,8 @@ static void post_pair(uint8_t type, int32_t arg, uint32_t arg2, TickType_t wait)
 	radio_req_t req = { .type = type, .arg = arg, .arg2 = arg2 };
 	send(&req, wait);
 }
+
+void radio_req_switch_pos(uint16_t pos) { post_pair(RREQ_ZONE_POS, pos, 1, 0); }
 
 #if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
 void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }

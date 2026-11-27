@@ -177,6 +177,7 @@ void ui_push(uint8_t scr, uint16_t arg)
 	}
 	sp++;
 	stack[sp].scr = scr;
+	ui_svc_switch_menu(true);
 	stack[sp].arg = arg;
 	stack[sp].focus = 0;
 	stack[sp].top = 0;
@@ -227,6 +228,7 @@ void ui_pop(void)
 	left(sp);
 	if (sp > 0)
 		sp--;
+	ui_svc_switch_menu(sp != 0);
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
 		ui_filter_rebuild();
 #if CONFIG_ZONE_EDIT
@@ -242,6 +244,7 @@ void ui_go_home(void)
 	cp_question_gone(1);
 	left(1);
 	sp = 0;
+	ui_svc_switch_menu(false);
 	ui_st.quick_edit = false;
 	entry_cancel();
 	update_focus_target();
@@ -1163,13 +1166,17 @@ bool ui_home_key(const input_event_t *ev)
 		// arrow keys only: the channel knob always steps the channel, so the two can do different jobs (#25)
 		bool arrows = ev->action != ACT_ENC_STEP;
 		if (arrows && !view->vfo && ui_st.updown == 1) {
-			zone_step(nav_dir(ev));
+			int dir = nav_dir(ev);
+			// With the knob selecting slots, Down moves forward through the zone list.
+			zone_step(board_channel_switch() ? -dir : dir);
 			return true;
 		}
 #if CONFIG_DMR
 		if (arrows && !view->vfo && ui_st.updown == 2 && view->ch.mode == RADIO_MODE_DMR && talk_step(nav_dir(ev)))
 			return true;
 #endif
+		if (!view->vfo && board_channel_switch())
+			return true;
 		for (int i = steps(ev); i > 0; i--) {
 			if (view->vfo)
 				radio_req_vfo_step(nav_dir(ev));
@@ -1979,6 +1986,7 @@ void ui_app_init(void)
 	ev_head = ev_tail = 0;
 	sp = 0;
 	stack[0].scr = SCR_HOME;
+	ui_svc_switch_menu(false);
 	for (uint8_t id = 0; id < UI_SET_COUNT; id++)
 		ui_svc_apply(id, ui_svc_setting_get(id));
 	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,

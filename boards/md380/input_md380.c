@@ -8,9 +8,8 @@
 // can correct the table.
 //
 // The channel knob is not a quadrature encoder but a 16-position switch with four code lines. Each scan reads the code,
-// turns it into a position and reports the change as encoder steps, so the core sees the same thing as on the other
-// radios (a step per detent). The code is a Gray code with its own line order, measured on the radio (hardware-md380.md
-// 9.2): one line changes per detent, so a contact that bounces flickers between two neighbors, never far away.
+// turns it into a position in the current zone, and reports detent changes for Dual Watch, VFO and menus. The Gray
+// code changes one line per detent (hardware-md380.md 9.2).
 #include "md380.h"
 #include "pins.h"
 #include "hal_time.h"
@@ -43,8 +42,8 @@ static uint32_t last_raw;
 static uint32_t stable;
 static uint8_t raw_rows[ROW_COUNT];
 static uint8_t ch_code;
-static int8_t ch_pos = -1;	// -1 until the first read
-static int32_t enc_count;
+static volatile int8_t ch_pos = -1;	// -1 until the first read
+static int8_t enc_steps;
 
 // The four code lines as a number 0..15 (bit n = line n), contacts as ones
 static uint8_t read_channel_code(void)
@@ -81,14 +80,8 @@ static void channel_poll(void)
 	}
 	ch_code = code;
 	int8_t pos = code_position[code];
-	if (ch_pos >= 0 && pos != ch_pos) {
-		int d = pos - ch_pos;
-		if (d > 8) {		// the shorter way round, should the switch turn past its stop
-			d -= 16;
-		} else if (d < -8) {
-			d += 16;
-		}
-		enc_count += d;
+	if (ch_pos >= 0) {
+		enc_steps = pos - ch_pos;
 	}
 	ch_pos = pos;
 }
@@ -100,8 +93,8 @@ static void init(void)
 	uint32_t pull = MD380_CH_ACTIVE_HIGH ? GPIO_PULLDOWN : GPIO_PULLUP;
 	stm32_pin_in(PIN_PORT(PIN_CH_B0), PIN_MASK(PIN_CH_B0) | PIN_MASK(PIN_CH_B1), pull);
 	stm32_pin_in(PIN_PORT(PIN_CH_B2), PIN_MASK(PIN_CH_B2) | PIN_MASK(PIN_CH_B3), pull);
-	enc_count = 0;
 	ch_pos = -1;
+	enc_steps = 0;
 }
 
 // Called every 10 ms: a change is reported once two scans in a row agree
@@ -121,14 +114,14 @@ static uint32_t scan(void)
 
 static int8_t encoder(void)
 {
-	int32_t n = enc_count;
-	if (n > 127) {
-		n = 127;
-	} else if (n < -127) {
-		n = -127;
-	}
-	enc_count -= n;
-	return (int8_t)n;
+	int8_t steps = enc_steps;
+	enc_steps = 0;
+	return steps;
+}
+
+static int8_t position(void)
+{
+	return ch_pos;
 }
 
 void md380_input_raw(uint8_t rows[3], uint8_t *channel_code)
@@ -140,4 +133,5 @@ void md380_input_raw(uint8_t rows[3], uint8_t *channel_code)
 }
 
 // The channel knob is a 16-position switch with end stops (hardware-md380.md)
-const hal_input_t md380_input = { .init = init, .scan = scan, .encoder = encoder, .encoder_limited = true };
+const hal_input_t md380_input = { .init = init, .scan = scan, .encoder = encoder, .encoder_limited = true,
+			       .position = position };

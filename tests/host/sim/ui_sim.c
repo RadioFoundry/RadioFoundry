@@ -1768,6 +1768,7 @@ static const hal_hwopt_t sim_hwopts[] = {
 static bool ref_trim;
 // A volume knob the MCU reads (Settings > Key lock > Knob when locked) only with a "knob:<percent>" token
 static bool knob_radio;
+static bool switch_menu;
 static bool vol_held;		// ui_svc_volume_hold: the radio ignores the volume knob
 uint32_t ui_svc_features(void)
 {
@@ -2063,6 +2064,7 @@ void ui_svc_vibrate(uint8_t vibe) { sim_rec.vibes++; sim_rec.last_vibe = vibe; }
 static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
 void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
 void ui_svc_volume_hold(bool hold) { vol_held = hold; }
+void ui_svc_switch_menu(bool active) { switch_menu = active; }
 void ui_svc_apply(uint8_t id, int32_t value)
 {
 	if (id == UI_SET_LONG_PRESS_MS)
@@ -2572,7 +2574,7 @@ static void step(void)
 		view.tx_elapsed_ms += TICK_MS;
 	if (ptt_up_at && now_ms >= ptt_up_at) {
 		ptt_up_at = 0;
-		input_event_t ev = { ACT_PTT, GESTURE_UP, 0 };
+		input_event_t ev = { ACT_PTT, GESTURE_UP, 0, 0 };
 		ui_app_key(&ev);
 		ptt(false);
 	}
@@ -2859,12 +2861,13 @@ static bool on_map(uint8_t action, bool lng)
 
 static bool press(const char *name, bool lng, char *err, size_t len)
 {
-	if (strcmp(name, "enc+") == 0 || strcmp(name, "enc-") == 0) {
+	int slot = strncmp(name, "slot", 4) == 0 ? atoi(name + 4) : 0;
+	if (strcmp(name, "enc+") == 0 || strcmp(name, "enc-") == 0 || (slot >= 1 && slot <= 16)) {
 		if (!(board.caps & CAP_ENCODER)) {
 			snprintf(err, len, "no encoder on this key map");
 			return false;
 		}
-		input_event_t ev = { ACT_ENC_STEP, GESTURE_DOWN, (int8_t)(name[3] == '+' ? 1 : -1) };
+		input_event_t ev = { ACT_ENC_STEP, GESTURE_DOWN, (int8_t)(name[3] == '+' ? 1 : -1), (uint8_t)slot };
 		presses++;
 		ui_app_key(&ev);
 		advance(PRESS_MS);
@@ -2877,7 +2880,7 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 			if (k->bit != K_SK2)
 				continue;
 			input_event_t ev = { lng ? k->long_action : k->short_action,
-					     (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
+					     (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0, 0 };
 			presses++;
 			advance(lng ? LONG_MS : PRESS_MS / 2);
 			ui_app_key(&ev);
@@ -2899,7 +2902,7 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		if (a == ACT_MONITOR) {
 			// The radio gets the edge first, as on the radio (input_forward runs before the UI's queue, and the
 			// radio task outranks the UI): the UI reads the view the edge already changed
-			input_event_t ev = { ACT_MONITOR, GESTURE_DOWN, 0 };
+			input_event_t ev = { ACT_MONITOR, GESTURE_DOWN, 0, 0 };
 			radio_req_monitor(true);
 			ui_app_key(&ev);
 			advance(lng ? LONG_MS : PRESS_MS);
@@ -2908,7 +2911,7 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 			ui_app_key(&ev);
 			return true;
 		}
-		input_event_t ev = { a, (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
+		input_event_t ev = { a, (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0, 0 };
 		advance(lng ? LONG_MS : PRESS_MS / 2);
 		if (hop_next >= 0) {	// the radio moved while the UI task waited: the view it reads first (ui.c)
 			sim_tune(hop_next);
@@ -2966,6 +2969,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
 	else if (strcmp(key, "gps") == 0) snprintf(got, sizeof got, "%u", s.gps);	// UI_GPS_*: the strip's icon
+	else if (strcmp(key, "switchmenu") == 0) snprintf(got, sizeof got, "%u", switch_menu);
 	else if (strcmp(key, "volhold") == 0) snprintf(got, sizeof got, "%u", vol_held);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
@@ -3125,7 +3129,7 @@ static bool run_token(char *t, char *err, size_t len)
 			return false;
 		}
 		presses++;
-		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0 };
+		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0, 0 };
 		ui_app_key(&ev);
 		if (!ptt_blocked)
 			ptt(true);
@@ -3135,7 +3139,7 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "pttdown") == 0) {	// PTT held until pttup (for a look at the TX screen)
 		presses++;
-		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0 };
+		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0, 0 };
 		ui_app_key(&ev);
 		if (!ptt_blocked)
 			ptt(true);
@@ -3171,7 +3175,7 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 	if (strcmp(t, "pttup") == 0) {
-		input_event_t ev = { ACT_PTT, GESTURE_UP, 0 };
+		input_event_t ev = { ACT_PTT, GESTURE_UP, 0, 0 };
 		ui_app_key(&ev);
 		ptt(false);
 		advance(200);
@@ -3230,7 +3234,7 @@ static bool run_token(char *t, char *err, size_t len)
 		bool down = t[3] == 'd';
 		if (down)
 			presses++;
-		input_event_t ev = { ACT_MONITOR, down ? GESTURE_DOWN : GESTURE_UP, 0 };
+		input_event_t ev = { ACT_MONITOR, down ? GESTURE_DOWN : GESTURE_UP, 0, 0 };
 		radio_req_monitor(down);	// the radio first, as on the radio (see `mon`)
 		ui_app_key(&ev);
 		advance(200);
@@ -3936,7 +3940,7 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "satdoneok") == 0) {
 		sim_satellite_predicting = false;
-		input_event_t ev = { ACT_SELECT, GESTURE_PRESS, 0 };
+		input_event_t ev = { ACT_SELECT, GESTURE_PRESS, 0, 0 };
 		presses++;
 		ui_app_key(&ev);
 		advance(200);

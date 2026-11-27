@@ -392,6 +392,11 @@ void ui_svc_dtmf_block(bool blocked)
 	input_set_dtmf_block(blocked);
 }
 
+void ui_svc_switch_menu(bool active)
+{
+	input_switch_menu(active);
+}
+
 void ui_svc_volume_hold(bool hold)
 {
 	radio_req_volume_hold(hold);

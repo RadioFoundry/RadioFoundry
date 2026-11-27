@@ -4,7 +4,7 @@
 // A new position is asked for at once, and so is the position again when the zone changes (a zone key, the debug
 // link), since a new zone starts on its first channel. The radio may not take it (transmitting, a hotspot, the
 // codeplug not loaded yet), so every SWITCH_FOLLOW_RETRY_MS the task reads the radio's zone and position and asks
-// again when the radio would take it, until the radio is on it or the zone is too short for it. A position the radio
+// again when the radio would take it, until the radio is on it. A position the radio
 // keeps refusing while it could take one (a channel it can't read) is given up after SWITCH_FOLLOW_ASKS asks, since
 // every ask stops a scan and an APRS transmission and resets the battery saver. Then it leaves the radio alone until
 // the knob moves or the zone changes (another zone, or the same one with another size after a codeplug write), so a
@@ -28,6 +28,7 @@ typedef enum {
 
 typedef struct {
 	int8_t want;		// the switch's position, -1 none yet
+	bool detached;		// the knob is controlling VFO or dual watch
 	bool pending;		// asked for, and the radio not seen on it yet
 	bool zone_known;	// zone and size hold the zone last seen loaded
 	uint8_t asks;		// asked again since pending was set
@@ -42,6 +43,7 @@ typedef struct {
 static inline void switch_follow_init(switch_follow_t *f)
 {
 	f->want = -1;
+	f->detached = false;
 	f->pending = false;
 	f->zone_known = false;
 	f->asks = 0;
@@ -63,10 +65,27 @@ static inline void switch_follow_hold(switch_follow_t *f, uint16_t zone, uint32_
 	f->pending = false;
 }
 
+// Detents outside regular memory mode belong to that mode. Adopt the restored zone without requesting a
+// channel change, then let the next physical turn take over again.
+static inline void switch_follow_mode(switch_follow_t *f, bool detached, int8_t pos, uint16_t zone, uint16_t size)
+{
+	if (detached) {
+		if (pos >= 0)
+			f->want = pos;
+		f->pending = false;
+		f->hold = false;
+	} else if (f->detached) {
+		f->zone = zone;
+		f->size = size;
+		f->zone_known = size != 0;
+	}
+	f->detached = detached;
+}
+
 // Each scan, with the switch's settled position (-1: none)
 static inline switch_step_t switch_follow_step(switch_follow_t *f, int8_t pos, uint32_t now_ms)
 {
-	if (pos < 0) {
+	if (f->detached || pos < 0) {
 		return SWITCH_IDLE;
 	}
 	if (pos != f->want) {
@@ -106,7 +125,7 @@ static inline bool switch_follow_check(switch_follow_t *f, uint16_t zone, uint16
 		}
 	}
 	if (f->zone_known && (zone != f->zone || zone_size != f->size)) {
-		f->pending = true;	// a position given up as past the end may fit now
+		f->pending = true;	// the slot may have changed
 		f->asks = 0;
 	}
 	f->zone = zone;
@@ -115,7 +134,7 @@ static inline bool switch_follow_check(switch_follow_t *f, uint16_t zone, uint16
 	if (!f->pending || !ready) {
 		return false;
 	}
-	if (zone_pos == (uint16_t)f->want || (uint16_t)f->want >= zone_size) {
+	if (zone_pos == (uint16_t)f->want) {
 		f->pending = false;
 		return false;
 	}

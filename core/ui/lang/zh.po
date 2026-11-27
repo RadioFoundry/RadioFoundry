@@ -4775,6 +4775,11 @@ msgid "ROAM"
 msgstr "漫游"
 
 #: core/ui/ui_screens.c
+msgctxt "CHANNEL_UNPROGRAMMED"
+msgid "Unprogrammed"
+msgstr "未设置"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "搜索中"

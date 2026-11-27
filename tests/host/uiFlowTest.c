@@ -119,6 +119,8 @@ static const flow_t flows[] = {
 	{ "Canceled satellite TLE entry reopens empty", "", "ok 6 9 ok ctx 2 back back ctx",
 	  "screen=satellite-tle-text hides=A_", 19, false },
 #endif
+	{ "menu owns the physical selector until Home returns", "", "ok expect:switchmenu=1 down back",
+	  "screen=home switchmenu=0 pos=3", 3, false },
 	{ "menu entry keeps an available first row", "", "ok", "screen=hub focus=Contacts", 1, false },
 	{ "menu disabled row still explains why", "ok 7 5", "up ok", "focus=Send_position toast=No_GPS_on_this_radio", 2, false },
 	{ "menu return preserves focus", "ok 7 down down ok", "back", "screen=settings focus=Talk_&_listen", 1, false },
@@ -1338,6 +1340,8 @@ static const flow_t flows_k[] = {
 		{ "11 dual watch: P1 moves the selected", "quick 7 ctx 3 5 ok", "user1", "dual=1 azone=2", 1, false },
 		{ "11 dual watch: Up/Down on zone, the knob still steps", "ok 7 8 down down ok long:back quick 7 ctx 3 5 ok", "enc+",
 	  "dual=1 azone=0 apos=4", 1, false },
+	{ "11 dual watch: A/B recalls both panes after a physical knob turn", "quick 7 ctx 3 5 ok sk2 slot7 sk2",
+	  "slot6 sk2", "dual=1 sel=B apos=6 bpos=7", 2, false },
 #if CONFIG_UI_COLOR
 	{ "S theme light (color screens)", "", "ok 7 2 down down ok", "set7=1", 6, false },
 	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set61=1", 7, false },
