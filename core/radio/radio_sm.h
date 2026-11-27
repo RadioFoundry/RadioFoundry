@@ -370,6 +370,7 @@ typedef struct {
 	// An air-framed mode (P25, NXDN; radio_air.h)
 	bool air_tx;			// a transmission runs in the engine (from prepare until it is done and cleared)
 	bool air_keyed;			// board.radio->tx() keyed for it (until tx_off)
+	uint32_t air_name_id;		// the caller ID view.air_src_name was looked up for (0: none; a reload clears it)
 #endif
 #if CONFIG_P25
 #if CONFIG_P25_TRUNK

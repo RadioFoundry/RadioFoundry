@@ -840,13 +840,13 @@ static const char *signal_word(const ui_dual_pane_t *p, bool dmr)
 }
 
 // "Joe Smith TG 91", with "Joe Smith" as the shorter alternate (font.h): the caller's name gives way last. Without a
-// DMR caller: what pane p hears ("FM signal")
-static void caller_text(char *out, size_t len, const ui_dual_pane_t *p, bool dmr, uint32_t src, const char *name,
-			uint32_t dst, bool group)
+// DMR, P25 or NXDN caller (air: one of the latter two): what pane p hears ("FM signal", "P25 call")
+static void caller_text(char *out, size_t len, const ui_dual_pane_t *p, bool dmr, bool air, uint32_t src,
+			const char *name, uint32_t dst, bool group)
 {
 	sbuf_t b;
 	sb_init(&b, out, len);
-	if (!dmr || (!src && !dst)) {
+	if ((!dmr && !air) || (!src && !dst) || (air && !src)) {	// P25, NXDN: no caller until the link control
 		sb_str(&b, signal_word(p, dmr));
 		return;
 	}
@@ -1137,6 +1137,24 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 			x->group = v->dmr.call.group;
 			strncpy(x->src_name, v->dmr.call.src_name, sizeof x->src_name - 1);
 #endif
+#if CONFIG_P25
+			if (shown_mode(&v->ch) == RADIO_MODE_P25) {
+				x->air = true;
+				x->src = v->p25.src;
+				x->dst = v->p25.dst;
+				x->group = (v->p25.flags & RADIO_P25_UNIT) == 0;
+				strncpy(x->src_name, v->air_src_name, sizeof x->src_name - 1);
+			}
+#endif
+#if CONFIG_NXDN
+			if (shown_mode(&v->ch) == RADIO_MODE_NXDN) {
+				x->air = true;
+				x->src = v->nxdn.src;
+				x->dst = v->nxdn.dst;
+				x->group = (v->nxdn.flags & RADIO_NXDN_UNIT) == 0;
+				strncpy(x->src_name, v->air_src_name, sizeof x->src_name - 1);
+			}
+#endif
 		}
 	}
 	uint8_t sel0 = d->sel, back0 = d->back_to;
@@ -1150,7 +1168,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 				talk_back(d, i, now);
 		}
 		if (x->active) {
-			caller_text(caller_buf, sizeof caller_buf, p, x->dmr, x->src, x->src_name, x->dst, x->group);
+			caller_text(caller_buf, sizeof caller_buf, p, x->dmr, x->air, x->src, x->src_name, x->dst, x->group);
 			if (strcmp(caller_buf, p->caller) != 0) {
 				strcpy(p->caller, caller_buf);
 				dirty = true;

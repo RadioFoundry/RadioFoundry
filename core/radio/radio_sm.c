@@ -6596,19 +6596,45 @@ static bool air_running(void)
 	return on;
 }
 
-// The engine's view into the radio view. True when it changed
+// The caller's name on P25 and NXDN (#1141): its private contact in the codeplug, the contacts these modes' talk
+// groups come from. Looked up once per caller ID (a contact search reads flash). Not the DMR ID database: P25 and NXDN
+// IDs are numbered apart from DMR's. True when the name changed
+static bool air_name(radio_sm_t *sm, uint32_t src)
+{
+	if (src == sm->air_name_id) {
+		return false;
+	}
+	sm->air_name_id = src;
+	char name[CODEPLUG_NAME_LEN + 1] = "";
+	contact_t c;
+	if (src != 0 && codeplug_contact_find(src, false, &c)) {
+		memcpy(name, c.name, sizeof(name));
+	}
+	if (strcmp(name, sm->view.air_src_name) == 0) {
+		return false;
+	}
+	memcpy(sm->view.air_src_name, name, sizeof(name));
+	return true;
+}
+
+// The engine's view into the radio view, and its caller's name. True when it changed
 static bool air_poll(radio_sm_t *sm)
 {
+	bool moved = false;
+	uint32_t src = 0;
 #if CONFIG_NXDN
 	if (nxdn_now(sm)) {
-		return radio_nxdn_poll(&sm->view.nxdn);
-	}
+		moved = radio_nxdn_poll(&sm->view.nxdn);
+		src = sm->view.nxdn.src;
+	} else
 #endif
+	{
 #if CONFIG_P25
-	return radio_p25_poll(&sm->view.p25);
-#else
-	return false;
+		moved = radio_p25_poll(&sm->view.p25);
+		src = sm->view.p25.src;
 #endif
+	}
+	return air_name(sm, src) || moved;
 }
 
 // A call on the channel (our NAC or RAN): it shows as a reception, whether or not it plays
@@ -8204,6 +8230,9 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	// would otherwise stay a bare ID on the screens until it fell out of the cache
 	memset(sm->lookups, 0, sizeof(sm->lookups));
 	sm->lookup_next = 0;
+#endif
+#if CONFIG_AIR
+	sm->air_name_id = 0;	// the same for the P25 or NXDN caller's name: looked up again at the next poll
 #endif
 	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
 	bool vfo = sm->view.vfo;

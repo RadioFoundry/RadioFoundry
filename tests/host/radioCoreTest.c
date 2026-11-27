@@ -7149,7 +7149,11 @@ static void test_p25_rx(void)
 	run(300);				// noise: no call
 	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN] && !aud.started);
 
-	// A group call on our NAC: received and played (rx_tgid 0: every call of the NAC)
+	// A group call on our NAC: received and played (rx_tgid 0: every call of the NAC). Its caller is a contact:
+	// named on the screens (#1141), looked up once, never in the DMR ID database (P25 IDs are numbered apart)
+	added_contact = (contact_t){ "Pat P25", 1001, CONTACT_PRIVATE, 0 };
+	uint32_t finds0 = contact_finds, iddb0 = iddb_lookups;
+	CHECK(sm.view.air_src_name[0] == '\0');
 	far_begin(P25_NAC_DEFAULT, 1001, false, 77);
 	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
 	far_tx = true;
@@ -7157,6 +7161,9 @@ static void test_p25_rx(void)
 	CHECK(sm.view.state == RS_RX && (v->flags & (RADIO_P25_RX | RADIO_P25_PLAYED)) == (RADIO_P25_RX | RADIO_P25_PLAYED));
 	CHECK(!(v->flags & (RADIO_P25_ENC | RADIO_P25_UNIT | RADIO_P25_LATE)));
 	CHECK(v->nac == P25_NAC_DEFAULT && v->src == 1001 && v->dst == 77);
+	CHECK(strcmp(sm.view.air_src_name, "Pat P25") == 0);
+	CHECK(contact_finds == finds0 + 1 && iddb_lookups == iddb0);
+	memset(&added_contact, 0, sizeof(added_contact));
 	CHECK(hw.led[LED_GREEN] && !hw.audio && radio_view_wakes(&sm.view));	// voice is PCM, not the FM speaker path
 	CHECK(aud.started);			// the voice stream plays it
 	p25_view_text(buf, sizeof buf);
@@ -8802,11 +8809,14 @@ static void test_nxdn_rx(void)
 	dec_in_order = 0;
 	v_decode_hook = dec_hook;
 	nfar_next = 0;
+	// The caller isn't a contact: no name (#1141), and the DMR ID database isn't asked (NXDN IDs are numbered apart)
+	uint32_t iddb0 = iddb_lookups;
 	nfar_begin(true, 1, 2001, false, 20);
 	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
 	nfar_tx = true;
 	run(1000);
 	CHECK(sm.view.state == RS_RX && hw.led[LED_GREEN]);
+	CHECK(sm.view.air_src_name[0] == '\0' && iddb_lookups == iddb0);
 	CHECK((v->flags & (RADIO_NXDN_RX | RADIO_NXDN_PLAYED)) == (RADIO_NXDN_RX | RADIO_NXDN_PLAYED));
 	CHECK(v->src == 2001 && v->dst == 20 && v->ran == 1 && !(v->flags & (RADIO_NXDN_UNIT | RADIO_NXDN_ENC)));
 	CHECK(dec_in_order >= 30);

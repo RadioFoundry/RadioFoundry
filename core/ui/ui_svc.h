@@ -153,6 +153,7 @@ typedef struct {
 	bool active;		// a call or a signal now
 	bool heard;		// its audio is the one playing
 	bool dmr;
+	bool air;		// a P25 or NXDN call: src, dst, group and src_name are its, as for DMR (#1141)
 	bool group;
 	int16_t rssi_dbm;
 	uint32_t src, dst;

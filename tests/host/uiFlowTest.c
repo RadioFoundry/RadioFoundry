@@ -142,6 +142,8 @@ static const flow_t flows[] = {
 	{ "NXDN home: scrambled call on a stored channel",
 	  "chkind:3,nxdn,COUNTY_NXDN dlpos:3 dlmode:nxdn", "nxdnrx:1234,7,p",
 	  "screen=home shows=COUNTY_NXDN shows=ENC shows=ID_1234 shows=TG_7 hides=Encrypted:_not_played", 0, false },
+	{ "NXDN home: a caller in the contacts by name (#1141)", "dlmode:nxdn airname:Nan", "nxdnrx:1234,7",
+	  "screen=home shows=Nan shows=TG_7 hides=ID_1234", 0, false },
 	{ "NXDN home: scrambled call without a matching key", "dlmode:nxdn", "nxdnrx:1234,7,e",
 	  "screen=home shows=Encrypted:_not_played hides=ID_1234", 0, false },
 	{ "NXDN channel: bandwidth is FM only", "dlmode:nxdn", "quick 8", "mode=nxdn toast=FM_only:_this_is_NXDN", 2, false },
@@ -152,6 +154,8 @@ static const flow_t flows[] = {
 	// P25 on Home: what PTT calls on the talk line, the NAC in the chips, the caller while a call comes in
 	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
 	{ "P25 home: the caller", "dlmode:p25", "p25rx:3101234,7", "screen=home shows=ID_3101234 shows=TG_7", 0, false },
+	{ "P25 home: a caller in the contacts by name (#1141)", "dlmode:p25 airname:Pat_P25", "p25rx:3101234,7",
+	  "screen=home shows=Pat_P25 shows=TG_7 hides=ID_3101234", 0, false },
 	{ "P25 home: a unit call", "dlmode:p25", "p25rx:3101234,3105555,u", "shows=Private_to_3105555", 0, false },
 	{ "P25 home: encrypted", "dlmode:p25", "p25rx:3101234,7,e", "shows=Encrypted:_not_played hides=ID_3101234", 0,
 	  false },
@@ -419,6 +423,11 @@ static const flow_t flows[] = {
 	{ "11 dual watch modes: P25 channel", "p25 chkind:3,p25 up down quick 7", "", "dual=1 sel=A shows=P25 hides=FM", 0, false },
 	{ "11 dual watch modes: P25 call", "p25 chkind:3,p25 up down quick 7 tune:a", "fmrx",
 	  "dual=1 shows=P25_call hides=FM_signal hides=DMR_call", 0, false },
+	{ "11 dual watch modes: a P25 caller by ID", "p25 chkind:3,p25 up down quick 7 tune:a", "p25rx:3101234,7",
+	  "dual=1 shows=3101234_TG_7 hides=P25_call", 0, false },
+	{ "11 dual watch modes: a P25 caller in the contacts by name (#1141)",
+	  "p25 chkind:3,p25 up down quick 7 tune:a airname:Pat_P25", "p25rx:3101234,7",
+	  "dual=1 shows=Pat_P25_TG_7 hides=P25_call", 0, false },
 #endif
 #if CONFIG_NXDN
 	{ "11 dual watch modes: NXDN VFO", "dlvfo:438800000 dlmode:nxdn quick 7", "",
@@ -426,6 +435,9 @@ static const flow_t flows[] = {
 	{ "11 dual watch modes: NXDN channel", "nxdn chkind:3,nxdn up down quick 7", "", "dual=1 sel=A shows=NXDN hides=FM", 0, false },
 	{ "11 dual watch modes: NXDN call", "nxdn chkind:3,nxdn up down quick 7 tune:a", "fmrx",
 	  "dual=1 shows=NXDN_call hides=FM_signal hides=DMR_call", 0, false },
+	{ "11 dual watch modes: an NXDN caller in the contacts by name (#1141)",
+	  "nxdn chkind:3,nxdn up down quick 7 tune:a airname:Nan", "nxdnrx:1234,7",
+	  "dual=1 shows=Nan_TG_7 hides=NXDN_call", 0, false },
 #endif
 	// Settings > Advanced > Hardware (last row): OK steps a choice without storing ("*"), holding OK stores it
 	{ "S hardware options open", "hwopt", "ok 7 up ok up ok", "screen=hwopt shows=Not_set", 6, false },
