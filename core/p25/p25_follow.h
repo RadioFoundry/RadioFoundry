@@ -23,6 +23,10 @@
 #define P25_FOLLOW_IDENS	16
 #define P25_FOLLOW_LEARN	4		// control channels learned off air (secondary, adjacent sites)
 
+// Receiver policy, not standard-mandated timers: header deadline and total hang-time wait.
+#define P25_FOLLOW_ALIAS_HEADER_MS 150
+#define P25_FOLLOW_ALIAS_MAX_MS	500
+
 // Timers, ms
 #define P25_FOLLOW_DWELL_MS	600	// a control channel candidate with nothing decoded: the next
 #define P25_FOLLOW_ID_MS	4000	// ... with signaling but not yet the system's identity
@@ -208,13 +212,29 @@ typedef struct {
 	const p25_follow_cfg_t *cfg;		// the caller's, kept until p25_follow_end
 	const p25_follow_hooks_t *hooks;
 	void *ctx;
-	uint32_t t_state;	// the step in hand began (a dwell, an identity wait, a backoff)
+	uint32_t t_state;	// the hunt step began (dwell, identity wait, backoff)
 	uint32_t t_good;	// the last block decoded on the control channel, or the last voice unit
-	uint32_t t_nocc;	// no control channel since
+	union {
+		uint32_t t_nocc;	// HUNT only: no control channel since
+#if CONFIG_P25_ALIAS
+		uint32_t t_alias_tail;	// VOICE only: first transmission-end or alias header
+#endif
+	};
 	uint32_t t_call;	// on the voice channel since
 	uint32_t t_hold;	// the talk group hold began
 	uint32_t t_left;	// left a call on its terminator
-	uint32_t backoff;	// ms
+	// Hunt and voice-tail state never coexist. hunt_start restores all hunt fields;
+	// retuned clears the tail flags only when entering VOICE.
+	union {
+		uint32_t backoff;	// HUNT only: ms
+#if CONFIG_P25_ALIAS
+		struct {
+			bool alias_tail;	// bounded wait after transmission end
+			bool alias_header;	// a valid MFID 0x90 header arrived in time
+			bool alias_done;
+		};
+#endif
+	};
 	uint16_t hold_tg, left_tg, left_ch;
 	uint16_t learn[P25_FOLLOW_LEARN];
 	uint8_t nlearn;

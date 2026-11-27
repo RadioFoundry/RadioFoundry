@@ -105,6 +105,7 @@ uint16_t p25_ldu_voice_sym(uint8_t n);
 // Link control words of conventional voice (5.5): a group call (LCF 0x00) and a unit to unit call (LCF 0x03)
 #define P25_LCF_GROUP		0x00
 #define P25_LCF_UNIT		0x03
+#define P25_LCF_CALL_TRM_CAN	0x4F	// implicit standard format, LCO 15: call termination/cancellation
 #define P25_TGID_EVERYONE	0xFFFFu	// the talk group every radio takes
 typedef struct {
 	uint8_t lcf;
@@ -165,6 +166,9 @@ typedef struct {
 	uint8_t algid;		// P25_ALGID_CLEAR, or the call is encrypted: its voice is not handed on
 	uint16_t kid;
 	int16_t rssi_dbm;
+#if CONFIG_P25_ALIAS
+	char alias[15];		// complete TIA-102.AABF-D-2 alias for lc.src, never a partial name
+#endif
 } p25_call_t;
 
 typedef struct {
@@ -180,8 +184,30 @@ typedef struct {
 #endif
 } p25_call_sink_t;
 
+#if CONFIG_P25_ALIAS
+#include "p25_alias90.h"
+// A completed, selected alias retained until the next completion, including after call end.
+typedef struct {
+	uint32_t serial, call, src, dst;
+	bool unit;
+	char name[15];
+} p25_alias_event_t;
+typedef struct {
+	uint32_t lc_other, parts, complete, rejected, no_source, unpaired;
+	uint32_t last_src;
+	uint32_t decoded_src;
+	char last_name[15];
+	uint32_t mfid90_src;
+	uint16_t mfid90_seen;
+	uint8_t mfid90_result, mfid90_count, mfid90_seq;
+} p25_alias_stats_t;
+#endif
+
 typedef struct {
 	uint32_t units, voice, voice_bad, voice_bits, lc_fail, es_fail, calls;
+#if CONFIG_P25_ALIAS
+	p25_alias_stats_t alias;
+#endif
 	uint32_t sys_no_tx;	// LDU1s and TDULCs whose link control names a blocked system (p25_unit_sys_no_tx)
 } p25_call_stats_t;
 
@@ -192,6 +218,12 @@ typedef struct {
 	bool active;
 	p25_call_t call;
 	p25_call_stats_t stats;
+#if CONFIG_P25_ALIAS
+	uint8_t alias_part[7];
+	uint8_t alias_opcode, alias_age;	// pending Part A; expires after 12 received units
+	p25_alias90_t alias90;
+	uint8_t alias90_age;
+#endif
 } p25_call_rx_t;
 
 // nac as p25_rx_init. Hand &c->rx to air_framer_init as the mode's context

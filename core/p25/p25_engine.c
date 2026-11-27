@@ -33,7 +33,8 @@ static bool wanted(const p25_engine_t *e, const p25_call_t *c)
 
 static void rx_fields(p25_engine_t *e, const p25_call_t *c, bool start)
 {
-	bool play = wanted(e, c) && c->algid == P25_ALGID_CLEAR;
+	bool selected = wanted(e, c);
+	bool play = selected && c->algid == P25_ALGID_CLEAR;
 
 #if CONFIG_P25_TRUNK
 	if (e->hooks.rx_call)
@@ -43,8 +44,24 @@ static void rx_fields(p25_engine_t *e, const p25_call_t *c, bool start)
 	e->view.rx = *c;
 	e->view.rx_active = true;
 	e->view.rx_played = play;
+	e->view.rx_selected = selected;
 	if (start)
 		e->view.rx_calls++;
+#if CONFIG_P25_ALIAS
+	p25_alias_event_t *a = &e->view.alias_event;
+	bool unit = c->lc.lcf == P25_LCF_UNIT;
+	uint32_t dst = unit ? c->lc.dst : c->lc.tgid;
+	if (selected && c->have_lc && c->lc.src && c->alias[0] &&
+	    (a->call != e->view.rx_calls || a->src != c->lc.src || a->dst != dst ||
+	     a->unit != unit || strcmp(a->name, c->alias))) {
+		a->serial++;
+		a->call = e->view.rx_calls;
+		a->src = c->lc.src;
+		a->dst = dst;
+		a->unit = unit;
+		memcpy(a->name, c->alias, sizeof a->name);
+	}
+#endif
 	view_end(e);
 	if (play && !e->played) {
 		e->played = true;
@@ -94,6 +111,7 @@ static void on_end(void *ctx)
 	view_begin(e);
 	e->view.rx_active = false;
 	e->view.rx_played = false;
+	e->view.rx_selected = false;
 	view_end(e);
 	if (e->played && e->hooks.rx_end)
 		e->hooks.rx_end(e->ctx);

@@ -207,6 +207,46 @@ learned, the last grant refused and why, whether the last block taken failed its
 failures, blocks taken with a failed CRC, manufacturer's blocks, packets, grants,
 follows, refusals by reason, wrong system, hunts, control channel losses, voice losses, and blocks by opcode.
 
+### 4.1 Transmission end and call termination
+
+A TDU, or a TDULC carrying group voice channel user LC during message-trunking hang time,
+ends a transmission without releasing the call's channel (TIA-102.AABD 4.2.1.2).
+A listener may stay during hang time or return to control (4.2.1.2.2). Grant updates
+continue during hang time. A standard TDULC carrying `LC_CALL_TRM_CAN` (LCO 15,
+implicit format byte `0x4F`) ends the call and releases the channel (TIA-102.AABF 7.3.8); the follower
+leaves immediately, including during alias collection (AABD 3.5.1). Protected or
+manufacturer-specific opcodes are not interpreted as standard call termination.
+
+With `CONFIG_P25_ALIAS`, other terminators start a short receive-only window:
+
+- `P25_FOLLOW_ALIAS_HEADER_MS`: 150 ms from the first terminator for a valid MFID
+  0x90 alias header matching the followed group. Data without a header does not extend it.
+- `P25_FOLLOW_ALIAS_MAX_MS`: 500 ms total from that first terminator if a header
+  arrived in time. Return sooner when a validated alias completes. An alias header
+  received without a preceding terminator starts the same total limit at its arrival.
+
+These durations are receiver policy choices, not values mandated by the standard.
+Repeated terminators, headers and data do not restart either deadline. New voice
+cancels the window. Existing wrong-call and encrypted-call handling still applies.
+Without alias support, all terminators return immediately as before.
+
+A received, eligible grant update for another call preempts the window through the
+normal group, NAC, channel-plan and encryption checks. A same-call update does not
+restart it. The follower accepts the two channel/group pairs of an unprotected
+implicit-format group voice channel update LC (LCO 2, format byte `0x42`, AABF 7.3.2)
+in a TDULC during the window, as well as received control-channel grant updates.
+This applies to signaling actually delivered to the receiver: a single
+receiver tuned to voice cannot simultaneously hear a separate control channel.
+After returning, it can receive the control channel's repeated updates.
+
+The LC formats follow [TIA-102.AABF-A](https://lists.osmocom.org/pipermail/op25-dev/attachments/20130712/b3accd32/attachment.pdf),
+7.1, 7.3.2 and 7.3.8.
+
+Host tests cover late-header decoding after both transmission-end formats, immediate
+LCO 15 release, missing/invalid headers, both deadlines, repeated headers, new voice,
+tick wraparound, and grant-update preemption. Radio/bench validation is still pending.
+
+
 ## 5. The transmit side
 
 On with `P25_FOLLOW_TX` (the channel's tag allows transmit, the system is not listen only, a unit ID and a talk group

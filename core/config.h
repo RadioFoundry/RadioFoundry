@@ -360,6 +360,12 @@
 #ifndef CONFIG_P25_TRUNK
 #define CONFIG_P25_TRUNK		0
 #endif
+#ifndef CONFIG_P25_ALIAS
+#define CONFIG_P25_ALIAS		CONFIG_P25
+#endif
+#if CONFIG_P25_ALIAS && !CONFIG_P25
+#error "CONFIG_P25_ALIAS needs CONFIG_P25"
+#endif
 #ifndef CONFIG_AIR_RAW
 #define CONFIG_AIR_RAW			0
 #endif

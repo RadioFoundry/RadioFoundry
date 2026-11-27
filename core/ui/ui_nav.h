@@ -73,6 +73,10 @@ typedef struct {
 	bool group;		// a talkgroup (else a person)
 	uint32_t heard_tg;	// a person heard on this talkgroup (0 = privately / unknown)
 	bool saved;		// in the contacts
+#if CONFIG_P25_ALIAS
+	bool p25;		// received P25 identity: inspect only, never a DMR action target
+	uint32_t p25_session, p25_call;
+#endif
 	char name[CODEPLUG_NAME_LEN + 1];
 } ui_target_t;
 
@@ -216,6 +220,10 @@ const char *ui_find_query(void);
 typedef struct {
 	uint32_t src, dst;
 	bool group, out, to_us;
+#if CONFIG_P25_ALIAS
+	bool p25;		// separates P25 and DMR IDs in the history
+	uint32_t p25_session, p25_call;
+#endif
 	uint32_t ms;
 	char name[CODEPLUG_NAME_LEN + 1];	// the other station's (or the talkgroup's, for calls we made) name
 	bool gps_range;		// the caller sent its position (ETSI GPS Info) and ours was known: how far, which way

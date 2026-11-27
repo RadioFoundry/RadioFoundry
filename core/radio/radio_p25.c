@@ -86,6 +86,10 @@ static p25_mem_t *mem;			// while running
 static radio_p25_stats_t stats;
 static p25_call_stats_t call_base;	// the call layer's counters when the engine started (they restart with it)
 static air_session_stats_t air_base;
+#if CONFIG_P25_ALIAS
+static uint32_t call_session, alias_session, alias_seen;
+static p25_alias_event_t alias_event;
+#endif
 static uint32_t rx_calls_base, tx_calls_base, filler_base;
 #if CONFIG_P25_TRUNK
 static bool trunk;			// the engine runs a trunked channel
@@ -599,6 +603,10 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 	const p25_engine_hooks_t *hooks = &no_voice;
 
 	radio_p25_end();
+#if CONFIG_P25_ALIAS
+	call_session++;
+	alias_seen = 0;
+#endif
 	stats.begins++;
 	mem = mem_get();
 	if (mem == NULL || board.air == NULL || p25_engine_fit(board.air) == 0) {
@@ -691,6 +699,33 @@ static void count(const p25_engine_view_t *ev)
 	stats.voice_bits += c->voice_bits - call_base.voice_bits;
 	stats.lc_fail += c->lc_fail - call_base.lc_fail;
 	stats.es_fail += c->es_fail - call_base.es_fail;
+#if CONFIG_P25_ALIAS
+	if (ev->alias_event.serial && ev->alias_event.serial != alias_seen) {
+		uint32_t serial = alias_event.serial + 1;
+		alias_seen = ev->alias_event.serial;
+		alias_session = call_session;
+		alias_event = ev->alias_event;
+		alias_event.serial = serial;
+	}
+	stats.alias.lc_other += c->alias.lc_other - call_base.alias.lc_other;
+	stats.alias.parts += c->alias.parts - call_base.alias.parts;
+	stats.alias.complete += c->alias.complete - call_base.alias.complete;
+	stats.alias.rejected += c->alias.rejected - call_base.alias.rejected;
+	stats.alias.no_source += c->alias.no_source - call_base.alias.no_source;
+	stats.alias.unpaired += c->alias.unpaired - call_base.alias.unpaired;
+	if (c->alias.complete != call_base.alias.complete) {
+		stats.alias.decoded_src = c->alias.decoded_src;
+		memcpy(stats.alias.last_name, c->alias.last_name, sizeof stats.alias.last_name);
+	}
+	if (c->alias.lc_other != call_base.alias.lc_other) {
+		stats.alias.last_src = c->alias.last_src;
+		stats.alias.mfid90_src = c->alias.mfid90_src;
+		stats.alias.mfid90_result = c->alias.mfid90_result;
+		stats.alias.mfid90_seen = c->alias.mfid90_seen;
+		stats.alias.mfid90_count = c->alias.mfid90_count;
+		stats.alias.mfid90_seq = c->alias.mfid90_seq;
+	}
+#endif
 	stats.rx_chunks += a->rx_chunks - air_base.rx_chunks;
 	stats.tx_underruns += a->tx_underruns - air_base.tx_underruns;
 	stats.tx_syms += a->tx_syms - air_base.tx_syms;
@@ -756,6 +791,11 @@ static void settings_view(radio_p25_view_t *n)
 
 	if (mem != NULL)
 		cfg_settings(&mem->eng.cfg, &s);
+#if CONFIG_P25_ALIAS
+	n->call_session = call_session;
+	n->alias_session = alias_session;
+	n->alias_event = alias_event;
+#endif
 	n->rx_nac = s.rx_nac;
 	n->talk = s.tx_dst;
 	if (s.unit_call)
@@ -770,6 +810,10 @@ bool radio_p25_poll(radio_p25_view_t *v)
 	if (mem == NULL) {
 		n = *v;		// the last call heard stays
 		n.flags = 0;
+		n.selected = false;
+#if CONFIG_P25_ALIAS
+		memset(n.alias, 0, sizeof n.alias);
+#endif
 		n.tx = AIR_TX_IDLE;
 		n.trunk = RADIO_P25_TRUNK_OFF;
 		settings_view(&n);
@@ -788,6 +832,7 @@ bool radio_p25_poll(radio_p25_view_t *v)
 	count(&ev);
 	memset(&n, 0, sizeof(n));
 	n.flags = RADIO_P25_ON;
+	n.selected = ev.rx_active && ev.rx_selected;
 	if (ev.rx_active) {
 		n.flags |= RADIO_P25_RX;
 		if (ev.rx_played)
@@ -803,6 +848,11 @@ bool radio_p25_poll(radio_p25_view_t *v)
 	n.tx = ev.tx;
 	n.nac = ev.rx.nac;
 	n.src = ev.rx.have_lc ? ev.rx.lc.src : 0;
+#if CONFIG_P25_ALIAS
+	n.call_number = ev.rx_calls;
+	if (n.selected && n.src)
+		memcpy(n.alias, ev.rx.alias, sizeof n.alias);
+#endif
 	n.dst = unit ? ev.rx.lc.dst : ev.rx.lc.tgid;
 #if CONFIG_P25_TRUNK
 	if (trunk) {

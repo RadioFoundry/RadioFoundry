@@ -12,6 +12,12 @@
 #include "gfx.h"
 #include "config.h"
 #include "fmt.h"
+#if CONFIG_P25_ALIAS
+// Current caller's validated alias, falling back to session-scoped Recent history.
+const char *ui_p25_caller_alias(const radio_view_t *v);
+// A completed caller shown briefly on idle Home; invalid after a new call or receiver session.
+const p25_alias_event_t *ui_p25_held_alias(const radio_view_t *v);
+#endif
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
@@ -132,7 +138,7 @@ typedef struct {
 	bool knob_lock;		// the volume knob does nothing while the keys are locked (Knob when locked Off)
 	uint16_t auto_off_min;	// switch off after this long without use, 0 = never (Settings > Power saving)
 	uint16_t unread;	// unread messages
-	const char *home_hint;	// the hint for Home's idle state, built from the board's keys ("OK Menu *Quick #Joe")
+	const char *home_hint;	// Home's idle hint: menu, quick settings and the last caller
 	ui_banner_t banner;
 #if CONFIG_DUAL_WATCH
 	ui_dual_t dual;

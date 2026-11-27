@@ -713,7 +713,8 @@ static const char *key_names(const char *text, char *out, size_t cap, bool hint)
 				p += 2;
 			continue;
 		}
-		bool alone = (p == text || p[-1] == ' ' || alt_mark(p[-1])) && (p[1] == 0 || p[1] == ' ' || alt_mark(p[1]));
+		bool alone = (p == text || p[-1] == ' ' || alt_mark(p[-1])) &&
+			(p[1] == 0 || p[1] == ' ' || alt_mark(p[1]));
 		const char *sub = !alone ? NULL : *p == '*' ? board.quick_label : *p == '#' ? board.context_label : NULL;
 		if (sub == NULL) {
 			out[n++] = *p;
@@ -2151,10 +2152,18 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 typedef struct {
 	bool played, enc, unit;
 	uint32_t src, dst;
+#if CONFIG_P25_ALIAS
+	const char *alias;
+	bool remembered;
+#endif
 } air_call_t;
 
 static bool air_call(const radio_view_t *v, air_call_t *c)
 {
+#if CONFIG_P25_ALIAS
+	c->alias = NULL;
+	c->remembered = false;
+#endif
 #if CONFIG_P25
 	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
 		const radio_p25_view_t *p = &v->p25;
@@ -2163,6 +2172,10 @@ static bool air_call(const radio_view_t *v, air_call_t *c)
 		c->unit = (p->flags & RADIO_P25_UNIT) != 0;
 		c->src = p->src;
 		c->dst = p->dst;
+#if CONFIG_P25_ALIAS
+		c->alias = ui_p25_caller_alias(v);
+		c->remembered = c->alias[0] && !p->alias[0];
+#endif
 		return true;
 	}
 #endif
@@ -2201,8 +2214,15 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 		if (c->enc)
 			sb_str(&b, "ENC ");
 		if (with_id) {
-			sb_str(&b, "ID ");
-			sb_u32(&b, c->src, 1);
+#if CONFIG_P25_ALIAS
+			if (c->alias && c->alias[0])
+				sb_str(&b, c->alias);
+			else
+#endif
+			{
+				sb_str(&b, "ID ");
+				sb_u32(&b, c->src, 1);
+			}
 			sb_str(&b, " " GLYPH_ARROW " ");
 		}
 		if (c->unit) {
@@ -2215,7 +2235,11 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 			break;
 	}
 	gfx_text_fit(f, buf, gfx_width(), fit, sizeof fit);
-	gfx_text(f, 0, y, fit, ui_col.rx);
+	gfx_text(f, 0, y, fit,
+#if CONFIG_P25_ALIAS
+		 c->remembered ? ui_col.dim :
+#endif
+		 ui_col.rx);
 }
 #endif
 
@@ -2240,6 +2264,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_AIR
 		air_call_t ac;
 		bool air_rx = air_call(v, &ac);
+
 		if (!two && air_rx) {
 			air_call_line(&ac, sm, y);	// one line: who calls says more than the meter
 			break;
@@ -2319,6 +2344,15 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			}
 			break;
 		}
+#if CONFIG_P25_ALIAS
+		const p25_alias_event_t *held = ui_p25_held_alias(v);
+		if (held != NULL) {
+			air_call_t previous = { .played = true, .unit = held->unit,
+				.src = held->src, .dst = held->dst, .alias = held->name, .remembered = true };
+			air_call_line(&previous, sm, y + (L->activity_h - sm->h) / 2);
+			break;
+		}
+#endif
 #if CONFIG_DMR_TRUNK
 		if (v->t3.on && v->t3.state == T3_HUNT && (v->t3.other != 0 || v->t3.other_fid != 0)) {
 			draw_t3_other(v, y);

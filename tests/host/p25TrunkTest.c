@@ -458,6 +458,12 @@ static void unit_duid(p25_follow_t *f, uint8_t duid)
 	static uint8_t air[P25_UNIT_BYTES_MAX];
 	p25_rx_unit_t u = { .duid = duid, .nac = NAC, .nsyms = P25_LDU_SYMS, .air = air };
 
+	if (duid == P25_DUID_TDULC) {
+		uint8_t raw[P25_LC_BYTES];
+		p25_lc_t lc = { .lcf = P25_LCF_GROUP, .tgid = f->view.tg, .src = f->view.src };
+		p25_lc_build(&lc, raw);
+		p25_tdulc_put(air, raw);
+	}
 	p25_follow_unit(f, &u, now_ms);
 }
 static bool cc_alive;	// the control channel keeps sending (a network status block every 200 ms)
@@ -625,8 +631,9 @@ static void testFollowHand(void)
 	}
 	CHECK(view(&f).state == P25_FOLLOW_VOICE, "on the voice channel while voice comes");
 	unit_duid(&f, P25_DUID_TDULC);
+	run_ms(&f, CONFIG_P25_ALIAS ? P25_FOLLOW_ALIAS_HEADER_MS : 0);
 	v = view(&f);
-	CHECK(v.state == P25_FOLLOW_CONTROL && ntunes == n + 2 && tunes[n + 1].hz == HZ_CC1 && v.follows == 1, "back on the terminator");
+	CHECK(v.state == P25_FOLLOW_CONTROL && ntunes == n + 2 && tunes[n + 1].hz == HZ_CC1 && v.follows == 1, "back after the transmission-end header window");
 	retune(&f);
 	// The call's updates go on a moment: not joined again; a new grant after that is
 	mk_grant(b, P25_OP_GRP_V_UPDT, 0, 0x100A, 100, 0);
@@ -698,6 +705,7 @@ static void testFollowHand(void)
 	      tunes[n + 8].what == P25_FOLLOW_TUNE_UNIT && tunes[n + 8].id == OUR_UNIT, "unit call to us");
 	retune(&f);
 	unit_duid(&f, P25_DUID_TDU);
+	run_ms(&f, CONFIG_P25_ALIAS ? P25_FOLLOW_ALIAS_HEADER_MS : 0);
 	retune(&f);
 	// ... and one between two others: not ours
 	mk_grant(b, P25_OP_UU_V_GRANT, 0, 0x100D, 1, 2);
@@ -1026,6 +1034,7 @@ static void testAccess(void)
 	run_ms(&f, 5000);
 	CHECK(view(&f).state == P25_FOLLOW_VOICE && view(&f).voice_lost == 0, "transmitting: no voice-lost timer");
 	unit_duid(&f, P25_DUID_TDU);
+	run_ms(&f, CONFIG_P25_ALIAS ? P25_FOLLOW_ALIAS_HEADER_MS : 0);
 	CHECK(view(&f).state == P25_FOLLOW_VOICE, "a terminator heard while we talk: ours to end");
 	p25_follow_ptt(&f, false, now_ms);
 	CHECK(view(&f).req == P25_REQ_TALK, "release while talking: the caller ends it");
@@ -1084,6 +1093,7 @@ static void testAccess(void)
 	if (view(&f).state == P25_FOLLOW_VOICE) {	// (followed as a listener: back)
 		retune(&f);
 		unit_duid(&f, P25_DUID_TDU);
+		run_ms(&f, CONFIG_P25_ALIAS ? P25_FOLLOW_ALIAS_HEADER_MS : 0);
 		retune(&f);
 	}
 	run_ms(&f, 500);
@@ -1098,9 +1108,11 @@ static void testAccess(void)
 	p25_follow_ptt(&f, true, now_ms);
 	CHECK(view(&f).state == P25_FOLLOW_CONTROL && tunes[ntunes - 1].hz == HZ_CC1 && view(&f).req == P25_REQ_WAIT,
 	      "PTT on a voice channel: back to ask");
+	cc_alive = false;
 	run_ms(&f, 100);
 	CHECK(nsends == n, "nothing sent before the control channel is heard again");
 	retune(&f);
+	cc_alive = true;
 	run_ms(&f, 400);
 	CHECK(nsends == n + 1 && last_isp().opcode == P25_ISP_GRP_V_REQ, "then the request");
 	p25_follow_ptt(&f, false, now_ms);
@@ -1586,6 +1598,7 @@ static void testFollowOptions(void)
 	CHECK(view(&f).state == P25_FOLLOW_VOICE && tunes[ntunes - 1].hz == HZ_VA, "programmed plan used");
 	retune(&f);
 	unit_duid(&f, P25_DUID_TDU);
+	run_ms(&f, CONFIG_P25_ALIAS ? P25_FOLLOW_ALIAS_HEADER_MS : 0);
 	retune(&f);
 	// Hold: only group 100 for 3 s
 	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100B, 200, 1);
@@ -1599,6 +1612,7 @@ static void testFollowOptions(void)
 	CHECK(view(&f).state == P25_FOLLOW_VOICE, "hold: the held group is followed");
 	retune(&f);
 	unit_duid(&f, P25_DUID_TDU);
+	run_ms(&f, CONFIG_P25_ALIAS ? P25_FOLLOW_ALIAS_HEADER_MS : 0);
 	retune(&f);
 	run_ms(&f, 3100);
 	// (the control channel was lost meanwhile: nothing came; feed it again)
@@ -2221,6 +2235,185 @@ static void testAirLoss(void)
 	rig_end();
 }
 
+#if CONFIG_P25_ALIAS
+static void alias_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, uint32_t now)
+{
+	ntunes = 0;
+	p25_follow_begin(f, cfg, &fhooks, NULL, now);
+	p25_follow_retuned(f, now);
+	CHECK(f->backoff == P25_FOLLOW_BACKOFF_MS && f->t_nocc == now,
+	      "hunt retune preserves backoff and fallback epoch");
+	f->view.state = P25_FOLLOW_VOICE;
+	p25_follow_retuned(f, now);
+	f->view.tg = cfg->talk_group;
+	f->view.nac = cfg->nac;
+	f->view.src = 7654321;
+	f->left_ch = 0x100A;
+	f->good = f->view.cc = 0;
+}
+
+static void testAliasTail(void)
+{
+	const p25_follow_cc_t cc = { .hz = HZ_CC1 };
+	const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	p25_follow_cfg_t cfg = { .ncc = 1, .cc = &cc, .nac = NAC, .talk_group = 0x03e9,
+		.iden_set = 1u << 1, .iden = iden };
+	p25_follow_t f;
+	uint8_t air[P25_UNIT_BYTES_MAX] = { 0 };
+	const uint8_t hang[9] = { 0, 0, 0, 0, 0x03, 0xe9, 0x74, 0xcb, 0xb1 };
+	const uint8_t head[9] = { 0x15, 0x90, 0x03, 0xe9, 5, 1, 0, 0x80, 0 };
+	// The synthetic, checksum-validated UNIT001 fixture also used by p25Test.
+	const uint8_t block[5][9] = {
+		{ 0x17, 0x90, 0x01, 0x8a, 0xbc, 0xde, 0x12, 0x37, 0x4c },
+		{ 0x17, 0x90, 0x02, 0x8b, 0xb1, 0xb5, 0x06, 0xc2, 0xe8 },
+		{ 0x17, 0x90, 0x03, 0x87, 0xee, 0x05, 0x1a, 0xeb, 0xf2 },
+		{ 0x17, 0x90, 0x04, 0x8e, 0xd2, 0x8b, 0xbe, 0xd2, 0x73 },
+		{ 0x17, 0x90, 0x05, 0x89, 0xb0, 0x00, 0x00, 0x00, 0x00 }
+	};
+	p25_rx_unit_t u = { .duid = P25_DUID_TDULC, .nac = NAC, .air = air, .nsyms = P25_TDULC_SYMS };
+	// Both transmission-end formats allow a late header; include tick wraparound.
+	for (unsigned pass = 0; pass < 3; pass++) {
+		uint32_t start = pass == 2 ? UINT32_MAX - 100 : 200;
+		static const p25_call_sink_t sink = { 0 };
+		p25_call_rx_t call;
+		p25_call_rx_init(&call, NAC, &sink, NULL);
+		alias_follow_begin(&f, &cfg, start - 100);
+		u.duid = pass == 1 ? P25_DUID_TDU : P25_DUID_TDULC;
+		p25_tdulc_put(air, hang);
+		p25_follow_unit(&f, &u, start);
+		call.rx.unit(&u, call.rx.ctx);
+		CHECK(f.view.state == P25_FOLLOW_VOICE && f.alias_tail && !f.alias_header,
+		      "transmission end waits for a late header");
+		u.duid = P25_DUID_TDULC;
+		p25_tdulc_put(air, head);
+		p25_follow_unit(&f, &u, start + 45);
+		call.rx.unit(&u, call.rx.ctx);
+		CHECK(f.alias_header && !call.call.alias[0], "late header starts assembly, not a partial name");
+		for (unsigned i = 0; i < 5; i++) {
+			uint32_t now = start + 90 + i * 45;
+			p25_tdulc_put(air, block[i]);
+			p25_follow_unit(&f, &u, now);
+			CHECK(f.view.state == P25_FOLLOW_VOICE, "still tuned for alias fragment %u", i);
+			call.rx.unit(&u, call.rx.ctx);
+			p25_follow_call(&f, &call.call, now);
+			p25_follow_tick(&f, now);
+		}
+		CHECK(!strcmp(call.call.alias, "UNIT001") && call.call.lc.src == 7654321 &&
+		      f.view.state == P25_FOLLOW_CONTROL, "late alias decoded, then immediate return");
+		CHECK(f.view.reg_tx == 0 && f.view.aff_tx == 0 && f.view.req_tx == 0,
+		      "alias wait sends no registration, affiliation or request");
+		p25_follow_retuned(&f, start + 300);
+		p25_follow_tick(&f, start + 2300);
+		CHECK(f.view.state == P25_FOLLOW_HUNT && f.backoff == P25_FOLLOW_BACKOFF_MS,
+		      "control loss after alias wait restores hunt state");
+	}
+
+	// Missing, orphaned or malformed headers cannot extend the initial 150 ms.
+	for (unsigned pass = 0; pass < 4; pass++) {
+		uint8_t raw[9];
+		alias_follow_begin(&f, &cfg, 100);
+		p25_tdulc_put(air, hang);
+		p25_follow_unit(&f, &u, 200);
+		memcpy(raw, pass == 1 ? block[0] : pass == 0 ? hang : head, sizeof raw);
+		if (pass == 2) raw[4] = 0;
+		if (pass == 3) raw[3]++;
+		p25_tdulc_put(air, raw);
+		p25_follow_unit(&f, &u, 300);
+		p25_follow_tick(&f, 200 + P25_FOLLOW_ALIAS_HEADER_MS - 1);
+		CHECK(f.view.state == P25_FOLLOW_VOICE && !f.alias_header, "header wait has not expired");
+		// A header exactly at the deadline, before a tick, is too late.
+		p25_tdulc_put(air, head);
+		p25_follow_unit(&f, &u, 200 + P25_FOLLOW_ALIAS_HEADER_MS);
+		CHECK(f.view.state == P25_FOLLOW_CONTROL, "missing/invalid header releases at 150 ms");
+	}
+
+	alias_follow_begin(&f, &cfg, 100);
+	p25_tdulc_put(air, hang);
+	p25_follow_unit(&f, &u, 200);
+	p25_tdulc_put(air, head);
+	p25_follow_unit(&f, &u, 200 + P25_FOLLOW_ALIAS_HEADER_MS - 1);
+	CHECK(f.alias_header, "header just inside the deadline is accepted");
+	for (unsigned t = 400; t < 200 + P25_FOLLOW_ALIAS_MAX_MS; t += 50)
+		p25_follow_unit(&f, &u, t);
+	p25_follow_tick(&f, 200 + P25_FOLLOW_ALIAS_MAX_MS - 1);
+	CHECK(f.view.state == P25_FOLLOW_VOICE, "assembly remains available before total deadline");
+	p25_follow_tick(&f, 200 + P25_FOLLOW_ALIAS_MAX_MS);
+	CHECK(f.view.state == P25_FOLLOW_CONTROL, "repeated headers cannot extend the 500 ms total cap");
+
+	// A true call termination releases immediately, before or during assembly.
+	for (unsigned pass = 0; pass < 2; pass++) {
+		uint8_t term[9] = { P25_LCF_CALL_TRM_CAN, 0 };
+		alias_follow_begin(&f, &cfg, 100);
+		if (pass) {
+			p25_tdulc_put(air, head);
+			p25_follow_unit(&f, &u, 200);
+		}
+		p25_tdulc_put(air, term);
+		p25_follow_unit(&f, &u, 245);
+		CHECK(f.view.state == P25_FOLLOW_CONTROL && f.tuning, "LCO 15 releases without a tick or wait");
+	}
+	// The same opcode in a manufacturer-specific format is not standard call termination.
+	alias_follow_begin(&f, &cfg, 100);
+	uint8_t vendor_term[9] = { 0x0F, 0x90 };
+	p25_tdulc_put(air, vendor_term);
+	p25_follow_unit(&f, &u, 200);
+	CHECK(f.view.state == P25_FOLLOW_VOICE, "manufacturer-specific opcode does not force standard release");
+	u.duid = P25_DUID_LDU2;
+	p25_follow_unit(&f, &u, 250);
+	p25_follow_tick(&f, 400);
+	CHECK(f.view.state == P25_FOLLOW_VOICE && !f.alias_tail, "new voice cancels the alias wait");
+	u.duid = P25_DUID_TDULC;
+
+	// Protection still applies to a status LC received exactly at the timeout.
+	alias_follow_begin(&f, &cfg, 100);
+	p25_tdulc_put(air, hang);
+	p25_follow_unit(&f, &u, 200);
+	const uint8_t blocked[9] = { 0x63, 0, 0, 0x0A };
+	p25_tdulc_put(air, blocked);
+	p25_follow_unit(&f, &u, 200 + P25_FOLLOW_ALIAS_HEADER_MS);
+	CHECK(f.view.reg == P25_REG_BLOCKED && f.view.state == P25_FOLLOW_CONTROL,
+	      "system protection is processed before an expired alias window releases");
+
+	// A decoded voice-channel LC update: the first pair repeats this call, the
+	// second announces another one. No second receiver or CC injection is needed.
+	for (unsigned pass = 0; pass < 2; pass++) {
+		uint8_t update[9] = { 0x42, 0x10, 0x0A, 0x03, 0xe9, 0x10, 0x0B, 0x03, 0xe9 };
+		alias_follow_begin(&f, &cfg, 100);
+		p25_tdulc_put(air, pass ? head : hang);
+		p25_follow_unit(&f, &u, 200);
+		update[0] |= 0x80;
+		p25_tdulc_put(air, update);
+		p25_follow_unit(&f, &u, 220);
+		CHECK(!f.tuning, "protected LC update is not used");
+		update[0] &= 0x7F;
+		p25_tdulc_put(air, update);
+		p25_follow_unit(&f, &u, 245);
+		CHECK(f.tuning && f.left_ch == 0x100B && f.view.follows == 1,
+		      "voice-channel update's second pair preempts the alias wait");
+	}
+
+	// A received grant update wins over alias collection. This is a parser-boundary
+	// test, not a claim that one receiver hears a separate CC while tuned to voice.
+	for (unsigned pass = 0; pass < 2; pass++) {
+		uint8_t b[P25_TSBK_BYTES];
+		alias_follow_begin(&f, &cfg, 100);
+		p25_tdulc_put(air, pass ? head : hang);
+		p25_follow_unit(&f, &u, 200);
+		mk_grant(b, P25_OP_GRP_V_UPDT, 0, 0x100A, cfg.talk_group, 0);
+		p25_follow_tsbk(&f, b, NAC, 245);
+		CHECK(!f.tuning && f.t_alias_tail == 200, "same-call update does not restart the wait");
+		mk_grant(b, P25_OP_GRP_V_UPDT, 0, 0x100B, cfg.talk_group, 0);
+		p25_follow_tsbk(&f, b, NAC ^ 1, 250);
+		CHECK(!f.tuning, "foreign-NAC grant cannot interrupt alias collection");
+		p25_follow_tsbk(&f, b, NAC, 255);
+		CHECK(f.view.state == P25_FOLLOW_VOICE && f.tuning && f.left_ch == 0x100B,
+		      "another call's grant update preempts the alias window");
+		p25_follow_retuned(&f, 260);
+		CHECK(!f.alias_tail && !f.alias_header, "retuning for another call clears alias wait state");
+	}
+}
+#endif
 static void testExplicitStatus(void)
 {
 	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1 } };
@@ -2427,6 +2620,9 @@ int main(void)
 	testFuzz();
 	testAirSystem();
 	testAirLoss();
+#if CONFIG_P25_ALIAS
+	testAliasTail();
+#endif
 	printf("p25TrunkTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
 }

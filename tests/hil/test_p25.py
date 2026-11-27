@@ -127,6 +127,38 @@ def p25_view(radio):
     return v
 
 
+@pytest.mark.feature("p25_alias")
+def test_p25_alias_detail(radio):
+    """Read-only diagnostic check; never reset counters or change the channel."""
+    if p25_view(radio).get("p25.alias.built") != "1":
+        skip("not_built", "built without CONFIG_P25_ALIAS")
+    v = radio.view(["p25_detail"])
+    assert v.get("truncated") != "1"
+    for key in ("p25.alias.mfid90_src", "p25.alias.result", "p25.alias.seen",
+                "p25.alias.count", "p25.alias.seq", "p25v.frames", "p25v.bad"):
+        assert as_int(v.get(key)) is not None, f"missing diagnostic {key}"
+    assert 0 <= int(v["p25.alias.result"]) <= 7
+
+
+@pytest.mark.feature("p25_alias")
+def test_p25_alias_receive(radio):
+    """Opt-in, read-only live check; set expected source/name for a known broadcast."""
+    name = os.environ.get("RFOUNDRY_HIL_P25_ALIAS_NAME")
+    source = os.environ.get("RFOUNDRY_HIL_P25_ALIAS_SRC")
+    if not name or not source:
+        skip("state", "set RFOUNDRY_HIL_P25_ALIAS_NAME and RFOUNDRY_HIL_P25_ALIAS_SRC for a live call")
+    v = p25_view(radio)
+    if v.get("p25.alias.built") != "1":
+        skip("not_built", "built without CONFIG_P25_ALIAS")
+    heard = radio.wait_for(
+        lambda x: x.get("p25.alias") == name and x.get("p25.src") == source,
+        15.0, sections=("p25",), what="expected broadcast P25 alias and source ID")
+    assert heard.get("p25.rx") == "1" and heard.get("p25.selected") == "1"
+    if heard.get("p25.enc") == "1":
+        assert heard.get("p25.played") == "0", "encrypted metadata must not unmute voice"
+    assert 0 < len(name) <= 14 and all(0x20 <= ord(c) <= 0x7e for c in name)
+
+
 def load(radio):
     """(work_us, span_us) of the provider's receive since P25 started, or None when it doesn't count them."""
     v = radio.view(["p25"])

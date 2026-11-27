@@ -9,9 +9,117 @@
 #include <string.h>
 
 // ── Receive ──
+#if CONFIG_P25_ALIAS
+// TIA-102.AABF-D-2 7.3.35/36. Only pair A followed by B of the same conveyance,
+// after learning the current caller. No alias is carried between calls or callers.
+static bool alias_lc(p25_call_rx_t *c, const uint8_t raw[P25_LC_BYTES])
+{
+	p25_alias_stats_t *s = &c->stats.alias;
+	s->lc_other++;
+	s->last_src = c->call.have_lc ? c->call.lc.src : 0;
+	if (raw[1] == 0x90 && (raw[0] == 0x15 || raw[0] == 0x17)) {
+		if (!c->call.have_lc || !c->call.lc.src)
+			s->no_source++;
+		// This header names a group. Never reinterpret an identified private call.
+		if (c->call.have_lc && c->call.lc.lcf != P25_LCF_GROUP)
+			return false;
+		s->parts++;
+		c->alias90_age = 0;
+		char name[15];
+		uint32_t recovered_src;
+		bool complete = p25_alias90_lc(&c->alias90, raw, c->call.have_lc ? c->call.lc.src : 0,
+					     c->call.lc.tgid, name, &recovered_src);
+		s->mfid90_src = c->call.have_lc ? c->call.lc.src : 0;
+		s->mfid90_result = c->alias90.result;
+		s->mfid90_seen = c->alias90.seen;
+		s->mfid90_count = c->alias90.count;
+		s->mfid90_seq = c->alias90.seq;
+		if (c->alias90.result >= P25_ALIAS90_BAD_HEADER)
+			s->rejected++;
+		if (!complete)
+			return false;
+		if (!c->call.have_lc || !c->call.lc.src) {
+			// The complete alias payload includes its SUID in the CRC check.
+			// Do not infer identity from incomplete fragments or a grant alone.
+			c->call.lc.lcf = P25_LCF_GROUP;
+			c->call.lc.mfid = 0x90;
+			c->call.lc.src = recovered_src;
+			c->call.lc.tgid = c->alias90.tg;
+			c->call.have_lc = true;
+		}
+		s->complete++;
+		s->decoded_src = c->call.lc.src;
+		memcpy(s->last_name, name, sizeof name);
+		if (!memcmp(c->call.alias, name, sizeof name))
+			return false;
+		memcpy(c->call.alias, name, sizeof name);
+		return true;
+	}
+	uint8_t op = raw[0] & 0x3F;
+	if (op < 0x32 || op > 0x35)
+		return false;
+	if (raw[1] != 0xA4 || raw[0] != op) {
+		s->rejected++;
+		c->alias_opcode = 0;
+		return false;
+	}
+	if (!c->call.have_lc || c->call.lc.src == 0) {
+		s->no_source++;
+		c->alias_opcode = 0;
+		return false;
+	}
+	for (unsigned i = 2; i < P25_LC_BYTES; i++) {
+		if (raw[i] && (raw[i] < 0x20 || raw[i] > 0x7E)) {
+			s->rejected++;
+			c->alias_opcode = 0;
+			return false;
+		}
+	}
+	s->parts++;
+	if ((raw[0] & 1) == 0) {
+		memcpy(c->alias_part, raw + 2, 7);
+		c->alias_opcode = raw[0];
+		c->alias_age = 0;
+		return false;
+	}
+	bool paired = c->alias_opcode != 0 && raw[0] == c->alias_opcode + 1;
+	c->alias_opcode = 0;
+	if (!paired) {
+		s->unpaired++;
+		return false;
+	}
+	char name[15] = { 0 };
+	memcpy(name, c->alias_part, 7);
+	memcpy(name + 7, raw + 2, 7);
+	bool ended = false;
+	for (unsigned i = 0; i < 14; i++) {
+		if (!name[i])
+			ended = true;
+		else if (ended) {
+			s->rejected++;
+			return false;	// non-null bytes after the padding are malformed
+		}
+	}
+	size_t len = strlen(name);
+	while (len && name[len - 1] == ' ')
+		name[--len] = 0;
+	s->complete++;
+	s->decoded_src = c->call.lc.src;
+	memcpy(s->last_name, name, sizeof name);
+	if (!memcmp(name, c->call.alias, sizeof name))
+		return false;
+	memcpy(c->call.alias, name, sizeof name);
+	return true;
+}
+#endif
+
 static void call_start(p25_call_rx_t *c, const p25_rx_unit_t *u, bool late)
 {
 	memset(&c->call, 0, sizeof c->call);
+#if CONFIG_P25_ALIAS
+	c->alias_opcode = 0;
+	memset(&c->alias90, 0, sizeof c->alias90);
+#endif
 	c->call.nac = u->nac;
 	c->call.late = late;
 	c->call.algid = P25_ALGID_CLEAR;
@@ -25,6 +133,11 @@ static void call_end(p25_call_rx_t *c)
 	if (!c->active)
 		return;
 	c->active = false;
+#if CONFIG_P25_ALIAS
+	c->alias_opcode = 0;
+	memset(&c->alias90, 0, sizeof c->alias90);
+	memset(c->call.alias, 0, sizeof c->call.alias);
+#endif
 	if (c->sink->end)
 		c->sink->end(c->ctx);
 }
@@ -36,6 +149,14 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 	bool fresh = false, changed = false;
 
 	c->stats.units++;
+#if CONFIG_P25_ALIAS
+	if (c->alias_opcode && ++c->alias_age > 12)
+		c->alias_opcode = 0;
+	if (c->alias90.count && ++c->alias90_age > 80)
+		memset(&c->alias90, 0, sizeof c->alias90);
+#endif
+	if (c->active && c->call.nac != u->nac)
+		call_end(c);
 	if (p25_unit_sys_no_tx(u))
 		c->stats.sys_no_tx++;
 #if CONFIG_P25_TRUNK
@@ -66,13 +187,33 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 			uint8_t raw[P25_LC_BYTES];
 			p25_lc_t lc;
 
-			if (p25_ldu_lc_get(u->air, raw) < 0) {
+			int lc_result = p25_ldu_lc_get(u->air, raw);
+			if (lc_result < 0) {
 				c->stats.lc_fail++;
+#if CONFIG_P25_ALIAS
+				c->alias_opcode = 0;
+#endif
 			} else if (p25_lc_parse(raw, &lc)) {
+#if CONFIG_P25_ALIAS
+				if (!c->call.have_lc || lc.src != c->call.lc.src || lc.lcf != c->call.lc.lcf ||
+				    lc.dst != c->call.lc.dst || lc.tgid != c->call.lc.tgid) {
+					c->alias_opcode = 0;
+					// Learning the first source is not a caller change. Keep pending vendor
+					// fragments for this group; their CRC-checked SUID must still match lc.src.
+					if ((c->call.have_lc && c->call.lc.src) || lc.lcf != P25_LCF_GROUP ||
+					    (c->alias90.tg && c->alias90.tg != lc.tgid))
+						memset(&c->alias90, 0, sizeof c->alias90);
+					memset(c->call.alias, 0, sizeof c->call.alias);
+				}
+#endif
 				if (!c->call.have_lc || memcmp(&lc, &c->call.lc, sizeof lc))
 					changed = true;
 				c->call.lc = lc;
 				c->call.have_lc = true;
+#if CONFIG_P25_ALIAS
+			} else if (alias_lc(c, raw)) {
+				changed = true;
+#endif
 			}
 		} else {
 			uint8_t es[P25_ES_BYTES];
@@ -90,8 +231,30 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 			}
 		}
 		break;
-	case P25_DUID_TDU:
 	case P25_DUID_TDULC:
+#if CONFIG_P25_ALIAS
+		if (u->air && u->nsyms >= P25_TDULC_SYMS) {
+			uint8_t raw[P25_LC_BYTES];
+			if (p25_tdulc_get(u->air, raw) >= 0) {
+				if (p25_alias90_word(raw)) {
+					if (!c->active) {
+						if (raw[0] != 0x15 || !raw[4] || raw[4] > 16 || raw[5] != 1 ||
+						    !(raw[2] || raw[3])) return;
+						call_start(c, u, true);
+						c->call.algid = 0;
+						if (c->sink->start) c->sink->start(&c->call, c->ctx);
+					}
+					if (alias_lc(c, raw) && c->sink->update)
+						c->sink->update(&c->call, c->ctx);
+					return;	// alias data is not a voice frame or the end of its sequence
+				}
+
+			}
+		}
+#endif
+		call_end(c);
+		return;
+	case P25_DUID_TDU:
 		call_end(c);
 		return;
 	default:

@@ -115,8 +115,11 @@ fecTest: fecTest.c $(FEC) $(wildcard $(CORE)/fec/*.h)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fecTest.c $(FEC)
 
 # P25 data units, their FEC and a call through the framer (core/p25)
-P25     := $(CORE)/p25/p25_unit.c $(CORE)/p25/p25_rx.c $(CORE)/p25/p25_call.c
+P25     := $(CORE)/p25/p25_unit.c $(CORE)/p25/p25_rx.c $(CORE)/p25/p25_call.c $(CORE)/p25/p25_alias90.c
 TESTS   += p25Test
+TESTS   += p25AliasTest
+p25AliasTest: p25Test.c $(P25) $(CORE)/p25/p25.h $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(FEC)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -DCONFIG_P25_ALIAS=1 -o $@ p25Test.c $(P25) $(CORE)/air/air_framer.c $(FEC)
 p25Test: p25Test.c $(P25) $(CORE)/p25/p25.h $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(FEC)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ p25Test.c $(P25) $(CORE)/air/air_framer.c $(FEC)
 
@@ -128,7 +131,9 @@ hrc6000AirTest: hrc6000AirTest.c fuzz.h $(HRCAIR) $(ROOT)/drivers/modem/hrc_comm
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -o $@ hrc6000AirTest.c $(HRCAIR)
 
 # The P25 engine and the air interface session under it: two radios on made-up providers
-TESTS   += p25EngineTest
+TESTS   += p25EngineTest p25EngineAliasTest
+p25EngineAliasTest: p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/p25/p25_engine.h $(CORE)/air/air_session.c $(CORE)/air/air_session.h $(CORE)/air/air_framer.c $(P25) $(FEC)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -DCONFIG_P25_ALIAS=1 -o $@ p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(P25) $(FEC)
 p25EngineTest: p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/p25/p25_engine.h $(CORE)/air/air_session.c $(CORE)/air/air_session.h $(CORE)/air/air_framer.c $(P25) $(FEC)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ p25EngineTest.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(P25) $(FEC)
 
@@ -175,6 +180,10 @@ P25TRUNK := $(CORE)/p25/p25_tsbk.c $(CORE)/p25/p25_follow.c $(CORE)/p25/p25_engi
             $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(P25) $(FEC) $(RXSEEN)
 p25TrunkTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25TrunkTest.c $(P25TRUNK) -lm
+
+TESTS += p25TrunkNoAliasTest
+p25TrunkNoAliasTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_P25_ALIAS=0 -o $@ p25TrunkTest.c $(P25TRUNK) -lm
 
 # The P25 voice path: engine frames through the full-rate decoder to PCM blocks (core/p25/p25Voice.c)
 TESTS   += p25VoiceTest
@@ -261,15 +270,18 @@ run: $(TESTS)
 	./fecTest | tail -1
 	./airFramerTest
 	./p25Test
+	./p25AliasTest
 	./fxpTest
 	./mbeTest | tail -1
 	./imbeEncTest | tail -1
 	for v in $(VOICE_SETS); do ./imbeVoiceGen --check $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe || exit 1; done
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
+	./p25EngineAliasTest
 	./nxdnTest | tail -1
 	./nxdnEngineTest | tail -1
 	./p25TrunkTest
+	./p25TrunkNoAliasTest
 	./p25VoiceTest
 	./hrc6000AirTest
 	./radioKeysTest
@@ -747,11 +759,15 @@ $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm3
 UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
            '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
-TESTS   += uiFlowTest uiFlowTestNoColor uiSim
+TESTS   += uiFlowTest uiFlowTestNoAlias uiFlowTestNoColor uiSim
 TESTS   += uiFlowTestSatellite
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+
+uiFlowTestNoAlias: uiFlowTest.c $(UIDEPS)
+	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_P25_ALIAS=0 -DCONFIG_NXDN=1 \
+		-o $@ uiFlowTest.c $(UIAPP) -lz
 
 # The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
 # without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests
@@ -771,7 +787,7 @@ uiFlowTestSatellite: uiFlowTest.c $(UIDEPS)
 # off by default: make -B uiSim UI_LANG=fr (docs/dev/translating.md). The CJK face compiles to nothing without Chinese
 UI_LANG_FLAG := $(if $(UI_LANG),-DCONFIG_LANG_$(shell echo '$(UI_LANG)' | tr a-z A-Z)=1)
 uiSim: uiSim.c $(UIDEPS) $(CJK)
-	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -DCONFIG_SATELLITE_TLE=1 -o $@ uiSim.c $(UIAPP) $(CJK) -lz
+	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -DCONFIG_SATELLITE_TLE=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -o $@ uiSim.c $(UIAPP) $(CJK) -lz
 
 # The beep reel (tools/beep_reel.py). BEEP_DIR picks the beep.c and beep.h to build with, so CI can build the base
 # commit's beeps for a before and after comparison. We copy that beep.h into out/beep/radio/ and put out/beep first on
@@ -807,7 +823,7 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
+run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoAlias uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
 	./gfxTest
 	./gfxTestZh
 	./gfxFbEdgeTest
@@ -815,6 +831,7 @@ run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault 
 	./i18nTestNoLang
 	./i18nTestDefault
 	./uiFlowTest
+	./uiFlowTestNoAlias
 	./uiFlowTestNoColor
 	./uiFlowTestSatellite
 	./uiSim --layout

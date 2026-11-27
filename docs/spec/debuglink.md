@@ -403,6 +403,19 @@ Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states
 `data.built=0`. The DMR sections are rendered in
 `core/debuglink/debuglink_view_dmr.c`, apart from the rest, so DMR work can extend them.
 
+Section 39, `p25_detail`, independently exposes alias assembly and voice playback
+diagnostics. The main `p25` section also exposes `p25.selected`: destination-filter
+acceptance independent of `p25.played`. Selected encrypted metadata can be shown
+without playing encrypted audio. Section 39 exposes the following
+counters when the main P25 section is too long.
+With `CONFIG_P25_ALIAS` it repeats
+`p25.alias.parts complete rejected no_source decoded_src last_name` and adds
+`mfid90_src result seen count seq` (the last vendor fragment's known caller,
+result code, received-block bitmask, expected block count and sequence).
+Result codes are documented in [manufacturer-specific (MFID 0x90) alias reception](p25-alias-provenance.md).
+With `CONFIG_P25` and `CONFIG_IMBE` it repeats `p25v.in frames bad concealed calls
+underruns overflows`. Section numbers already assigned retain their meanings.
+
 ### 3.8 RADIO
 
 Radio requests, queued to the radio core exactly as the UI sends them (`core/radio/radio.h`); the radio core may

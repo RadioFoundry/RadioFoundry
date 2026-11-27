@@ -323,6 +323,14 @@ On a radio that runs P25 ([feature matrix](../feature-matrix.md)), P25 is one of
 - PTT sends a P25 voice call to talkgroup 1 from your P25 unit ID, or your DMR ID when the codeplug has none.
 - Home shows "P25", what PTT calls ("TG 1") and the network access code ("NAC 293"). During a call it shows who calls
   and where ("ID 3101234 > TG 7"), or why the call isn't played ("Encrypted: not played", "Other TG: not played").
+  On radios with alias reception, a validated standard A4 or manufacturer-specific
+  alias (MFID 0x90) replaces the caller ID in that row. The talkgroup stays visible.
+  Partial names are never shown. The ID remains available in caller details.
+  Names recalled from Recent or the optional RAM cache are dimmed; a live name
+  replaces them. The cache is disabled by default to conserve RAM.
+  Only alias fragments can hold the voice channel after speech, for at most two
+  seconds; ordinary terminators return immediately. Completed names remain in
+  Recent. Alias reception sends nothing and works with listen-only systems and ID 0.
   FM's tone and width tiles say "FM only: this is a P25 channel".
 - The code, talkgroup and talkaround can be changed only from a computer for now (`rfoundry_debug.py radio p25`), and the
   change lasts until the radio is switched off.
@@ -348,7 +356,25 @@ silent.
   FM?", "Save as DMR?", or "Unsaved Changes" for NXDN), and "No, keep editing" is the default. **Save as new channel** leaves the P25 channel as it is.
 - Scan stops on P25 channels and holds on a call you would hear there. Dual watch takes one as A or B.
 
+With P25 talker aliases enabled in the firmware, open **Recent** from the menu.
+No physical key is reserved for history; existing key assignments and caller-context behavior are preserved.
+Select a received call to inspect its unit ID, talkgroup and completed alias. These
+P25 details are read-only and never send a callback or registration.
+The Recent list omits the P25 prefix so more of the caller's name fits on each row.
+
+On idle Home, a completed P25 alias remains dimmed for three seconds after the call
+ends, then the activity-age display returns. A late alias gets the same reading
+time. New calls and channel changes dismiss it. This display hold does not delay
+returning to the control channel or keep audio open.
+
 ### P25 trunked channels
+
+With P25 talker aliases enabled, calls you hear appear in Recent. Open it from the menu;
+select a caller to see its alias/ID and talkgroup. A later call without an alias
+keeps that caller's known name within the same receiver session and destination.
+A new decoded alias replaces an older name. These details are
+read-only; no callback, radio-check or registration is sent. Recent clears when
+the radio restarts.
 
 On a radio that runs P25 trunking, a channel can belong to a P25 trunked system (Phase 1 voice channels). The system
 (its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written
@@ -380,6 +406,10 @@ The configured system identity still has to match; receive-only operation never 
 - Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' RF transceiver components
   can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
+- With talker aliases enabled, the radio briefly stays on the voice channel after a transmission ends:
+  up to 150 ms for an alias header, and up to 500 ms total if one arrives. It returns sooner when the
+  name is complete or the system explicitly ends the call. This may recover names sent after speech;
+  it cannot receive a separate control channel during that short wait.
 - Explicit network/site status acquisition has also been checked on a live system in receive-only mode.
 - The editor treats a system with a blocked network ID as listen only as soon as its WACN or system ID is typed. A
   notice under the identity fields names the WACN or system ID that matched, and **Transmit** locks to "Never (listen

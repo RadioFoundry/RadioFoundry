@@ -3541,6 +3541,11 @@ static bool run_token(char *t, char *err, size_t len)
 			(kind == 'u' ? RADIO_P25_UNIT : 0) | (kind == 'e' ? RADIO_P25_ENC : 0) |
 			(kind == 'e' || kind == 'o' ? 0 : RADIO_P25_PLAYED));
 		view.p25.src = src;
+		view.p25.selected = kind != 'o';
+#if CONFIG_P25_ALIAS
+		view.p25.call_number++;
+		memset(view.p25.alias, 0, sizeof view.p25.alias);
+#endif
 		view.p25.dst = dst;
 		view.state = RS_RX;
 		view.rssi_dbm = -84;
@@ -3567,6 +3572,36 @@ static bool run_token(char *t, char *err, size_t len)
 			view.state = RS_TX_DENIED;
 			view.tx_deny = TXDENY_TRUNK;
 			view.p25.twhy = (uint8_t)why;
+		}
+		changed();
+		advance(100);
+		return true;
+	}
+#endif
+#if CONFIG_P25_ALIAS
+	if (strcmp(t, "p25session") == 0) {
+		view.p25.call_session++;
+		view.p25.alias[0] = 0;
+		changed();
+		advance(100);
+		return true;
+	}
+	if ((strcmp(t, "p25alias") == 0 || strcmp(t, "p25aliastail") == 0) && arg != NULL) {
+		str_copy(view.p25.alias, sizeof view.p25.alias, arg);
+		if ((view.p25.flags & RADIO_P25_RX) && view.p25.selected) {
+			p25_alias_event_t *a = &view.p25.alias_event;
+			a->serial++;
+			a->call = view.p25.call_number;
+			a->src = view.p25.src;
+			a->dst = view.p25.dst;
+			a->unit = (view.p25.flags & RADIO_P25_UNIT) != 0;
+			str_copy(a->name, sizeof a->name, arg);
+			view.p25.alias_session = view.p25.call_session;
+		}
+		if (strcmp(t, "p25aliastail") == 0) {
+			view.p25.flags &= (uint8_t)~(RADIO_P25_RX | RADIO_P25_PLAYED);
+			view.p25.alias[0] = 0;
+			view.state = RS_IDLE;
 		}
 		changed();
 		advance(100);

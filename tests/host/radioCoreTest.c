@@ -7100,6 +7100,17 @@ static void p25_view_text(char *buf, size_t cap)
 	dl_text_t t;
 	dl_text_init(&t, buf, cap);
 	debuglink_view_p25(&sm.view, &t);
+	char detail[1000];
+	dl_text_init(&t, detail, sizeof detail - 1);
+	debuglink_view_p25_detail(&t);
+	detail[t.len] = '\0';
+	CHECK(!t.full && strstr(detail, "p25v.frames="));
+#if CONFIG_P25_ALIAS
+	CHECK(strstr(detail, "p25.alias.result=") && strstr(detail, "p25.alias.seen="));
+	CHECK(strstr(detail, "p25.alias.parts=") && strstr(detail, "p25.alias.complete=") &&
+	      strstr(detail, "p25.alias.rejected=") && strstr(detail, "p25.alias.no_source="));
+	CHECK(!strstr(buf, "p25.alias.last_lc=") && !strstr(buf, "p25.alias.cache."));
+#endif
 }
 
 static void setup_codeplug_p25(void)
@@ -7145,7 +7156,8 @@ static void test_p25_rx(void)
 	CHECK(st.begins == 1 && st.begin_fails == 0 && st.mem_lent == LENDS);
 	p25_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25.built=1\np25.on=1\np25.rx=0\n") != NULL && strstr(buf, "p25.rx_nac=659\n") != NULL);
-	CHECK(strstr(buf, "p25.tx=0\np25.rx_work_us=1000\np25.rx_span_us=20000\n") != NULL);	// the provider's load
+	CHECK(strstr(buf, "p25.tx=0\n") != NULL &&
+	      strstr(buf, "p25.rx_work_us=1000\np25.rx_span_us=20000\n") != NULL);	// the provider's load
 	run(300);				// noise: no call
 	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN] && !aud.started);
 
@@ -8292,6 +8304,7 @@ static void test_p25_trunk(void)
 	req(RREQ_ZONE_POS, 2);
 	run(3000);
 	CHECK(radio_p25_trunked() && hw.rx_hz == TS_CC2 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+
 
 	// No control channel programmed: the follower hunts and finds none
 	stored_trunk.ctl_count = 0;

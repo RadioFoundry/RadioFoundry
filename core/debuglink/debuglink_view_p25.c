@@ -26,6 +26,12 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 		(p->flags & RADIO_P25_ENC) != 0, (p->flags & RADIO_P25_UNIT) != 0, (p->flags & RADIO_P25_LATE) != 0);
 	dl_text(t, "p25.nac=%u\np25.src=%u\np25.dst=%u\np25.tx=%u\n", p->nac, (unsigned)p->src, (unsigned)p->dst,
 		p->tx);
+	dl_text(t, "p25.selected=%u\n", p->selected);
+#if CONFIG_P25_ALIAS
+	dl_text(t, "p25.alias.built=1\np25.alias=%s\n", p->alias);
+#else
+	dl_text(t, "p25.alias.built=0\n");
+#endif
 	if ((p->flags & RADIO_P25_ON) != 0 && board.air != NULL && board.air->rx_load != NULL) {
 		uint32_t work, span;
 
@@ -47,6 +53,15 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 			(unsigned)s.tx_dst, (unsigned)s.unit_id);
 	}
 	radio_p25_stats(&c);
+#if CONFIG_P25_ALIAS
+	dl_text(t, "p25.alias.other=%u\np25.alias.parts=%u\np25.alias.complete=%u\np25.alias.rejected=%u\n"
+		"p25.alias.no_source=%u\np25.alias.unpaired=%u\np25.alias.last_src=%u\n",
+		(unsigned)c.alias.lc_other, (unsigned)c.alias.parts, (unsigned)c.alias.complete,
+		(unsigned)c.alias.rejected, (unsigned)c.alias.no_source, (unsigned)c.alias.unpaired,
+		(unsigned)c.alias.last_src);
+	dl_text(t, "p25.alias.decoded_src=%u\np25.alias.last_name=%s\n",
+		(unsigned)c.alias.decoded_src, c.alias.last_name);
+#endif
 	dl_text(t, "p25.begins=%u\np25.begin_fails=%u\np25.mem_lent=%u\np25.rx_calls=%u\np25.tx_calls=%u\n",
 		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.mem_lent, (unsigned)c.rx_calls,
 		(unsigned)c.tx_calls);
@@ -79,6 +94,31 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 	(void)v;
 	dl_text(t, "p25.built=0\n");
 #endif
+}
+
+// The original P25 section can fill a reply after its counters grow overnight.
+// Keep these diagnostics independently readable without resetting the receiver.
+void debuglink_view_p25_detail(dl_text_t *t)
+{
+#if CONFIG_P25 && CONFIG_P25_ALIAS
+	radio_p25_stats_t c;
+	radio_p25_stats(&c);
+	const p25_alias_stats_t *a = &c.alias;
+	dl_text(t, "p25.alias.parts=%u\np25.alias.complete=%u\np25.alias.rejected=%u\np25.alias.no_source=%u\n",
+		(unsigned)a->parts, (unsigned)a->complete, (unsigned)a->rejected, (unsigned)a->no_source);
+	dl_text(t, "p25.alias.mfid90_src=%u\np25.alias.result=%u\np25.alias.seen=%u\np25.alias.count=%u\np25.alias.seq=%u\n",
+		(unsigned)a->mfid90_src, a->mfid90_result, a->mfid90_seen, a->mfid90_count, a->mfid90_seq);
+	dl_text(t, "p25.alias.decoded_src=%u\np25.alias.last_name=%s\n", (unsigned)a->decoded_src, a->last_name);
+#endif
+#if CONFIG_P25 && CONFIG_IMBE
+	p25_voice_stats_t vs;
+	p25VoiceGetStats(&vs);
+	dl_text(t, "p25v.in=%u\np25v.frames=%u\np25v.bad=%u\np25v.concealed=%u\np25v.calls=%u\n",
+		(unsigned)vs.rx_in, (unsigned)vs.rx_frames, (unsigned)vs.rx_bad,
+		(unsigned)vs.rx_concealed, (unsigned)vs.rx_calls);
+	dl_text(t, "p25v.underruns=%u\np25v.overflows=%u\n", (unsigned)vs.rx_underruns, (unsigned)vs.rx_overflows);
+#endif
+	(void)t;
 }
 
 // noinline: its copy of the view would otherwise sit in the section dispatcher's frame, under every section's path

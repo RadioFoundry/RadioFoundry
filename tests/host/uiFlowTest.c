@@ -9,10 +9,14 @@
 // - long presses keep their one meaning on every screen: long BACK Home, long QUICK lock, long CONTEXT the talk target picker on DMR (P3);
 // - the Transmitting screen names a private call's contact and tells it apart from a group call (P2).
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/ui_svc.h"
+#include "ui/ui_nav.h"
+#include "input/keyassign.h"
 #include "ui/gfx.h"
 #include "ui/i18n.h"
 #include "ui/gfx.h"
@@ -150,6 +154,45 @@ static const flow_t flows[] = {
 	  2, false },
 #if CONFIG_P25
 	// P25 on Home: what PTT calls on the talk line, the NAC in the chips, the caller while a call comes in
+#if CONFIG_P25_ALIAS
+	{ "P25 caller details active", "dlmode:p25 p25rx:7654321,1001", "ctx ok", "screen=actions shows=ID_7654321 shows=TG_1001 shows=P25_RX_only hides=Radio_check hides=PTT_talk focusid=0", 2, false },
+	{ "P25 caller details after call", "dlmode:p25 p25rx:7654321,1001 p25rxend", "ctx ok", "screen=actions shows=ID_7654321 focusid=0", 2, false },
+	{ "P25 context keeps caller action", "dlmode:p25 p25rx:7654321,1001", "ctx", "screen=actions shows=ID_7654321 focusid=0", 1, false },
+	{ "P25 Recent opens details", "dlmode:p25 p25rx:7654321,1001 p25rxend", "ok down down ok ok", "screen=actions shows=ID_7654321 focusid=0", 5, false },
+	{ "P25 filtered excluded from history", "dlmode:p25 p25rx:7654321,1001,o p25rxend", "ok down down ok", "screen=recent hides=7654321", 4, false },
+	{ "P25 encrypted caller retained", "dlmode:p25 p25rx:7654321,1001,e p25rxend", "ok down down ok", "screen=recent shows=7654321 hides=P25_7654321", 4, false },
+	{ "P25 Recent menu opens history", "dlmode:p25 p25rx:7654321,1001 p25rxend", "ok down down ok", "screen=recent shows=7654321 hides=P25_7654321 focusid=0", 4, false },
+	{ "P25 Recent alias without mode prefix", "dlmode:p25 p25rx:7654321,1003 p25alias:TEST-UNIT p25rxend", "ok down down ok", "screen=recent shows=TEST-UNIT hides=P25_TEST focusid=0", 4, false },
+	{ "P25 alias remains readable after return", "dlmode:p25 p25t:3,1001 p25rx:7654321,1001",
+	  "p25aliastail:TEST-UNIT p25t:2 wait:2000", "screen=home shows=TEST-UNIT shows=RX_only hides=Last_activity", 0, false },
+	{ "P25 alias hold expires to activity", "dlmode:p25 p25rx:7654321,1001 p25alias:TEST-UNIT",
+	  "p25rxend wait:3500", "screen=home hides=TEST-UNIT shows=Last_activity", 0, false },
+	{ "P25 alias hold starts after a long call", "dlmode:p25 p25rx:7654321,1001 p25alias:TEST-UNIT wait:5000",
+	  "p25rxend wait:2000", "screen=home shows=TEST-UNIT hides=Last_activity", 0, false },
+	{ "P25 alias hold cleared on session change", "dlmode:p25 p25rx:7654321,1001 p25aliastail:TEST-UNIT",
+	  "p25session", "screen=home hides=TEST-UNIT", 0, false },
+	{ "P25 alias hold cleared by next call", "dlmode:p25 p25rx:7654321,1001 p25aliastail:TEST-UNIT",
+	  "p25rx:7654322,1002 p25rxend", "screen=home hides=TEST-UNIT", 0, false },
+	{ "P25 tail alias retained", "dlmode:p25 p25rx:7654321,1001", "p25aliastail:TEST-UNIT ok down down ok ok", "screen=actions shows=TEST-UNIT shows=ID_7654321 focusid=0", 5, false },
+	{ "P25 tail alias expires", "dlmode:p25 p25rx:7654321,1001 p25aliastail:TEST-UNIT", "wait:3500", "hides=TEST-UNIT", 0, false },
+	{ "P25 next caller clears alias", "dlmode:p25 p25rx:7654321,1001 p25aliastail:TEST-UNIT", "p25rx:7654322,1001", "hides=TEST-UNIT shows=ID_7654322", 0, false },
+	{ "P25 same caller keeps known alias", "dlmode:p25 p25rx:7654321,1001 p25aliastail:TEST-UNIT", "p25rx:7654321,1001 ok down down ok ok", "screen=actions shows=TEST-UNIT shows=ID_7654321", 5, false },
+	{ "P25 known alias on next live call", "dlmode:p25 p25t:3,1001 p25rx:7654321,1001 p25alias:TEST-UNIT p25rxend", "p25rx:7654321,1001", "screen=home shows=TEST-UNIT", 0, false },
+	{ "P25 alias isolated by session", "dlmode:p25 p25rx:7654321,1001 p25alias:TEST-UNIT p25rxend", "p25session p25rx:7654321,1001 ok down down ok ok", "screen=actions hides=TEST-UNIT shows=ID_7654321", 5, false },
+	{ "P25 alias isolated by destination", "dlmode:p25 p25rx:7654321,1001 p25alias:TEST-UNIT p25rxend", "p25rx:7654321,1002 ok down down ok ok", "screen=actions hides=TEST-UNIT shows=ID_7654321", 5, false },
+	{ "P25 known alias updated", "dlmode:p25 p25rx:7654321,1001 p25alias:TEST-UNIT p25rxend", "p25rx:7654321,1001 p25alias:NEW-UNIT ok down down ok ok", "screen=actions shows=NEW-UNIT hides=TEST-UNIT", 5, false },
+	{ "P25 remembered caller moves to top", "dlmode:p25 p25rx:7654321,1001 p25alias:TEST-UNIT p25rxend p25rx:7654322,1001 p25rxend", "p25rx:7654321,1001 ok down down ok ok", "screen=actions shows=TEST-UNIT shows=ID_7654321", 5, false },
+	{ "P25 cached alias shown on encrypted call", "dlmode:p25 p25t:3,1001 p25rx:7654321,1001 p25alias:TEST-UNIT p25rxend", "p25rx:7654321,1001,e", "screen=home shows=Encrypted", 0, false },
+	{ "P25 cached alias hidden on filtered call", "dlmode:p25 p25t:3,1001 p25rx:7654321,1001 p25alias:TEST-UNIT p25rxend", "p25rx:7654321,1001,o", "screen=home hides=TEST-UNIT", 0, false },
+	{ "P25 encrypted tail held after return", "dlmode:p25 p25t:3,1003 p25rx:7654323,1003,e", "p25aliastail:UNIT002 p25t:2", "screen=home shows=RX_only shows=UNIT002", 0, false },
+	{ "P25 encrypted tail in Recent history", "dlmode:p25 p25t:3,1003 p25rx:7654323,1003,e", "p25aliastail:UNIT002 p25t:2 ok down down ok", "screen=recent shows=UNIT002 hides=P25_7654323", 4, false },
+	{ "P25 encrypted tail expires", "dlmode:p25 p25rx:7654323,1003,e p25aliastail:UNIT002", "wait:3500", "hides=UNIT002", 0, false },
+	{ "P25 alias retained in history", "dlmode:p25 p25rx:7654321,1001 p25alias:TEST-UNIT p25rxend", "ok down down ok ok", "screen=actions shows=TEST-UNIT shows=ID_7654321 focusid=0", 5, false },
+	{ "P25 alias updates open details", "dlmode:p25 p25rx:7654321,1001 ok down down ok ok", "p25alias:TEST-UNIT", "screen=actions shows=TEST-UNIT shows=ID_7654321 focusid=0", 3, false },
+#else
+	{ "P25 alias disabled: no Recent entry", "dlmode:p25 p25rx:7654321,1001 p25rxend", "ok down down ok",
+	  "screen=recent hides=7654321 shows=No_calls_heard_yet", 4, false },
+#endif
 	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
 	{ "P25 home: the caller", "dlmode:p25", "p25rx:3101234,7", "screen=home shows=ID_3101234 shows=TG_7", 0, false },
 	{ "P25 home: a unit call", "dlmode:p25", "p25rx:3101234,3105555,u", "shows=Private_to_3105555", 0, false },
@@ -161,6 +204,16 @@ static const flow_t flows[] = {
 	{ "P25 dual watch: A in P25", "dlmode:p25", "quick 7", "dual=1 sel=A shows=P25 hides=No_tone hides=12.5k", 2, false },
 #if CONFIG_P25_TRUNK
 	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
+	{ "P25 trunk: caller without losing power and NAC", "dlmode:p25 p25t:3,1001", "p25rx:7654321,1001",
+	  "screen=home shows=ID_7654321 shows=NAC_293 shows=1W", 0, false },
+#if CONFIG_P25_ALIAS
+	{ "P25 alias: original layout", "dlmode:p25 p25t:3,1001 p25rx:16777214,1001", "p25alias:UNIT001",
+	  "screen=home shows=UNIT001 shows=NAC_293 shows=TG_1001 hides=ID_16777214", 0, false },
+	{ "P25 alias: expires after call", "dlmode:p25 p25rx:7654321,1001 p25alias:TEST-UNIT", "p25rxend wait:3500",
+	  "hides=TEST-UNIT hides=ID_7654321", 0, false },
+	{ "P25 alias: encrypted shown", "dlmode:p25 p25rx:7654321,1001,e", "p25alias:TEST-UNIT",
+	  "shows=Encrypted", 0, false },
+#endif
 	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",
 	  0, false },
 	// Idle on the control channel, a system that can't transmit says "RX only" (listen only here); a call on it
@@ -2418,8 +2471,34 @@ static int check_satellite_path_endpoint_colors(void)
 }
 #endif
 
+static int check_alias_colors(void)
+{
+#if CONFIG_P25_ALIAS
+	char err[160] = "";
+	sim_reset(sim_geom_find("240x320"), SIM_MAP_K);
+	if (!sim_run("dlmode:p25 p25rx:7654321,7 p25alias:UNIT001", err, sizeof err) ||
+	    !sim_text_has_color("UNIT001", ui_col.rx)) {
+		printf("FAIL live alias color: %s\n", err);
+		return 1;
+	}
+	if (!sim_run("p25rxend wait:2000", err, sizeof err) ||
+	    !sim_text_has_color("UNIT001", ui_col.dim)) {
+		printf("FAIL held alias color: %s\n", err);
+		return 1;
+	}
+	if (!sim_run("p25rxend p25rx:7654321,7", err, sizeof err) ||
+	    !sim_text_has_color("UNIT001", ui_col.dim)) {
+		printf("FAIL remembered alias color: %s\n", err);
+		return 1;
+	}
+#endif
+	return 0;
+}
+
 int main(void)
 {
+	if (check_alias_colors() != 0)
+		return 1;
 	if (check_name_is_id() != 0)
 		return 1;
 #if CONFIG_SATELLITE_TLE

@@ -11,7 +11,7 @@ CC      ?= cc
 # build where the compiler turns _FORTIFY_SOURCE on by default
 CFLAGS  := -std=gnu99 -O2 -Wall -Wextra -Wshadow -I$(CORE) -I$(ROOT)/hal '-D__attribute__(x)=' -U_FORTIFY_SOURCE \
            -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1
-SRC     := $(HERE)/p25tool.c $(CORE)/p25/p25_unit.c $(CORE)/p25/p25_rx.c $(CORE)/p25/p25_call.c $(CORE)/p25/p25_tsbk.c \
+SRC     := $(HERE)/p25tool.c $(CORE)/p25/p25_unit.c $(CORE)/p25/p25_rx.c $(CORE)/p25/p25_call.c $(CORE)/p25/p25_alias90.c $(CORE)/p25/p25_tsbk.c \
            $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(wildcard $(CORE)/fec/*.c)
 HDRS    := $(wildcard $(CORE)/p25/*.h $(CORE)/air/*.h $(CORE)/fec/*.h) $(ROOT)/hal/hal_air.h $(ROOT)/hal/hal_baseband.h
 
