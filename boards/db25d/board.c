@@ -164,6 +164,10 @@ const board_t board = {
 #define DIPLEX0_UART1		((1u << 9) | (1u << 10))	// UART1 RXD / TXD
 #define DIPLEX1_SPK_GPIO	((1u << 11) | (1u << 12))	// the speaker route pins as GPIOs, as the stock firmware
 #define DIPLEX2_LCD_GPIO	(0x3Fu << 3)			// the LCD pins (PTC2-PTC7) as GPIOs, as the stock firmware
+#define DIPLEX2_PTT2_GPIO	(1u << 15)			// PTC11, the hand mic PTT, as a GPIO (the reset value; set in case a loader changed it)
+// PTC11's pad pull-up (IOMGR_REN1 bit 9, the LCD_DB4 pad; 0 = on). Without it the line floats with no mic in the jack
+// and reads low, or picks up a level from the programming cable (hardware-db25d.md 3.3)
+#define REN1_PTT2_PULLUP	(1u << 9)
 
 // The power latch is driven high before anything else so the radio stays on once the power key is let go
 static void io_init(void)
@@ -173,7 +177,7 @@ static void io_init(void)
 	IO_DIPLEX0 &= ~DIPLEX0_UART1;
 	IO_DIPLEX1 |= DIPLEX1_SPK_GPIO;
 	// The three DAC outputs on their pins, as the stock firmware
-	IO_DIPLEX2 = (IO_DIPLEX2 | DIPLEX2_LCD_GPIO) & ~(IO_DIPLEX2_DAC_A | IO_DIPLEX2_DAC_B | IO_DIPLEX2_DAC_C);
+	IO_DIPLEX2 = (IO_DIPLEX2 | DIPLEX2_LCD_GPIO | DIPLEX2_PTT2_GPIO) & ~(IO_DIPLEX2_DAC_A | IO_DIPLEX2_DAC_B | IO_DIPLEX2_DAC_C);
 
 	// Outputs at their safe levels: transmitter off, receiver paths off, speaker muted, chip selects high
 	hrc_pin_out(PIN_NAND_CS, true);
@@ -203,6 +207,7 @@ static void io_init(void)
 
 	hrc_pin_in(PIN_RF_DATA);
 	hrc_pin_in(PIN_POWER_KEY);
+	IOMGR_REN1 &= ~REN1_PTT2_PULLUP;
 }
 
 #if CONFIG_GPS
