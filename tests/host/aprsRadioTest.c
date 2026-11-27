@@ -1677,7 +1677,7 @@ static void test_codeplug_freq(void)
 	run(200);
 	aprs_get_cfg(&c);
 	settings_read(&st);
-	CHECK(c.region == APRS_REGION_NA && st.aprs_cp_freq == 0);	// none in the record: nothing taken
+	CHECK(c.region == APRS_REGION_NA && st.aprs_cp_freq == SETTINGS_APRS_FREQ_EMPTY);	// none in the record: seen
 	cp_hz = 145570000u;			// a CPS writes 145.570 (Brazil)
 	cp_serial++;
 	run(200);
@@ -1745,6 +1745,9 @@ static void test_codeplug_freq_first_take(void)
 	c.region = APRS_REGION_EU;		// picked on the radio
 	aprs_set_cfg(&c, now);
 	run(200);
+	settings_t *s = settings_begin();	// settings from before the marker
+	s->aprs_cp_freq = 0;
+	settings_end(now);
 	settings_read(&st);
 	CHECK(st.aprs_stored == 1 && st.aprs_region == APRS_REGION_EU && st.aprs_cp_freq == 0);
 	cp_hz = 145570000u;			// a record from before the marker holds a frequency
@@ -1763,6 +1766,64 @@ static void test_codeplug_freq_first_take(void)
 	run(200);
 	aprs_get_cfg(&c);
 	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 146520000u);
+}
+
+// The first take on a radio left on the default region with APRS settings of its own keeps N America: such a radio
+// took a stray record frequency and stopped hearing 144.390. A later CPS write is taken
+static void test_codeplug_freq_first_take_default(void)
+{
+	aprs_cfg_t c;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	aprs_get_cfg(&c);
+	c.ssid = 9;				// something else set on the radio: the settings are stored, the region not touched
+	aprs_set_cfg(&c, now);
+	run(200);
+	settings_read(&st);
+	settings_t *s = settings_begin();	// settings from before the marker
+	s->aprs_cp_freq = 0;
+	settings_end(now);
+	settings_read(&st);
+	CHECK(st.aprs_stored == 1 && st.aprs_region == APRS_REGION_NA && st.aprs_cp_freq == 0);
+	cp_hz = 145570000u;			// ... and a record that holds another frequency
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_NA && aprs_cfg_freq(&c) == 144390000u && st.aprs_region == APRS_REGION_NA);
+	CHECK(st.aprs_cp_freq == settings_aprs_freq_mark(145570000u));
+	cp_hz = 146520000u;			// a later CPS write is taken
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 146520000u);
+}
+
+// The first look on a radio from before the marker: a record's revert channel is marked and left, N America stays; a
+// later CPS write is taken (one outside the ham bands too: the page says why nothing is sent)
+static void test_codeplug_freq_first_take_not_ham(void)
+{
+	aprs_cfg_t c;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	settings_t *s = settings_begin();	// settings from before the marker
+	s->aprs_cp_freq = 0;
+	settings_end(now);
+	cp_hz = 462562500u;			// ... and a record with a revert channel
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_NA && aprs_cfg_freq(&c) == 144390000u);
+	CHECK(st.aprs_cp_freq == settings_aprs_freq_mark(462562500u));
+	cp_hz = 151000000u;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 151000000u);
 }
 
 // The first take after an upgrade (no SSID marker yet) leaves a codeplug SSID of 0 alone: the radio keeps sending
@@ -2238,6 +2299,8 @@ int main(void)
 	test_codeplug_ssid_first_zero();
 	test_codeplug_freq();
 	test_codeplug_freq_first_take();
+	test_codeplug_freq_first_take_default();
+	test_codeplug_freq_first_take_not_ham();
 	test_rf_failures();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();

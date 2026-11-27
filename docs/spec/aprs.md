@@ -462,12 +462,14 @@ The path, the SSID and the frequency live in both places, and the one changed la
   differs from it, it replaces `aprs_path` or `aprs_ssid` and is stored there. Checked at start-up and whenever the
   codeplug serial changes (a CPS write). A path that isn't one of the five (another callsign, a second entry without a
   first) is left alone. The frequency's marker is `aprs_cp_freq`, an 8-bit hash of the frequency
-  (`settings_aprs_freq_mark`, 1-255; 0 = none yet). A frequency in the record (0x37, BCD of 10 Hz units, LE; 0 =
+  (`settings_aprs_freq_mark`, 2-255; 0 = none yet, 1 = a record without a frequency seen). A frequency in the record (0x37, BCD of 10 Hz units, LE; 0 =
   none) whose mark differs becomes the region with that frequency, else Custom with the frequency in `aprs_freq_hz`. One outside
   the ham bands is taken too: the APRS page then says why nothing is sent. Two frequencies with the same mark only
-  cost a CPS change to the second being missed; the radio keeps its own. On the first take (`aprs_cp_freq` 0, a record from before the
-  marker) a radio already set to a region other than N America keeps that region and only marks the record's
-  frequency as taken: the frequency may be a revert channel no one meant for APRS.
+  cost a CPS change to the second being missed; the radio keeps its own. On the first look (`aprs_cp_freq` 0, a
+  record from before the marker) the radio keeps its region and frequency, N America included, and only marks the
+  record's frequency as taken: the frequency may be a revert channel no one meant for APRS, and firmware before the
+  marker ignored the field. A record without a frequency is marked 1 on the first look, so a frequency a CPS writes
+  there later is taken.
 - Radio to codeplug: a change of the path, SSID or frequency on the APRS page posts a storage job
   (`aprs_to_codeplug`) that rewrites what differs in the record (the two path entries, callsign space padded with an
   SSID byte; the SSID byte at 0x08; the frequency in use, a region's too, at 0x37) and sets `aprs_cp_path` and
