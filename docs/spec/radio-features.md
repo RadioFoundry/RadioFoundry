@@ -55,7 +55,7 @@ codeplugs that wrote 0 for "no time-out" now get the radio's.
 ## 2. Scan (CONFIG_SCAN)
 
 Requests: `radio_req_scan(cmd)` with stop, zone, VFO, dual, cancel, nuisance or toggle; `radio_req_scan_vfo(lo, hi)`;
-`radio_req_scan_dual(pos)`; `radio_req_dual(ref, sel)` (2.1). The view shows `scan` (off / zone / vfo / dual), `scan_phase` and `scan_skipped`; the
+`radio_req_scan_dual(pos)`; `radio_req_dual(ref, sel)` (2.1). The view shows `scan` (off / zone / vfo / dual / list), `scan_phase` and `scan_skipped`; the
 tuned channel or frequency is the core view's as usual.
 
 - **Zone scan** visits the current zone's channels in order, from the one it started on, skipping empty positions and
@@ -68,6 +68,8 @@ tuned channel or frequency is the core view's as usual.
   link's) watches the current channel and position `pos` of the current zone. The UI on top of it (A and B, the
   screens, the keys) is in [dual-watch.md](../ux/dual-watch.md).
 - **Priority** (zone scan): the start channel again after every 2 others.
+- **List scan** (`CONFIG_SCAN_LIST`, `radio_req_scan_list(slot)`, view `scan` 4) visits the channels of a stored scan list,
+  each in its own zone, in the list's order, skip flags ignored ([scan-list.md](scan-list.md) 6).
 
 Each stop: 50 ms settle (readings from the previous frequency are ignored), then `scan_dwell_ms` listening. A signal
 is "active" when FM squelch opens (with the RX tone if the channel needs one) or DMR plays a call (`dmr.state` rx).

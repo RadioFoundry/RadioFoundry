@@ -226,6 +226,19 @@ codeplug_kv_state_t codeplug_kv_info(uint16_t *length, uint16_t *entries)
 	return s;
 }
 
+bool codeplug_kv_writable(void)
+{
+	uint32_t a, data, crc;
+	uint16_t len, count;
+	if (!area_addr(&a)) {
+		return false;
+	}
+	storage_lock();
+	codeplug_kv_state_t s = check_flash(&data, &len, &count, &crc);
+	storage_unlock();
+	return s != CODEPLUG_KV_NEWER;
+}
+
 bool codeplug_kv_keep(uint32_t addr, const uint8_t *sector)
 {
 	uint32_t a, data, crc;

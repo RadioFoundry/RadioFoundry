@@ -15,6 +15,9 @@
 #include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
+#if CONFIG_SCAN_LIST
+#include "codeplug/scan_list.h"
+#endif
 #if CONFIG_SATELLITE_TLE
 #include "satellite/store.h"
 #endif
@@ -274,6 +277,17 @@ typedef struct {
 	bool used;		// in the fix
 } ui_gps_sat_t;
 bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out);	// false past the last
+
+#if CONFIG_SCAN_LIST
+// --- Scan lists (Tools > Scan, CONFIG_SCAN_LIST; ui_svc_scanlist.c, docs/spec/scan-list.md). The lists are read where
+// they are; every change is a job for the housekeeping task (the flash write), one at a time
+uint16_t ui_svc_scanlist_slots(void);			// places for lists; 0: none here (no area, or another firmware's data in it)
+uint32_t ui_svc_scanlist_generation(void);		// changes when a list was written, added or deleted
+bool ui_svc_scanlist_get(uint16_t slot, scan_list_t *out);	// false: no list in that slot
+bool ui_svc_scanlist_put(int slot, const scan_list_t *l);	// a job: write the list; slot < 0 takes the first free one. False: busy or invalid
+bool ui_svc_scanlist_delete(uint16_t slot);		// a job. False: busy
+bool ui_svc_scanlist_start(uint16_t slot);		// scan it (radio_req_scan_list). False: not in this build
+#endif
 
 // --- Emergency, reset ---
 // Emergency is dmr-ext's: it defines ui_svc_emergency and reports UI_FEAT_EMERGENCY from ui_svc_feat_ext. Until

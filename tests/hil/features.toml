@@ -604,3 +604,8 @@ source = ["core/debuglink/debuglink_dmrip.c", "core/debuglink/dl_dmrip.c", "core
 [feature.audio_probe]
 switch = "AUDIO_PROBE"
 spec = "docs/spec/usb-audio.md"
+
+[feature.scan_list]
+switch = "SCAN_LIST"
+spec = "docs/spec/scan-list.md"
+source = ["core/codeplug/scan_list.c"]

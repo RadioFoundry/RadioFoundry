@@ -32,7 +32,11 @@
 #include "hotspot/hotspot.h"
 #endif
 
+#if CONFIG_SCAN_LIST
+#define UI_STACK_MAX		8	// Home, the hub, Tools, Scan lists, a list's options, its channels, the picker and its zone
+#else
 #define UI_STACK_MAX		6
+#endif
 #define TOAST_MS		1800
 #define VOLUME_MS		3000	// the volume screen closes this long after the last key, the knob's bar after its last turn
 #define ENTRY_TIMEOUT_MS	10000
@@ -2279,6 +2283,11 @@ void ui_app_key(const input_event_t *ev)
 		case ACT_MONITOR_TOGGLE:
 			ui_monitor_toggle();
 			return;
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+		case ACT_SCAN_LISTS:
+			ui_scan_lists_key();
+			return;
+#endif
 #if CONFIG_DUAL_WATCH
 		case ACT_DUAL_WATCH:
 			ui_dual_key();

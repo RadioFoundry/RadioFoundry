@@ -168,6 +168,7 @@ is `tools/bringup.py list --radio <id>`.
 | `air_raw` | off | off | off | off | off | off | off | off |
 | `debuglink_dmrip` | off | off | off | off | off | off | off | off |
 | `audio_probe` | not written | off | not written | not written | not written | off | off | not written |
+| `scan_list` | off | off | off | off | off | off | off | off |
 <!-- end generated -->
 
 What the records don't hold yet: limits and known problems from the bring-up pages.
@@ -297,6 +298,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● | ✕ |
 | `SATELLITE_TLE` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `SCAN_LIST` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● | ● | ✕ |
@@ -354,6 +356,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,468 | 2,224 | Up to 9 keys |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 25,640 | 24,204 |  |
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 20,876 | 20,640 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). |
+| Stored scan lists: named lists of channels from any zone, kept in the codeplug settings area | `SCAN_LIST` | — | — | Needs `SCAN` and `CHANNEL_EDIT`. Not measured yet. Off by default; every board has the area ([scan-list](spec/scan-list.md)) |
 | Beeps and alert tones | `BEEP` | 8,036 | 2,700 |  |
 | Signaling tone chains (Settings > Signaling tones) | `SIG_TONES` | 5,340 | 5,748* | Needs `BEEP` |
 | Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured with `CONFIG_SNMP=n`; 236 B with LTO |

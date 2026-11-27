@@ -68,6 +68,10 @@ extern const ui_scr_def_t ui_satellite_passes_screen;	// ui_satellite.c
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
 #endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT	// the same condition as ui_scr[]
+extern const ui_scr_def_t ui_scanlists_screen, ui_scanlist_options_screen, ui_scanlist_delete_screen,
+	ui_scanlist_edit_screen, ui_scanlist_pick_screen, ui_scanlist_zone_screen;	// ui_scanlist.c
+#endif
 
 static void item_num(ui_item_t *it, uint16_t n)
 {
@@ -1361,7 +1365,7 @@ static bool ch_locked(uint16_t num)
 // fit beside it, the frequency and the bare number (P25: the frequency and "P25"), then the talkgroup alone (text
 // alternates). A trunked channel (dmr-trunking-codeplug.md 4) names its system where the frequency would be. Returns
 // false for a trunked channel whose system isn't set up: the caller dims the row
-static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
+bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 {
 	char what[16];
 	uint8_t mid = 0;	// the middle form: what from here ("TG" left out), or for P25 its kind's name alone
@@ -2205,6 +2209,13 @@ void ui_menus_satellite_text(char *target, uint8_t line, void (*done)(void))
 #endif
 #if CONFIG_APRS_AFSK
 static void ui_text_open_to(char *target, uint8_t max) { text_open(target, max, SCR_APRS_TO); }
+#endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+void ui_text_open_done(char *target, uint8_t max, void (*done)(void))
+{
+	ui_text_open(target, max);
+	text_done = done;
+}
 #endif
 
 static void text_enter(void)
@@ -6530,6 +6541,20 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	}
 }
 
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+// A side key set to Scan lists (keyassign.h): Home, then the lists to pick from (docs/spec/ui.md 2.7), on any screen.
+// Nothing to pick from when the radio has no scan list area: it says so, and starts nothing
+void ui_scan_lists_key(void)
+{
+	if (!(feats() & UI_FEAT_SCAN) || ui_svc_scanlist_slots() == 0) {
+		ui_toast(TR(KEYFN_WHY_NO_SCAN_LISTS, "Scan lists: not on this radio"));
+		return;
+	}
+	ui_go_home();
+	ui_push(SCR_SLISTS, 0);
+}
+#endif
+
 static void tools_select(uint16_t row, bool hold)
 {
 	(void)hold;
@@ -6537,6 +6562,10 @@ static void tools_select(uint16_t row, bool hold)
 	case T_SCAN:
 		if (!(feats() & UI_FEAT_SCAN)) {
 			ui_toast(TR(WHY_SCAN_NOT_IN_BUILD, "Scan: not in this build"));
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+		} else if (ui_svc_scanlist_slots() > 0) {
+			ui_push(SCR_SLISTS, 0);	// the zone scan is its first row; then the stored lists
+#endif
 		} else {
 			ui_go_home();
 			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO (dual watch ends)
@@ -6657,6 +6686,9 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 #if CONFIG_DUAL_WATCH
 					 KEYFN_AB, KEYFN_DUAL_WATCH,
 #endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+					 KEYFN_SCAN_LISTS,
+#endif
 };
 static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN_VALUE_NOTHING, "Nothing"),
 	TRN(KEYFN_VALUE_MONITOR, "Monitor"), TRN(KEYFN_VALUE_TALK_TARGET, "Talk target"),
@@ -6679,6 +6711,9 @@ static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYF
 #if CONFIG_DUAL_WATCH
 					     TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
 #endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+					     TRN(KEYFN_VALUE_SCAN_LISTS, "Scan lists"),
+#endif
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
 					KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_SCAN_SKIP, KEYFN_MONITOR_TOGGLE,
@@ -6694,6 +6729,9 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #endif
 #if CONFIG_DUAL_WATCH
 					KEYFN_AB, KEYFN_DUAL_WATCH,
+#endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+					KEYFN_SCAN_LISTS,
 #endif
 };
 static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN_VALUE_NOTHING, "Nothing"),
@@ -6715,6 +6753,9 @@ static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN
 #endif
 #if CONFIG_DUAL_WATCH
 					    TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
+#endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+					    TRN(KEYFN_VALUE_SCAN_LISTS, "Scan lists"),
 #endif
 };
 #endif
@@ -8285,6 +8326,11 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_SATELLITE_PASSES] = &ui_satellite_passes_screen,
 	[SCR_SATELLITE] = &ui_satellite_screen,
 	[SCR_SATELLITE_TEXT] = &satellite_text_screen,
+#endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+	[SCR_SLISTS] = &ui_scanlists_screen, [SCR_SLOPT] = &ui_scanlist_options_screen,
+	[SCR_SLDEL] = &ui_scanlist_delete_screen, [SCR_SLEDIT] = &ui_scanlist_edit_screen,
+	[SCR_SLPICK] = &ui_scanlist_pick_screen, [SCR_SLZONE] = &ui_scanlist_zone_screen,
 #endif
 #if CONFIG_CRASH_SCREEN
 	[SCR_CRASH] = &crash_screen,

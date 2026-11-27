@@ -39,6 +39,7 @@
 #define CODEPLUG_KEY_TLIST	0x1800u		// receive lists of call targets (0x1800-0x18FF)
 #define CODEPLUG_KEY_TRAFFIC	0x1900u		// traffic keys, each a system's (0x1900-0x1CFF)
 #define CODEPLUG_KEY_ZONE_TAG	0x1D00u		// reserved: per-zone mode records, 0x1D00 + zone (0x1D00-0x1DFF)
+#define CODEPLUG_KEY_SCAN_LIST	0x1E00u		// stored scan lists, 0x1E00 + slot (0x1E00-0x1EFF)
 
 // How a key's value is encoded (docs/spec/codeplug-settings.md 3.1): the encoding, never a width. A type is never
 // redefined, only grown by appending bytes
@@ -159,6 +160,9 @@ bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n);
 bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len);
 bool codeplug_kv_set_u32(uint16_t key, uint32_t value);
 bool codeplug_kv_remove(uint16_t key);
+// Whether keys can be written: the board has the area and it isn't a later firmware's (a codeplug_kv_write can still
+// fail: full, the sector buffer in use, the storage region foreign)
+bool codeplug_kv_writable(void);
 // The state of an area held whole in RAM (a STORAGE_SECTOR), as a reader would find it in flash. No lock
 codeplug_kv_state_t codeplug_kv_check(const uint8_t *sector);
 // A raw write of sector (STORAGE_SECTOR bytes) at flash address addr, for every path that commits the EEPROM image's

@@ -114,6 +114,7 @@ continuation keeps the reserved bytes and the header length as it found them.
 | 0x1800 | Target lists | record list | 0x1800-0x18FF: receive lists of targets ([channel-modes.md](channel-modes.md) 5.3) | none | a kind that uses them built |
 | 0x1900 | Traffic keys | record list | 0x1900-0x1CFF: keys that encrypt traffic, each a system's ([channel-modes.md](channel-modes.md) 5.4) | none | a type that uses them built |
 | 0x1D00 | Zone tags | record list | 0x1D00-0x1DFF: reserved for per-zone mode records ([channel-modes.md](channel-modes.md) 5.6) | none | none yet |
+| 0x1E00 | Scan lists | record list | 0x1E00-0x1EFF: scan list n, a name and its channel numbers ([scan-list.md](scan-list.md) 3) | none (codeplug data) | Scan lists in the build (`CONFIG_SCAN_LIST`) |
 
 **Radio's own copy** is the setting's field in the settings store ([settings-store.md](settings-store.md) 3). Every
 scalar key has one (3.2).

@@ -2077,6 +2077,88 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	}
 }
 bool ui_svc_scan_skip(void) { radio_req_channel_step(1); return true; }
+
+#if CONFIG_SCAN_LIST
+// Scan lists: 16 slots in RAM, as the store keeps them, off until a flow says scanlists:on (the other flows' Tools > Scan
+// is the plain scan toggle then); a write is done at once. scanlists:seed adds "Mix" (a channel of each zone) and "Empty"
+#define SIM_SLISTS	16
+static struct {
+	bool on;
+	bool used[SIM_SLISTS];
+	scan_list_t l[SIM_SLISTS];
+	uint32_t gen;
+	int started;		// the slot scanned last, -1 none
+} slist_sim;
+
+uint16_t ui_svc_scanlist_slots(void) { return slist_sim.on ? SIM_SLISTS : 0u; }
+uint32_t ui_svc_scanlist_generation(void) { return slist_sim.gen; }
+
+bool ui_svc_scanlist_get(uint16_t slot, scan_list_t *out)
+{
+	if (slot >= SIM_SLISTS || !slist_sim.used[slot])
+		return false;
+	*out = slist_sim.l[slot];
+	return true;
+}
+
+bool ui_svc_scanlist_put(int slot, const scan_list_t *l)
+{
+	// The store's own rule (scan_list.c valid): a name, no repeats, no channel 0
+	bool ok = l->name[0] != 0 && l->count <= SCAN_LIST_MAX;
+	for (uint8_t i = 0; ok && i < l->count; i++) {
+		ok = l->channels[i] != 0;
+		for (uint8_t k = 0; ok && k < i; k++)
+			ok = l->channels[k] != l->channels[i];
+	}
+	if (!ok)
+		return false;
+	if (slot < 0) {
+		for (int i = 0; i < SIM_SLISTS && slot < 0; i++)
+			if (!slist_sim.used[i])
+				slot = i;
+		if (slot < 0)
+			return false;
+	}
+	if (slot >= SIM_SLISTS)
+		return false;
+	slist_sim.used[slot] = true;
+	slist_sim.l[slot] = *l;
+	slist_sim.gen++;
+	return true;
+}
+
+bool ui_svc_scanlist_delete(uint16_t slot)
+{
+	if (slot >= SIM_SLISTS || !slist_sim.used[slot])
+		return false;
+	slist_sim.used[slot] = false;
+	slist_sim.gen++;
+	return true;
+}
+
+bool ui_svc_scanlist_start(uint16_t slot)
+{
+	slist_sim.started = slot;
+	view.scan = 4;	// scan_kind_t: a scan list
+	changed();
+	return true;
+}
+
+static void slist_seed(void)
+{
+	scan_list_t l;
+	memset(&l, 0, sizeof l);
+	strcpy(l.name, "Mix");
+	l.count = 3;
+	l.channels[0] = 3;	// Local repeaters
+	l.channels[1] = 17;	// Simplex
+	l.channels[2] = 29;	// Hotspots
+	ui_svc_scanlist_put(-1, &l);
+	memset(&l, 0, sizeof l);
+	strcpy(l.name, "Empty");
+	ui_svc_scanlist_put(-1, &l);
+}
+#endif
 // Dual watch as the radio core does it with a receiver per channel: the view stays on the selected channel (the
 // keys act on it); `tune:a` / `tune:b` move it to a channel, as the alternating receiver does when a call holds it
 // Each channel keeps its changes for now while the receiver is on the other (as radio_sm.c's dual_keep)
@@ -2807,6 +2889,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_LANGUAGE, lang != NULL && strlen(lang) == 2 ? (uint8_t)lang[0] << 8 | (uint8_t)lang[1] : 0);
 #if CONFIG_DUAL_WATCH
 	ui_svc_setting_set(UI_SET_DUAL_TALK_BACK, 0);
+#if CONFIG_SCAN_LIST
+	memset(&slist_sim, 0, sizeof slist_sim);
+	slist_sim.started = -1;
+#endif
 	ui_svc_setting_set(UI_SET_DUAL_B, 0);
 	memset(sim_dual, 0, sizeof sim_dual);
 	sim_at = 0xFF;
@@ -2835,6 +2921,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "labelkey", ACT_TALK_LABEL },
 	{ "skipkey", ACT_SCAN_SKIP },
 	{ "monkey", ACT_MONITOR_TOGGLE },
+	{ "listskey", ACT_SCAN_LISTS },		// a side key set to Scan lists
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2844,7 +2931,8 @@ static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
 	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL ||
-	    action == ACT_SCAN_SKIP || action == ACT_MONITOR_TOGGLE)
+	    action == ACT_SCAN_SKIP || action == ACT_MONITOR_TOGGLE ||
+	    action == ACT_SCAN_LISTS)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -2982,6 +3070,25 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
 	else if (strcmp(key, "aprs_to") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_aprs_to);
 	else if (strcmp(key, "aprs_flags") == 0) snprintf(got, sizeof got, "%u", sim_rec.last_aprs_flags);
+#if CONFIG_SCAN_LIST
+	else if (strcmp(key, "lists") == 0) {	// lists stored
+		unsigned n = 0;
+		for (int i = 0; i < SIM_SLISTS; i++)
+			n += slist_sim.used[i];
+		snprintf(got, sizeof got, "%u", n);
+	} else if (strncmp(key, "list", 4) == 0 && key[4] >= '0' && key[4] <= '9') {	// list<slot>=name:channels, none: -
+		unsigned k = (unsigned)atoi(key + 4);
+		got[0] = 0;
+		if (k >= SIM_SLISTS || !slist_sim.used[k]) {
+			snprintf(got, sizeof got, "-");
+		} else {
+			const scan_list_t *l = &slist_sim.l[k];
+			snprintf(got, sizeof got, "%s:", l->name);
+			for (uint8_t c = 0; c < l->count; c++)
+				snprintf(got + strlen(got), sizeof got - strlen(got), "%s%u", c ? "," : "", l->channels[c]);
+		}
+	} else if (strcmp(key, "listscan") == 0) snprintf(got, sizeof got, "%d", view.scan == 4 ? slist_sim.started : -1);
+#endif
 	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0 && view.scan != 3);
 #if CONFIG_DUAL_WATCH
 	else if (strcmp(key, "dual") == 0) snprintf(got, sizeof got, "%u", ui_st.dual.on && view.scan == 3);
@@ -3674,6 +3781,14 @@ static bool run_token(char *t, char *err, size_t len)
 			aprs_sim.cfg.freq_hz = 144930000;
 		return true;
 	}
+#if CONFIG_SCAN_LIST
+	if (strcmp(t, "scanlists") == 0 && arg != NULL) {	// scanlists:on (an empty store) or scanlists:seed
+		slist_sim.on = true;
+		if (strcmp(arg, "seed") == 0)
+			slist_seed();
+		return true;
+	}
+#endif
 	if (strcmp(t, "crash") == 0 && arg != NULL) {	// crash:on, crash:ask, crash:auto (see crash_sim)
 		crash_sim.have = true;
 		crash_sim.seen = crash_sim.sent = false;

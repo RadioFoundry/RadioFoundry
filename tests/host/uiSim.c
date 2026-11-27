@@ -180,6 +180,15 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "talk_target_picker", "call:9991234,91,g tt" },
 	{ "talk_target_picker_vfo", "ok 4 up ok quick 4 tt" },
 	{ "scan_actions", "ok 6 1 ctx" },
+#if CONFIG_SCAN_LIST
+	// Scan lists (docs/spec/ui.md 2.7), with two stored: "Mix" (a channel of each zone) and an empty one
+	{ "scan_lists", "scanlists:seed ok 6 1" },
+	{ "scan_list_options", "scanlists:seed ok 6 1 down ctx" },
+	{ "scan_list_channels", "scanlists:seed ok 6 1 down ctx 1" },
+	{ "scan_list_add", "scanlists:seed ok 6 1 down down ctx 1 ok ok down" },
+	{ "scan_list_zone", "scanlists:seed ok 6 1 down down ctx 1 ok up ok" },
+	{ "scan_list_delete", "scanlists:seed ok 6 1 down ctx 3" },
+#endif
 #if CONFIG_DUAL_WATCH
 	// Dual watch (docs/ux/dual-watch.md): A = channel 3, B = channel 5 of the zone unless the script picks another
 	{ "dual_pick", "quick 7 ctx 3" },

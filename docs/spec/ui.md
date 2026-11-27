@@ -110,7 +110,7 @@ into logical actions (`hal_input.h`).
 
 ## 2. Screens and the stack
 
-The stack holds up to 6 frames; Home is frame 0. Each screen is a `ui_scr_def_t` (`ui_nav.h`): a name (the debug
+The stack holds up to 6 frames, 8 with `CONFIG_SCAN_LIST` (`UI_STACK_MAX`); Home is frame 0. Each screen is a `ui_scr_def_t` (`ui_nav.h`): a name (the debug
 link's `ui.screen`), flags, and callbacks for list rows, SELECT, CONTEXT, the talk target of the focused row, a title,
 a body, raw keys, drawing and entry. List screens need only `count` and `item`; the generic list code does focus,
 scrolling, numbered shortcuts (`SF_NUMBERED`: 1-9, then 0 for the 10th row; later rows have none), T9 filtering (`SF_FILTER`), and the long-press target.
@@ -401,6 +401,25 @@ characters (`tools/cjkfont.py`). It needs an advance width and row pitch of its 
 screen that draws words needs checking at the new pitch. The generated 16x16 face is cropped there and cannot be
 reused, so a board with such a panel keeps `CONFIG_LANG_ZH` unsupported until a face with a suitable license exists.
 
+### 2.7 Scan lists
+
+With `CONFIG_SCAN_LIST` and a usable settings area ([scan-list.md](scan-list.md) 2), Tools > Scan (`scan-lists`,
+`ui_scanlist.c`; Tools 1) opens the lists; without them it starts the zone scan at once. A list is named and holds up to
+80 channels from any zone; it is scanned without changing zone ([scan-list.md](scan-list.md) 6).
+
+| Screen | Shows |
+|---|---|
+| Scan (`scan-lists`) | Row 0 "Scan zone" ("Scan band" in the VFO) with On or Off: the zone scan as before. Then each stored list with its channel count ("12 ch"), then "New scan list" while there is room. OK on a list scans it (Home, with "Scanning" and its name); "Leave the VFO first" in the VFO, "Add two channels first" under two. `#` (long OK without a CONTEXT key) opens the list's options. "New scan list" opens text entry; the new list appears focused with "Added" and its name |
+| Scan list (`scan-list`) | The options, numbered: 1 Edit channels, 2 Rename (text entry with the name), 3 Delete |
+| Delete (`scan-list-delete`) | "No, keep it" / "Yes, delete" and a line that the channels stay in their zones |
+| Channels (`scan-list-edit`) | "Add channel", then the list's channels as "1 Name" with frequency and talk target; OK removes one ("Removed"). A channel the codeplug no longer has reads "Missing", dim, and OK removes it. A list of 80 says "The list is full" |
+| Add to (`scan-list-add`) | The zone row (OK picks another zone), then that zone's channels. OK adds a channel or takes it out again ("In list" marks them) and stays, so a list takes channels from several zones in a row. Digits filter by name |
+| Zone (`scan-list-zone`) | Every zone; OK returns to the picker on it |
+
+Changes are saved by a job for the housekeeping task, one at a time: a second change before it finishes says "Busy saving:
+try again" and is not made. With `CONFIG_SCAN_LIST` the stack is 8 deep (`UI_STACK_MAX`): Home, hub, Tools, Scan, the options, Channels, Add to,
+Zone. Only Scan is a field-use screen.
+
 ## 3. Key meanings
 
 The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
@@ -504,8 +523,9 @@ position in the list is its role. Each role has a press and a long press, and ea
 | TG name / number (19) | TALK_LABEL: Home's talk line puts the talkgroup's name first, or back to its number first; the same as Settings > Display > Talkgroup name first, and saved. Toast "Talkgroup name first" / "Talkgroup number first". Offered in builds with DMR | yes | yes |
 | Scan skip (20) | SCAN_SKIP: what the scan action's "Skip channel for now" does, without the menu: the nuisance delete of the channel that stopped the scan, until the scan stops. Toast "Skipped until the scan stops", "Nothing to skip yet" when the radio has no channel to skip, "Not scanning" (and nothing else) when no scan is running. Allowed on a home key like Scan: it is a plain press or long press function | yes | yes |
 | Monitor toggle (21) | MONITOR_TOGGLE: what quick tile 5 does, on one key: on an FM channel it latches the squelch open (status line MON) or closes it again; on a DMR channel it turns digital monitor on or off (toast "Digital monitor on" / "Digital monitor off"). It is not the Monitor key: that one still opens the squelch only while held, and the retired values 9 and 10 stay retired. Allowed on a home key like Scan: it is a plain press or long press function, and works in the VFO too | yes | yes |
+| Scan lists (22) | SCAN_LISTS: Home and then the lists to pick from (section 2.7: "Scan zone" is the first row, then each stored list), from any screen and while a scan runs. Toast "Scan lists: not on this radio" (and nothing else) when the settings area can't take lists (a later firmware's). Offered with `CONFIG_SCAN_LIST` and `CONFIG_CHANNEL_EDIT`. The Scan function (7) still starts the zone scan at once: set Scan on a press and Scan lists on a long press (or the reverse) to have both | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, SCAN_SKIP, MONITOR_TOGGLE, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE and TALK_LABEL do the same on a press and a long
+POWER, ZONE_UP, ZONE_DOWN, SCAN, SCAN_SKIP, MONITOR_TOGGLE, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE, TALK_LABEL and SCAN_LISTS do the same on a press and a long
 press and work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the

@@ -153,11 +153,12 @@ static void test_toggles(void)
 		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO }, { KEYFN_DUAL_WATCH, 15, ACT_DUAL_WATCH }, { KEYFN_AB, 16, ACT_AB },
 		{ KEYFN_VFO_TOGGLE, 17, ACT_VFO_TOGGLE }, { KEYFN_TALK_LABEL, 19, ACT_TALK_LABEL },
 		{ KEYFN_SCAN_SKIP, 20, ACT_SCAN_SKIP }, { KEYFN_MONITOR_TOGGLE, 21, ACT_MONITOR_TOGGLE },
+		{ KEYFN_SCAN_LISTS, 22, ACT_SCAN_LISTS },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
 	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
-	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 22);
+	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 23);
 	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
 		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 		CHECK(t[i].fn == t[i].value);

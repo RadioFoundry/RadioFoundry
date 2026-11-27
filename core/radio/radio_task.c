@@ -797,6 +797,7 @@ static const debuglink_air_core_t bench_core = { bench_enter, bench_leave, bench
 void radio_req_scan(uint8_t cmd) { post(RREQ_SCAN, cmd, 0); }
 void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz) { post_pair(RREQ_SCAN_VFO, (int32_t)lo_hz, hi_hz, 0); }
 void radio_req_scan_dual(uint16_t pos) { post_pair(RREQ_SCAN, RSCAN_DUAL, pos, 0); }
+void radio_req_scan_list(uint16_t slot) { post_pair(RREQ_SCAN, RSCAN_LIST, slot, 0); }
 bool radio_dtmf_ready(void)
 {
 	return dtmf_ready;

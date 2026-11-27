@@ -134,6 +134,7 @@ never renumbers:
 | 0x1800-0x18FF | Target lists | list n | 5.3 |
 | 0x1900-0x1CFF | Traffic keys | entry n | 5.4 |
 | 0x1D00-0x1DFF | Reserved: per-zone records | zone n | 5.6 |
+| 0x1E00-0x1EFF | Scan lists | slot n | [scan-list.md](scan-list.md) 3 |
 
 Every family keeps unknown bytes: a writer that changes a record it doesn't fully know changes only the fields it
 knows and keeps the rest, and a record of a kind or type it doesn't know is kept whole.

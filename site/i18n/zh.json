@@ -2408,5 +2408,11 @@
  "editor.sig.play": "播放",
  "editor.sig.roll": "链路的音高随时间变化，{ms} 毫秒",
  "editor.sig.no_audio": "此处无法播放",
- "editor.sig.empty": "无步骤:使用标准声音"
+ "editor.sig.empty": "无步骤:使用标准声音",
+ "screen.scan_lists": "扫描列表：区域扫描和你命名的列表",
+ "screen.scan_list_options": "扫描列表的选项",
+ "screen.scan_list_channels": "扫描列表中的信道",
+ "screen.scan_list_add": "从任意区域向列表添加信道",
+ "screen.scan_list_zone": "选择要从中添加的其他区域",
+ "screen.scan_list_delete": "删除扫描列表"
 }
