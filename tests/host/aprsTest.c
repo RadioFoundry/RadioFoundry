@@ -186,6 +186,52 @@ static void test_frame_types(void)
 	CHECK(got == 15 && same, "SABM through HDLC got %zu", got);
 }
 
+// Data carrier detect (docs/spec/aprs.md 9.2): two flags back to back set it, a frame keeps it, seven 1s clear it, and
+// random bits (an ungated receiver on an empty channel) almost never set it
+static void dcd_bits(hdlc_dec_t *d, const uint8_t *tones, uint32_t from, uint32_t to)
+{
+	for (uint32_t i = from; i < to; i++) {
+		hdlc_dec_bit(d, hdlc_tone_bit(tones, i));
+	}
+}
+
+static void test_dcd(void)
+{
+	uint8_t frame[64], tones[256];
+	size_t n = make_frame("Q0TEST>APRS:>dcd", frame, sizeof(frame));
+	hdlc_enc_t e;
+	hdlc_enc_init(&e, tones, sizeof(tones));
+	CHECK(hdlc_enc_flags(&e, 3) && hdlc_enc_frame(&e, frame, n), "dcd tones");
+	uint32_t frame_end = e.nbits;
+	hdlc_dec_t d;
+	hdlc_dec_init(&d);
+	// The decoder has no NRZI reference before the first tone change, so the first flag goes to syncing it (a real
+	// preamble has dozens): the second flag is the first it sees, the third the first back to back
+	dcd_bits(&d, tones, 0, 17);
+	CHECK(!d.dcd, "one flag seen: no dcd");
+	dcd_bits(&d, tones, 17, 24);
+	CHECK(d.dcd, "two flags back to back: dcd");
+	dcd_bits(&d, tones, 24, frame_end);
+	CHECK(d.dcd, "dcd through the frame");
+	// seven 1s: no tone change for seven bits (NRZI)
+	bool level = hdlc_tone_bit(tones, frame_end - 1u);
+	for (int i = 0; i < 8; i++) {
+		hdlc_dec_bit(&d, level);
+	}
+	CHECK(!d.dcd, "seven 1s clear dcd");
+	// Random tone decisions: dcd set on a small share of them
+	hdlc_dec_init(&d);
+	uint32_t x = 0x9E3779B9u, on = 0, total = 100000;
+	for (uint32_t i = 0; i < total; i++) {
+		x ^= x << 13;
+		x ^= x >> 17;
+		x ^= x << 5;
+		hdlc_dec_bit(&d, (x & 1u) != 0);
+		on += d.dcd ? 1u : 0u;
+	}
+	CHECK(on < total / 50u, "noise dcd %u of %u", on, total);
+}
+
 // --- HDLC ---
 
 static void test_hdlc(void)
@@ -1556,6 +1602,7 @@ int main(int argc, char **argv)
 	test_addresses();
 	test_hdlc();
 	test_frame_types();
+	test_dcd();
 	test_afsk();
 	test_position_build();
 	test_position_parse();

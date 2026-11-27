@@ -637,6 +637,16 @@ static void reset_tone(radio_sm_t *sm)
 // The APRS job's phases (aprs_phase)
 enum { APRS_RF_OFF = 0, APRS_RF_LISTEN, APRS_RF_KEYUP, APRS_RF_SEND };
 
+#if CONFIG_APRS_AFSK
+// The radio is on the user's channel with its receive running as always: no APRS job, or a KISS packet job waiting for a
+// clear slot on that same channel (docs/spec/aprs.md 9.2), which needs the squelch, the speaker and the demodulator
+// as they are
+static bool aprs_on_channel(const radio_sm_t *sm)
+{
+	return sm->aprs_phase == APRS_RF_OFF || (sm->aprs_job.packet && sm->aprs_phase == APRS_RF_LISTEN);
+}
+#endif
+
 // A broadcast station is listened to, not squelched: the state stays RX (so the screen shows the level; the LED stays
 // off, outputs()) whatever the signal, and the audio plays. A scan keeps the squelch to stop on stations
 static bool bcast_listening(const radio_sm_t *sm)
@@ -5998,10 +6008,16 @@ static void aprs_rf_end(radio_sm_t *sm, aprs_rf_result_t r, uint32_t now_ms)
 		board.radio->tx_off();
 		sm->tx_end_ms = now_ms;
 	}
+	// A packet job that never keyed is still on the user's channel with its receive running: nothing to put back
+	bool stayed = sm->aprs_job.packet && phase == APRS_RF_LISTEN;
 	sm->aprs_phase = APRS_RF_OFF;
-	sm->view.state = RS_IDLE;
 	sm->view.aprs_tx = false;
 	aprs_rf_done(r, now_ms);
+	if (stayed) {
+		changed(sm);
+		return;
+	}
+	sm->view.state = RS_IDLE;
 	tune(sm, now_ms);	// the channel again (DMR set up again if it was DMR)
 #if CONFIG_SCAN
 	if (dual_running(sm)) {
@@ -6025,6 +6041,16 @@ static void aprs_rf_start(radio_sm_t *sm, uint32_t now_ms)
 {
 	static const subtone_t none = { TONE_NONE, 0 };
 	if (!aprs_rf_take(&sm->aprs_job, now_ms)) {
+		return;
+	}
+	if (sm->aprs_job.packet) {
+		// KISS packet mode (aprs.md 9.2): the job is on the user's FM channel, so nothing is retuned; it waits there for
+		// a clear slot with the channel's receive running (aprs_on_channel)
+		sm->aprs_phase = APRS_RF_LISTEN;
+		sm->aprs_ms = now_ms;
+		sm->aprs_listen_ms = now_ms;
+		sm->aprs_rand ^= now_ms;
+		changed(sm);
 		return;
 	}
 #if CONFIG_SCAN && CONFIG_DUAL_WATCH
@@ -6058,16 +6084,33 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 			aprs_rf_end(sm, APRS_RF_BUSY, now_ms);
 			return;
 		}
-		if (now_ms - sm->aprs_ms < APRS_SETTLE_MS + APRS_SLOT_MS) {
-			return;
-		}
-		sm->aprs_ms = now_ms - APRS_SETTLE_MS;	// the next check a slot later
-		if (st->noise < radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT)) {
-			return;		// a carrier: wait
-		}
-		sm->aprs_rand = sm->aprs_rand * 1103515245u + 12345u;
-		if ((sm->aprs_rand >> 24) > APRS_PERSIST) {
-			return;		// clear, but not our turn this slot
+		if (sm->aprs_job.packet) {
+			// The host's p-persistent CSMA (KISS, Chepponis and Karn 1987): each SLOTTIME, a clear channel is taken
+			// with p = (P + 1) / 256. Busy: the channel's squelch is open (its receive runs, aprs_on_channel) or the
+			// demodulator is inside a transmission (data carrier detect)
+			if (now_ms - sm->aprs_ms < sm->aprs_job.slot_ms) {
+				return;
+			}
+			sm->aprs_ms = now_ms;
+			if (sm->view.state != RS_IDLE || aprs_rx_dcd()) {
+				return;
+			}
+			sm->aprs_rand = sm->aprs_rand * 1103515245u + 12345u;
+			if ((sm->aprs_rand >> 24) > sm->aprs_job.persist) {
+				return;
+			}
+		} else {
+			if (now_ms - sm->aprs_ms < APRS_SETTLE_MS + APRS_SLOT_MS) {
+				return;
+			}
+			sm->aprs_ms = now_ms - APRS_SETTLE_MS;	// the next check a slot later
+			if (st->noise < radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT)) {
+				return;		// a carrier: wait
+			}
+			sm->aprs_rand = sm->aprs_rand * 1103515245u + 12345u;
+			if ((sm->aprs_rand >> 24) > APRS_PERSIST) {
+				return;		// clear, but not our turn this slot
+			}
 		}
 		sm->aprs_phase = APRS_RF_KEYUP;		// before tx(): aprs_rf_end unkeys from here on
 		sm->aprs_ms = now_ms;
@@ -6079,9 +6122,11 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		outputs(sm);
 		changed(sm);
 		// APRS's own power level when it has one, else the radio's current one (a temporary change included), as for
-		// PTT. The settings' default (the board's default power) ignored a lowered level
+		// PTT. The settings' default (the board's default power) ignored a lowered level. A packet job keys the
+		// user's channel as PTT would: its transmit subtone and the radio's current power
 		if (!key_tx(sm, sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K,
-				     aprs_tx_power(sm->view.power), &none)) {
+			    sm->aprs_job.packet ? sm->view.power : aprs_tx_power(sm->view.power),
+			    sm->aprs_job.packet ? &sm->view.ch.tx_tone : &none)) {
 			aprs_rf_end(sm, APRS_RF_NO_KEY, now_ms);
 		}
 		break;
@@ -6129,8 +6174,7 @@ static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
 	memset(&r, 0, sizeof(r));
 #if CONFIG_APRS_AFSK
 	r.can_rf = aprs_can_start(sm);
-	r.fm_rx = sm->aprs_phase == APRS_RF_OFF && sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot &&
-		  sm->view.state != RS_TX;
+	r.fm_rx = aprs_on_channel(sm) && sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot && sm->view.state != RS_TX;
 	r.rx_hz = sm->view.ch.rx_hz;
 	// The selected channel for KISS packet mode (aprs.md 9.2)
 	r.ch_fm = sm->view.ch.mode == RADIO_MODE_FM;
@@ -9955,7 +9999,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	// An APRS job has the channel receiver on its own frequency in FM: its carrier sense reads that receiver as is
 	bool own_rx = true;
 #if CONFIG_APRS_AFSK
-	own_rx = sm->aprs_phase == APRS_RF_OFF;
+	own_rx = aprs_on_channel(sm);
 #endif
 	(void)own_rx;
 #if CONFIG_AIR_RAW
@@ -9998,8 +10042,11 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_APRS_AFSK
 	if (sm->aprs_phase != APRS_RF_OFF) {
 		aprs_rf_service(sm, &st, now_ms);	// on the APRS frequency: no squelch, scan or time-out here
-		outputs(sm);
-		return;
+		if (!aprs_on_channel(sm)) {
+			outputs(sm);
+			return;
+		}
+		// A packet job waiting for a slot on the user's channel: the channel's receive goes on below
 	}
 #endif
 #if CONFIG_SCAN

@@ -75,5 +75,7 @@ void afsk_demod(afsk_demod_t *d, const int16_t *s, size_t n);
 // The HDLC decoders' frames with a bad FCS and aborts, summed over the paths
 uint32_t afsk_demod_fcs_errors(const afsk_demod_t *d);
 uint32_t afsk_demod_aborts(const afsk_demod_t *d);
+// Data carrier detect: a path's HDLC decoder is inside a transmission (hdlc_dec_t dcd)
+bool afsk_demod_dcd(const afsk_demod_t *d);
 
 #endif

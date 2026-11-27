@@ -1170,6 +1170,15 @@ void aprs_rx_stats(aprs_rx_stats_t *out)
 }
 #endif
 
+bool aprs_rx_dcd(void)
+{
+#if CONFIG_APRS_RX
+	return aprs_s.rx_running && afsk_demod_dcd(&aprs_s.demod);
+#else
+	return false;
+#endif
+}
+
 bool aprs_rx_listening(void)
 {
 #if CONFIG_APRS_RX

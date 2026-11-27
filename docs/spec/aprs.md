@@ -411,11 +411,16 @@ zone or VFO scan or dual watch runs (`scanning`).
 
 **Transmit.** The radio core's job (6) with these differences:
 
-1. No retune and no settle time: the job listens on the channel it is on. The receive path keeps running (below).
+1. No retune and no settle time: the job waits on the channel it is on, with the channel's receive running as always
+   (squelch, speaker, the demodulator: `radio_sm.c` `aprs_on_channel`). No job starts while the squelch is open.
 2. CSMA per the KISS paper: each SLOTTIME, if the channel is clear, transmit with probability (P + 1) / 256, else
-   wait a slot. The channel is busy while the squelch reading shows a carrier or the demodulator is inside a frame
-   (a flag seen and no closing flag yet). A frame that hasn't gone out 10 s after it was queued is dropped and counted
-   in `rf_busy`: the host's own retry timer sends it again.
+   wait a slot. The channel is busy while the squelch is open or the demodulator detects a data carrier (DCD,
+   `aprs_rx_dcd`): set once its HDLC decoder sees two flags back to back, a transmission's preamble, which noise
+   almost never makes (under 2 % of random bits in `aprsTest`, so an ungated receiver isn't held off an empty
+   channel), and cleared by seven 1s in a row, the end of a transmission or an idle channel. A frame that hasn't gone
+   out 10 s after it was queued is dropped and counted in `rf_busy`: the host's own retry timer sends it again. A job
+   still waiting for its slot after 10 s ends as busy, without a retune. It keys the channel as PTT would: its
+   transmit frequency and subtone, the radio's current power.
 3. Frames back to back with one flag between them, as many as the tone buffer holds, TXDELAY of flags before, TXTAIL
    of flags plus the 3 tail flags after. The packet build's buffer is 768 bytes (6144 symbols, 5.1 s): two frames
    with 256 bytes of information and no digipeaters (274 bytes with the FCS, at most 2630 symbols stuffed) fit after a

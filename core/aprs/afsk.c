@@ -223,3 +223,13 @@ uint32_t afsk_demod_aborts(const afsk_demod_t *d)
 	}
 	return n;
 }
+
+bool afsk_demod_dcd(const afsk_demod_t *d)
+{
+	for (int p = 0; p < AFSK_PATHS; p++) {
+		if (d->path[p].hdlc.dcd) {
+			return true;
+		}
+	}
+	return false;
+}

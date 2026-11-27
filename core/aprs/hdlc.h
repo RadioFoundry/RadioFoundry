@@ -42,6 +42,10 @@ typedef struct {
 	uint8_t last;		// the previous tone (NRZI)
 	uint8_t ones;
 	bool in_frame;		// a flag was seen: bits are collected
+	// Data carrier detect (docs/spec/aprs.md 9.2): set once two flags come back to back (a transmission's preamble;
+	// noise almost never makes two), cleared by seven 1s in a row (the end of a transmission, an idle or silent channel)
+	uint8_t flag_run;
+	bool dcd;
 	uint32_t nbits;
 	uint8_t buf[HDLC_BUF_MAX];
 	uint32_t frames, fcs_errors, aborts;	// counters

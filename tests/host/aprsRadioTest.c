@@ -42,6 +42,10 @@ static struct {
 	bool keyed;
 	uint16_t tone_hz;	// the TX tone in force (0 = the microphone)
 	uint8_t noise_on_aprs;	// noise reading on 144.390 (low = a carrier)
+	uint8_t noise_on_ch;	// ... on any other frequency (0: 120, no carrier)
+	int rx_calls;		// receiver tunes
+	int rx_calls_at_key;	// ... when the transmitter last keyed
+	subtone_t tx_tone;	// the subtone the transmitter last keyed with
 	// AFSK
 	uint8_t tones[600];
 	uint16_t nbits;
@@ -79,12 +83,12 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 	}
 #endif
 	hw.rx_hz = hz;
+	hw.rx_calls++;
 	return true;
 }
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
 	(void)bw;
-	(void)t;
 	if (hw.tx_fail) {
 		return false;
 	}
@@ -92,6 +96,8 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 	hw.tx_hz = hz;
 	hw.tx_power = p;
 	hw.keyed = true;
+	hw.rx_calls_at_key = hw.rx_calls;
+	hw.tx_tone = *t;
 	return true;
 }
 static void r_tx_off(void)
@@ -101,7 +107,7 @@ static void r_tx_off(void)
 }
 static void r_status(radio_status_t *st)
 {
-	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : 120;
+	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : hw.noise_on_ch != 0 ? hw.noise_on_ch : 120;
 	st->rssi_dbm = st->noise < 64 ? -80 : -120;	// a signal reads above the floor (a voice peak's noise doesn't drop it)
 	st->carrier = false;
 	st->tone_ok = true;
@@ -1159,6 +1165,111 @@ static void test_packet_channel_blocks(void)
 	run(200);
 	aprs_get_view(&v);
 	CHECK(v.pk_block == APRS_NOT_FM && !aprs_host_frame(frame, n, now));
+}
+
+// A KISS parameter from the host through the host port's own parser (aprs_host.c)
+static void pk_param(uint8_t cmd, uint8_t value)
+{
+	uint8_t kiss[8];
+	size_t k = kiss_encode(cmd, &value, 1, kiss, sizeof(kiss));
+	aprs_host_feed(kiss, k, now);
+}
+
+// The radio core's side (aprs.md 9.2): no retune before keying, the channel's subtone, the host's slot time
+static void test_packet_no_retune_slot(void)
+{
+	reset();
+	chan.tx_tone = (subtone_t){ TONE_CTCSS, 1000 };	// 100.0 Hz on transmit
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("Q1TST");
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.kiss = true;
+	c.packet = true;
+	aprs_set_cfg(&c, now);
+	run(200);
+	pk_param(KISS_CMD_PERSIST, 255);	// every clear slot
+	pk_param(KISS_CMD_SLOTTIME, 1);
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1TST-1", 0x20, "slot", 4, frame, sizeof(frame));
+	int rx0 = hw.rx_calls;
+	uint32_t t0 = now;
+	CHECK(pk_send(frame, n));
+	uint32_t fast = now - t0;
+	CHECK(hw.rx_calls_at_key == rx0);	// keyed without a retune
+	CHECK(hw.tx_hz == CH_HZ && hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 1000);
+	CHECK(hw.rx_hz == CH_HZ && !hw.keyed);	// back on the channel's receive
+	pk_param(KISS_CMD_SLOTTIME, 25);	// 250 ms
+	t0 = now;
+	int starts = hw.starts;
+	CHECK(aprs_host_frame(frame, n, now) && wait_start(starts + 1, 5000));
+	uint32_t slow_start = now - t0;
+	wait_idle();
+	(void)fast;
+	CHECK(slow_start >= 250u);
+	// fast covers the whole send; the start alone with SLOTTIME 1 is within a few polls
+	pk_param(KISS_CMD_SLOTTIME, 1);
+	t0 = now;
+	starts = hw.starts;
+	CHECK(aprs_host_frame(frame, n, now) && wait_start(starts + 1, 5000));
+	CHECK(now - t0 <= 100u && slow_start >= now - t0 + 150u);
+	wait_idle();
+}
+
+// A carrier on the channel holds the job, while the channel's receive (and the demodulator) keep running; the job goes
+// once it clears. Busy for APRS_CSMA_GIVE_UP_MS: dropped. PTT while waiting: dropped
+static void test_packet_busy_channel(void)
+{
+	fake_tap.caps = AUDIO_TAP_FM_RX;	// a board whose FM receive audio is on the PCM stream
+	memset(&pcm, 0, sizeof(pcm));
+	packet_setup();
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.rx_on = true;
+	aprs_set_cfg(&c, now);
+	run(200);
+	CHECK(aprs_rx_listening());		// on the packet channel
+	pk_param(KISS_CMD_PERSIST, 255);
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1TST-1", 0x20, "busy", 4, frame, sizeof(frame));
+	hw.noise_on_ch = 20;			// a strong carrier
+	run(500);
+	int starts = hw.starts;
+	CHECK(aprs_host_frame(frame, n, now));
+	run(2000);
+	CHECK(hw.starts == starts && sm.view.state == RS_RX);	// waiting (no job starts while the squelch is open)
+	CHECK(aprs_rx_listening() && hw.rx_hz == CH_HZ);	// the demodulator keeps listening while it waits
+	hw.noise_on_ch = 0;			// the carrier drops
+	CHECK(wait_start(starts + 1, 3000) && hw.tx_hz == CH_HZ);
+	wait_idle();
+	// Busy past the stale time: dropped, nothing sent later
+	aprs_view_t v0, v;
+	aprs_get_view(&v0);
+	hw.noise_on_ch = 20;
+	run(500);
+	starts = hw.starts;
+	int rx0 = hw.rx_calls;
+	CHECK(aprs_host_frame(frame, n, now));
+	run(10000u + 1000u);		// PACKET_STALE_MS (aprs_int.h) and a second
+	aprs_get_view(&v);
+	CHECK(v.rf_busy >= v0.rf_busy + 1 && sm.aprs_phase == 0 && hw.rx_calls == rx0);	// no retune meanwhile
+	hw.noise_on_ch = 0;
+	run(3000);
+	CHECK(hw.starts == starts);
+	// PTT while a job waits for its slot (a clear channel, p = 1/256 so it waits): the job is dropped
+	pk_param(KISS_CMD_PERSIST, 0);
+	pk_param(KISS_CMD_SLOTTIME, 25);
+	CHECK(aprs_host_frame(frame, n, now));
+	run(500);
+	CHECK(sm.aprs_phase == 1 && !hw.keyed);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.aprs_phase == 0);
+	req(RREQ_PTT, 0);
+	hw.noise_on_ch = 0;
+	run(3000);
+	CHECK(hw.starts == starts);
+	fake_tap.caps = 0;
 }
 
 // The duty cycle: at most PACKET_DUTY_MS keyed in any minute; frames past it wait, and are dropped once stale
@@ -2530,6 +2641,10 @@ int main(void)
 #endif
 	test_packet_channel_blocks();
 	test_packet_duty_cycle();
+	test_packet_no_retune_slot();
+#if CONFIG_APRS_RX
+	test_packet_busy_channel();
+#endif
 #endif
 	test_messages();
 	test_message_ends_blocked();

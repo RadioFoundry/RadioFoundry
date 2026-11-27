@@ -119,6 +119,8 @@ size_t hdlc_dec_bit(hdlc_dec_t *d, bool mark)
 			}
 			d->in_frame = false;
 			d->nbits = 0;
+			d->flag_run = 0;
+			d->dcd = false;
 			return 0;
 		}
 		if (d->in_frame) {
@@ -139,6 +141,11 @@ size_t hdlc_dec_bit(hdlc_dec_t *d, bool mark)
 					d->fcs_errors++;
 				}
 			}
+		}
+		// Back to back: the flag's first seven bits were all that came since the last one
+		d->flag_run = (uint8_t)(d->in_frame && d->nbits == 7u ? (d->flag_run < 255u ? d->flag_run + 1u : 255u) : 1u);
+		if (d->flag_run >= 2u) {
+			d->dcd = true;
 		}
 		d->in_frame = true;
 		d->nbits = 0;
