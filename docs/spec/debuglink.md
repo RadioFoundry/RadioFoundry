@@ -120,6 +120,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x26` | SATELLITE | operation u8 + arguments (3.30); `CONFIG_SATELLITE_TLE` builds only | capability, inventory, or transaction result (3.30) |
 | `0x27` | DETOUR | operation u8 + arguments (7.4); `CONFIG_DEBUGLINK_DMRIP` builds, else unknown command | the deadline, the detour's state, or none (7.4) |
 | `0x28` | DMRIP | operation u8 + arguments (7.5); `CONFIG_DEBUGLINK_DMRIP` builds, else unknown command | the transport's state, or none (7.5) |
+| `0x29` | RTC | operation u8 (0 GET; 1 SET + unix u32) (3.31); `CONFIG_RTC` builds, else status 1 | GET: valid u8, unix u32; SET: none (3.31) |
 
 ### 3.1 VERSION
 
@@ -1091,6 +1092,22 @@ board map has a dedicated satellite area. It has no raw-address access. The oper
 capacity and atomic commit behavior are specified in [satellite.md](satellite.md) 6. The command returns
 `DL_ST_UNAVAILABLE` when the feature or usable area is absent.
 
+### 3.31 RTC
+
+`DL_CMD_RTC` (`0x29`) reads or sets the board's hardware clock (`board.rtc`, `hal/hal_rtc.h`; `CONFIG_RTC` with `CONFIG_DEBUGLINK`). The time
+is UTC seconds since 1970-01-01, a `u32` (little endian). The reply to an unknown operation or a wrong length is
+`DL_ST_BAD_ARG`; a board with no clock driver answers `DL_ST_UNAVAILABLE`, and a build without `CONFIG_RTC` does not
+know the command (`DL_ST_UNKNOWN_CMD`).
+
+| Operation | Request | Reply |
+|---|---|---|
+| `0` GET | none | `valid` u8, `unix` u32. `valid` 0: the clock holds no time (never set, or its backup lost it), or its bus did not answer; `unix` is 0 |
+| `1` SET | `unix` u32 | none. `DL_ST_REFUSED` when the clock cannot hold that time or its bus did not answer. The clock takes the new time within a second, so a GET right after reads 00:00:00 |
+
+The debug link task is the only caller of the clock's bus. A SET is logged (`debuglink: rtc set N`). It writes nothing
+else: no setting, no codeplug. Host side: `rfoundry_debug.py rtc [get]`, `rfoundry_debug.py rtc set now|UNIX_SECONDS`
+(`now` is this computer's UTC time), `DebugLink.rtc_get()` and `rtc_set()`, `tests/hil/test_rtc.py`.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -1107,6 +1124,7 @@ capacity and atomic commit behavior are specified in [satellite.md](satellite.md
 - RX2 BRIDGE and RESTART need their token and are refused while transmitting. The bridge keeps the transmitter off
   and ends in a restart (3.22).
 - HWOPT SET is refused while transmitting (3.25).
+- RTC SET changes only the hardware clock; GET only reads (3.31).
 - SUPPORT only reads, and HASH reads at most 32 KB of program flash per request (3.29).
 - AIR (bench builds only) keys the transmitter only through the radio core, which applies its transmit checks and the
   lowest power level; without the core's hook TX_KEY is unavailable (3.28).
@@ -1204,7 +1222,7 @@ by anyone in range.
 |---|---|
 | Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, IDDB, DETOUR, DMRIP STATUS; the RADIO operations that leave the radio on the link's channel, mode, color code and slot, able to answer, change nothing later transmissions carry, and store nothing but the volume: power (7), squelch (8), FM tones (10), monitor (11), reply cancel (13), hotspot exit (14), the talk target (15-18), BEEP, VIBRATE, VOLUME (on a radio without a knob the step is stored, as from the UI), voice capture (41), and SETTING 32 (zone share offers); a CHIP_REG read of an RF chip; AUDIO_PROBE status and register read |
 | Only as an item of a detour (7.4) | The RADIO operations that move the link and that the detour undoes (channel, zone, VFO, frequency, step, bandwidth, clear, the DMR fields, VFO copy, P25 and NXDN settings), BEEP too (a beep while the radio is keyed and can't hear the link), PTT; a CHIP_REG write of an RF chip and an AUDIO_PROBE register write, for a level in the detour's mode: the return enters the home mode, which sets its registers again |
-| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, the RADIO operations that move the radio by themselves, transmit or set the PA (scan, roaming, tone burst, DTMF, privacy, the test TX limit, PA drive and key-up), the voice test signal (33), the USB and PPP operations (25-28), SETTING 29, 31 and 35 (mic gain, encode options, reference trim: they last until a restart and change later transmissions), SETTING for a stored id outside a detour, CHIP_REG for the SoC (DL_CHIP_SOC), the other AUDIO_PROBE operations, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
+| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, the RADIO operations that move the radio by themselves, transmit or set the PA (scan, roaming, tone burst, DTMF, privacy, the test TX limit, PA drive and key-up), the voice test signal (33), the USB and PPP operations (25-28), SETTING 29, 31 and 35 (mic gain, encode options, reference trim: they last until a restart and change later transmissions), SETTING for a stored id outside a detour, CHIP_REG for the SoC (DL_CHIP_SOC), the other AUDIO_PROBE operations, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, RTC, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
 
 A refused command answers status 7. The air can't restart the radio, so nothing it asks may last until a restart:
 writes no deadline undoes (flash, codeplug, stored keys, the SoC's registers) are refused even inside a detour, and

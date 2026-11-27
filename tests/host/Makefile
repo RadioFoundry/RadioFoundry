@@ -1191,6 +1191,19 @@ run-debuglinkChipReg: debuglinkChipRegTest
 	./debuglinkChipRegTest
 .PHONY: run-debuglinkChipReg
 
+# DL_CMD_RTC, the board's hardware clock on the debug link (core/debuglink/debuglink_rtc.c): the clock and the log are faked
+RTCDL := debuglinkRtcTest.c $(CORE)/debuglink/debuglink_rtc.c
+TESTS += debuglinkRtcTest
+debuglinkRtcTest: $(RTCDL) $(ROOT)/hal/board.h $(ROOT)/hal/hal_rtc.h $(CORE)/debuglink/debuglink.h \
+		$(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -DCONFIG_RTC=1 -DCONFIG_DEBUGLINK=1 -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(RTCDL)
+
+run: run-debuglinkRtc
+run-debuglinkRtc: debuglinkRtcTest
+	./debuglinkRtcTest
+.PHONY: run-debuglinkRtc
+
+
 # DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
 DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += debuglinkDmrDataTest

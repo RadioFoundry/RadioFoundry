@@ -145,6 +145,9 @@
 #ifndef CONFIG_SATELLITE_TLE
 #define CONFIG_SATELLITE_TLE		0
 #endif
+#ifndef CONFIG_RTC
+#define CONFIG_RTC			0
+#endif
 #ifndef CONFIG_TASK_STACKS
 #define CONFIG_TASK_STACKS		CONFIG_DEBUGLINK
 #endif

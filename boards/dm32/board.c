@@ -139,6 +139,9 @@ const board_t board = {
 #if CONFIG_NET_PPP
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
+#if CONFIG_RTC
+	.rtc = &hrc_rtc,	// the SoC RTC with its coin cell (platform/hrc7000/rtc_hrc.c)
+#endif
 #if CONFIG_GPS
 	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif

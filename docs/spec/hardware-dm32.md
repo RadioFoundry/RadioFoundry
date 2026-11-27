@@ -204,11 +204,23 @@ DATA_CMD.
 | 0x03 / 0x04 | current day count, low / high byte (16 bits, days since an epoch the firmware chooses) |
 | 0x0C / 0x0D / 0x0E | load seconds / minutes / hours |
 | 0x0F / 0x10 | load day low / high |
-| 0x11 | RTC_CCR: bit 0 interrupt enable, bit 1 run, bit 2 load (self clearing); RadioFoundry writes 0x07 |
+| 0x11 | RTC_CCR: bit 0 interrupt enable, bit 1 run, bit 2 load (self clearing); RadioFoundry writes 0x06 (run, load) |
 | 0x12 | RTC_LOAD_VSTAT bit 0: set to 0 before loading, 1 after (marks the time valid) |
 
 Datasheet first-power-up order: reset the RTC I2C interface, soft-reset the RTC (RTC_SOFT_RST_N = 0, wait 25 ms, = 1),
 optionally set the match (alarm) registers, load time, CCR.
+
+RadioFoundry's driver (`platform/hrc7000/rtc_hrc.c`, shared by the radios on this SoC, `CONFIG_RTC`, [radio-features.md](radio-features.md) 5.6) skips the
+soft reset and loads in this order: LOAD_VSTAT 0, the load seconds, minutes, hours and day count (low, high), CCR 0x06,
+LOAD_VSTAT 1. The interrupt enable bit stays clear: nothing handles the RTC interrupt. Time is binary (not BCD), the day count is days since 1970-01-01. A read needs LOAD_VSTAT bit 0 set and
+CCR bit 1 (run) set, else the clock holds no time. The seconds are read again after the other four registers, and the
+read repeats when they moved. After a load the registers read 00:00:00 for up to a second, so a read right after a set
+shows zeros.
+
+Measured on one DM-32UV with the firmware driver: an empty RTC (all registers 0, CCR 0, LOAD_VSTAT 0) reads without error; after a
+load it counted in step with the radio's millisecond counter, kept the time through a reboot and kept it for about 3 h
+with the main battery out (read afterward: the same offset from UTC as before, to 4 s). Not measured: longer than
+3 h, or the cell's age.
 
 ### 3.4 Timers
 

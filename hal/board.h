@@ -22,6 +22,7 @@
 #include "hal_netif.h"
 #include "hal_bcast.h"
 #include "hal_gps.h"
+#include "hal_rtc.h"
 #include "hal_afsk.h"
 #include "hal_air.h"
 #include "hal_baseband.h"
@@ -154,6 +155,9 @@ typedef struct {
 	const hal_baseband_t *baseband;
 	// Optional, with CAP_GPS: the GPS receiver (hal_gps.h); NULL when not built
 	const hal_gps_t *gps;
+	// Optional: a real-time clock that keeps the time through power-off (hal_rtc.h), for CONFIG_RTC; NULL when the
+	// board has none, its driver is not written, or it does not keep time while off
+	const hal_rtc_t *rtc;
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
 	// Optional: bench access to the radio's RF chip registers (the debug link's CHIP_REG, docs/spec/debuglink.md

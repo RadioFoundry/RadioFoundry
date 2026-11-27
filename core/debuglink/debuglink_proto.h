@@ -42,6 +42,7 @@ enum {
 	DL_CMD_SATELLITE	= 0x26,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE, 3.30)
 	DL_CMD_DETOUR		= 0x27,	// temporary settings a deadline reverts (CONFIG_DEBUGLINK_DMRIP; dl_dmrip.h, 7.4)
 	DL_CMD_DMRIP		= 0x28,	// the debug link over the air: status, key (CONFIG_DEBUGLINK_DMRIP; 7.5)
+	DL_CMD_RTC		= 0x29,	// the board's hardware clock: read, set (debuglink_rtc.c, 3.31)
 };
 
 // DL_CMD_DMRIP operations (first payload byte; docs/spec/debuglink.md 7.5)
@@ -126,6 +127,12 @@ enum {
 enum {
 	DL_SUPPORT_OP_INFO	= 0,	// -> key=value text: source, repo, hw.<part>, image.addr / size
 	DL_SUPPORT_OP_HASH	= 1,	// -> image.state pending (image.done) or done (image.sha256), or none
+};
+
+// DL_CMD_RTC operations (the first payload byte; docs/spec/debuglink.md 3.31)
+enum {
+	DL_RTC_GET	= 0,	// -> valid u8, unix u32 (UTC seconds since 1970; valid 0: the clock holds no time)
+	DL_RTC_SET	= 1,	// unix u32 -> status: set the clock to it and mark it valid
 };
 
 // DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and
