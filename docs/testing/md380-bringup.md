@@ -44,7 +44,25 @@ The web installer's channel step ([web-flasher.md](../dev/web-flasher.md), "Chan
 | First run | 508 channels, 96 contacts, 76 RX lists, 0 zones, reported as a success. The claim had erased the stock zone table (0x0149E0, inside the settings area) before the step read the radio, and the check compares against the conversion's own counts |
 | After the fix | The step converts from the backup's copy of the memory chip: 508 channels, 46 zones, 96 contacts, 76 RX lists. All zones present on the radio |
 
+## Chinese image
+
+`LANG_ZH` is no longer unsupported on this board: the 160 px class moves its words up to the 8x16 font while a wide
+language is in use, so a 16 px CJK glyph fits on the 160x128 panel ([UI spec](../spec/ui.md) 2.5). The `chinese` ci
+extra in `boards/md380/board.toml` builds `CONFIG_LANG_ZH=y CONFIG_LANG_DEFAULT_ZH=y` beside Spanish in the 464 KB
+region. That is a compile check, not a radio check.
+
+| Feature | Record |
+|---|---|
+| `lang_zh`, `lang_default_zh` | off in the default build; no bring-up record. Untested on a radio |
+
+A run needs a Chinese image on the radio and a check that a list, a menu label, the status strip and the About page
+draw whole glyphs with no cropped rows, and that Home still draws without its zone line. Until then nothing claims a
+pass ([features.toml](../../tests/hil/features.toml)).
+
 ## 0. Before anything
+
+**The speaker is off while the programming cable is plugged in.** Every check that needs ears is done with the cable out;
+read values from Diagnostics on the radio then.
 
 1. **Back up the radio** with the stock CPS (or `tools/md380_migrate.py backup`, [md380-migration.md](../spec/md380-migration.md)): the codeplug (RadioFoundry's open-firmware layout overwrites it, hardware-md380.md 12.2)
    and, if the CPS offers it, the calibration view (RadioFoundry only reads the calibration, never writes it).
@@ -80,6 +98,7 @@ Knobs for the DMR and audio bring-up (issue 3):
 | `-DHRC5000_INT_LOG` | records the first 40 system interrupts (flags 0x82, 0x51, 0x52, 0x42, microseconds after the tick) and writes them to the log once a second (needs `MD380_I2S_PROBE`, whose task prints them) |
 | `-DHRC5000_I2S_CTL_ON=<v>` | the 0x36 value written while a PCM stream runs (default 0x00: 0x70 left the clocks stopped, [hardware-md380.md](../spec/hardware-md380.md) 4.8) |
 | `-DHRC5000_I2S_CYCLE` | each PCM stream that starts takes the next 0x36 value of 0x00, 0x10 ... 0x60, logged as `0x36 now NN` (needs `MD380_I2S_PROBE`); key the other radio once per value |
+| `-DHRC5000_DAC_GAIN_KEEP` | a received DMR call keeps the speaker DAC gain (0x37) written before it (`rfoundry_debug.py reg 1 0x37 V --page 4`, over the air too) instead of the driver's `DAC_GAIN` (neither the DMR path set-up nor the speaker route writes 0x37), to tune the decoded voice level; only the FM TX set-up still writes `DAC_GAIN`. Entering a mode (the chip's set-up burst) writes 0x00 there: write the value again after a channel or mode change |
 | `-DHRC5000_TICK_LOG` | one call's timeline: every timeslot tick with the voice port's 27 bytes, and the system interrupts, 120 entries from a call's first interrupt; two 240-byte voice RAM snapshots mid-call (needs `MD380_I2S_PROBE`) |
 | `-DMD380_VOICE_SPI_PRESCALER=<v>` | the voice port's SPI2 prescaler (default `SPI_BAUDRATEPRESCALER_32`, 1.125 MHz; 8 gave bad reads, 4.4) |
 | `-DMD380_I2S_CKPOL=1` | I2S clock polarity high (default low) |
@@ -114,7 +133,8 @@ Open Diagnostics (Menu > Settings > Diagnostics, or `rfoundry_debug.py diag`). T
 | SK1 = monitor, SK2 = talk target | the K3 row's columns |
 | "ch x" changes by one per detent across all 16 positions, the channel steps the right way | Settled: the Gray code table in `input_md380.c` (hardware-md380.md 9.2) |
 | PTT (and the accessory PTT) key the PTT bit | PE11 / PE12 pulls in `input_md380.c` |
-| "vol" follows the knob; the red LED lights on TX later | PA0 / PE1 (the sources disagree). Unknown 5 |
+| "vol" follows the knob (two models examined: 2 to 1970, or 2 to 2019); the red LED lights on TX later | PA0 / PE1 (the sources disagree). Unknown 5 |
+| The volume bar follows the knob: step 8 near mid-rotation ("vol" about 327 there), 16 at the top, nothing at power-up or switch-off; the bottom stop reads 0 and the speaker is silent there (the knob alone leaves faint audio) | `volume()` in `power_md380.c` (the midpoint 327) |
 | "bat raw R NNNNmV" matches a meter within 2 % | `MD380_BATT_COUNTS_X10` in `power_md380.c`. Unknown 6 |
 | Switching off with the knob: the radio dies at once | if it stays on, the switch is sensed, not direct: `switch_on()` in `power_md380.c`. Unknown 7 |
 | "flash EF4018 16384K" (W25Q128) or a 1 MB part | `flash_md380.c` accepts any JEDEC type 0x40. Unknown 8 |

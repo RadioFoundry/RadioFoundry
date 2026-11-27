@@ -511,6 +511,44 @@ static void populate(void)
 	CHECK(codeplug_set_dmr_id(9997030));
 }
 
+// A name saves and reads back byte for byte: ASCII, Latin-1, 3-byte UTF-8 and the fonts' glyph bytes mix freely in one name,
+// so a name a CPS wrote is not rewritten. U+00FF is the byte 0xFF, which would end the name field there: a save writes '?'
+// for it (the CPS's rule) and the rest of the name stays
+static void test_name_round_trip(void)
+{
+	fresh();
+	char name[CODEPLUG_NAME_LEN + 1], l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
+
+	// the radio name (8 bytes): two 3-byte UTF-8 characters
+	CHECK(codeplug_set_radio_name("\xE4\xB8\xAD\xE9\x81\x93"));
+	codeplug_radio_name(name);
+	CHECK(strcmp(name, "\xE4\xB8\xAD\xE9\x81\x93") == 0);
+	// Latin-1 is one byte, as it stands
+	CHECK(codeplug_set_radio_name("Caf\xE9"));
+	codeplug_radio_name(name);
+	CHECK(strcmp(name, "Caf\xE9") == 0);
+	// each of the fonts' six glyph bytes (0x80..0x85) is one byte and comes back the same
+	for (uint8_t g = 0x80; g <= 0x85; g++) {
+		char glyph[2] = { (char)g, '\0' };
+		CHECK(codeplug_set_radio_name(glyph));
+		codeplug_radio_name(name);
+		CHECK(strcmp(name, glyph) == 0);
+	}
+	// U+00FF, the byte 0xFF, saves as '?' rather than ending the name at its first byte
+	CHECK(codeplug_set_radio_name("A\xFF" "B"));
+	codeplug_radio_name(name);
+	CHECK(strcmp(name, "A?B") == 0);
+
+	// the boot lines (16 bytes) and a channel name follow the same rules
+	CHECK(codeplug_set_boot_text("\xE4\xB8\xAD\xE9\x81\x93", "\xFF" "x"));
+	codeplug_boot_text(l1, l2);
+	CHECK(strcmp(l1, "\xE4\xB8\xAD\xE9\x81\x93") == 0 && strcmp(l2, "?x") == 0);
+	channel_t c = make("A\xE4\xB8\xAD" "\x81\xFF" "B", 145500000, 145500000), back;
+	CHECK(codeplug_set_channel(7, &c));
+	CHECK(codeplug_channel(7, &back) && strcmp(back.name, "A\xE4\xB8\xAD" "\x81?B") == 0);
+	CHECK(sim_flash_violations() == 0);
+}
+
 static void test_round_trip(void)
 {
 	static model_t a, b;
@@ -632,6 +670,16 @@ static void test_aprs_path(void)
 	      sim_flash_data[EE + 0x1588u + 0x09] == 0);	// one byte written
 	CHECK(!codeplug_set_aprs_ssid(1, 16) && !codeplug_set_aprs_ssid(2, 3) && !codeplug_set_aprs_ssid(0, 3));
 	CHECK(sim_flash_data[EE + 0x1588u + 0x40u] == 0xFF);
+	// The frequency at 0x37: BCD of 10 Hz units, LE; none (0) in this record
+	CHECK(codeplug_aprs(1, &a) && a.tx_hz == 0);
+	ser = codeplug_serial();
+	CHECK(codeplug_set_aprs_freq(1, 145570000u) && codeplug_serial() == ser + 1u);
+	CHECK(memcmp(&sim_flash_data[EE + 0x1588u + 0x37], "\x00\x70\x55\x14", 4) == 0);
+	CHECK(sim_flash_data[EE + 0x1588u + 0x36] == 0xFF && sim_flash_data[EE + 0x1588u + 0x3B] == 0);	// 4 bytes written
+	CHECK(codeplug_aprs(1, &a) && a.tx_hz == 145570000u && a.ssid == 12 && strcmp(a.comment, "Mobile") == 0);
+	CHECK(!codeplug_set_aprs_freq(2, 145570000u));	// no record: none made
+	sim_flash_data[EE + 0x1588u + 0x37] = 0x0A;	// not BCD: no frequency
+	CHECK(codeplug_aprs(1, &a) && a.tx_hz == 0);
 }
 #endif
 
@@ -794,6 +842,7 @@ int main(void)
 #endif
 	test_quick_keys();
 	test_foreign();
+	test_name_round_trip();
 	test_round_trip();
 	test_edit_cuts();
 	sim_flash_free();

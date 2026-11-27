@@ -65,7 +65,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 
 | Pin | Function | Notes |
 |---|---|---|
-| PA0 | ADC1 IN0: volume knob position | (unverified) |
+| PA0 | ADC1 IN0: volume knob position | Follows the knob: "vol" in the diagnostics reads 2 to 1970, or 2 to 2019 (measured on two models) |
 | PA1 | ADC1 IN1: battery voltage | (unverified) |
 | PA2 | ADC1 IN2: QT_DQT_IN, sub-audio tone input | (unverified); RadioFoundry decodes CTCSS / DCS in software, sampling it with `CONFIG_SUBTONE` (section 6.4) |
 | PA3 | ADC1 IN3: VOX, mic level | (unverified) |
@@ -240,9 +240,9 @@ DMR set-up (`hrc5000_set_mode_dmr`) writes 0x06 before the reset-release block (
 it runs once per mode change; per-burst switching (`hrc5000_dmr_path`) touches only the
 RF side:
 
-- TX: 0x0D = 0x8C, 0x0E = 0x44, mic gain, 0x37 = 0xC2, 0x25 = 0x0E, 0x26 = 0xFE (RX IF and audio off), 0x45 / 0x46 =
+- TX: 0x0D = 0x8C, 0x0E = 0x44, mic gain, 0x37 = 0x93, 0x25 = 0x0E, 0x26 = 0xFE (RX IF and audio off), 0x45 / 0x46 =
   the calibrated DMR modulation pair, 0x35 = 0x1E, 0x3F = 0x04.
-- RX: 0x0E = 0x44, mic gain, 0x37 = 0xC2, 0x25 = 0x0E, 0x26 = 0xFD.
+- RX: 0x0E = 0x44, mic gain, 0x37 = 0x93, 0x25 = 0x0E, 0x26 = 0xFD.
 
 VHF radios swap I and Q with 0x01 = 0xF0 after the init. The manual gives 0x01 as the TX and RX IQ/QI bits; which value
 the receiver needs is still to be confirmed on a VHF radio (unverified).
@@ -432,10 +432,43 @@ retunes per burst (`radio_md380.c`):
 | When | What |
 |---|---|
 | After each burst (the engine's `rf(false)`, PA off) | The synthesizer to the receive LO, the HR_C5000's receiver input on (4:0x26), the receive tune DAC, the receive path on. No lock wait |
-| RF_TX_INTER, 2.5 ms early | 4:0x12 bits 5-0 = 25 (100 us steps) while the transmission listens, restored at its end (only when it was read: a slot where it can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead |
+| RF_TX_INTER, about 1.56 ms early | 4:0x12 bits 5-0 set 15 half symbols over the value read (to 25 on the bench) while the transmission listens, restored at its end (only when 4:0x12 was read: a slot where 4:0x12 can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead. No lock in 2 ms: nothing sent for that burst, and the next burst retunes |
+
+4:0x12 bits 5-0 count half symbols (104.17 us, `hrc5000_tx_lead_us`) over the value the chip runs with, 0x0A:
+measured from the RF TX interrupt to the next timeslot interrupt, 1121 us at 10, 2684 us at 25, about 6600 us at 63.
+Before the fix the board waited 25 x 100 us from the interrupt, so the PA keyed about 0.9 ms late on every listened
+burst.
 
 The chip receives the other slot as it does when idle, and its bursts go to the stack as heard while sending. On the
 SDR bench, 45 key-ups of 45 got through a repeater whose hang ended around the key-up, against 13 of 15 without it.
+
+The modem holds its timing while the over listens (0x40 MasterMode, [gotchas.md](gotchas.md) 14.6.1, issue 609).
+Before, in passive timing, the HR_C5000 stepped its bursts by half a symbol every 3 s or so on the bench, and the burst
+at a step reached the repeater with bit errors; the SDR bench read those bursts as a carrier 100-320 Hz off. The
+retune itself was clean: lock detect about 60 us after the retune, the PA keyed 2447 us after the RF TX interrupt on
+every burst. SDR bench, idle outbound on 446.075 MHz, the inbound decoded on 446.125 MHz, 102 voice bursts a run,
+AMBE bits corrected:
+
+| Build | Runs | AMBE bits corrected | Carrier offset, worst |
+|---|---|---|---|
+| Listen on, passive timing | 9 | 0.01-0.12 %, 2 runs with a frame past correction | +28 to +264 Hz |
+| Listen on, timing held | 5 | 0 | +24 to +55 Hz |
+| Listen off | 3 | 0 | +24 to +65 Hz |
+
+A wide split leaves a smaller error with the timing held. The transmit VCO's supply is switched off for each listened
+slot (VCOVCC_SW), and the synthesizer steps between the two VCOs on each retune. On a 15.4 MHz split (outbound 446.075,
+inbound 461.4625 MHz) about one burst in ten carries a single corrected bit, always in the burst's first AMBE frame:
+the carrier is still settling at the burst's start. A longer lead makes the error smaller, never zero. Past about
+2.5 ms the lead also cuts the end of the listened burst. No frame was past correction in any run:
+
+| Build, 15.4 MHz split | Runs | AMBE bits corrected |
+|---|---|---|
+| Listen off | 3 | 0 |
+| Listen on, lead 15 steps (1.56 ms) | 2 | 0.05 % |
+| Listen on, lead 30 steps (3.1 ms) | 3 | 0.02-0.05 % |
+| Listen on, lead 53 steps (5.5 ms) | 3 | 0.01-0.02 % |
+
+The board keeps 15 steps (`LISTEN_LEAD_STEPS`). The 50 kHz split reads 0 at every lead.
 
 The HR_C5000's receive tap is one area, page 2 from 0x30, rewritten per burst received: no CACH, and a voice-layout
 burst's 48-bit sync / EMB / RC field at 0x30-0x35, then the voice bits. A BS's dedicated RC burst lands there too,
@@ -480,7 +513,7 @@ pull request. Each test started from a power-on, and register reads confirmed th
 **The fix (our test, on air 2026-10-19; not authoritative).** The speaker amplifier is fed from the codec's LINEOUT
 (pin 10, 0x0E bit 3), not HPOUT. The tests above never had 0x0D bit 4 (Switch2) and 0x0E bit 3 (LineOutEn) set together
 while a call played. `hrc5000_speaker_voice()` now writes, when a DMR PCM stream opens the route: 0x0D = 0x9C, 0x0E = 0x4C
-(HPMute stays set, HPoutEn stays off, Mic1En on) and 0x37 = 0xC2, with 0x36 = 0x00 already written; it writes 0x0D = 0x8C and
+(HPMute stays set, HPoutEn stays off, Mic1En on) and 0x37 (0xC2 then, 0x93 now: 6.1), with 0x36 = 0x00 already written; it writes 0x0D = 0x8C and
 0x0E = 0x44 back when the route closes, which should also end the buzz after a call. `-DHRC5000_SPK_VOICE=0` leaves it out.
 On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on a 70 cm test frequency, TS1, with the build at 17d89001 plus the codec
 move: received speech plays clear from the speaker and transmit is clear (one 10 s call: 498 frames, 10 bit errors, 3
@@ -763,19 +796,62 @@ synthesizer unpowered, PS floating) and 0 with SAVE high (powered, not yet progr
 
 ### 6.1 Paths
 
-FM receive audio and DMR voice both reach the amplifier through the HR_C5000 in RadioFoundry's model: FM through its
-feed-through (0x36) behind FM_MUTE (PE13), DMR through its codec DAC; SPK_C (PB8) mutes the speaker, AFCO (PB9) turns
-the amplifier on (the routing (unverified)). Measured on RadioFoundry with a pin scan (the 16 levels of FM_MUTE, FM_SW, SPK_C and AFCO,
+The USB programming cable plugs into the accessory jack, and the speaker is off while it is in. Nothing can be heard
+during a debug link session: unplug to listen, and read values from Diagnostics on the radio meanwhile.
+
+FM receive audio reaches the amplifier from the GT3136 behind FM_MUTE (PE13), on an analog path: the HR_C5000's DAC
+gain (0x37) doesn't change the FM level (measured). DMR voice comes from the HR_C5000's codec DAC. SPK_C (PB8) mutes
+the speaker, AFCO (PB9) turns the amplifier on. Measured on RadioFoundry with a pin scan (the 16 levels of FM_MUTE, FM_SW, SPK_C and AFCO,
 monitor held on an FM channel): noise only with FM_MUTE high, FM_SW high, SPK_C low and AFCO high. With those levels
 a received FM call plays clearly. The GT3136's discriminator audio also reaches the MCU on PC3, which
 RadioFoundry doesn't use.
 Our tests (2026-10-19, not authoritative) found the HR_C5000's codec output reaching the speaker with FM_SW and
 FM_MUTE low; DMR voice through it doesn't work yet (4.10).
 
-The volume knob sets the level in the analog path; the MCU only sees its position on PA0. The board therefore has no
-`CAP_VOLUME_POT` and `hal_power_t.volume()` returns -1. There is no `hal_radio_t.volume` either: the MCU has no way to set
-the speaker level (the HR_C5000's feed-through gain isn't used for it, and the knob acts after it), so the debug link's
-volume operation (RADIO op 30) answers "unavailable" (`radio-features.md` 4.2).
+The speaker is loud only with the receiver up: 5RC (PC9) and DMR_SW (PA10) high (5.4). Both are low during DMR
+transmit, so the HR_C5000 codec output is nearly silent there, and 5RC on during DMR transmit breaks the bursts (no LC
+header decodes, the burst on-time is off). Beeps while DMR is on air (the talk permit, the time-out warning) go through
+BEEP (PC8, TIM8 CH3) instead: the board's second speaker output (`spkaux_md380.c`, radio-features.md 4.4). The PWM
+runs at 40 kHz, the backlight's period on the same timer (1800 timer clocks; the backlight's CH1 keeps its 100
+steps), and plays the 8 kHz speaker PCM interpolated over five periods. AFCO (PB9) brings the amplifier up 60 ms before
+SPK_C (PB8) opens; SPK_C mutes 60 ms before AFCO drops. A 60 ms lead keeps the amplifier's turn-on step out of the
+tone (20 ms gave a 2-4.5 dB overshoot). With the mic gate, the permit leaves no tone in the decoded audio.
+
+At twice the PWM half swing for full-scale PCM, the default beep level played at half swing, about as loud at the
+speaker as decoded voice with the DAC gain at 0xC2, with harmonics 40 dB down (above about 70 % of the swing they
+rose to 30 dB down). With the DAC gain at 0x93 (below), decoded voice and the codec's beeps play about 7.6 dB lower,
+so the PWM path is scaled down by as much (`GAIN_Q7`). That level is derived from the DAC steps, not measured.
+
+The DAC gain (0x37) sets the level ahead of the knob: 0x80, 0x40 for a positive step, and the step in bits 4-0. A
+step of 0 (0x80, 0xC0) mutes the output. Measured with a microphone at the speaker, a 1 kHz beep and decoded DMR voice:
+
+| 0x37 | Result |
+|---|---|
+| 0xC2 | The codec output clips ahead of the knob above about -15 dBFS of PCM, at any knob position: voice peaks lose about 3 dB |
+| 0x9C | Voice peaks intact at full volume; about 3.5 dB quieter than 0xC2. Decoded voice about 3.5 dB louder than FM receive below full volume |
+| 0x93 | Decoded voice within 0.5 dB of narrow FM and 1 dB of wide FM receive (the same recorded voice; FM peaks at 2.5 kHz deviation narrow, 5 kHz wide), at 3/4 and at full volume; no clipping at full volume |
+| 0x8E | A -6 dBFS tone plays clean at half volume; at full volume the speaker amplifier clips it above about -15 dBFS |
+| 0x84 | A -6 dBFS tone plays clean at full volume; voice about 14 dB quieter than at 0x9C |
+
+The driver writes 0x93, so decoded DMR voice plays as loud as FM receive. Below full volume a step is about 0.46 dB
+between 0x8A and 0x9C. At full volume the speaker amplifier compresses voice peaks, so the same steps measure smaller
+there (0x9C to 0x8A: 6.4 dB at full volume, 8.3 dB at 3/4).
+
+The volume knob sets the level in the analog path; the MCU only sees its position on PA0. `hal_power_t.volume()` reports
+that position for the volume bar (`radio-features.md` 4.2), on a scale from raw 2 through 327 at mid-rotation (50 %) to
+1970 (100 %) (measured: units top out between about 1970 and 2019). With the knob against the bottom stop the speaker
+still plays a very faint audio, so the bottom 8 counts (raw 10 and below, back above 15) read 0 and the amplifier then
+stays off for every sound (`md380_speaker_knob_mute`). It answers -1 until the ADC readings settle, and holds the last
+position while the battery line reads off (10.1). The board has no `CAP_VOLUME_POT`, and there is no
+`hal_radio_t.volume`: the MCU has no way to set the speaker level (the HR_C5000's feed-through gain isn't used for it,
+and the knob acts after it), so the debug link's volume operation (RADIO op 30) answers "unavailable"
+(`radio-features.md` 4.2).
+
+PA0 reads the wiper of the potentiometer that sets the level. Measured with a microphone at the speaker, a 1 kHz beep
+changes by about 0.79 of the wiper's dB (the reading over the top reading): about -17.5 dB at a quarter turn, -12.5 dB at
+mid-rotation and -3.5 dB at three quarters. The board gives that curve as `hal_radio_t.volume_db10` (from the two lines
+of `volume()`), and beeps stop getting louder above 44 % of the knob (`radio-features.md` 4): a beep at the top plays
+within about 1 dB of one at mid-rotation.
 
 ### 6.2 I2S PCM
 
@@ -941,7 +1017,7 @@ PTT on PE11 and the accessory jack's PTT on PE12, both active low with pull-ups 
 The volume knob carries the power switch. It doesn't switch the supply: POW_C (PA7) is a latch the firmware holds (unverified),
 and the switch breaks the battery sense line (and the volume pot's supply). Measured on a UHF MD-380 with
 the radio on USB: the raw battery reading (ADC1 IN1) is 3341-3351 (8.3 V) with the knob on and 3-4 with it off, at once;
-the volume reading falls from about 130-155 to 2-4. The radio stays on with the knob off, and with `switch_on()` always
+the volume reading falls from about 130-155 (where the knob was set then) to 2-4. The radio stays on with the knob off, and with `switch_on()` always
 on it only showed the battery running down. `switch_on()` now reads the knob from the battery line (`radio-features.md`
 5.5, `core/radio/power_switch.c`, as on the DM-1701), and power-off drops the latch.
 
@@ -1153,7 +1229,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | 2 | Display controller, orientation, colors | Stage 2: the type is detected (section 7); if the boot screen is wrong, note the `display.panel_*` keys and try `MD380_PANEL_TYPE` / `MD380_PANEL_MADCTL_XOR` |
 | 3 | Key matrix positions, side keys on K3 | Stage 3: press each key, read "keys" on the diagnostics page, correct section 9.1 and `input_md380.c` |
 | 4 | Channel switch code polarity and order | Settled 2026-10-16: a Gray code, table in 9.2 |
-| 5 | Volume knob on PA0 vs the TX LED | Stage 3: "vol" on the diagnostics page follows the knob, and the red LED lights on PE1 |
+| 5 | Volume knob on PA0 vs the TX LED | The knob is on PA0 (measured). Open: stage 3, the red LED lights on PE1 |
 | 6 | Battery divider | Stage 3: compare "bat raw" against a meter; set `MD380_BATT_COUNTS_X10` |
 | 7 | Power switch wiring (direct or sensed) | Stage 3: switch off with the knob: does the radio die at once? |
 | 8 | Flash size and JEDEC ID | Stage 3: "flash" line |
@@ -1187,7 +1263,6 @@ Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380)
 `CONFIG_NET_WEBCTL` follows `CONFIG_NET_HTTP_GZIP` on this radio (`boards/md380/config.mk`): web control's files,
 stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
 status page.
-
 
 ## 20. Facts moved from the shared specs
 

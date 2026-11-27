@@ -106,19 +106,83 @@ static void set_phases(mbe_frame_t *f, uint32_t seed)
 	}
 }
 
+#if CONFIG_MBE_OPTS
+// Regenerated phases (MBE_PHASE_REGEN): a share g of the minimum phase the spectral envelope implies, by a short
+// discrete Hilbert transform of the log amplitudes, th_l = g / pi sum_m (A_{l+m} - A_{l-m}) / m radians over
+// m = 1..REGEN_TERMS, A the natural log amplitude (held at the first and last harmonic past the ends, floored
+// REGEN_FLOOR under the frame's peak so silent harmonics don't swing the sum). A harmonic on a rising slope of the
+// envelope leads, one on a falling slope lags, as through the resonance that made the slope. Plus a small fixed
+// dispersion REGEN_DISP l^2: without one the harmonics line up into a pulse sharper than speech's (a crest factor
+// 1.5 dB over the input's on the test voices), heard as a buzz. Continuous from frame to frame wherever the envelope
+// is. g, the count of terms and the dispersion were set on the test voices by how well the output's waveform follows
+// the input's: the other sign of the sum, three times the share, or twice the dispersion all follow it worse
+#define REGEN_TERMS	8
+#define REGEN_FLOOR	(12 * 2048)	// log2 Q11: 72 dB
+#define REGEN_DISP	393		// 0.006 of a turn, 2^16 = one turn
+// g / (pi m) in turn units (2^16) per log2 Q11 unit, Q12: g = 0.44, times ln 2 / (2 pi) * 2^16 / 2^11
+static const uint16_t regen_w[REGEN_TERMS] = { 2025, 1013, 675, 506, 405, 338, 289, 253 };
+
+static int32_t regen_a(const mbe_frame_t *f, int l, int32_t floor)
+{
+	int32_t a = f->a[l < 1 ? 0 : l > f->L ? f->L - 1 : l - 1];
+
+	return a < floor ? floor : a;
+}
+
+static void regen_phases(mbe_frame_t *f)
+{
+	int32_t amax = -32768;
+
+	for (int l = 0; l < f->L; l++)
+		if (f->a[l] > amax)
+			amax = f->a[l];
+	amax -= REGEN_FLOOR;
+	for (int l = 1; l <= f->L; l++) {
+		int32_t acc = 0;
+
+		for (int m = 1; m <= REGEN_TERMS; m++)
+			acc += regen_w[m - 1] * (regen_a(f, l + m, amax) - regen_a(f, l - m, amax));
+		f->th[l - 1] = (uint16_t)((uint32_t)(REGEN_DISP * l * l) + (uint32_t)(acc >> 12));
+	}
+}
+#endif
+
 // one sinusoid added into acc[0..N-1]: phase ph, step inc changing by dinc per sample, amplitude from the knots k[0..4]
-// (Q4) linearly over four 40-sample pieces
+// (Q4) linearly over four 40-sample pieces.
+//
+// This loop is most of the decoder's time (a harmonic per sample; a pitch jump runs the old and the new harmonics, up
+// to 112 x 160 a frame), so it is written for a core without a wide multiply (fxp.h). The product (a >> 8) cos is
+// fxp_mulshr's (a >> 8) cos >> 15 in every case: where both knots are at most OSC_NARROW, a >> 8 stays within one of
+// them (da rounds toward minus infinity: never past the upper knot, at most one under the lower) and the product is
+// under 65535 * 32767 < 2^31, one 32-bit multiply; above, fxp_mulshr16's two. The phase carries mbe_cos's rounding
+// half step from the start, so the table index is its top 10 bits. Speech's harmonics are mostly under OSC_NARROW
+// (4,096 in PCM units). Only worth the extra branch and loop body where fxp_mulshr16 is the two-multiply halves
+// version (FXP_HALVES): on Arm it is already one SMMULR, so the split bought nothing and cost flash for no gain
+#define OSC_NARROW	65534
 static void osc(int32_t *acc, uint32_t ph, uint32_t inc, uint32_t dinc, const int32_t *k)
 {
+	ph += 0x200000u;
 	for (int j = 0; j < N / SEG; j++) {
 		int32_t a = k[j] * 256, da = fxp_mulshr((k[j + 1] - k[j]) * 256, 53687091, 31);	// / SEG
-		int32_t *o = acc + j * SEG;
+		int32_t *o = acc + j * SEG, *e = o + SEG;
 
-		for (int n = 0; n < SEG; n++) {
-			a += da;
-			ph += inc;
-			inc += dinc;
-			o[n] += fxp_mulshr(a >> 8, mbe_cos(ph), 15);
+#if FXP_HALVES
+		if ((uint32_t)(k[j] + OSC_NARROW) <= 2u * OSC_NARROW && (uint32_t)(k[j + 1] + OSC_NARROW) <= 2u * OSC_NARROW) {
+			for (; o < e; o++) {
+				a += da;
+				ph += inc;
+				inc += dinc;
+				*o += ((a >> 8) * mbe_cos_idx(ph >> 22)) >> 15;
+			}
+		} else
+#endif
+		{
+			for (; o < e; o++) {
+				a += da;
+				ph += inc;
+				inc += dinc;
+				*o += fxp_mulshr16(a >> 8, mbe_cos_idx(ph >> 22), 15);
+			}
 		}
 	}
 }
@@ -305,18 +369,20 @@ void mbe_synth_init(const mbe_mem_t *m)
 	m->prev->w0 = W0_INIT;
 }
 
-int mbe_synth_frame(const mbe_mem_t *m, const mbe_params_t *in, int bad, int16_t pcm[MBE_FRAME_LEN])
+int mbe_synth_conceal(const mbe_mem_t *m, const mbe_conceal_t *c, const mbe_params_t *in, int bad,
+		      int16_t pcm[MBE_FRAME_LEN])
 {
 	mbe_state_t *s = m->s;
 	mbe_frame_t *f = m->cur;
 	const mbe_params_t *src = in;
+	int rmax = c ? c->repeat_max : MBE_REPEAT_MAX;
 
 	if (!in)
 		bad = 1;
 	if (bad) {
-		if (s->run <= MBE_REPEAT_MAX)
+		if (s->run <= rmax && s->run < INT16_MAX)	// (a policy may ask for any count)
 			s->run++;
-		src = s->have_last && s->run <= MBE_REPEAT_MAX ? &s->last : NULL;
+		src = s->have_last && s->run <= rmax ? &s->last : NULL;
 	} else {
 		s->run = 0;
 		s->last = *in;
@@ -327,6 +393,7 @@ int mbe_synth_frame(const mbe_mem_t *m, const mbe_params_t *in, int bad, int16_t
 		f->w0 = m->prev->w0;
 	} else {
 		int L = src->L > MBE_MAXL ? MBE_MAXL : src->L;
+		int32_t uvd = 0, fade = bad && c ? c->fade * s->run : 0;
 
 		f->L = (int16_t)L;
 		f->w0 = src->w0 < W0_MIN ? W0_MIN : src->w0 > W0_MAX ? W0_MAX : src->w0;
@@ -335,7 +402,21 @@ int mbe_synth_frame(const mbe_mem_t *m, const mbe_params_t *in, int bad, int16_t
 		else
 			mbe_enhance(f->a, src->a, L, f->w0);
 		memcpy(f->v, src->v, (size_t)L);
-		set_phases(f, s->rng ^ 0x5BD1E995u);
+#if CONFIG_MBE_OPTS
+		if (src->flags & MBE_PHASE_REGEN)
+			regen_phases(f);
+		else
+#endif
+			set_phases(f, s->rng ^ 0x5BD1E995u);
+#if CONFIG_MBE_OPTS
+		// after the enhancement, which works on the envelope as coded: a density to the band level the noise is made at
+		if (src->flags & MBE_UV_DENSITY)
+			uvd = (mbe_log2_q11(f->w0) - 32 * 2048) >> 1;
+#endif
+		if (uvd || fade)
+			for (int l = 0; l < L; l++)
+				if (f->a[l] != MBE_A_SILENT)
+					f->a[l] = (int16_t)fxp_clamp(f->a[l] - fade + (f->v[l] == 1 ? 0 : uvd), -32767, 32767);
 	}
 	synth(m, f, pcm);
 	return s->run;

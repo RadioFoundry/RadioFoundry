@@ -494,6 +494,28 @@ def test_long_press_time_reaches_input(home):
     r.wait_for(lambda x: as_int(x.get("input.long_ms")) == before, sections=("link",), what="long press time back")
 
 
+@pytest.mark.feature("vfo")
+@pytest.mark.needs_switch("UI_SETTINGS")
+def test_vfo_step_setting(home):
+    """Settings > Talk & listen > VFO step: the radio core takes the new step (core.vfo_step_hz). OK steps through the
+    list, so going the rest of the way round puts back the step the radio had."""
+    r = home
+    if "VFO" not in r.features():
+        skip("not_built", "built without the VFO")
+    core = r.view(["core"])
+    if core.get("bcast") == "1":
+        skip("state", "in the broadcast band the step is the FM broadcast step's")
+    before = core["vfo_step_hz"]
+    row = "ok 7 3 down down down"
+    values = 11 if "AM_RX" in r.features() else 10     # 8.33 kHz is listed with air band receive
+    settings_keys(r, row + " ok")
+    try:
+        r.wait_for(lambda x: x.get("vfo_step_hz") != before, sections=("core",), what="another VFO step")
+    finally:
+        settings_keys(r, row + " ok" * (values - 1))
+    r.wait_for(lambda x: x.get("vfo_step_hz") == before, sections=("core",), what="the VFO step back")
+
+
 @pytest.mark.feature("key_lock")
 def test_auto_lock(home):
     """Settings > Key lock > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
@@ -569,7 +591,7 @@ def test_updown_changes_the_zone(home):
 @pytest.mark.feature("dmr_privacy")
 @pytest.mark.needs_switch("UI_SETTINGS")
 def test_privacy_key_entry(home):
-    """Settings > Privacy: key type Motorola, key typed 123 (slot 1); type Off again removes it."""
+    """Settings > Privacy: key type 8-bit, key typed 123 (slot 1); type Off again removes it."""
     r = home
     if "DMR_PRIVACY" not in r.features():
         skip("not_built", "built without CONFIG_DMR_PRIVACY")
@@ -582,7 +604,7 @@ def test_privacy_key_entry(home):
         skip("state", "a privacy key is set already: not overwriting it")
     settings_keys(r, "ok 7 4 ok down ok 1 2 3 ok")
     try:
-        r.wait_for(lambda x: x.get("settings.privacy_type") == "1", sections=("storage",), what="key type Motorola")
+        r.wait_for(lambda x: x.get("settings.privacy_type") == "1", sections=("storage",), what="key type 8-bit")
         if r.core().get("mode") == "dmr":
             r.press("quick")
             wait_screen(r, "quick")
@@ -591,7 +613,7 @@ def test_privacy_key_entry(home):
             leave_quick(r)
             r.press("back")
     finally:
-        settings_keys(r, "ok 7 4 ok ok")	# Motorola -> Anytone -> Off
+        settings_keys(r, "ok 7 4 ok ok")	# 8-bit -> 16-bit -> Off
     r.wait_for(lambda x: x.get("settings.privacy_type") == "0", sections=("storage",), what="the key removed")
 
 
@@ -721,14 +743,30 @@ def test_zone_editor_moves_a_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
+@pytest.mark.rf_fallback
+@pytest.mark.delete_message
+# The firmware deletes by row number. An arrival after the final read can take row zero.
+@skip_if(os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") not in ("hil", "1"), "opt_in",
+         "isolate the receiver from other message sources and set RFOUNDRY_HIL_DELETE_MESSAGE=hil, "
+         "or authorize deletion from a disposable inbox with RFOUNDRY_HIL_DELETE_MESSAGE=1")
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_delete_message(home, request, pytestconfig):
     """Hub 2 (Messages), OK on the newest, Delete (the last action): the inbox has one message less. Only a message
-    a HIL test sent (its text starting HIL_SMS_PREFIX) is deleted without asking: when the newest isn't one, the bench
-    sends one first (with --allow-rf; the radio only receives). To delete one of the owner's instead set
-    RFOUNDRY_HIL_DELETE_MESSAGE=1."""
+    from an isolated bench (RFOUNDRY_HIL_DELETE_MESSAGE=hil) or a disposable inbox
+    (RFOUNDRY_HIL_DELETE_MESSAGE=1) can be deleted. On the isolated bench the selected text must start with
+    HIL_SMS_PREFIX. With --allow-rf the bench can supply that message."""
     r = home
     if r.data_view().get("data.built") != 1:
         skip("not_built", "built without the DMR data features")
+
+    def require_dmr_rows():
+        # The Messages screen merges DMR and APRS by age. inbox(0) identifies only the newest DMR message.
+        aprs = r.view(["aprs"])
+        if aprs.get("aprs.built") != "0" and aprs.get("aprs.messages") != "0":
+            skip("state", "cannot identify the first Messages row as DMR with this APRS inbox")
+
+    require_dmr_rows()
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
     newest = (r.link.inbox(0) or {}) if n else {}
     if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1":
@@ -737,18 +775,27 @@ def test_delete_message(home, request, pytestconfig):
                            "RFOUNDRY_HIL_DELETE_MESSAGE=1 to delete it")
         n = bench_sms(r, request.getfixturevalue("sdr_bench"), rig(pytestconfig, "dmr-freq"),
                       rig(pytestconfig, "dmr-cc"))
-    if not n:
+        newest = r.link.inbox(0) or {}
+        if not newest.get("text", "").startswith(HIL_SMS_PREFIX):
+            skip("state", "the bench message is no longer first in the DMR inbox")
+    if not n or not newest:
         skip("state", "the inbox is empty")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("2")
-    wait_screen(r, "messages")
+    if as_int(wait_screen(r, "messages").get("ui.focus")) != 0:
+        skip("state", "the first Messages row is not selected")
     r.press("ok")
     s = wait_screen(r, "message")
     last = as_int(s.get("ui.count")) - 1     # Delete is the last row: a long message has Full message first
     for _ in range(last):
         r.press("down")
     r.wait_for(lambda v: as_int(v.get("ui.focus")) == last, sections=("link",), what="Delete (the last row)")
+    require_dmr_rows()
+    current = r.link.inbox(0)
+    # Opening the message marks it read. Its addresses, format and text must still match before Delete.
+    if not current or any(current.get(k) != newest.get(k) for k in ("src", "dst", "group", "format", "text")):
+        skip("state", "the selected DMR message changed before Delete")
     r.press("ok")
     r.wait_for(lambda x: as_int(x.get("data.inbox_count")) == n - 1, sections=("dmr_data",), what="one message less")
     # The toast shows a UI tick after the inbox changes

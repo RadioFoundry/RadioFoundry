@@ -8,6 +8,7 @@
 #include "hrc/dmr_glue.h"
 #include "hrc/vocoder.h"
 #include "pins.h"
+#include "variant_mduv380.h"
 #include "fsmc_keypad/fsmc_keypad.h"
 #include "ui/fmt.h"
 #if CONFIG_GPS
@@ -21,15 +22,7 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
-// The Plus 10 W check (hardware-mduv380.md 4): security register 3 byte 0x1C is said to read 0xF4 on that radio, but the
-// TYT images never read it, so the marker is unconfirmed. A 5 W image refuses to transmit on a radio that has it (it would
-// drive the PA band select through the backlight pin); a 10 W image doesn't require it, or a Plus without the marker
-// could never transmit. 0 skips the check (a bench knob, board.mk MDUV380_DEFS)
-#ifndef MDUV380_10W_CHECK
-#define MDUV380_10W_CHECK	1
-#endif
-#define MARK_10W		0xF4u
-
+// The Plus 10 W marker (variant_mduv380.h): a disagreement with the image is a warning, never a refusal to transmit
 // Matrix positions, [row][column D0..D7] (hardware-mduv380.md 5): no P1/P2, no top key, no third side key
 const uint8_t uvf_key_matrix[3][8] = {
 	{ KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_0, KEY_STAR },
@@ -38,21 +31,16 @@ const uint8_t uvf_key_matrix[3][8] = {
 	  STM32_KEYPAD_NO_KEY, KEY_SK2, KEY_SK1 },
 };
 
-static uint8_t mark_10w;	// security register 3 byte 0x1C, read at start-up (0xFF until then or when unreadable)
+static uint8_t mark_10w;	// security register 3 byte 0x1C, read at start-up
+static bool mark_read;		// ... and the read worked
 
-static const char *tx_block(void)
+static bool variant_mismatch(void)
 {
-#if MDUV380_10W_CHECK
-#if !RFOUNDRY_POWER_10W
-	if (mark_10w == MARK_10W) {
-		return "10 W radio, 5 W image";
-	}
-#endif
-#endif
-	return NULL;
+	return mduv380_variant_mismatch(mark_read, mark_10w, RFOUNDRY_POWER_10W != 0);
 }
 
-// The support info: the Plus 10 W marker as start-up read it (hardware-mduv380.md 4), and the power this image drives
+// The support info: the Plus 10 W marker as start-up read it (hardware-mduv380.md 4; "--" unreadable), and the power
+// this image drives
 static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
 {
 	if (i != 0) {
@@ -66,19 +54,40 @@ static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
 #else
 	sb_str(&b, "5 W image, mark ");
 #endif
-	sb_hex(&b, mark_10w, 2);
+	if (mark_read) {
+		sb_hex(&b, mark_10w, 2);
+	} else {
+		sb_str(&b, "--");	// unreadable
+	}
 	return true;
 }
 
 static void init(void)
 {
-	if (!stm32_spi_flash_read_security(3, 0x1C, &mark_10w, 1)) {
-		mark_10w = 0xFF;
-	}
+	mark_read = stm32_spi_flash_read_security(3, 0x1C, &mark_10w, 1);
 #if CONFIG_GPS
 	uvf_gps_init();	// the G models' module (hardware-mduv380.md 9)
 #endif
 }
+
+// AT1846S 0x05 at the channels where the radio's own clocks put a spur on the receiver, on top of the 26 MHz
+// reference rule (hardware-mduv380.md 2): 0x8543 as at the reference harmonics, 0x8643 (the data sheet's 26 MHz word near
+// 445 MHz) at 405.4, 439.6 and beside 455 MHz, 0x8443 at 407.1 MHz. Exact channel frequencies; the same on the 5 W and
+// 10 W builds
+static const at1846s_spur_t rf_spurs[] = {
+	{ 405400000u, 0x8643u }, { 407100000u, 0x8443u }, { 408100000u, 0x8543u },
+	{ 409400000u, 0x8543u }, { 409600000u, 0x8543u }, { 411900000u, 0x8543u },
+	{ 413600000u, 0x8543u }, { 416800000u, 0x8543u }, { 418400000u, 0x8543u },
+	{ 420875000u, 0x8543u }, { 424600000u, 0x8543u }, { 424900000u, 0x8543u },
+	{ 428200000u, 0x8543u }, { 430600000u, 0x8543u }, { 431400000u, 0x8543u },
+	{ 431500000u, 0x8543u }, { 432200000u, 0x8543u }, { 432250000u, 0x8543u },
+	{ 432300000u, 0x8543u }, { 432400000u, 0x8543u }, { 433000000u, 0x8543u },
+	{ 433100000u, 0x8543u }, { 434700000u, 0x8543u }, { 439600000u, 0x8643u },
+	{ 443625000u, 0x8543u }, { 446100000u, 0x8543u }, { 450900000u, 0x8543u },
+	{ 452600000u, 0x8543u }, { 454900000u, 0x8643u }, { 455100000u, 0x8643u },
+	{ 466375000u, 0x8543u }, { 467600000u, 0x8543u }, { 467700000u, 0x8543u },
+	{ 467800000u, 0x8543u }, { 468200000u, 0x8543u }, { 468300000u, 0x8543u },
+};
 
 // hardware-mduv380.md: 4 (every factory type kept, always RGB order), 6 (raw / 40.3 per 0.1 V; the volume pot ends of
 // the MD-UV380 22..2070 and the RT3S 23..2020, break 309 / 317, which one image can't tell apart: the higher bottom plus
@@ -97,8 +106,10 @@ const uvf_variant_t uvf_variant = {
 	.frac = { { 350, 700, 340, 610 }, { 400, 700, 250, 550 } },
 	.cal_k = { { 630, 1000, 1000, 1100 }, { 720, 1000, 1050, 1250 } },
 #endif
+	.rf_spur_step_hz = 6500000u,	// 26 MHz reference / 4
+	.rf_spurs = rf_spurs,
+	.rf_spurs_n = sizeof rf_spurs / sizeof rf_spurs[0],
 	.init = init,
-	.tx_block = tx_block,
 	.hw_line = hw_line,
 };
 
@@ -199,6 +210,7 @@ const board_t board = {
 	.diag_line = uvf_diag_line,
 	.diag_reset = uvf_diag_reset,
 #endif
+	.variant_mismatch = variant_mismatch,
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
 #if CONFIG_AIR

@@ -32,8 +32,12 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip and, from 100 px high, each list row take
 one pixel more than the text cell, so lines never touch (easy to read comes before one more row; principles.md 5).
 The board's safe-area insets (`hal_display_t.inset_*`) are outside the drawing area (`gfx_width` / `gfx_height`),
-for panel edges hidden by the case (for example 5 px left and right under a lens). At 160x120i5 a list shows 7 rows, at 160x128 7, at
-240x320i10x5 11, at 128x64 5. The 240 px class keeps 6 px between rows and a separate title row;
+for panel edges hidden by the case (for example 5 px left and right under a lens). They show the last `gfx_clear`
+color. A 16-color board may keep only the safe area in RAM (`hal_display_t.fb_safe_area`): the drawing is the same
+to the pixel, the board paints the insets when that color changes, and captures (`gfx_read_rgb565`,
+`gfx_read_packed`, the debug link's screenshot) give the whole panel. At 160x120i5 a list shows 7 rows, at 160x128 7, at
+240x320i10x5 11, at 128x64 5; the 160 px class shows 5 of them while a wide language is in use, whose lines are 16 px
+high (2.5). The 240 px class keeps 6 px between rows and a separate title row;
 `uiSim --layout` fails a class whose row pitch drops below these. A narrow portrait panel (120x160) keeps the 128 px
 class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
 (name, then "TG 91 11s ago") where it has the rows for them, else one line where the name gives way first; a single
@@ -71,10 +75,15 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   hint row. Banners give the title and the text two lines each ("Call alert from" / "Jodi Ruiz"), and a message
   banner shows two lines of the message from the inbox.
 - Home's talk target line (DMR target or FM frequency) drops to the small font as a whole, then takes the target's
-  short form; a frequency is never shortened. Large-text Home picks the largest font each line fits in, and takes the
-  short form before it would go below the medium font. The short form of a talkgroup is its number ("TG 91 World"
-  becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234" becomes "Joe Smith"). A contact's ID alone
-  says nothing at a glance, so it is what goes. An ID without a contact is shown as the ID.
+  short form; a frequency is never shortened. An FM channel's line is its RX frequency and a repeater's offset
+  ("147.060 MHz +600k", no arrow), which drops " MHz", then the offset. While PTT is held (transmitting or refused),
+  and in the VFO, the line is the arrow and the TX frequency. A trunked P25 channel's line is the follower's state
+  ([p25-trunking.md](p25-trunking.md) 7); idle on the control channel of a system that can't transmit (listen only,
+  or blocked) it is `WORD_RX_ONLY` in the warning color, as an RX-only channel's is. Large-text Home picks the
+  largest font each line fits in, and takes the short form before it would go below the medium font. The short form
+  of a talkgroup is its number ("TG 91 World" becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234"
+  becomes "Joe Smith"). A contact's ID alone says nothing at a glance, so it is what goes. An ID without a contact is
+  shown as the ID.
 - While a VFO frequency is being typed in dual watch, its selected pane shows the digits and blanks for the remaining
   places in place of the old frequency, including on Large text Home. The other pane keeps its frequency. Back removes
   a digit; OK or # tunes the selected pane.
@@ -382,9 +391,15 @@ shown as it is. The tables are built by `tools/i18n.py` from the marks and `core
 | Switching | At once, no restart; nothing caches translated text. Stored in `settings_t.lang` ([settings-store.md](settings-store.md) 3); a stored language the image lacks reads as English |
 | Default | Until the user picks one (the setting empty, also after a factory reset), the build's default: the language whose `CONFIG_LANG_DEFAULT_<CODE>` is on, else English. Picking English stores `en`, so it stays English in any build. The web flasher sets the switch from its Radio language choice |
 | Characters | One byte a character: ASCII, the glyph bytes of `font.h`, and Latin-1 0xA0..0xFF. The fonts carry the Latin-1 glyphs only in a build with a language (`CONFIG_LANG_ANY`); the 5x8 font has none. Without them a Latin-1 byte is drawn as its letter without the accent ("Espanol"), so names stay readable |
-| CJK languages | A language whose script the fonts have no glyph for (Chinese, `CONFIG_LANG_ZH`) writes its catalog in UTF-8 instead, marked by an `X-Glyphs: utf8` header. The text layer decodes a character at a time (`gfx_utf8_next`), draws it from the CJK face (`core/ui/cjk_font_data.c`, one 16x16 glyph per character the catalogs use, built by `tools/cjkfont.py`), and advances 16 px; Latin and digits in the same line keep their font's cell. The 16 px cell is the height of the 8x16 font: in a larger font it sits at the bottom of the cell, on the Latin baseline, and in the 6x12 font its top 4 rows are clipped. A character with no glyph is a box. Text is cut at the end, whole characters only (`gfx_text_fit`), and a line may wrap after any CJK character (`wrap_line`): neither ever splits a character |
+| CJK languages | A language whose script the fonts have no glyph for (Chinese, `CONFIG_LANG_ZH`) writes its catalog in UTF-8 instead, marked by an `X-Glyphs: utf8` header. The text layer decodes a character at a time (`gfx_utf8_next`), draws it from the CJK face (`core/ui/cjk_font_data.c`, one 16x16 glyph per character the catalogs use, built by `tools/cjkfont.py`), and advances 16 px; Latin and digits in the same line keep their font's cell. The 16 px cell is the height of the 8x16 font: in a larger font it sits at the bottom of the cell, on the Latin baseline. A line must therefore be 16 px high, and while a wide language is in use the text layer's layouts move up to a font that tall: the 240 px class moves its text pages from 6x12 to 8x16, and the 160 px class (160x120, 160x128) moves lists, labels, the status strip, the hints and the text pages too, which costs Home its zone line and a 160x120 panel 2 of its 7 list rows (`ui_layout_init`). English and Spanish keep the tighter layout in the same image. A line still drawn in a font shorter than 16 px clips the glyph's top rows (`gfx_text`), so a 128x64 layout, which cannot afford 16 px lines at all, leaves `CONFIG_LANG_ZH` off (`BOARD_UNSUPPORTED`). A character with no glyph is a box. Text is cut at the end, whole characters only (`gfx_text_fit`), and a line may wrap after any CJK character (`wrap_line`): neither ever splits a character |
 | Lengths | A translation may be longer than its English. Text goes into fixed buffers through `str_copy` or `sb_str`, which cut it; a row too long for the screen is shortened as any row is (`gfx_text_fit`, text alternates) |
 | Not translated | Search words of the settings (Find matches the English words and the shown name), debug link names and values, protocol text sent off the radio (APRS, the debug link). The canned text messages are the exception: sent in the language in use |
+
+A panel whose words stay shorter than 16 px needs its own CJK face and a layout to go with it. The face is a
+hand-tuned bitmap at that line height: an outline font scaled to 12x12 loses the strokes of all but the simplest
+characters (`tools/cjkfont.py`). It needs an advance width and row pitch of its own in `ui_layout_init`, and every
+screen that draws words needs checking at the new pitch. The generated 16x16 face is cropped there and cannot be
+reused, so a board with such a panel keeps `CONFIG_LANG_ZH` unsupported until a face with a suitable license exists.
 
 ### 2.6 D-STAR
 
@@ -477,8 +492,8 @@ stored value stays, as the module is detected after start-up and its driver foll
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
 idle, the bars, the GPS icon and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
 and the unread count stay. Home shows the battery, and the low battery banner warns on any screen. On a radio without
-a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power saving > Battery saver and Low battery warning are left
-out of their lists, so the other Tools rows move up), and only the name part of the title is
+a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Settings > Power saving > Battery saver and Low battery
+warning are left out of their lists. The Battery tool is not present; tools retain their assigned numbers. Only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
 ### 3.1 Key assignment
@@ -508,8 +523,10 @@ position in the list is its role. Each role has a press and a long press, and ea
 | VFO/Channel (17) | VFO_TOGGLE: between the channel and the VFO, as a VFO / MR key does ("VFO", "Back to channels"; in dual watch, the selected side). Offered in builds with a VFO | yes | yes |
 | Tone burst (18) | TONE_BURST raw edges: FM repeater access, at least 1 s; offered with `CONFIG_FM_TX_TONES` | yes | no |
 | TG name / number (19) | TALK_LABEL: Home's talk line puts the talkgroup's name first, or back to its number first; the same as Settings > Display > Talkgroup name first, and saved. Toast "Talkgroup name first" / "Talkgroup number first". Offered in builds with DMR | yes | yes |
+| Scan skip (20) | SCAN_SKIP: what the scan action's "Skip channel for now" does, without the menu: the nuisance delete of the channel that stopped the scan, until the scan stops. Toast "Skipped until the scan stops", "Nothing to skip yet" when the radio has no channel to skip, "Not scanning" (and nothing else) when no scan is running. Allowed on a home key like Scan: it is a plain press or long press function | yes | yes |
+| Monitor toggle (21) | MONITOR_TOGGLE: what quick tile 5 does, on one key: on an FM channel it latches the squelch open (status line MON) or closes it again; on a DMR channel it turns digital monitor on or off (toast "Digital monitor on" / "Digital monitor off"). It is not the Monitor key: that one still opens the squelch only while held, and the retired values 9 and 10 stay retired. Allowed on a home key like Scan: it is a plain press or long press function, and works in the VFO too | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE and TALK_LABEL do the same on a press and a long
+POWER, ZONE_UP, ZONE_DOWN, SCAN, SCAN_SKIP, MONITOR_TOGGLE, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE and TALK_LABEL do the same on a press and a long
 press and work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
@@ -566,7 +583,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_roam` (`UI_FEAT_ROAMING`); roaming state from `radio_view_t.roam` (the Home chip, `ROAM` in the strip, Tools > Roaming, the "Moved to" toast) | radio core (CONFIG_DMR_ROAMING) | `ui_svc_radio.c`: `radio_req_roam` |
 | `hostlink_network_mode`, `board.netif->up`: the strip's USB word (`ui_state_t.usb_net`, polled in `ui_app_tick` so a change without a key press redraws): `IP` while USB is a network adapter, and right after it an up and a down arrow standing close (as U+21C5, a phone's data link mark) once the computer has brought the adapter up (the debug link's `usb.net_up`, [usb-network.md](usb-network.md) 1); after SCAN / ROAM / MON, which win while they last; not on screens that merge their title into the strip | host link and the board's netif (CONFIG_USB_NETWORK, CONFIG_HOSTLINK) | direct calls; Tools > USB network uses the first too |
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
-| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, reference trim, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; the reference trim goes to `radio_set_ref_trim` (radio-features.md 6.1); mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
+| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, reference trim, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; the reference trim goes to `radio_set_ref_trim` (radio-features.md 6.1); mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder, with a peak limiter; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
 | `ui_svc_beep` kinds (key, error, message, battery low) | radio-features | `ui_svc_radio.c`: a table from `UI_BEEP_*` to `BEEP_*` (`BEEP_MESSAGE` is the new-message tone) |
 | `UI_FEAT_VOLUME`, `UI_SET_VOLUME` | radio-features | `ui_svc_radio.c`: the feature bit when `radio_volume_soft()` (no knob, a board volume hook); `ui_svc_storage.c`: the step in `settings_t.volume`, and `radio_req_volume` so it is in force at once. The UI side is the volume screen (`SCR_VOLUME`, opened by `ACT_VOLUME`) and Settings > Sound > Volume, both only with the feature (`radio-features.md` 4.2) |
 | `UI_SET_DMR_ID` | storage-cps | `ui_svc_storage.c`: the codeplug's own DMR ID (`codeplug_dmr_id`); a set (1..`CODEPLUG_DMR_ID_MAX`) posts a storage job that calls `codeplug_set_dmr_id`, and the radio core takes the new ID when `codeplug_serial()` changes. A CPS read shows it |
@@ -719,7 +736,7 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   "AGC", is dimmed, OK says "Mic AGC sets the level"
   and the gain is step 5, the board's levels (FM too on a radio whose board sets the gain).
 - Mic gain acts on FM and DMR where the board sets it in its audio path (`hal_radio_t.mic_gain`), else on DMR only,
-  in software before the vocoder (radio-features.md 3.6). The
+  in software before the vocoder with a peak limiter (radio-features.md 3.6). The
   GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
 - Freq trim (Advanced, the last row: Up from the top) is shown only on a radio whose board has `hal_radio_t.ref_trim`
   (`UI_FEAT_REF_TRIM`). The row shows the trim in ppm and opens the Freq Trim page (`freq-trim`, section 2).
@@ -748,8 +765,10 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   text reads on them (at least 7.5:1 after RGB565 rounding); the red is lighter and pinker than TX's red, and there is
   no green, which would hide the RX pill. Gallery: `home_dmr*`, `home_plain`, `channels*` (section 7).
 - The VFO has a mode of its own (`dmr-voice.md` 2.1). The Mode tile (tile 4 in the VFO only) switches it FM / DMR ("VFO: DMR", no "for now": it is kept), and in a build with only one VFO kind the tile is dimmed ("VFO: one mode in this build"). On a channel tile 4 is "To VFO" (`dmr-voice.md` 2.2): it copies what is in effect on the channel to the VFO and opens it on Home ("Copied to VFO"); a channel the VFO can't hold is refused with a toast. A channel has no temporary mode change any more. In DMR the quick menu is the DMR one: Timeslot, Color and Talk to change the VFO's own settings, with no dot on Home. The talk target picker lists the VFO's current target first ("Current"); both OK and hold OK keep the target for the VFO.
-- The privacy key is typed in decimal (Anytone 0..65535). Number rows take typed digits; a value outside the range or
-  between steps is refused with the range. Only key slot 1 is reachable from the menu.
+- The privacy key types are named by key size with the key's range, "8-bit (1-255)" and "16-bit (0-65535)"; where the
+  range doesn't fit beside the row's label it drops out ("16-bit"), so the label stays whole. The key is typed in
+  decimal. Number rows take typed digits; a value outside the range or between steps is refused with the
+  range. Only key slot 1 is reachable from the menu.
 - Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.
 - A failed message isn't kept for a retry: the banner says "Not delivered: send it again".
 - Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"), sent in the language in use (2.5); free text is dimmed.

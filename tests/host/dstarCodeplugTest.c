@@ -61,7 +61,7 @@ static channel_t make(const char *name, uint32_t rx, uint32_t tx)
 // The registry, whichever way the switch is: the row is there, built follows CONFIG_DSTAR
 static void test_registry(void)
 {
-	CHECK(CODEPLUG_KIND_DSTAR == 5);
+	CHECK(CODEPLUG_KIND_DSTAR == 6);
 	CHECK(strcmp(codeplug_kind_name(CODEPLUG_KIND_DSTAR), "DV") == 0);
 	CHECK(codeplug_kind_built(CODEPLUG_KIND_DSTAR) == (CONFIG_DSTAR != 0));
 	CHECK(!codeplug_systype_built(CODEPLUG_KIND_DSTAR) && strcmp(codeplug_systype_name(CODEPLUG_KIND_DSTAR), "?") == 0);
@@ -232,7 +232,7 @@ static void test_load(void)
 	CHECK(codeplug_channel(10, &c) && c.kind == CODEPLUG_KIND_DSTAR && c.system == CODEPLUG_SYSTEM_NONE && !c.rx_only);
 	dstar_chan_t got;
 	CHECK(dstar_chan_load(10, &c, &got) && memcmp(&got, &dc, sizeof dc) == 0);
-	// The stored tag: kind 5, no system, transmit allowed, the 25-byte block as the spec lays it out
+	// The stored tag: kind 6, no system, transmit allowed, the 25-byte block as the spec lays it out
 	uint8_t v[64];
 	int n = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_CH_TAG + 10 - 1), v, sizeof v);
 	CHECK(n == (int)(CODEPLUG_TAG_HDR + DSTAR_CP_CHAN_LEN) && v[0] == CODEPLUG_KIND_DSTAR && v[1] == 0xFF && v[4] == CODEPLUG_TAG_TX);

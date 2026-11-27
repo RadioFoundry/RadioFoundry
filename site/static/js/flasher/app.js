@@ -38,7 +38,7 @@ import { suggestPack, packCode, startCode, startLanguages, startLanguage, setSta
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, tOr, num, LANG, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
+import { t, tOr, num, LANG, ROOT, HOME, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
 import { stepHistory } from "./stephistory.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
@@ -55,7 +55,7 @@ import * as diag from "../diag.js";
 import { initReporting, reportLine, reportingActive, errorNotice, reportButton, setAdapter } from "../report.js";
 import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
-import { missingApi, kitPanel, kitLine } from "./manual.js";
+import { missingApi, kitPanel, kitLine, supportNotices } from "./manual.js";
 import { showBetaNotice } from "./beta.js";
 import { DROP_OK, START_KEEP, currentBuild, planUpdate } from "./update.js";
 import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
@@ -846,8 +846,8 @@ function betaNotice() {
 	const beta = S.data?.site?.beta, href = betaLink(beta, location.href, VERSION_REF);
 	if (!href) return null;
 	return h("div", { class: "notice info beta-notice", role: "note" },
-		h("p", {}, h("strong", {}, t("flash.beta.title", { ref: beta })), " ", t("flash.beta.text")),
-		h("p", {}, h("a", { href }, t("flash.beta.link", { ref: beta }))));
+		h("p", {}, h("strong", {}, t("flash.testbuild.title", { ref: beta })), " ", t("flash.testbuild.text")),
+		h("p", {}, h("a", { href }, t("flash.testbuild.link", { ref: beta }))));
 }
 
 // A radio still in development (board.toml [status] below supported): on every step after it is picked
@@ -880,10 +880,9 @@ async function reset() {
 // start
 
 function startView() {
-	// one banner: both APIs missing (Safari, Firefox), or the one that is
+	// one banner: both APIs missing (Safari), or the one that is (Firefox: no WebUSB)
 	const usb = S.sim || usbSupported(), serial = S.sim || serialSupported();
-	const support = !usb && !serial ? [notice(t("flash.support.none"), "bad")]
-		: [!usb && notice(t("flash.support.usb"), "bad"), !serial && notice(t("flash.support.serial"), "bad")].filter(Boolean);
+	const support = supportNotices({ usb, serial }).map(([key, level]) => notice(t(key), level));
 	if (support.length) support.push(notice(t("flash.kit.start"), "info"));
 	const choice = (task, icon) => h("button", { class: "choice", type: "button", onclick: () => { S.task = task; S.step = 0; render(); } },
 		h("strong", {}, `${icon} ${t(`flash.task.${task}`)}`), h("span", { class: "small muted" }, t(`flash.task.${task}.text`)));
@@ -2318,7 +2317,7 @@ function bootloaderPanel(title, makePlanFn, onDone, what, { inline = false } = {
 		// through h(): the DOM's own replaceChildren writes a null as the text "null"
 		box.replaceChildren(...h("div", {}, inline ? null : h("h2", {}, title),
 			h("h3", {}, t("flash.write.bootloader_title")),
-			withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((s) => h("li", {}, s)),
+			withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((s) => h("li", {}, tOr("flash.bootloader." + s, s))),
 				h("li", {}, t("flash.write.then_connect")))),
 			S.fakeRadio ? h("p", {}, button(t("flash.sim.enter_bootloader"), () => { S.fakeRadio.enterBootloader(); log.add("(simulated) radio in update mode"); }, { quiet: true })) : null,
 			winHelp, inline ? slot : null, fp, status,
@@ -2541,7 +2540,7 @@ function stubPanel(fallback, onDone, what, stockPicked = () => {}) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// install: after the write
+// install or update: after the write
 
 function doneView() {
 	const box = h("div", { class: "flasher" });
@@ -2565,6 +2564,15 @@ function doneView() {
 				h("dt", {}, t("flash.now.firmware")), h("dd", {}, firmwareName(p)),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, codecText(p.codec))),
 			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), ...(good ? [] : [helpLink(), reportLine()]));	// the DOM writes a null as "null"
+			if ((S.task === "install" || S.task === "update") && !S.sim) {
+				const features = new Set([...String(p.features || "").split(","), ...String(S.firmware?.manifest?.features || "").split(",")]);
+				if (features.has("SATELLITE_TLE"))
+					status.append(h("div", { class: "notice info" }, h("p", {}, t("flash.done.satellite_tle_offer")),
+						h("div", { class: "actions" }, button(t("flash.done.satellite_tle_load"), async () => {
+							await dropSerial();
+							location.assign(`${HOME}tools/satellite/index.html`);
+						}, { primary: true }))));
+			}
 			const learnedNote = await storeLearned(link);
 			if (learnedNote) status.append(learnedNote);
 			// what the radio still needs from a person goes first, where the eye lands
@@ -3121,7 +3129,7 @@ function updateModeCheck(go) {
 	}, { primary: true });
 	S.forward([giveUp, check]);
 	return panel(t("flash.help.um_title"), h("p", {}, t("flash.help.um_lead")),
-		withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((x) => h("li", {}, x)), h("li", {}, t("flash.help.um_then")))),
+		withPicture(h("ol", { class: "steps" }, S.radio.flash.bootloader.map((x) => h("li", {}, tOr("flash.bootloader." + x, x))), h("li", {}, t("flash.help.um_then")))),
 		S.fakeRadio ? h("p", {}, button(t("flash.sim.enter_bootloader"), () => S.fakeRadio.enterBootloader(), { quiet: true })) : null, status);
 }
 
@@ -3179,7 +3187,7 @@ function fixChooser(st, go) {
 function stuckInUpdateMode() {
 	return h("div", {}, h("p", {}, t("flash.help.iap_cause")), h("p", {}, t("flash.help.iap_nokeys")),
 		h("p", { class: "small" }, t("flash.help.iap_enter")),
-		withPicture(h("ol", { class: "steps small" }, S.radio.flash.bootloader.map((x) => h("li", {}, x)))),
+		withPicture(h("ol", { class: "steps small" }, S.radio.flash.bootloader.map((x) => h("li", {}, tOr("flash.bootloader." + x, x))))),
 		h("p", { class: "small muted" }, t("flash.help.iap_original")));
 }
 

@@ -61,7 +61,7 @@ static const struct {
 // The UI's beep codes and the beeps they play. This has to match ui_svc_beep() in core/ui/ui_svc_radio.c
 static const char *const ui_beeps[] = {
 	[UI_BEEP_KEY] = "KEY", [UI_BEEP_ERROR] = "ERROR", [UI_BEEP_MESSAGE] = "MESSAGE",
-	[UI_BEEP_BATTERY_LOW] = "BATTERY_LOW",
+	[UI_BEEP_BATTERY_LOW] = "BATTERY_LOW", [UI_BEEP_CALL_ALERT] = "CALL_ALERT",
 };
 
 // One step of a scene. A step waits out the gap unless it's quiet, plays its radio core beep if it has one, runs its
@@ -92,6 +92,8 @@ static const step_t steps[] = {
 	{ "Reply, permit before keying (radios with CAP_BEEP_NOT_ON_AIR)", "pttdown", "TX_PERMIT_SHORT", false, false, 600 },
 	{ NULL, "pttup", NULL, false, true, 300 },
 	{ "Text message", "msg:9991234,Net_starts_in_5_min", NULL, false, false, 0 },
+	{ NULL, "back", NULL, false, false, 0 },
+	{ "Call alert", "alert:9991234", NULL, false, false, 0 },
 	{ NULL, "back", NULL, false, false, 0 },
 	{ "Battery runs down", "battery:14", NULL, false, false, 0 },
 	{ NULL, "battery:3", "BATTERY_CRIT", false, false, 0 },

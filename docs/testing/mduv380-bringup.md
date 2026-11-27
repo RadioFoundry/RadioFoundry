@@ -26,6 +26,21 @@ Runs on radios (community testers). The codec builds were checked on a host: TYT
 219.74, 5 W and 10 W; TYT and Retevis 18.11 and 18.16; Retevis RT3S 19.06 and 219.60. A first DMR test
 should use a 19.26 file and one whose code goes to the start of sector 10 (RT3S 219.60, any 219.74, S19.74).
 
+## Chinese image
+
+`LANG_ZH` is no longer unsupported on this board: the 160 px class moves its words up to the 8x16 font while a wide
+language is in use, so a 16 px CJK glyph fits on the 160x128 panel ([UI spec](../spec/ui.md) 2.5). The `chinese` ci
+extra in `boards/mduv380/board.toml` builds `CONFIG_LANG_ZH=y CONFIG_LANG_DEFAULT_ZH=y` beside Spanish in the 720 KB
+region. That is a compile check, not a radio check.
+
+| Feature | Record |
+|---|---|
+| `lang_zh`, `lang_default_zh` | off in the default build; no bring-up record. Untested on a radio |
+
+Nothing on this radio has run yet (Status above). A run needs a Chinese image and a check that a list, a menu label,
+the status strip and the About page draw whole glyphs with no cropped rows, and that Home still draws without its zone
+line. Until then nothing claims a pass ([features.toml](../../tests/hil/features.toml)).
+
 ## 0. Before anything
 
 1. Back up the radio: the codeplug with the stock CPS, then the whole SPI flash and the internal flash through the
@@ -61,7 +76,7 @@ should use a 19.26 file and one whose code goes to the start of sector 10 (RT3S 
 | Volume 0 at the stop, 100 at the top | `diag` "vol raw" at both ends | unknown 7: `vol_min`, `vol_break`, `vol_max` |
 | SPI flash JEDEC 0xEF4018 | `info` | `flash_uvf.c` (`device`) |
 | Calibration read | `diag` "cal" factory or working | the k factors `uvf_variant.cal_k`, the reader `calibration_uvf.c` |
-| 10 W marker | read security register 3 byte 0x1C on a 5 W and on a Plus 10 W radio (`rfoundry backup` keeps the security registers); `diag` "TX off: 10 W radio, 5 W image" means a 5 W image found the marker | unknown 3: the TYT images never read the byte, so the marker is unconfirmed; a 10 W image doesn't require it. `MDUV380_DEFS=-DMDUV380_10W_CHECK=0` skips it |
+| 10 W marker | read security register 3 byte 0x1C on a 5 W and on a Plus 10 W radio (`rfoundry backup` keeps the security registers); the diagnostics warning "This firmware may be for another version of this radio" and `board.variant_mismatch=1` mean a 5 W image read 0xF4 (a 10 W image never warns). The radio transmits either way | unknown 3: the marker is unconfirmed, and one 5 W radio reads 0xF4 (#773), so the byte only warns; a second marker is needed |
 
 ## 4. AT1846S, HR_C6000
 

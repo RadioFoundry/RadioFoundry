@@ -9,6 +9,7 @@
 
 import { t3Kind, t3System } from "./mode_t3.js";
 import { p25Kind, p25TrunkKind, p25System } from "./mode_p25.js";
+import { aesKind, aesSystem } from "./mode_aes.js";
 import { nxdnKind, nxdnSystem } from "./mode_nxdn.js";
 import { dstarKind } from "./mode_dstar.js";
 
@@ -18,13 +19,15 @@ export const KINDS = [
 	{ id: 2, token: "P25", short: "P25", feature: "P25", module: p25Kind },
 	{ id: 3, token: "P25_TRUNK", short: "P25T", feature: "P25_TRUNK", module: p25TrunkKind },
 	{ id: 4, token: "NXDN", short: "NXDN", feature: "NXDN", module: nxdnKind },
-	{ id: 5, token: "DSTAR", short: "DV", feature: "DSTAR", module: dstarKind },
+	{ id: 5, token: "DMR_AES", short: "AES", feature: "DMR_AES", module: aesKind },
+	{ id: 6, token: "DSTAR", short: "DV", feature: "DSTAR", module: dstarKind },
 ];
 
 export const SYSTEM_TYPES = [
 	{ id: 1, token: "DMR_TRUNK", short: "T3", feature: "DMR_TRUNK", module: t3System },
 	{ id: 3, token: "P25_TRUNK", short: "P25T", feature: "P25_TRUNK", module: p25System },
 	{ id: 4, token: "NXDN", short: "NXDN", feature: "NXDN", module: nxdnSystem },
+	{ id: 5, token: "DMR_AES", short: "AES", feature: "DMR_AES", module: aesSystem },
 ];
 
 export const kindRow = (id) => KINDS.find((k) => k.id === id) ?? null;

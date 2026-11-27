@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { validRef, refShort, defaultRef, firmwareName, betaLink, releaseKey, updateFor } from "../static/js/flasher/version.js";
 
 test("tags, full hashes and branch names are valid refs", () => {
@@ -53,7 +54,9 @@ test("release names sort as tools/release_version.py sorts them", () => {
 	};
 	for (const a of NAMES) for (const b of NAMES) {
 		if (a === b) continue;
-		const py = spawnSync("python3", [new URL("../../tools/release_version.py", import.meta.url).pathname, "pick", a, b], { encoding: "utf8" }).stdout.trim();
+		const run = spawnSync("python3", [fileURLToPath(new URL("../../tools/release_version.py", import.meta.url)), "pick", a, b], { encoding: "utf8" });
+		assert.equal(run.status, 0, run.stderr || String(run.error));
+		const py = run.stdout.trim();
 		assert.equal(cmp(a, b) > 0 ? a : b, py, `${a} vs ${b}`);
 	}
 });

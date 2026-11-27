@@ -75,6 +75,7 @@ typedef struct {
 	bool igate;		// RF -> APRS-IS
 	bool igate_tx;		// APRS-IS -> RF
 	uint8_t digi;		// aprs_digi_mode_t
+	bool mute;		// the speaker stays off on the APRS frequency in FM; decoding goes on, Monitor plays it
 } aprs_cfg_t;	// where our position comes from and its ambiguity: the position service's settings (position.h)
 
 void aprs_cfg_default(aprs_cfg_t *c);
@@ -124,6 +125,11 @@ typedef struct {
 	bool msg_acked;
 	char last_info[48];	// the information field of our last beacon (truncated)
 	uint32_t serial;	// bumped on every change worth a redraw
+#if CONFIG_APRS_RX
+	uint32_t msg_serial;		// bumped on each new (non-dup) inbound message addressed to us
+	uint32_t last_msg_ms;		// hal_millis() when the newest such message arrived (0 = none yet)
+	char last_msg_from[AX25_CALL_LEN + 4];	// who sent it
+#endif
 } aprs_view_t;
 
 typedef struct {
@@ -233,8 +239,8 @@ bool aprs_host_enabled(void);
 // answer "nothing there", so a caller needs no switch of its own ---
 #if CONFIG_APRS_AFSK
 const char *aprs_path_text(uint8_t path);
-// A storage job (it writes flash; not the radio or UI task): our path and SSID into the codeplug's APRS record 1, so
-// the CPS reads what the radio uses. False when there is no such record or the write failed
+// A storage job (it writes flash; not the radio or UI task): our path, SSID and frequency into the codeplug's APRS
+// record 1, so the CPS reads what the radio uses. False when there is no such record or the write failed
 bool aprs_to_codeplug(void);
 // The level an RF transmission keys at: APRS's own setting (aprs_cfg_t.power: n = the board's level n - 1, capped at
 // its highest) or, with none (0), the radio's current level
@@ -250,6 +256,8 @@ bool aprs_rx_listening(void);
 uint32_t aprs_rx_freq(void);
 // Stop the receive path at once (radio task): before tuning away from the APRS frequency (aprs_ax25.c)
 void aprs_rx_release(void);
+// The APRS frequency while its audio is muted (aprs_cfg_t mute), else 0 (radio task)
+uint32_t aprs_mute_hz(void);
 // A status packet (">text")
 bool aprs_send_status(const char *text);
 // A message with acks and retries; false when one is still waiting or the text is unusable
@@ -281,6 +289,7 @@ static inline bool aprs_can_receive(void) { return false; }
 static inline bool aprs_rx_listening(void) { return false; }
 static inline uint32_t aprs_rx_freq(void) { return 0u; }
 static inline void aprs_rx_release(void) {}
+static inline uint32_t aprs_mute_hz(void) { return 0u; }
 static inline bool aprs_send_status(const char *text) { (void)text; return false; }
 static inline bool aprs_send_message(const char *to, const char *text) { (void)to; (void)text; return false; }
 static inline bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags)

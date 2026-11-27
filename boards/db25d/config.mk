@@ -77,7 +77,7 @@ BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (owner, 2026-10-22)
 BOARD_UNSUPPORTED += AM_RX	# no air band receive (owner, 2026-10-22)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
 # maximal configuration too
-BOARD_NOT_WRITTEN += NET_USRP	# the host link stalls under USRP's PCM; another HR_C7000 board carries it at the same 115200 baud
+BOARD_NOT_WRITTEN += NET_USRP	# USRP's 8 kHz PCM both ways needs more than the host link's 115200 baud; it stalled the link here
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the per-burst TX path has no continuous base-station outbound yet (above)
 BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet (above)
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)

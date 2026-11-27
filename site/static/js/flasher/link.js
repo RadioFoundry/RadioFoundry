@@ -9,20 +9,20 @@
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
 import { wire, note } from "../diag.js";
 import { serialApi, usbSerialNeeded, UsbSerialPort } from "./usbserial.js";
-import { usbSerialChip } from "./adapter.js";
+import { usbSerialChip, CABLE_FILTERS } from "./adapter.js";
 
 export { serialApi };
 
 export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
-// USB-serial chips found in programming cables (tools/serial_loader.py USB_SERIAL), for the port chooser on radios
-// that talk over their programming cable
-export const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
+// USB-serial chips found in programming cables (adapter.js CHIPS + AIOC; tools/serial_loader.py USB_SERIAL has them by
+// product id too), for the port chooser on radios that talk over their programming cable
+export const CABLES = CABLE_FILTERS;
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
 // driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it) and ask
 // it for the serial port (netmode.js)
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
-export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21, SUPPORT: 0x25 };
+export const CMD = { PING: 0x01, VERSION: 0x02, GET_VIEW: 0x09, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21, SUPPORT: 0x25, SATELLITE: 0x26 };
 // The status a command not built in, or with nothing to act on, answers (debuglink.md 2)
 const DL_UNAVAILABLE = 4;
 
@@ -355,7 +355,13 @@ export class Link {
 		this.s.take(reply.end);
 		wire(`cmd 0x${cmd.toString(16)} seq ${seq} len ${payload.length}: status ${reply.payload[0]} len ${reply.payload.length}`);
 		if (!reply.payload.length || reply.payload[0] !== 0) {
-			throw Object.assign(new LinkError(`command 0x${cmd.toString(16)}: status ${reply.payload[0]}`), { status: reply.payload[0] });
+			const satelliteOperation = cmd === CMD.SATELLITE && payload.length ? payload[0] : undefined;
+			const operation = satelliteOperation === undefined ? "" :
+				` operation 0x${satelliteOperation.toString(16).padStart(2, "0")}` +
+				(satelliteOperation === 12 && payload.length >= 6 ?
+					` profiles ${payload[4] + 1}-${payload[4] + payload[5]} of ${payload[3]}` : "");
+			throw Object.assign(new LinkError(`command 0x${cmd.toString(16)}${operation}: status ${reply.payload[0]}`),
+				{ status: reply.payload[0], operation: cmd === CMD.SATELLITE ? payload[0] : undefined });
 		}
 		return reply.payload.subarray(1);
 	}
@@ -618,7 +624,8 @@ export function silence(link) {
 // The open-firmware CPS's radio info (open-firmware-cps.md 4: area 9, little endian): {structVersion, radioType, git,
 // built, flashId, features}, or null when the bytes aren't that structure. Checked field by field, so a reply of another
 // protocol that happens to start with "R" isn't taken for it. The revision or the build date must be there: our shim
-// (core/cps/cps_openfw.c) always fills both, so all zeros after the struct version is not that structure
+// (core/cps/cps_openfw.c) always fills the revision ("unknown" without git) and leaves the date empty when built
+// without git, so all zeros after the struct version is not that structure
 export const RADIO_INFO_LEN = 46;
 // The memory chip's size from the radio info's flash part id, whose low byte is the JEDEC capacity code (log2 of the
 // size: 0x4018 is 16 MB); null when the radio gives none

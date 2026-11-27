@@ -10,8 +10,9 @@
 #   sudo tools/rfoundry_ppp.sh --stop                       hang up (LCP Terminate: the radio goes back to serial)
 #
 # pppd's first LCP frame gives the radio's host port to PPP by itself. The radio assigns the addresses (the same
-# pair as on the USB network adapter: the host 12.<DMR ID>, the radio that xor 1); this script adds the routes to the
-# other radios (12.0.0.0/8) and the talkgroups (225.0.0.0/8) through the link, as the adapter's DHCP does.
+# pair as on the USB network adapter: the host 13.<DMR ID>, the radio 12.<DMR ID>); this script adds the routes to the
+# other radios (12.0.0.0/8), their peripherals (13.0.0.0/8) and the talkgroups (225.0.0.0/8) through the link, as the
+# adapter's DHCP does.
 set -e
 UNIT=7
 IF=ppp$UNIT
@@ -38,10 +39,12 @@ RADIO=$(ifconfig $IF 2>/dev/null | sed -n 's/.*--> *\([0-9.]*\).*/\1/p; s/.*dest
 case "$(uname)" in
 Darwin)
 	route -q add -net 12.0.0.0/8 -interface $IF || true
+	route -q add -net 13.0.0.0/8 -interface $IF || true
 	route -q add -net 225.0.0.0/8 -interface $IF || true
 	;;
 *)
 	ip route replace 12.0.0.0/8 dev $IF
+	ip route replace 13.0.0.0/8 dev $IF
 	ip route replace 225.0.0.0/8 dev $IF
 	;;
 esac

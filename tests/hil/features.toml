@@ -98,6 +98,11 @@ switch = "NXDN_SCRAMBLER"
 spec = "docs/spec/nxdn.md"
 source = ["core/nxdn/nxdn_scramble.c", "core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c"]
 
+[feature.mbe2400]
+switch = "MBE2400"
+spec = "docs/spec/mbe-2400.md"
+source = ["core/mbe", "core/fec/golay.c", "core/fec/golay.h"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
@@ -106,6 +111,11 @@ source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "ha
 [feature.dmr_privacy]
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"
+
+[feature.dmr_aes]
+switch = "DMR_AES"
+spec = "docs/spec/dmr-voice.md"
+manual = "A receiver of another make with the same AES-256 key and key ID plays our over from key-up and when it joins after key-up, simplex and through a repeater (the missing-key refusal is test_dmr_aes.py)"
 
 [feature.dmr_data_privacy]
 requires = "DMR_PRIVACY"
@@ -224,6 +234,15 @@ hardware = "a GPS receiver"
 spec = "docs/spec/position.md"
 source = ["hal/hal_gps.h", "drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
 
+[feature.satellite_tle]
+switch = "SATELLITE_TLE"
+spec = "docs/spec/satellite.md"
+source = ["core/debuglink/debuglink_satellite.c", "core/debuglink/debuglink_view.c", "core/radio/radio_task.c",
+          "core/satellite", "core/ui/ui_satellite.c", "core/position/position.c",
+          "hal/hal_flash.h", "boards/db25d/flash_db25d.c", "boards/dm32/board.c",
+          "boards/dm1801pro/board.c", "boards/md380/flash_md380.c",
+          "boards/md9600/store_md9600.c", "boards/uv380_family/flash_uvf.c"]
+
 # The status strip's GPS icon: none, off, searching, a fix (ui.md 3); part of GPS, no switch of its own
 [feature.gps_icon]
 requires = "GPS"
@@ -298,6 +317,10 @@ spec = "docs/spec/aprs.md"
 [feature.aprs_rx]
 switch = "APRS_RX"
 hardware = "FM receive audio sampled by the processor (the AFSK input path)"
+spec = "docs/spec/aprs.md"
+
+[feature.aprs_mute]
+requires = "APRS_RX"
 spec = "docs/spec/aprs.md"
 
 [feature.aprs_igate]
@@ -429,10 +452,6 @@ switch = "NET_WEBCTL"
 spec = "docs/spec/tcp-services.md"
 planned_tests = ["tests/hil/test_webctl.py::test_webctl_keys_ptt_audio"]
 
-[feature.net_radio_udp]
-switch = "NET_RADIO_UDP"
-spec = "docs/spec/tcp-services.md"
-
 [feature.net_rigctl]
 switch = "NET_RIGCTL"
 spec = "docs/spec/tcp-services.md"
@@ -535,6 +554,11 @@ spec = "docs/spec/ui.md"
 switch = "LANG_ZH"
 spec = "docs/spec/ui.md"
 
+[feature.cjk_glyphs]
+switch = "CJK_GLYPHS"
+spec = "docs/spec/ui.md"
+source = ["core/ui/cjk_font.c", "core/ui/cjk_font_data.c"]
+
 [feature.lang_default_es]
 switch = "LANG_DEFAULT_ES"
 spec = "docs/spec/ui.md"
@@ -580,6 +604,12 @@ source = ["tools/rfoundry/rfoundry"]
 switch = "AIR_RAW"
 spec = "docs/spec/debuglink.md"
 source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
+
+[feature.debuglink_dmrip]
+switch = "DEBUGLINK_DMRIP"
+spec = "docs/spec/debuglink.md"
+source = ["core/debuglink/debuglink_dmrip.c", "core/debuglink/dl_dmrip.c", "core/debuglink/dl_dmrip.h",
+          "tools/rfoundry/rfoundry/dmrip.py"]
 
 [feature.audio_probe]
 switch = "AUDIO_PROBE"

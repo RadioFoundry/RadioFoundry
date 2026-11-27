@@ -72,6 +72,7 @@ Look at the boards on your platform for a model (`tools/boards.py list --platfor
 | `power`, `flash` | Battery and power switch, external flash |
 | `host_port`, `cps`, `netif` | The link to a computer (NULL if none), CPS and USB network hooks |
 | `system`, `diag_line`, `diag_reset` | Optional: chip identity and reboot modes, a diagnostics page |
+| `variant_mismatch` | Optional: true when a marker the board reads suggests another hardware version than the image's build option. A warning only: the diagnostics page shows a line, the debug link `board.variant_mismatch=1`, and the radio still transmits. Use for a marker not yet confirmed on every radio |
 | `battery_low_mv`, `battery_critical_mv` | Battery warning levels; 0 for none |
 | `audio_tap`, `bcast`, `afsk` | Optional: audio path taps, a broadcast FM receiver, APRS AFSK transmit and receive audio |
 | `air`, `baseband` | Optional: the modem chip's air interface provider for the modes the core frames itself (P25, NXDN; [air-interface.md](../spec/air-interface.md) 3), and the sample taps the soft modem receives through (section 6). The platform's DMR glue exports both (`stm32_hrc_air` and `stm32_hrc_baseband`, `hrc_air` and `hrc_baseband`); point the board at them. Without `air`, list `P25`, `P25_TRUNK` and `NXDN` in `BOARD_NOT_WRITTEN` |
@@ -103,7 +104,10 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
 
 The frame buffer is sized to the panel in `board.mk` `MCU_DEFS`: `GFX_FB_BYTES` (width times height times bits per pixel,
 over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. Without them the build reserves the
-40 KB RGB565 default. `boards.py check` requires the buffer to hold the board's `hardware.gallery` class.
+40 KB RGB565 default. `boards.py check` requires the buffer to hold the board's `hardware.gallery` class. A 16-color
+board short of RAM whose panel has insets may keep only the safe area: `GFX_FB_SAFE_AREA=1`, `GFX_FB_BYTES` for the
+safe area, and in its `hal_display_t` `fb_safe_area` and a `fill_insets` that paints the insets (the rows then go to
+that window of the panel); the check then sizes the buffer by the gallery class's insets.
 
 ## The drawing
 
@@ -130,8 +134,9 @@ one without a label.
    data: send back-to-back 0x00 bytes and watch the raw PTT pin. If it goes low, gate PTT on UART traffic
    (`drivers/input/sharedptt`, [gotchas.md](../spec/gotchas.md) 16.2) before anything transmits. Then run
    `tests/hil/test_ptt_host_traffic.py`: host polling must make no PTT press.
-   If PTT also comes through a mic jack, power on with the jack empty and watch the raw pin. If it reads low, count it
-   only once it has read high (`drivers/input/plugptt`, [gotchas.md](../spec/gotchas.md) 16.3).
+   If PTT comes through a mic jack or the cable, power on with the jack empty, then with a mic in, then with the
+   cable in, and watch the raw pins. Count each line only once the line has idled high (`drivers/input/plugptt`,
+   [gotchas.md](../spec/gotchas.md) 16.3).
 4. Flash, settings and calibration reads. Check the foreign-region guard on a radio that still runs the vendor firmware
    ([settings-store.md](../spec/settings-store.md) 5).
 5. RF chip: FM receive, then FM transmit into a dummy load.

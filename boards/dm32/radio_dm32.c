@@ -78,13 +78,21 @@ static const pa_keyup_cfg_t keyup_cfg[2] = {
 // with these writes on top. Which one the radio has is found at start-up (rf_detect)
 #define RF_PROBE_HZ		145000000u	// in band on both sections
 #define RF_LOCK_MS		20u		// the probe's wait for the lock bit after the tune
-#define FD_REG_TX_AUX		0x50u		// set-up B: around each switch to TX
-#define FD_TX_AUX_FM_PRE	0xBB20u		// FM, before the switch
-#define FD_TX_AUX_FM		0x3B20u		// FM, after
-#define FD_TX_AUX_DMR		0x3B18u		// DMR burst, after
 #define FD_REG_CSS_A		0x2Eu		// set-up B: two words by the receive sub-audio type
 #define FD_REG_CSS_B		0x2Fu
-#define FD_REG40_BASE		0x3480u		// set-up B, FM transmit: 0x40 = this + the calibration byte
+// Set-up B on this board, on top of the shared tables: 0x7D (b12:8 receive digital gain 9, the low byte the analog
+// mic step; the step set-up A's 0xE35E uses), FD6818 GPIO 5 as function 1 (0x33 b9 and b1 clear, 0x34 b7:4), and
+// 0x28 b8 set while the FM audio is wanted (rx_gate)
+#define FD_REG_7D		0x7Du
+#define FD_7D_B			0xE92Cu
+#define FD_REG_GPIO_DIR		0x33u
+#define FD_REG_GPIO_FN		0x34u
+#define FD_GPIO5_DIR		0x0202u
+#define FD_GPIO5_FN_MASK	0x00F0u
+#define FD_GPIO5_FN		0x0010u
+#define FD_REG_RX_GATE		0x28u
+#define FD_RX_GATE_CLOSED	0x0A40u
+#define FD_RX_GATE_OPEN		0x0B40u
 #define C7_RF_MODE_RX_INVERT	(1u << 15)	// HR_C7000 RF_MODE: RX IQ invert, off on the newer section
 // FD6818 0x2B, the audio filter word (BK4819 layout: bits 2:0 the transmit filter bypasses, 10:8 the receive ones).
 // Both RF set-ups write this value in their FM table and nothing else touches it in FM, so the flat paths put it back
@@ -130,8 +138,10 @@ static bool flat_rx;		// a data modem's flat receive: set up again at every FM r
 #define AMP_PCM		0x02u	// speaker PCM
 #define AMP_SIDE	0x40u	// the transmitted tone's sidetone
 #define AMP_BCAST	0x04u	// the broadcast receiver (dm32_bcast_audio)
+static uint8_t amp_users;	// AMP_* bits (the debug link's board.amp_users)
 
 static void speaker_source(void);
+static void rx_gate(void);
 static void ring_play(void);
 static void amp(uint8_t who, bool on);
 static void tx_tone_side(bool on);
@@ -239,9 +249,7 @@ static void burst_switch(void)
 {
 	lna(tx_hz, false);
 	fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
-	if (rf_b) {
-		fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_DMR);
-	}
+	fd6818_tx_audio(&fd, true);
 }
 
 // One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points in time order (the boost, the PA on, the
@@ -334,10 +342,11 @@ static void dmr_disarm(void)
 static bool afsk_tx_route(bool on);
 static void aprs_listen_route(bool on);
 
-// PCM amplitude per AFSK level step: 50 (nominal) = 2750, about 3 kHz peak. Bench, 25 kHz: 2925 gave 3.3 kHz peak;
-// 5850 and up are limited at 5.1 kHz peak, 4.5 kHz on the tones
+// PCM amplitude per AFSK level step: 50 (nominal) = 450, about 3.2 kHz peak. The tones go out with the microphone on
+// the DMR path (afsk_tx_route), where they come out much hotter than with it on the FM path, with mark about 4 dB
+// under space. Bench, 25 kHz: 435 gave 3.1 kHz peak, 725 4.7 kHz; 1450 and up are limited near 5.2 kHz
 static const hrc_afsk_board_t afsk_board = {
-	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 55,
+	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 9,
 };
 #endif
 
@@ -354,6 +363,10 @@ static void rf_detect(void)
 	rf_unlocked = i == 2;
 	fd6818_set_state(&fd, FD6818_STATE_IDLE);
 	if (rf_b) {
+		fd6818_write(&fd, FD_REG_7D, FD_7D_B);
+		fd6818_write(&fd, FD_REG_GPIO_DIR, (uint16_t)(fd6818_read(&fd, FD_REG_GPIO_DIR) & ~FD_GPIO5_DIR));
+		fd6818_write(&fd, FD_REG_GPIO_FN,
+			(uint16_t)((fd6818_read(&fd, FD_REG_GPIO_FN) & ~FD_GPIO5_FN_MASK) | FD_GPIO5_FN));
 		hrc7000_wr(&modem, C7_RF_MODE, hrc7000_rd(&modem, C7_RF_MODE) & ~C7_RF_MODE_RX_INVERT);
 	}
 }
@@ -397,6 +410,15 @@ static void wake(void)
 	}
 }
 
+// Set-up B's two receive sub-audio words: DCS one pair, CTCSS and no tone the other
+static void css_words(bool dcs)
+{
+	if (rf_b) {
+		fd6818_write(&fd, FD_REG_CSS_A, dcs ? 0x9608u : 0x8608u);
+		fd6818_write(&fd, FD_REG_CSS_B, dcs ? 0x9890u : 0x1890u);
+	}
+}
+
 #if CONFIG_FM_FLAT
 static void flat_tx_end(void);
 static void flat_rx_drop(void);
@@ -413,7 +435,8 @@ static void set_mode(radio_mode_t m)
 	flat_rx_drop();
 #endif
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
-		fd6818_set_mode(&fd, FD6818_MODE_DMR);
+		fd6818_set_mode(&fd, FD6818_MODE_DMR);	// the FM channel's receive tone off (0x51 would key it on the 4FSK)
+		css_words(false);
 		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
 		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)), MIC_GAIN_DB);
 		mode = RADIO_MODE_DMR;
@@ -433,7 +456,7 @@ static void set_mode(radio_mode_t m)
 // transmission, dmr_tx_end): the burst switch already put the FD6818 in RX; on the same channel it stays as it is
 static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, bool keep)
 {
-	if (!board_in_band(hz, false) || (am && (mode != RADIO_MODE_FM || rf_b))) {	// AM: not worked out on set-up B
+	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
@@ -468,12 +491,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
 		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
-		if (rf_b) {
-			// CTCSS one pair, DCS and no tone the other
-			bool ctcss = tone != NULL && tone->type == TONE_CTCSS;
-			fd6818_write(&fd, FD_REG_CSS_A, ctcss ? 0x8608u : 0x9608u);
-			fd6818_write(&fd, FD_REG_CSS_B, ctcss ? 0x1890u : 0x9890u);
-		}
+		css_words(tone != NULL && (tone->type == TONE_DCS || tone->type == TONE_DCS_INV));
 #if CONFIG_AM_RX
 		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
 #endif
@@ -492,6 +510,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 	rx_tone = tone != NULL ? *tone : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
 	transmitting = false;
+	rx_gate();
 	speaker_source();
 	return true;
 }
@@ -568,6 +587,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	hrc_dac_b_power(true);
 	transmitting = true;
+	rx_gate();	// closed before the FD6818 switches to TX
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for each burst's sequence. Between bursts the radio
 		// receives: the FD6818 in RX and the LNA on until the RF task switches to the first burst (burst_on). In TX
@@ -587,10 +607,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		if (flat_rx) {
 			fd6818_write(&fd, FD_REG_AF_FILTER, FD_AF_FILTER_FM);	// voice transmit until fm_tx_inject says otherwise
 		}
-		if (rf_b && bf_cal_valid()) {
-			// The band's calibration byte; without calibration the power-on word stays. The next rx() puts the
+		if (bf_cal_valid()) {
+			// The band's calibration byte; without calibration the variant's word stays. The next rx() puts the
 			// band word back (fd6818_set_freq)
-			fd6818_write(&fd, FD6818_REG_BAND_B, (uint16_t)(FD_REG40_BASE + bf_cal_tx_byte(hz, BF_ROW_REG40)));
+			fd6818_fm_tx_cal(&fd, bf_cal_tx_byte(hz, BF_ROW_REG40));
 		}
 		tx_wide = bw == RADIO_BW_25K;
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
@@ -598,12 +618,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		hrc7000_fm_tx(&modem, tx_wide);
 		hrc_pin_write(PIN_MIC_PATH, true);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
-		if (rf_b) {
-			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM_PRE);
-		}
 		fd6818_set_state(&fd, FD6818_STATE_TX);
+		fd6818_tx_audio(&fd, true);
 		if (rf_b) {
-			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM);
 			hal_delay_ms(1);
 		}
 		pa_key();
@@ -616,6 +633,7 @@ static void tx_end(bool keep)
 {
 	dmr_disarm();
 	pa_off();
+	fd6818_tx_audio(&fd, false);
 #if CONFIG_APRS_AFSK
 	if (afsk_tx) {
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
@@ -765,8 +783,9 @@ static void speaker_source(void)
 // APRS listens (hrc_afsk.c): the FD6818's audio stays on the HR_C7000's input, which also plays it to the speaker
 static void aprs_listen_route(bool on)
 {
-	uint32_t s = hrc_irq_save();	// dm32_speaker_pcm runs speaker_source from the audio task
 	aprs_listen = on;
+	rx_gate();	// before the source switch, as in audio()
+	uint32_t s = hrc_irq_save();	// dm32_speaker_pcm runs speaker_source from the audio task
 	if (rx_audio) {
 		amp(AMP_RADIO, false);	// the source changes under an open squelch: no click
 	}
@@ -780,16 +799,34 @@ static void aprs_listen_route(bool on)
 
 static void amp(uint8_t who, bool on)
 {
-	static uint8_t users;
 	uint32_t s = hrc_irq_save();
-	users = on ? (uint8_t)(users | who) : (uint8_t)(users & ~who);
-	hrc_pin_write(PIN_AMP_EN, users != 0);
+	amp_users = on ? (uint8_t)(amp_users | who) : (uint8_t)(amp_users & ~who);
+	hrc_pin_write(PIN_AMP_EN, amp_users != 0);
 	hrc_irq_restore(s);
+}
+
+uint8_t dm32_amp_users(void)
+{
+	return amp_users;
+}
+
+// Set-up B's 0x28 receive gate: open while the squelch is open or APRS listens. The APRS demodulator needs the FM
+// audio with the squelch closed too, and with Mute APRS audio on the core holds audio() off on the APRS frequency
+// (radio_sm.c, aprs_mute_hz). Closed in transmit. Worked out from the state at each change, and again after every FM
+// tune: the first FM tune after DMR finds the DMR table's closed word (the FM table doesn't write 0x28), and the tune
+// after a transmission finds the gate closed
+static void rx_gate(void)
+{
+	if (rf_b && mode == RADIO_MODE_FM) {
+		bool open = !transmitting && (rx_audio || aprs_listen);
+		fd6818_write(&fd, FD_REG_RX_GATE, open ? FD_RX_GATE_OPEN : FD_RX_GATE_CLOSED);
+	}
 }
 
 static void audio(bool on)
 {
 	rx_audio = on;
+	rx_gate();
 	if (!on) {
 		amp(AMP_RADIO, false);	// before the source switch, so the switch doesn't click
 	}
@@ -833,8 +870,10 @@ void dm32_speaker_pcm(bool on)
 
 #if CONFIG_APRS_AFSK
 // APRS AFSK (hrc_afsk.c): during an FM transmission the prompt FIFO's audio goes to the modulator (the path that put
-// beeps on DMR bursts, modem-hrc7000.md 8.4), so the tones go there with the microphone muted. False when the radio
-// isn't transmitting FM
+// beeps on DMR bursts, modem-hrc7000.md 8.4). In FM TX the microphone takes the analog FM path (0x2E = 1), which
+// muting the codec's microphone doesn't reach, so the voice rode on the tones (#828). While the tones play the
+// microphone goes to the DMR path (0x2E = 0) as well, where the codec mute holds it. The FD6818's own audio input
+// stays on: the tones reach the modulator through it. False when the radio isn't transmitting FM
 static bool afsk_tx_route(bool on)
 {
 	if (on && (!transmitting || mode != RADIO_MODE_FM)) {
@@ -842,6 +881,7 @@ static bool afsk_tx_route(bool on)
 	}
 	afsk_tx = on;
 	hrc7000_codec_mute(&modem, on, false);
+	hrc_pin_write(PIN_MIC_PATH, !on);
 	ring_play();
 	return true;
 }
@@ -1010,7 +1050,16 @@ bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool 
 	return true;
 }
 
+// Digital gain on the mic PCM before the AMBE+2 encoder (hal_radio_t.mic_pcm_db, with the core's limiter). Measured
+// off air: speech from this radio's AMBE+2 encoder decoded at -31 dBFS (rms of the loudest 30 % of 100 ms blocks)
+// against -18 dBFS for another maker's handheld decoded the same way, while the encoder itself reaches full scale (a
+// speech clip on DMR). 12 dB brings normal speech to about that radio's level. Digital rather than the codec's
+// analogue gain (GCR_ADCL, 11 dB): that register also feeds the VOX meter and every other use of the mic ADC, and a
+// 16-bit PCM at -31 dBFS still has 60 dB and more over its quantization, so the analogue gain buys nothing audible
+#define MIC_PCM_DB		12
+
 const hal_radio_t dm32_radio = {
+	.mic_pcm_db = MIC_PCM_DB,
 	.init = init,
 	.set_mode = set_mode,
 	.rx = rx,

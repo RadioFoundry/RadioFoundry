@@ -104,39 +104,17 @@ int imbe_q_alloc(int b0, int *K, uint8_t nb[MBE_MAXL + 2])
 
 void imbe_q_predict(imbe_state_t *s, int L, int32_t pr[MBE_MAXL + 1])
 {
-	int32_t rho, rcp, sum = 0, S;
-	int rem = 0, ik = 0;
-	int32_t *ya = pr;
+	int32_t rho;
 
-	// prediction from the last frame: its log amplitudes resampled to this frame's harmonic count (linear between
-	// neighbors), scaled by rho, the mean of the prediction removed
+	// prediction from the last frame: its log amplitudes resampled to this frame's harmonic count, scaled by rho, the
+	// mean of the prediction removed
 	if (L <= 15)
 		rho = 13107;
 	else if (L <= 24)
 		rho = ((30 * L - 50) * 32768 + 500) / 1000;
 	else
 		rho = 22938;
-	if (L > s->L)
-		for (int l = s->L + 1; l <= L; l++)
-			s->lg[l] = s->lg[s->L];
-	rcp = (int32_t)((1u << 30) / (uint32_t)L);
-	for (int l = 1; l <= L; l++) {
-		int32_t p0, p1, d;
-
-		rem += s->L;
-		while (rem >= L) {
-			rem -= L;
-			ik++;
-		}
-		p0 = s->lg[ik];
-		p1 = s->lg[ik + 1];
-		d = fxp_mulshr(rem, rcp, 15);		// rem / L, Q15 (rem < L: rem * rcp < 2^30)
-		ya[l] = p0 * 32 + fxp_mulshr((p1 - p0) * 32, d, 15);
-		sum += ya[l];
-	}
-	S = fxp_mulshr(fxp_mulshr(sum, rho, 15), rcp, 30);
-	for (int l = 1; l <= L; l++)
-		pr[l] = fxp_mulshr(ya[l], rho, 15) - S;
+	mbe_predict(s, L, rho, pr);
 }
 
 int imbe_unpack(imbe_state_t *s, const uint8_t imbe[IMBE_BYTES], mbe_params_t *p)

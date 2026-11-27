@@ -33,11 +33,20 @@ dmr.tx_alias = the radio name; a 4 s over: the alias the SDR decodes from the em
 modem's listener assembles equal dmr.tx_alias (at least one of the two must have heard it complete; both, when they
 did, must agree), call.tx_alias_lcs grew.
 
+test_dmr_tx_after_toned_fm_channel (also --allow-codeplug-write): the zone position next to the test channel becomes
+an FM channel on --dmr-freq with a 233.6 Hz receive CTCSS tone (backed up first, restored and verified afterwards). Three
+times: the radio receives on that FM channel for 1.5 s, goes back to the DMR test channel and keys a 2 s over. Every
+over must reach the air: the SDR decodes voice bursts from the radio's ID, or the bench modem hears its call. The
+radio's own counters (call.tx_calls + 1) are not enough: an FM receive tone left on in the RF chip keyed the chip's
+sub-audio onto the 4FSK, so every burst was sent and counted but none decoded on air (issue 685).
+
 test_dmr_tx_permit_before_key: a 3 s over plays the talk permit (beep.played grew), and on air the over starts with
 three voice LC headers from us that decode, each within 1.5 dB of the over's median burst level, with no burst 2 dB or
 more under it. On a board that holds its beeps off the air (the HR_C7000 TX gate, its "pg" diagnostics line) the
 permit plays before the key-up, and the gate closed (g + 1) and never found the beep still sounding (l) or ring play
-on (ra). Other boards play it once the voice is on air (radio-features.md 4), so the over must be whole around it.
+on (ra). Other boards play it once the voice is on air (radio-features.md 4), so the over must be whole around it, and
+the mic the board hands the vocoder is muted while it plays (the speaker reaches the mic, issue 532): at least
+PERMIT_MUTED_BLOCKS blocks of the over went out as silence (voice.tx_mic_muted).
 
 test_dmr_privacy_tx: Motorola basic privacy key 1 loaded (RADIO op 19), a 3 s over: every voice LC header and
 terminator from us that the SDR or the bench modem decoded carries the privacy service option (so & 0x40), every
@@ -329,6 +338,66 @@ def test_dmr_tx_talker_alias(radio, sdr_bench, pytestconfig, backup_dir):
         assert got is None or got == alias, f"{name} heard alias {got!r}, the radio sends {alias!r}"
 
 
+FM_VISITS = 3
+FM_RX_TONE = 0x2336     # 233.6 Hz CTCSS, the codeplug's BCD word
+FM_DWELL_S = 1.5
+VISIT_OVER_S = 2.0
+VISIT_MIN_VOICE = 12    # of the ~33 voice bursts in a 2 s over: the SDR heard the over, not a stray burst
+
+
+@pytest.mark.feature("dmr_voice")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.sdr_or_modem
+@pytest.mark.codeplug_write
+def test_dmr_tx_after_toned_fm_channel(radio, sdr_bench, pytestconfig, backup_dir):
+    import cps_client
+    from test_cps import codeplug_edited
+    freq, cc, pos, d = _dmr_tx_setup(radio, pytestconfig)
+    own = int(d["dmr.own_id"])
+    size = int(radio.core().get("zone_size") or 0)
+    if size < 2:
+        skip("state", "the test channel's zone has one channel: no FM channel next to it to visit")
+    other = pos + 1 if pos + 1 < size else pos - 1
+    number = int(radio.core()["channel_number"])
+    fm_number = int(radio._req_until(lambda: radio.link.zone_pos(other), lambda x: x.get("zone_pos") == str(other),
+                                     f"position {other}")["channel_number"])
+
+    def edit(img):
+        cps_client.set_channel_fm(img, fm_number, FM_RX_TONE)
+        cps_client.set_channel_rx(img, fm_number, round(freq * 1e6))  # receive only: never keyed here
+        cps_client.set_channel_tx(img, fm_number, round(freq * 1e6))
+
+    def go(p, mode):  # radio.link each time: the CPS session reopens the port as a new link
+        return radio._req_until(lambda: radio.link.zone_pos(p), lambda x: x.get("zone_pos") == str(p) and x.get("mode") == mode,
+                                f"position {p} ({mode})")
+
+    rows = []
+    with codeplug_edited(radio, backup_dir, edit, "fm_tone"):
+        radio.lowest_power()
+        for k in range(FM_VISITS):
+            go(other, "fm")
+            time.sleep(FM_DWELL_S)
+            v = go(pos, "dmr")
+            assert int(v["channel_number"]) == number, f"back on channel {v['channel_number']}, not {number}"
+            time.sleep(1.0)
+            _, before = radio.counters()
+            sdr, heard = _over(radio, sdr_bench, freq, cc, VISIT_OVER_S, f"hil_dmr_after_fm_{k + 1}")
+            _, after = radio.counters()
+            calls = after.get("call.tx_calls", 0) - before.get("call.tx_calls", 0)
+            voice = [b for b in sdr.get("bursts", []) if str(b.get("kind", "")).startswith("VOICE_")]
+            ours = [b for b in sdr.get("bursts", []) if (b.get("lc") or {}).get("src") == own]
+            modem = [r for r in heard if "call" in r and r.get("src") == own]
+            on_air = (bool(ours) and len(voice) >= VISIT_MIN_VOICE) or bool(modem)
+            print(f"over {k + 1} after the FM channel: call.tx_calls +{calls}; SDR {len(voice)} voice bursts, "
+                  f"{len(ours)} with our LC; bench modem {len(modem)} call(s), "
+                  f"{[r.get('voice') for r in modem]} voice bursts{'' if on_air else '  <- not on air'}")
+            rows.append((calls, on_air))
+    bad = [k + 1 for k, (calls, on_air) in enumerate(rows) if calls != 1 or not on_air]
+    assert not bad, (f"after a visit to an FM channel with a receive tone, overs {bad} of {len(rows)} didn't reach the "
+                     f"air (or the radio didn't count them: {rows})")
+
+
 def _gate(radio):
     """The HR_C7000 TX gate's diagnostics line ("pg g<closings> l<late> ra<ring play while gated>", newer firmware
     adds fields after it, such as " un<speaker queue underruns>") as a dict, or None on a board without it (one whose
@@ -340,6 +409,7 @@ def _gate(radio):
 
 
 PERMIT_LEVEL_DB = 1.5     # a header's level against the over's median (a beep on air or a late gate would dent it)
+PERMIT_MUTED_BLOCKS = 6   # the permit's blocks after its first (7 x 20 ms), at least: its echo after it adds 3 more
 
 
 @pytest.mark.feature("beep")
@@ -351,7 +421,8 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
     that decode, each at the over's level (within PERMIT_LEVEL_DB of the median burst), and no burst more than 2 dB
     below it. A board that holds its beeps off the air (CAP_BEEP_NOT_ON_AIR, the HR_C7000 TX gate) plays it before it
     keys (docs/spec/dmr-modem.md): the gate closes once and never finds the beep still sounding or ring play on. A
-    board without the gate (no "pg" line) plays it with the voice on air."""
+    board without the gate (no "pg" line) plays it with the voice on air, the mic muted meanwhile (the speaker
+    reaches the mic): voice.tx_mic_muted counts the blocks sent as silence."""
     gate = _gate(radio)
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     own = int(d["dmr.own_id"])
@@ -365,6 +436,14 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
         assert after["g"] - gate["g"] >= 1, "the TX gate never closed for the over"
         assert after["l"] == gate["l"], f"the key-up found the beep still sounding ({gate['l']} -> {after['l']})"
         assert after["ra"] == gate["ra"], f"ring play was on while the gate was closed ({gate['ra']} -> {after['ra']})"
+    else:
+        muted = radio.view(["dmr"]).get("voice.tx_mic_muted")
+        print(f"voice.tx_mic_muted {muted}")
+        if muted is None:
+            warnings.warn("older firmware without voice.tx_mic_muted: the mic gate is not judged")
+        else:
+            assert int(muted) >= PERMIT_MUTED_BLOCKS, \
+                f"{muted} mic blocks muted for the permit: the speaker's beep reaches the air through the mic"
 
     bursts = sdr.get("bursts", [])
     ours = [b for b in bursts if (b.get("lc") or {}).get("src") == own]

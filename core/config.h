@@ -17,6 +17,9 @@
 #ifndef CONFIG_DMR_PRIVACY
 #define CONFIG_DMR_PRIVACY		1
 #endif
+#ifndef CONFIG_DMR_AES
+#define CONFIG_DMR_AES			CONFIG_DMR_PRIVACY
+#endif
 #ifndef CONFIG_DMR_TALKER_ALIAS
 #define CONFIG_DMR_TALKER_ALIAS		1
 #endif
@@ -79,9 +82,6 @@
 #endif
 #ifndef CONFIG_NET_WEBCTL
 #define CONFIG_NET_WEBCTL		CONFIG_NET_HTTP
-#endif
-#ifndef CONFIG_NET_RADIO_UDP
-#define CONFIG_NET_RADIO_UDP		CONFIG_DMR_IP_GATEWAY
 #endif
 #ifndef CONFIG_NET_RIGCTL
 #define CONFIG_NET_RIGCTL		CONFIG_NET_TCP
@@ -150,8 +150,20 @@
 #ifndef CONFIG_DEBUGLINK
 #define CONFIG_DEBUGLINK		CONFIG_HOSTLINK
 #endif
+#ifndef CONFIG_SATELLITE_TLE
+#define CONFIG_SATELLITE_TLE		0
+#endif
 #ifndef CONFIG_TASK_STACKS
 #define CONFIG_TASK_STACKS		CONFIG_DEBUGLINK
+#endif
+// The debug link over the air (docs/spec/debuglink.md 7): a bench diagnostic, off by default. RADIO_DETOUR, derived
+// from it, is the radio core's and the settings store's part (temporary settings a deadline reverts), which host tests
+// build on its own
+#ifndef CONFIG_DEBUGLINK_DMRIP
+#define CONFIG_DEBUGLINK_DMRIP		0
+#endif
+#ifndef CONFIG_RADIO_DETOUR
+#define CONFIG_RADIO_DETOUR		CONFIG_DEBUGLINK_DMRIP
 #endif
 #ifndef CONFIG_CPS_OPENFW
 #define CONFIG_CPS_OPENFW		CONFIG_HOSTLINK
@@ -197,6 +209,11 @@
 // Chinese brings its own 16x16 glyphs (core/ui/cjk_font_data.c) and UTF-8 text the text layer decodes (core/ui/gfx.c)
 #ifndef CONFIG_LANG_ZH
 #define CONFIG_LANG_ZH			0
+#endif
+// The CJK glyph table (cjk_font_data.c) is a ~120 KB rodata cost. It can stay off while CONFIG_LANG_ZH's translated
+// menus stay on, for a board too small to show Chinese (docs/build-config.md). Defaults to LANG_ZH; a board sets it 0
+#ifndef CONFIG_CJK_GLYPHS
+#define CONFIG_CJK_GLYPHS		CONFIG_LANG_ZH
 #endif
 #define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT || CONFIG_LANG_FR || CONFIG_LANG_ZH)
 // The language the radio starts in until the user picks one (CONFIG_LANG_DEFAULT_<CODE>, needs its CONFIG_LANG_<CODE>):
@@ -357,8 +374,17 @@
 #ifndef CONFIG_IMBE
 #define CONFIG_IMBE			CONFIG_P25
 #endif
+// The 2400 bit/s MBE voice codec (core/mbe/mbe2400.h), compatible with D-STAR's voice frames; MBE is on with it too
+#ifndef CONFIG_MBE2400
+#define CONFIG_MBE2400			0
+#endif
 #ifndef CONFIG_MBE
-#define CONFIG_MBE			CONFIG_IMBE
+#define CONFIG_MBE			(CONFIG_IMBE || CONFIG_MBE2400)
+#endif
+// Derived: the MBE core's per-frame options (core/mbe/mbe.h: MBE_UV_DENSITY, MBE_PHASE_REGEN) are built with a front
+// end that sets them. Another front end that sets them adds its switch here: without it the flags are not defined
+#ifndef CONFIG_MBE_OPTS
+#define CONFIG_MBE_OPTS			CONFIG_MBE2400
 #endif
 // Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
 // mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them
@@ -409,7 +435,7 @@
 
 // Derived: the shared packet data / CSBK code
 // Any of the radio's own services on the USB network link (core/net/net.c starts and polls them)
-#define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP || CONFIG_NET_RADIO_UDP)
+#define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP)
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
 					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT || \
@@ -479,6 +505,9 @@
 #if CONFIG_DEBUGLINK && !CONFIG_HOSTLINK
 #error "CONFIG_DEBUGLINK needs CONFIG_HOSTLINK"
 #endif
+#if CONFIG_SATELLITE_TLE && !CONFIG_DEBUGLINK
+#error "CONFIG_SATELLITE_TLE needs CONFIG_DEBUGLINK"
+#endif
 #if CONFIG_TASK_STACKS && !CONFIG_DEBUGLINK
 #error "CONFIG_TASK_STACKS needs CONFIG_DEBUGLINK"
 #endif
@@ -512,8 +541,8 @@
 #if (CONFIG_NET_KISS || CONFIG_NET_APRSIS) && !(CONFIG_NET_TCP && CONFIG_APRS_AFSK)
 #error "CONFIG_NET_KISS and CONFIG_NET_APRSIS need CONFIG_NET_TCP and CONFIG_APRS_AFSK"
 #endif
-#if (CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_RADIO_UDP) && !CONFIG_DMR_IP_GATEWAY
-#error "CONFIG_MDNS, CONFIG_TFTP and CONFIG_NET_RADIO_UDP need CONFIG_DMR_IP_GATEWAY (the IP stack they run on)"
+#if (CONFIG_MDNS || CONFIG_TFTP) && !CONFIG_DMR_IP_GATEWAY
+#error "CONFIG_MDNS and CONFIG_TFTP need CONFIG_DMR_IP_GATEWAY (the IP stack they run on)"
 #endif
 #if CONFIG_IDDB_COMPACT && !CONFIG_DMR
 #error "CONFIG_IDDB_COMPACT needs CONFIG_DMR"
@@ -529,6 +558,9 @@
 #endif
 #if CONFIG_SNMP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_SNMP needs CONFIG_DMR_IP_GATEWAY"
+#endif
+#if CONFIG_DEBUGLINK_DMRIP && !(CONFIG_DEBUGLINK && CONFIG_DMR_IP_GATEWAY)
+#error "CONFIG_DEBUGLINK_DMRIP needs CONFIG_DEBUGLINK and CONFIG_DMR_IP_GATEWAY"
 #endif
 #if CONFIG_USB_SERIAL_REQUEST && !CONFIG_USB_NETWORK
 #error "CONFIG_USB_SERIAL_REQUEST needs CONFIG_USB_NETWORK"

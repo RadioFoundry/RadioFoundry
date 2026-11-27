@@ -15,6 +15,10 @@
 #include "config.h"
 
 #define CODEPLUG_NAME_LEN	16
+// A name field's text valid: Latin-1 and 3-byte UTF-8 mixed, no stray continuation or control byte; a 3-byte lead
+// without its continuations is a Latin-1 byte. The rule the CPS and the radio use, also exposed for tests
+// (core/codeplug/codeplug.c)
+bool name_field_ok(const uint8_t *p, unsigned len, bool *empty);
 #define CODEPLUG_ZONE_MAX	80	// channels per zone
 #define CODEPLUG_DMR_ID_MAX	16776415u	// a radio's own ID; the IDs above it are the system's (gateways, all call)
 
@@ -54,6 +58,9 @@ typedef struct {
 	// parameter block, which its mode module fetches (codeplug_tag_params); none of them live here
 	uint8_t kind;
 	uint8_t system;
+#if CONFIG_DMR_AES
+	uint16_t aes_ref;  // 1 + the eight-bit PI key ID, zero for a missing or malformed reference
+#endif
 } channel_t;
 
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
@@ -164,7 +171,7 @@ bool codeplug_set_quick_keys(const uint16_t in[CODEPLUG_QUICK_KEYS]);
 
 #if CONFIG_APRS_AFSK
 // An open-firmware codeplug APRS configuration (open-firmware-cps.md 7.3.8; qdmr writes them): what the APRS engine
-// takes from it. Not read: the fixed position and the frequency (their encodings aren't in the interop spec yet)
+// takes from it. Not read: the fixed position (its encoding isn't in the interop spec yet)
 #define CODEPLUG_APRS_CONFIGS	8
 #define CODEPLUG_APRS_COMMENT	23
 typedef struct {
@@ -174,6 +181,7 @@ typedef struct {
 	char sym_code;
 	char comment[CODEPLUG_APRS_COMMENT + 1];
 	uint8_t ambiguity;	// 0-4
+	uint32_t tx_hz;		// the APRS frequency, 0 = none
 } codeplug_aprs_t;
 // Configuration n (1..CODEPLUG_APRS_CONFIGS); false when empty, unknown or no open-firmware codeplug
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out);
@@ -182,6 +190,8 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out);
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2);
 // Rewrite configuration n's SSID (0-15), the same way
 bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid);
+// Rewrite configuration n's frequency, the same way
+bool codeplug_set_aprs_freq(uint8_t n, uint32_t hz);
 #endif
 
 // Re-read everything after the image was written underneath (the CPS); bumps the serial

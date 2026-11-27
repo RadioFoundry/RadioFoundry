@@ -20,6 +20,7 @@ from rfoundry_hil import DebugLink, DebugLinkError, need_radio_tx, skip
 from hil_config import rig
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
+PERIPHERAL_NET = 0x0D000000      # 13.0.0.0/8, IPGW_PERIPHERAL_NET
 FIXED_RADIO = "192.168.10.1"     # IPGW_FIXED_LINK_DEFAULT
 FIXED_HOST = "192.168.10.2"
 BENCH_SRC = 9990301
@@ -63,8 +64,7 @@ def _back_to_serial(radio, ips):
 def _addresses(radio):
     own = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
     assert 0 < own < (1 << 24), "no DMR ID: the gateway can't make an address"
-    host = ipaddress.IPv4Address(INDIVIDUAL_NET | own)
-    return own, str(host), str(ipaddress.IPv4Address(int(host) ^ 1))
+    return own, str(ipaddress.IPv4Address(PERIPHERAL_NET | own)), str(ipaddress.IPv4Address(INDIVIDUAL_NET | own))
 
 
 @pytest.mark.feature("dmr_control_station")

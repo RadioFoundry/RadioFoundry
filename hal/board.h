@@ -121,6 +121,10 @@ typedef struct {
 	// Optional: line i of the board's own debug link view keys as "key=value" (the debug link's `board` section adds
 	// the "board." prefix; the keys are listed in the radio's hardware spec); false past the last line
 	bool (*view_line)(uint8_t i, char *buf, uint8_t len);
+	// Optional: true when a marker the board reads suggests the radio is another hardware version than the image was
+	// built for (a build option such as POWER). Only a warning, since the marker may be wrong: the radio still
+	// transmits. The diagnostics page shows it, and the debug link as board.variant_mismatch. NULL: never
+	bool (*variant_mismatch)(void);
 	// Optional: line i of the radio's hardware identity for About and the support info (docs/spec/support-info.md 2):
 	// *role a BOARD_HW_*, the part and what the board knows of its version or variant in buf ("FD6818 set-up B").
 	// Only what the board already holds (read at start-up, detected, stored): never a bus transfer, since the UI task
@@ -188,6 +192,12 @@ static inline void board_rx_ext_set(bool on)
 	if (board.rx_ext_count != 0u) {
 		*board.rx_ext_on = on;
 	}
+}
+
+// The board suspects the image was built for another hardware version of the radio (board_t.variant_mismatch)
+static inline bool board_variant_mismatch(void)
+{
+	return board.variant_mismatch != NULL && board.variant_mismatch();
 }
 
 // The radio runs from a battery (every handheld). False for a mobile on a fixed supply (CAP_NO_BATTERY)

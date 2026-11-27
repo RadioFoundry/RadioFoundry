@@ -22,7 +22,7 @@ import pytest
 
 from rfoundry_hil import DebugLink, skip
 from test_split_duplex import check_rx_labels, rx_half_labels
-from test_usb_network import INDIVIDUAL_NET, _udp_link
+from test_usb_network import INDIVIDUAL_NET, PERIPHERAL_NET, _udp_link
 from hil_config import rig
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -67,8 +67,8 @@ def net(radio):
             serial_link.close()
             skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
         own_id = int(serial_link.view(["dmr"]).get("dmr.own_id", "0"))
-        host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)
-        radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+        host_ip = ipaddress.IPv4Address(PERIPHERAL_NET | own_id)
+        radio_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | own_id))
         serial_link.usb_network(True)
         serial_link.close()
         n = NetRadio(radio_ip)

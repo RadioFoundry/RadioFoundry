@@ -7,26 +7,28 @@ built for the host from tools/bench/p25: `make -C tools/bench/p25`, done here wh
 than its sources).
 
     p25tool.py gen OUT.dibits --expect EXP.json [--nac 293] [--tg N | --dst N] [--src N] [--pairs N]
-               [--voice HEX22 | --random-voice SEED] [--ss unknown|talkaround|busy|idle] [--lead N] [--tail N]
+               [--voice HEX22 | --random-voice SEED | --voice-file FILE] [--ss unknown|talkaround|busy|idle] [--lead N] [--tail N]
                [--ber P --seed S] [--emergency] [--unpacked]
     p25tool.py decode IN.dibits [--expect EXP.json] [--unpacked | --air-jsonl] [--soft FILE] [--nac 293]
     p25tool.py disc IN.raw --rate HZ [--full HZ | --counts-per-khz N] [--invert] [--bits 8 --shift S] [--skip S]
                [--meta IN.json] [--expect EXP.json]
-    p25tool.py cc OUT.dibits --expect EXP.json [--nac 293] [--wacn BEE00] [--sysid 2F3] [--rfss N] [--site N]
+    p25tool.py cc OUT.dibits --expect EXP.json [--nac 293] [--wacn A4C21] [--sysid 2F3] [--rfss N] [--site N]
                [--units N] [--ch 1004] [--base HZ] [--spacing HZ] [--tx-offset HZ]
                [--grant TG:CH[:SRC[:SVC]] [--grant-at FIRST[:COUNT[:EVERY]]]] [--reg UNIT[:RV] [--reg-at FIRST[:COUNT[:EVERY]]]]
                [--aff UNIT:TG[:GAV] [--aff-at ...]] [--deny UNIT[:REASON[:SVC]] [--deny-at ...]]
                [--queue UNIT[:REASON[:SVC]] [--queue-at ...]]
-    p25tool.py inbound OUT.dibits --expect EXP.json [--nac 293] [--src N] [--tg N] [--wacn BEE00] [--sysid 2F3]
+    p25tool.py inbound OUT.dibits --expect EXP.json [--nac 293] [--src N] [--tg N] [--wacn A4C21] [--sysid 2F3]
                [--svc N] [--gap SYMS] [--reps N]
     p25tool.py mod IN.dibits OUT.raw [--rate HZ] [--full HZ] [--dev-scale PCT] [--offset HZ] [--noise HZ] [--ppm P]
                [--invert] [--carrier-gap S] [--carrier-lead S] [--seed S]
     p25tool.py selftest
 
 gen writes a transmission as the firmware's transmit path builds it (p25_call_tx): the profile's idle symbols as a
-lead, a header, N pairs of LDU1 and LDU2, a terminator, a tail. The dibit file is the air interface's packing (four
-a byte, the first in bits 7-6; 01 +3, 00 +1, 10 -1, 11 -3), which the bench's fsk4 transmitter takes as it is. --ber
-flips bits after the expect file was written. The expect file (JSON) lists every unit with its symbols, position and
+lead, a header, N pairs of LDU1 and LDU2, a terminator, a tail. Voice frames are one made-up 88-bit pattern (--voice),
+random (--random-voice), or the 11-byte full-rate frames of a file in order (--voice-file, as
+tests/data/voice/test_transmission.imbe holds them; its last one repeats). The dibit file is the air interface's
+packing (four a byte, the first in bits 7-6; 01 +3, 00 +1, 10 -1, 11 -3), which the bench's fsk4 transmitter takes as
+it is. --ber flips bits after the expect file was written. The expect file (JSON) lists every unit with its symbols, position and
 voice frames, for decode and disc to compare against.
 
 decode reads symbols (a dibit file, one symbol a byte with --unpacked, or `rfoundry_debug.py air rx` records with
@@ -357,7 +359,7 @@ def pass_opts(a, names):
 
 
 def cmd_gen(a):
-    lines = run(["gen", a.out, a.expect] + pass_opts(a, ["nac", "tg", "dst", "src", "pairs", "voice", "random-voice",
+    lines = run(["gen", a.out, a.expect] + pass_opts(a, ["nac", "tg", "dst", "src", "pairs", "voice", "random-voice", "voice-file",
                                                          "ss", "lead", "tail", "ber", "seed", "emergency",
                                                          "unpacked"]))
     d = lines[-1]
@@ -589,6 +591,7 @@ def main(argv=None):
     g.add_argument("--pairs", type=int, default=None, help="LDU1 + LDU2 pairs (3)")
     g.add_argument("--voice", default=None, help="every voice frame: 11 bytes in hex")
     g.add_argument("--random-voice", type=int, default=None, metavar="SEED", help="random voice frames")
+    g.add_argument("--voice-file", default=None, help="voice frames from a file of 11-byte frames (the last repeats)")
     g.add_argument("--ss", choices=("unknown", "talkaround", "busy", "idle"), default=None,
                    help="the status symbols (unknown: a subscriber, direct or to a repeater)")
     g.add_argument("--lead", type=int, default=None, help="idle symbols before (0)")
@@ -630,7 +633,7 @@ def main(argv=None):
     c.add_argument("out")
     c.add_argument("--expect", required=True)
     c.add_argument("--nac", default=None, help="hex (293)")
-    c.add_argument("--wacn", default=None, help="hex (BEE00)")
+    c.add_argument("--wacn", default=None, help="hex (A4C21)")
     c.add_argument("--sysid", default=None, help="hex (2F3)")
     c.add_argument("--rfss", type=int, default=None)
     c.add_argument("--site", type=int, default=None)
@@ -658,7 +661,7 @@ def main(argv=None):
     i.add_argument("--nac", default=None, help="hex (293)")
     i.add_argument("--src", type=int, default=None, help="the unit (1)")
     i.add_argument("--tg", type=int, default=None, help="the talk group (1)")
-    i.add_argument("--wacn", default=None, help="hex (BEE00)")
+    i.add_argument("--wacn", default=None, help="hex (A4C21)")
     i.add_argument("--sysid", default=None, help="hex (2F3)")
     i.add_argument("--svc", type=int, default=None, help="the voice request's service options (0)")
     i.add_argument("--gap", type=int, default=None, help="idle symbols between bursts (480)")

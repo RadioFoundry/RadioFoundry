@@ -37,6 +37,17 @@ static uint32_t press_after(shared_ptt_t *s, bool rx_seen, uint32_t rx, uint32_t
 	return NEVER;
 }
 
+// The pin idles high from t for ms, scanned every 10 ms: never a press
+static void idle(shared_ptt_t *s, bool rx_seen, uint32_t rx, uint32_t t, uint32_t ms)
+{
+	for (uint32_t d = 0; d < ms; d += 10) {
+		CHECK(!gate(s, false, rx_seen, rx, t + d));
+	}
+}
+
+// From power-on: the gate's first call at t; the pin idles high long enough to count as idle
+#define IDLE_FROM_START	(PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS + 10u)
+
 static uint32_t rng = 0x2545F491u;
 
 static uint32_t rnd(uint32_t n)
@@ -81,6 +92,7 @@ static uint32_t host_traffic(shared_ptt_t *s, uint32_t t0, uint32_t ms)
 int main(void)
 {
 	shared_ptt_t s = { 0 };
+	idle(&s, false, 0, 0, IDLE_FROM_START);
 
 	// Released: never pressed, whatever the serial line does
 	CHECK(!gate(&s, false, false, 0, 1000));
@@ -153,13 +165,14 @@ int main(void)
 	shared_ptt_t h = { 0 };
 	CHECK(host_traffic(&h, 100000, 600000) == 0u);
 	CHECK(h.ignored > 0u);
-	CHECK(!gate(&h, false, true, 700000, 700000 + 5u));
-	CHECK(press_after(&h, true, 700000, 700000 + SHARED_PTT_QUIET_MS, 10, 100) == SHARED_PTT_HOLD_MS);
+	idle(&h, true, 700000, 700000 + 5u, PLUG_PTT_ARM_MS + 10u);
+	CHECK(press_after(&h, true, 700000, 700200, 10, 100) == SHARED_PTT_HOLD_MS);
 
 	// The radio's own RF on the cable (a minute keyed, seen on the bench): a burst keyed the radio by the link, RF pulled
 	// the line low with garbage flagged characters and no good byte, the gate took it for a press, and the press kept
 	// the radio keyed. While the radio transmits, a new low never presses, however long
 	shared_ptt_t r = { 0 };
+	idle(&r, true, 790000, 790000, IDLE_FROM_START);
 	keyed = true;
 	for (uint32_t t = 800000; t < 860000; t += 10) {
 		if (t % 170u < 10u) {
@@ -177,6 +190,7 @@ int main(void)
 	// A press held when the radio keys stays held while it transmits: the key grounds the line, nothing arrives. Its own
 	// break, and the key's bounce, while it settles, are not noise
 	shared_ptt_t k = { 0 };
+	idle(&k, true, 0, 899600, IDLE_FROM_START);
 	CHECK(!gate(&k, false, true, 0, 899990));
 	CHECK(press_after(&k, true, 0, 900000, 10, 100) == SHARED_PTT_HOLD_MS);
 	flagged++;	// the break, reported late
@@ -238,12 +252,17 @@ int main(void)
 	}
 	CHECK(!gate(&b, false, false, 0, 601000));
 	CHECK(!shared_ptt_stuck(&b, 601000));
-	CHECK(press_after(&b, false, 0, 601010, 10, 100) == SHARED_PTT_HOLD_MS);	// a key held at power-on, let go, pressed
-	CHECK(!shared_ptt_stuck(&b, 601200));
+	idle(&b, false, 0, 601000, PLUG_PTT_ARM_MS + 10u);	// a key held at power-on, let go, pressed
+	CHECK(press_after(&b, false, 0, 601200, 10, 100) == SHARED_PTT_HOLD_MS);
+	CHECK(!shared_ptt_stuck(&b, 601400));
 
-	// Latched at the end of host traffic: low from the last good byte on, past the quiet time
+	// Latched at the end of host traffic: the host's last byte and the radio's answer both after the last high read,
+	// low from then on, past the quiet time
 	shared_ptt_t e = { 0 };
+	idle(&e, false, 0, 0, IDLE_FROM_START);
 	CHECK(!gate(&e, false, true, 1000, 1005));
+	tx_seen = true;
+	tx_ms = 1500;
 	for (uint32_t t = 2000; t < 62000; t += 10) {
 		CHECK(!gate(&e, true, true, 1995, t));
 	}
@@ -251,9 +270,59 @@ int main(void)
 	// A good byte: the line is alive after all
 	CHECK(!gate(&e, true, true, 62001, 62010));
 	CHECK(!shared_ptt_stuck(&e, 62010));
+	tx_seen = false;
+
+	// A key's bounce frames a good byte as it closes (or a hand mic sends one), with no send of the radio's own since
+	// the line last read high: a press, never the latch (field reports: nothing for 2 s, then the stuck LEDs)
+	shared_ptt_t m = { 0 };
+	idle(&m, false, 0, 9600, IDLE_FROM_START);
+	CHECK(!gate(&m, false, false, 0, 10000));
+	CHECK(press_after(&m, true, 10003, 10003 + SHARED_PTT_QUIET_MS, 10, 100) == SHARED_PTT_HOLD_MS);
+	CHECK(!shared_ptt_stuck(&m, 13000));
+	CHECK(!gate(&m, false, true, 10003, 13010));
+	// The same after the radio answered a host long ago: its old send is from before the high read
+	tx_seen = true;
+	tx_ms = 12000;
+	CHECK(!gate(&m, false, true, 10003, 13020));
+	CHECK(press_after(&m, true, 13023, 13023 + SHARED_PTT_QUIET_MS, 10, 100) == SHARED_PTT_HOLD_MS);
+	tx_seen = false;
+
+	// What the rule gives up: a bounce byte as the key closes, with a send of the radio's own since the last high read
+	// (a host on the cable the radio answers), reads as the latch. Refused and stuck; the next press, after the line
+	// reads high again, keys
+	shared_ptt_t g2 = { 0 };
+	idle(&g2, false, 0, 20000, IDLE_FROM_START);
+	CHECK(!gate(&g2, false, true, 19000, 20400));
+	tx_seen = true;
+	tx_ms = 20404;
+	CHECK(press_after(&g2, true, 20406, 20406 + SHARED_PTT_QUIET_MS, 10, 2500) == NEVER);
+	CHECK(shared_ptt_stuck(&g2, 22500));
+	CHECK(!gate(&g2, false, true, 20406, 22510));
+	CHECK(press_after(&g2, true, 20406, 22520, 10, 100) == SHARED_PTT_HOLD_MS);
+	tx_seen = false;
+
+	// A long answer of the radio's: the host sends during it, the last host byte comes after the last high read and the
+	// line clamps while the radio is still sending. The port reports a write under way as sending now (tx_ms follows the
+	// clock), so the clamp reads as one after the radio's send: never a press
+	shared_ptt_t w = { 0 };
+	idle(&w, false, 0, 30000, IDLE_FROM_START);
+	tx_seen = true;
+	tx_ms = 30500;		// the write starts
+	CHECK(!gate(&w, false, true, 30490, 30500));
+	for (uint32_t t = 30510; t < 31000; t += 10) {
+		tx_ms = t;	// still writing
+		CHECK(!gate(&w, true, true, 30503, t));
+	}
+	tx_ms = 31000;		// the write ends; the line stays clamped
+	for (uint32_t t = 31010; t < 33100; t += 10) {
+		CHECK(!gate(&w, true, true, 30503, t));
+	}
+	CHECK(shared_ptt_stuck(&w, 33100));
+	tx_seen = false;
 
 	// The clamp lands just after a scan saw the line high: low within the guard of the radio's own send. Never a press
 	shared_ptt_t c = { 0 };
+	idle(&c, false, 0, 2000, IDLE_FROM_START + 400u);
 	CHECK(!gate(&c, false, true, 3000, 3005));
 	tx_seen = true;
 	tx_ms = 3008;
@@ -268,6 +337,46 @@ int main(void)
 	CHECK(gate(&c, true, true, 3000, 123000));
 	CHECK(!shared_ptt_stuck(&c, 123000));
 	tx_seen = false;
+
+	// Start-up (#716): the pin reads high while the lines settle, then rests low (a cable or mic holding it). Never a
+	// press, however long the high inside the settle time; stuck, so the radio shows it
+	shared_ptt_t u = { 0 };
+	idle(&u, false, 0, 0, PLUG_PTT_SETTLE_MS);
+	for (uint32_t t = PLUG_PTT_SETTLE_MS; t < 60000; t += 10) {
+		CHECK(!gate(&u, true, false, 0, t));
+	}
+	CHECK(shared_ptt_stuck(&u, 60000));
+	CHECK(!u.arm.armed);
+
+	// The settle time counts from the first call, not the clock's zero, and across a clock wrap
+	u = (shared_ptt_t){ 0 };
+	idle(&u, false, 0, 0xFFFFFF80u, PLUG_PTT_SETTLE_MS);
+	CHECK(!u.arm.armed);
+	CHECK(press_after(&u, false, 0, 0xFFFFFF80u + PLUG_PTT_SETTLE_MS, 10, 5000) == NEVER);
+	// and arms across the wrap: idle high after the settle time, then a press
+	u = (shared_ptt_t){ 0 };
+	idle(&u, false, 0, 0xFFFFFF80u, IDLE_FROM_START);
+	CHECK(u.arm.armed);
+	CHECK(press_after(&u, false, 0, 0xFFFFFF80u + IDLE_FROM_START, 10, 100) == SHARED_PTT_HOLD_MS);
+
+	// High through start-up and after: idle only PLUG_PTT_ARM_MS after the settle time, not before
+	u = (shared_ptt_t){ 0 };
+	idle(&u, false, 0, 5000, PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS);
+	CHECK(!u.arm.armed);
+	idle(&u, false, 0, 5000 + PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS, 20);
+	CHECK(u.arm.armed);
+	CHECK(press_after(&u, false, 0, 5400, 10, 100) == SHARED_PTT_HOLD_MS);
+
+	// After the settle time, glitches high shorter than the idle time don't count
+	u = (shared_ptt_t){ 0 };
+	idle(&u, false, 0, 0, PLUG_PTT_SETTLE_MS);
+	for (uint32_t t = PLUG_PTT_SETTLE_MS; t < 10000; t += 200) {
+		idle(&u, false, 0, t, 50);
+		for (uint32_t d = 50; d < 200; d += 10) {
+			CHECK(!gate(&u, true, false, 0, t + d));
+		}
+	}
+	CHECK(!u.arm.armed);
 
 	if (failures == 0) {
 		printf("sharedPttTest: all passed\n");

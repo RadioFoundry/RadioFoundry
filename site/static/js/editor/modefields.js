@@ -7,6 +7,8 @@
 // "freq" (MHz to Hz; zero: blank is 0), "bool", "select" (options: [value, label or i18n key]), "list" (whole numbers
 // split on spaces or commas, at most count), "hexbytes" (bytes octets in hex, or blank), "text" (trimmed, unless the
 // spec's keep(raw) says what to keep).
+// A select whose options(r) read other fields of the record (a key list from the channel's system) sets dynamic: the
+// form then rebuilds its list as those fields change, instead of keeping the one built when the form opened.
 
 import { parseFreq, mhz } from "../codeplug/fields.js";
 
@@ -74,7 +76,7 @@ export function specField(spec, t, holder, id) {
 	};
 	if (spec.type === "bool") return { ...f, type: "bool", set: (r, v) => on(r) && holder.put(r, spec.key, !!v) };
 	if (spec.type === "select") {
-		return { ...f, type: "select", options: () => spec.options().map(([v, l]) => [v, label(t, l)]), set: (r, v) => on(r) && holder.put(r, spec.key, v) };
+		return { ...f, type: "select", dynamicOptions: !!spec.dynamic, options: (r) => spec.options(r).map(([v, l]) => [v, label(t, l)]), set: (r, v) => on(r) && holder.put(r, spec.key, v) };
 	}
 	return {
 		...f, type: "text",
@@ -86,4 +88,19 @@ export function specField(spec, t, holder, id) {
 			holder.put(r, spec.key, res.value);
 		},
 	};
+}
+
+// The system's fields as typed in the form so far: the stored fields, each text field of the module replaced by what
+// read(`sys.<key>`) returns when that parses (a blank reads as the field's blank value). read gives undefined for a
+// field with no input yet, and text that doesn't parse leaves the stored value, as the form would on save.
+export function liveSystemFields(mod, fields, read, t) {
+	const live = { ...fields };
+	for (const spec of mod.fields()) {
+		if (spec.type === "bool" || spec.type === "select") continue;
+		const raw = read(`sys.${spec.key}`);
+		if (raw === undefined) continue;
+		const res = parseSpec(spec, raw, t, live);
+		if (!res.error) live[spec.key] = res.value;
+	}
+	return live;
 }

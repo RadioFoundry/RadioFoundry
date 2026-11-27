@@ -59,6 +59,9 @@ static const char features[] =
 #if CONFIG_GPS
 	"GPS,"
 #endif
+#if CONFIG_SATELLITE_TLE
+	"SATELLITE_TLE,"
+#endif
 #if CONFIG_APRS
 	"APRS,"
 #endif
@@ -91,6 +94,9 @@ static const char features[] =
 #endif
 #if CONFIG_DMR_ROAMING
 	"DMR_ROAMING,"
+#endif
+#if CONFIG_DMR_AES
+	"DMR_AES,"
 #endif
 #if CONFIG_DMR_TRUNK
 	"DMR_TRUNK,"
@@ -130,9 +136,6 @@ static const char features[] =
 #endif
 #if CONFIG_NET_HTTP_GZIP
 	"NET_HTTP_GZIP,"
-#endif
-#if CONFIG_NET_RADIO_UDP
-	"NET_RADIO_UDP,"
 #endif
 #if CONFIG_NET_RIGCTL
 	"NET_RIGCTL,"

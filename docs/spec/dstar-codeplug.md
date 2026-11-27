@@ -31,7 +31,7 @@ The callsign characters are the ones callsigns and the gateway commands of 2.3 u
 character out of a header it sends. A writer cleans a field the same way before storing it, and a field shorter than
 its length is padded with spaces.
 
-## 2. Channel (kind 5)
+## 2. Channel (kind 6)
 
 The tag ([channel-modes.md](channel-modes.md) 2): no system (0xFF), no fallback. Flag bit 0, transmit allowed, is set
 on a new channel: D-STAR is an amateur mode the user transmits on. The base record rule still applies: the base record
@@ -97,9 +97,9 @@ case, with a space before the module, and with a short reflector number (`REF1C`
 (`REF001CL`): reflectors are named with three letters and three digits, and `REF1  CL` names none. A name that isn't
 three letters and one to three digits (a repeater's callsign) is padded as typed.
 
-## 3. Radio-wide record (kind 5)
+## 3. Radio-wide record (kind 6)
 
-Key 0x0A00 + 4 ([channel-modes.md](channel-modes.md) 5.5):
+Key 0x0A00 + 6, 0x0A06 ([channel-modes.md](channel-modes.md) 5.5):
 
 | Offset | Size | Field |
 |---|---|---|

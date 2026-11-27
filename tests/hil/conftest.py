@@ -32,8 +32,12 @@ def pytest_addoption(parser):
     g.addoption("--sfr-freq", type=float, default=None,
                 help="MHz: the SFR test channels' frequency (test_sfr_standalone); default --dmr-freq")
     g.addoption("--ambe", default=os.environ.get("RFOUNDRY_HIL_AMBE"),
-                help="a 9-byte-frame .ambe speech recording on this Mac for test_dmr_voice ($RFOUNDRY_HIL_AMBE); never "
-                     "commit recordings")
+                help="AMBE+2 speech, 9-byte frames ($RFOUNDRY_HIL_AMBE), in place of the test voice set "
+                     "(tests/data/voice) in test_dmr_voice, test_dmr_audio_smoke, test_nxdn_rx_speech and "
+                     "test_speaker_ear; test_usrp sends speech only with it. Never commit recordings")
+    g.addoption("--imbe", default=os.environ.get("RFOUNDRY_HIL_IMBE"),
+                help="full-rate speech, 11-byte frames ($RFOUNDRY_HIL_IMBE), in place of the test voice set's "
+                     "(tests/data/voice/test_transmission.imbe) in test_p25_rx_speech")
     g.addoption("--rssi-floor", type=int, default=-115, help="dBm: test_fm passes above this")
     g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
     g.addoption("--bench-wait-max", type=float, default=float(os.environ.get("RFOUNDRY_SDR_BENCH_WAIT_MAX", "900")),
@@ -137,6 +141,9 @@ def pytest_addoption(parser):
                      "bandwidth, one over per step")
     g.addoption("--mic-gain-window", type=float, default=30.0,
                 help="test_mic_gain: seconds the SDR bench records per over (unplug, key, talk, release in it)")
+    g.addoption("--dmrip-relay", default=os.environ.get("RFOUNDRY_DMRIP_RELAY"), metavar="route|HOST[:PORT]",
+                help="test_debuglink_dmrip over the air: the IP gateway's way to the radio (route: this host's route "
+                     "to 12.0.0.0/8; HOST[:PORT]: a relay)")
     hil_config.add_options(g)
     bringup_plugin.add_options(parser)
 
@@ -154,6 +161,7 @@ def pytest_configure(config):
         config.args += sorted(d for d in glob.glob(os.path.join(ROOT, "boards", "*", "hil"))
                               if glob.glob(os.path.join(d, "test_*.py")))
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
+    config.addinivalue_line("markers", "rf_fallback: the test checks --allow-rf itself if its fallback needs to transmit")
     config.addinivalue_line("markers", "bench_service: uses the bench board's transmitter or receiver through a "
                             "session (needs --bench-api, skips without one)")
     config.addinivalue_line("markers", "sdr_rx: uses the bench board's receiver and no transmitter. With bench_modem "

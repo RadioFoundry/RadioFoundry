@@ -2,9 +2,11 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Helpers for the hardware-in-the-loop tests: the radio over its USB debug link (Radio), and the SDR bench with its
 bench board (SdrBench). See README.md."""
+import array
 import collections
 import contextlib
 import json
+import math
 import os
 import re
 import shlex
@@ -24,7 +26,9 @@ from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_network_radi
                        parse_counters,
                        to_rgb, write_png, ACTIONS, PRESS, LONG, UP, APRS, APRS_OP_MESSAGE, APRS_OP_SEND_NOW,
                        APRS_OP_STATUS, DATA_OP_CALL_ALERT, DATA_OP_EMERGENCY, DATA_OP_IP_SEND,
-                       DATA_OP_RADIO_CHECK, DATA_OP_SMS, DMR_DATA, KEY, OP_TONE_BURST, PTT, RADIO, T3)
+                       DATA_OP_RADIO_CHECK, DATA_OP_SMS, DETOUR, DMR_DATA, KEY, OP_CHANNEL_STEP, OP_CLEAR_TEMP,
+                       OP_DMR_FIELDS, OP_NXDN, OP_P25, OP_SETTING, OP_TONE_BURST, OP_VFO, OP_VFO_COPY, OP_VFO_SET,
+                       OP_VFO_STEP, OP_ZONE, OP_ZONE_POS, PTT, RADIO, T3)
 
 
 # Layer 1 of the TX guard (README.md, "Transmit frequencies"): with --allow-rf, every debug link request that keys the
@@ -72,6 +76,38 @@ def keys_tx(cmd, payload):
     return None
 
 
+# DETOUR RUN (debuglink.md 7.4) carries its own requests as items, run by the radio after the reply: the guard checks
+# each item that keys on the frequency the items before it leave the radio on. OP_VFO_SET's frequency is known here;
+# any other change of channel, zone, VFO or mode can't be followed, so a detour that makes one and then keys is refused.
+# A detour never changes TX inhibit (SETTING 5) in a HIL run: layer 2 would be lifted where no test asked for it.
+DETOUR_RUN_OP = 1
+DETOUR_RETUNES = {OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_STEP, OP_CLEAR_TEMP, OP_DMR_FIELDS, OP_VFO_COPY,
+                  OP_P25, OP_NXDN}
+SETTING_TX_INHIBIT = 5
+
+
+def detour_tx_freqs(link, payload, check_tx=True):
+    """The frequencies (MHz) a DETOUR RUN's items would key on; raises when an item can't be checked. check_tx=False
+    only refuses a TX inhibit change (a run without --allow-rf: layer 2 covers the keying, as for a plain PTT)"""
+    p, at, hz, out = bytes(payload), 3, None, []
+    while at + 2 <= len(p):
+        cmd, n = p[at], p[at + 1]
+        item = p[at + 2:at + 2 + n]
+        at += 2 + n
+        if cmd == RADIO and item[:1] == bytes([OP_SETTING]) and item[1:2] == bytes([SETTING_TX_INHIBIT]):
+            raise RuntimeError("TX refused: a detour must not change TX inhibit in a HIL run")
+        if cmd == RADIO and item[:1] == bytes([OP_VFO_SET]) and len(item) >= 5:
+            hz = int.from_bytes(item[1:5], "little")
+        elif cmd == RADIO and item[:1] and item[0] in DETOUR_RETUNES:
+            hz = -1
+        elif check_tx and keys_tx(cmd, item) is not None:
+            if hz == -1:
+                raise RuntimeError("TX refused: this detour keys after a change of channel, zone or mode, so its "
+                                   "transmit frequency can't be checked (set the frequency with \"radio freq\")")
+            out += [hz / 1e6] if hz else tx_freqs(link, "channel")
+    return out
+
+
 def tx_freqs(link, where):
     """The frequencies (MHz) a request that keys on `where` (keys_tx) would transmit on, as the radio says now"""
     # A position goes out by AFSK, over DMR or both (set.aprs_via; a firmware that doesn't say gets both checked);
@@ -94,10 +130,26 @@ def tx_freqs(link, where):
         afsk = int(a.get("aprs.freq_hz") or 0) / 1e6 if a.get("aprs.block") == "ok" else 0     # else no AFSK goes out
         out += [afsk] if afsk else []
     if via != "rf":
-        core = link.view(["core"])
+        core = _core_for_guard(link)
         if where == "channel" or core.get("mode") == "dmr":   # positions over DMR go on the DMR channel
             out.append(int(core.get("tx_hz") or 0) / 1e6)
     return out
+
+
+# Over the air each read is a data burst each way (seconds): the guard reuses a core view read this recently, so a
+# test can read the TX frequency before it starts a timed recording and the run's check costs nothing. A RADIO or
+# DETOUR request may move the radio, so each one drops the reading (_guarded_request)
+AIR_CORE_FRESH_S = 10.0
+
+
+def _core_for_guard(link):
+    if not getattr(link, "air", False):
+        return link.view(["core"])
+    at, core = getattr(link, "_guard_core", (None, None))
+    if at is None or time.monotonic() - at > AIR_CORE_FRESH_S:
+        core = link.view(["core"])
+        link._guard_core = (time.monotonic(), core)
+    return core
 
 
 _request = DebugLink.request
@@ -114,17 +166,75 @@ def _guarded_request(self, cmd, payload=b"", *args, **kwargs):
             staged["listen_only"] = bool(int.from_bytes(p[9:11], "little") & T3_OPT_LISTEN_ONLY)
         elif p[0] == T3_OP_CTRL and len(p) >= 11 and "tx_hz" not in staged:
             staged["tx_hz"] = int.from_bytes(p[7:11], "little")
+    detour = cmd == DETOUR and p[:1] == bytes([DETOUR_RUN_OP])
+    freqs = []
+    if detour and hil_config.CONFIG is not None:
+        freqs = detour_tx_freqs(self, p, check_tx=bool(hil_config.CONFIG.getoption("--allow-rf")))
     if hil_config.CONFIG is not None and hil_config.CONFIG.getoption("--allow-rf"):
         where = keys_tx(cmd, payload)
-        if where is not None:
-            for mhz in tx_freqs(self, where):
+        if where is not None or detour:
+            for mhz in freqs if detour else tx_freqs(self, where):
                 if not hil_config.tx_allowed(None, mhz):
                     raise RuntimeError(f"TX refused: this request keys on {mhz:.5f} MHz, not one of the rig's "
                                        f"transmit frequencies (tx_mhz)")
+    if cmd in (RADIO, DETOUR):
+        self.__dict__.pop("_guard_core", None)      # checked above; the radio may be elsewhere after this
     return _request(self, cmd, payload, *args, **kwargs)
 
 
 DebugLink.request = _guarded_request
+
+
+
+# ── detour plans: many steps for three round trips ────────────────────────────
+# A test that keys and plays sounds over the air (the debug link over DMR IP, debuglink.md 7.4) can't afford a round
+# trip per step: each is a data burst each way on the channel. A plan records the steps as one DETOUR RUN, which the
+# radio runs on its own clock: the guard's read of the TX frequency, the run and one DETOUR STATUS once the plan's time
+# is up. The plan's marks give each step's time from the run's reply, for a recording made around it.
+
+class DetourPlan:
+    """Steps for one detour: any DebugLink call that makes RADIO or PTT requests (beep, ptt, setting, ...) is recorded
+    as an item; wait(ms) adds a pause; mark(name) notes the time (s) the next step starts"""
+
+    def __init__(self):
+        from rfoundry_debug import ItemRecorder
+        self._rec = ItemRecorder()
+        self.ms = 0
+        self.marks = {}
+
+    def wait(self, ms):
+        self._rec.items.append((0, int(ms)))
+        self.ms += int(ms)
+
+    def mark(self, name):
+        self.marks[name] = self.ms / 1000
+
+    @property
+    def items(self):
+        return self._rec.items
+
+    def __getattr__(self, name):
+        return getattr(self._rec, name)
+
+
+def run_detour(link, plan, slack_s=5.0, on_start=None):
+    """Runs plan as one detour and waits it out without asking the radio while it runs (over the air the radio can't
+    answer while keyed). on_start(t0) is called with the monotonic time the run's reply came back, which the plan's
+    marks count from (the radio starts the items as it sends the reply, so they run a little before t0). Returns
+    (t0, the detour's status once idle)"""
+    from rfoundry_debug import detour_status_until
+    seconds = math.ceil(plan.ms / 1000 + slack_s)
+    link.detour_run(seconds, plan.items)
+    t0 = time.monotonic()
+    if on_start is not None:
+        on_start(t0)
+    time.sleep(plan.ms / 1000)
+    end = t0 + seconds + 10
+    st = detour_status_until(link, end)
+    while st["phase"] != "idle" and time.monotonic() < end:
+        time.sleep(0.5)
+        st = detour_status_until(link, end)
+    return t0, st
 
 
 # ── skips ───────────────────────────────────────────────────────────────────
@@ -170,6 +280,27 @@ def skip(kind, reason, module=False):
     e = pytest.skip.Exception(skip_reason(kind, reason), allow_module_level=module)  # hil-skip: the helper
     e.kind = kind
     raise e
+
+
+# The test voice set (tests/data/voice/README.md): synthesized speech as the frames each digital mode carries, AMBE+2
+# in 9-byte frames (DMR, NXDN) and full rate in 11-byte frames (P25 Phase 1). A short test transmission (104 frames,
+# 2.08 s) and a countdown for longer overs (540 frames, 10.8 s). The voice tests send these unless --ambe / --imbe
+# names another file
+VOICE_DIR = os.path.join(ROOT, "tests", "data", "voice")
+TEST_SPEECH = {(o, long): os.path.join(VOICE_DIR, f"{name}.{o[2:]}") for o in ("--ambe", "--imbe")
+               for long, name in ((False, "test_transmission"), (True, "ten_second_countdown"))}
+
+
+def speech_file(pytestconfig, option, frame_bytes, long=False):
+    """The speech file a voice test sends: the --ambe or --imbe option's (or its environment variable's), else the
+    test voice set's, the countdown when long. Fails the test when the file is missing or not whole frames of
+    frame_bytes."""
+    __tracebackhide__ = True
+    import pytest
+    path = pytestconfig.getoption(option) or TEST_SPEECH[option, long]
+    if not os.path.isfile(path) or os.path.getsize(path) == 0 or os.path.getsize(path) % frame_bytes:
+        pytest.fail(f"{path}: not a file of {frame_bytes}-byte frames ({option})")
+    return path
 
 
 def need_radio_tx(radio):
@@ -375,6 +506,12 @@ class Radio:
         what the radio sends by itself (data replies, registration, beacons, roaming probes) can't go out either. The
         firmware sets it before it answers. False: firmware without the limit (no txlim in the core view)."""
         import hil_config
+        if self._txlim is None and getattr(self.link, "air", False):
+            # Over the air (debuglink.md 7.3) the radio takes reads and detours only: the limit can't be set, so the
+            # request check (layer 1) guards each detour's keying alone, and every write a test makes is refused
+            print("rfoundry-hil: debug link over the air: the test TX limit can't be set; only the request check "
+                  "guards TX")
+            self._txlim = False
         if self._txlim is None:
             self._txlim = "txlim" in self.view(["core"])
             if not self._txlim:
@@ -430,20 +567,23 @@ class Radio:
     def screen(self):
         return self.link.view(["link"]).get("ui.screen")
 
+    DMR_CALL_COUNTERS = ("call.rc_", "call.rx_end_", "call.rx_ts_dropped", "call.rx_cc_dropped", "call.rx_lc_taken")
+
     def counters(self):
         """(firmware ms, flat dict of every counter): the diagnostics lines (modem.*, call.*, voice.*, audio.*), the
-        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...), the reverse channel counters (call.rc_*)
-        and the hotspot counters (hs.*)"""
+        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...), the call filter and end counters and the
+        reverse channel counters (call.rx_ts_dropped, call.rx_end_*, call.rc_*, ...) and the hotspot counters (hs.*)"""
         ms, lines = self.link.diag()
         out = parse_counters(lines)
         for k, v in self.link.view(["dmr_stats", "hotspot"]).items():
             n = as_int(v)
             if n is not None and k != "ms":
                 out[k] = n
-        # The reverse channel counters sit in dmr_call (dmr_stats fills a reply)
+        # The filter, call end and reverse channel counters sit in dmr_call (dmr_stats fills a reply). Without them a
+        # delta of call.rx_ts_dropped read 0 whatever the radio dropped
         for k, v in self.link.view(["dmr_call"]).items():
             n = as_int(v)
-            if n is not None and k.startswith("call.rc_"):
+            if n is not None and k.startswith(self.DMR_CALL_COUNTERS):
                 out[k] = n
         return ms, out
 
@@ -739,7 +879,7 @@ class Radio:
 
     def hotspot_rf_level(self):
         """The MMDVM RF level (SET_FREQ / SET_CONFIG, 0-255) that gives bench_tx_level(): the smallest the radio
-        maps to it (radio_sm_hotspot_power spreads 0-255 over the power levels, rounding)"""
+        maps to it (radio_sm_hotspot_power spreads 0-254 over the power levels, rounding; 255 keeps the radio's own)"""
         level, n = self.bench_tx_level(), int(self.core().get("power_count") or 1)
         if level == 0 or n < 2:
             return 0
@@ -763,22 +903,22 @@ class Radio:
         afterwards (restore() does the rest). The VFO's mode and tones are kept settings: a run cut short in a DMR VFO
         test leaves it DMR, and a tone left on it (a run cut short in a tone test, or set by hand) keeps the squelch
         shut on every untoned bench signal."""
-        L = self.link
         if "VFO" not in self.features():
             skip("not_built", "built without the VFO")     # a radio with no keypad or display (BOARD_UNSUPPORTED)
+        # self.link, not a copy: a test inside may reopen the port (PPP, a USB switch) and leave the old link closed
         if self.core().get("vfo") != "1":
-            self._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
+            self._req_until(lambda: self.link.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
         hz = int(self.core()["rx_hz"])
         mode = self.core().get("mode")
         if mode != "fm":
-            self._req_until(lambda: L.dmr_fields(mode="fm"), lambda v: v.get("mode") == "fm", "FM VFO")
+            self._req_until(lambda: self.link.dmr_fields(mode="fm"), lambda v: v.get("mode") == "fm", "FM VFO")
         ch = self.view(["channel"])
         tones = {1: ch.get("ch.tx_tone", "none:0"), 2: ch.get("ch.rx_tone", "none:0")}     # 1 TX, 2 RX
 
         def set_tones(want):
             for which, t in want.items():
                 kind, value = t.split(":")
-                L.tone(which, kind, int(value))
+                self.link.tone(which, kind, int(value))
             self.wait_for(lambda v: v.get("ch.tx_tone") == want[1] and v.get("ch.rx_tone") == want[2],
                           sections=("channel",), what=f"VFO tones TX {want[1]}, RX {want[2]}")
         none = {1: "none:0", 2: "none:0"}
@@ -789,13 +929,15 @@ class Radio:
         finally:
             # The tones, frequency and mode are the VFO's: back in it first, after a test that left it for a channel
             if self.core().get("vfo") != "1":
-                self._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
-            if tones != none:
+                self._req_until(lambda: self.link.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
+            current = self.view(["channel"])
+            if any(current.get(key, "none:0") != tones[which]
+                   for which, key in ((1, "ch.tx_tone"), (2, "ch.rx_tone"))):
                 set_tones(tones)
             if self.core().get("rx_hz") != str(hz):
-                self._req_until(lambda: L.vfo_set(hz), lambda v: v.get("rx_hz") == str(hz), "VFO frequency back")
+                self._req_until(lambda: self.link.vfo_set(hz), lambda v: v.get("rx_hz") == str(hz), "VFO frequency back")
             if self.core().get("mode") != mode:
-                self._req_until(lambda: L.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
+                self._req_until(lambda: self.link.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
 
     def leave_vfo(self):
         """Put the radio on its stored channel when it is in the VFO, and return the core view. restore() puts back the
@@ -842,7 +984,7 @@ class _LineTx:
     """A bench board's tx or rx op (bench_line Request) as one of SdrBench's background jobs: .started once the board
     keyed (its "started" line) or started receiving (its rx header), .records an rx op's records, .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
 
-    def __init__(self, line, where, req):
+    def __init__(self, line, where, req, data=None):
         self.started = threading.Event()
         self.over = threading.Event()      # the done record came (the stream may stay open after it)
         self.done = None
@@ -850,7 +992,7 @@ class _LineTx:
         self.records = []
         self.pcm = {}               # an rx op's audio streams: name -> int16 LE bytes
         self.req_op = f"{req.get('op')} {req.get('mode', '')}".strip()                  # an rx op's records ({"block": ...})
-        self.req = line.Request(where, req, self._on)
+        self.req = line.Request(where, req, self._on, data=data)
 
     def _on(self, d, data):
         # A tx op's header comes before it waits for the modem: only its "started" line says it keyed. An rx op's
@@ -965,7 +1107,8 @@ class _LineJob:
     terminate = kill
 
 
-INDIVIDUAL_NET = 0x0C000000        # 12.0.0.0/8: the IP gateway's individual range (default addressing)
+INDIVIDUAL_NET = 0x0C000000        # 12.0.0.0/8: the IP gateway's individual range, the radios (default addressing)
+PERIPHERAL_NET = 0x0D000000        # 13.0.0.0/8: their peripherals, the host on the radio's link
 
 
 @contextlib.contextmanager
@@ -973,11 +1116,11 @@ def usb_network(radio, own_id, timeout=30.0):
     """The radio as this host's USB network adapter for the duration (docs/spec/usb-network.md; the test needs
     --allow-usb-switch): switched to the network personality, then its debug link over UDP at the radio's address once
     the host has its DHCP lease. Yields (udp, host_ip, radio_ip): the DebugLink over UDP and the addresses as strings,
-    12.<own_id> for the host and that xor 1 for the radio (the default /32 link). Afterwards, also on failure, the radio
+    13.<own_id> for the host and 12.<own_id> for the radio (the default /32 link). Afterwards, also on failure, the radio
     goes back to the serial personality and radio.link is opened again."""
     import ipaddress
-    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF))
-    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+    host_ip = ipaddress.IPv4Address(PERIPHERAL_NET | (own_id & 0xFFFFFF))
+    radio_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF)))
     radio.link.usb_network(True)
     radio.link.close()
     udp = None
@@ -1027,8 +1170,8 @@ def ppp_network(radio, own_id, timeout=30.0):
     if sudo and subprocess.run(sudo + ["true"], capture_output=True).returncode != 0:
         skip("bench", "pppd needs root: run as root or with passwordless sudo")
     script = os.path.join(ROOT, "tools", "rfoundry_ppp.sh")
-    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF))
-    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+    host_ip = ipaddress.IPv4Address(PERIPHERAL_NET | (own_id & 0xFFFFFF))
+    radio_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF)))
     radio.link.close()
     up, udp = False, None
     try:
@@ -1134,6 +1277,16 @@ class SdrBench:
         """Whether the TX board says it can do feature (its info's features, e.g. "dev_scale")"""
         return feature in (self._api_info().get("features") or {})
 
+    def max_key_s(self, want):
+        """The longest single key-up the TX board allows (its info's tx.max_key_s), at most want s"""
+        limit = (self._api_info().get("tx") or {}).get("max_key_s")
+        return float(want) if limit is None else min(float(want), float(limit))
+
+    def hears_while_keyed(self):
+        """True when the receive board decodes while the TX board keys: a second board, or one board that runs duplex
+        jobs (a half-duplex board says why it can't in info.jobs.bench_repeater)"""
+        return self.api_rx != self.api or not (self._api_info().get("jobs") or {}).get("bench_repeater")
+
     def _api_fail(self, e, what):
         """A BenchLineError from the board: a wait that ran out or a request the board can't serve is a skip."""
         if e.code in ("timeout", "busy", "deadlock"):
@@ -1233,11 +1386,12 @@ class SdrBench:
         return p
 
     # ── a bench board's transmitter (the line protocol's tx op, the gateway's bench-api.md 14.6) ──
-    def tx_start(self, mode, freq, program, max_s=10.0, **fields):
+    def tx_start(self, mode, freq, program, max_s=10.0, audio=None, **fields):
         """The TX board's signal mode (fm, am: its info's signal_modes) on freq (MHz), started in the background:
         program is a list of segments ({"kind": "tone", "hz": 1000, "s": 2}, "fsk", "dtmf", "sweep", "noise",
         "silence"), fields the mode's others (FM: ctcss, dcs, dev_hz, sub_dev_hz, lead_s, tail_s, repeat; AM: depth
-        ...; None left out). Returns once the board keyed: a _LineTx whose wait() gives the board's done record. Needs
+        ...; None left out). audio (FM): (rate, int16 samples) sent as the input, played where the program has a
+        {"kind": "pcm"} segment, or as the whole program when program is None. Returns once the board keyed: a _LineTx whose wait() gives the board's done record. Needs
         the lease (tests mark it bench_service and rf). A board without the mode skips."""
         name = mode.upper()
         if not self.allow_rf:
@@ -1251,15 +1405,21 @@ class SdrBench:
         self._api_reach(freq)
         self._api_claim(freq)
         req = {"op": "tx", "mode": mode, "freq": freq, "session": self._api_session, "max_s": max_s,
-               "program": program, "wait_max": self.wait_max,
-               "label": self.label or mode}
+               "wait_max": self.wait_max, "label": self.label or mode}
+        if program is not None:
+            req["program"] = program
+        data = None
+        if audio is not None:
+            rate, samples = audio
+            data = bytes(samples) if isinstance(samples, (bytes, bytearray)) else array.array("h", samples).tobytes()
+            req["pcm"] = {"rate": int(rate), "samples": len(data) // 2}
         if self.api_level is not None:
             req["power"] = self.api_level
         if mode == "fsk4":
             # A bench board can lose about the first 30 ms of a keying: lead with carrier so no symbols go there
             fields.setdefault("lead_s", 0.04)
         req.update({k: v for k, v in fields.items() if v is not None})
-        t = _LineTx(L, L.address(self.api), req)
+        t = _LineTx(L, L.address(self.api), req, data)
         self.bg.append(t)
         end = time.monotonic() + self.wait_max + 30      # it may queue behind another session's job
         while not t.started.wait(0.2) and not t.req.done.is_set() and time.monotonic() < end:
@@ -1274,9 +1434,9 @@ class SdrBench:
             raise RuntimeError(f"the bench board never keyed {name} on {freq} MHz: {t.req.replies[-3:]}")
         return t
 
-    def fm_tx_start(self, freq, program, max_s=10.0, **fields):
-        """tx_start of FM"""
-        return self.tx_start("fm", freq, program, max_s, **fields)
+    def fm_tx_start(self, freq, program, max_s=10.0, audio=None, **fields):
+        """tx_start of FM; audio (rate, int16 samples) as tx_start's"""
+        return self.tx_start("fm", freq, program, max_s, audio=audio, **fields)
 
     def fm_transmit(self, freq, program, max_s=10.0, **fields):
         """fm_tx_start, then its done record once the last sample went out"""
@@ -1518,13 +1678,14 @@ class SdrBench:
     def voice_call(self, freq, cc, dst, superframes=3, calls=1, headers=8, terminators=3, gap_ms=500, ambe=None,
                    private=False, src=None, late=None, talker_alias=None, pi=False, emergency=False,
                    service_options=None, gps=None, offset_hz=0, offset_sweep=None, superframes_per_step=1,
-                   background=False):
+                   family=None, background=False):
         """One or more voice calls from the bench (a bench_tx voice job). late=K: no header, the first K bursts left out;
         talker_alias: text in odd superframes; pi: the EMB PI bit on B-F; service_options: hex byte in the LC;
         gps: (lat, lon[, error code]) as an ETSI GPS Info LC in the odd superframes. offset_hz: the carrier that far
         from freq (+-2500 Hz; the lease stays on freq). offset_sweep=(from, to, step) Hz: one call stepping through
         the offsets, superframes_per_step superframes each (superframes ignored), with a "step" record a step.
-        background: the started job, as transmit()'s"""
+        family: the bursts' sync ("ms", the default, or "bs": base station sync, still one burst every 60 ms with no
+        CACH, as a simplex hotspot may send). background: the started job, as transmit()'s"""
         if offset_sweep:
             lo, hi, st = offset_sweep
             superframes = (int((hi - lo) / st + 1e-9) + 1) * superframes_per_step
@@ -1557,6 +1718,8 @@ class SdrBench:
             a += " --emergency"
         if service_options is not None:
             a += f" --service-options {service_options:02x}"
+        if family:
+            a += f" --family {family}"
         bursts = (0 if late is not None else headers) + 6 * superframes + terminators
         return self.transmit(a, freq, cc, expect_s=calls * bursts * 0.06 + (calls - 1) * gap_ms / 1000,
                              background=background)

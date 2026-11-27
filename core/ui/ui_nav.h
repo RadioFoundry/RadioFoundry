@@ -42,6 +42,9 @@ typedef enum {
 	SCR_MESSAGE_TEXT,		// message body editor
 	SCR_MESSAGE_READ,		// a message's whole text, scrolled (the message screen's Full message row)
 	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
+	SCR_SATELLITE_PASSES,		// Tools > Satellite: predict and select the next installed-TLE passes
+	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
+	SCR_SATELLITE_TEXT,		// one 69-character TLE line
 	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
 	SCR_DSTAR,			// D-STAR: UR and its shortcuts, the station (ui_dstar.c)
 	SCR_DSTAR_TEXT,			// its text editor (a reflector, MY, the suffix, the message)
@@ -74,6 +77,11 @@ typedef struct {
 	bool saved;		// in the contacts
 	char name[CODEPLUG_NAME_LEN + 1];
 } ui_target_t;
+
+#if CONFIG_SATELLITE_TLE
+void ui_menus_satellite_text(char *target, uint8_t line, void (*done)(void));
+void ui_satellite_passes_tick(void);
+#endif
 
 // A filtered list's raw row and its label (NULL: empty); false stops the pass
 typedef bool (*ui_raw_fn)(uint16_t raw, const char *label, void *ctx);
@@ -111,7 +119,7 @@ typedef struct {
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
-#if CONFIG_BACKLIGHT_TEST
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
 	void (*leave)(void);				// on leaving the stack (BACK, Home, replaced)
 #endif
 	const ui_filter_def_t *filter;			// SF_FILTER: the rows before filtering (NULL: not a filtered list)
@@ -153,6 +161,8 @@ bool ui_has_action(uint8_t action);
 void ui_apply_setting(uint8_t id, int32_t v);
 // Scan on / off (quick 7, Tools 1, long SK2), with a toast that says what scans: the zone, or the band in the VFO
 void ui_scan_toggle(void);
+void ui_monitor_toggle(void);	// a side key set to Monitor toggle: what quick tile 5 does
+void ui_scan_skip(void);	// a side key set to Scan skip: skip the channel that stopped the scan
 // Actions for the last caller (CONTEXT on Home), or a toast when there is none
 void ui_open_caller_actions(void);
 // A list row's number key ('1'..'9', '0')
@@ -236,6 +246,9 @@ void ui_diag_draw(void);
 bool ui_diag_key(const input_event_t *ev);
 void ui_home_draw(void);
 bool ui_home_key(const input_event_t *ev);
+#if CONFIG_DMR
+bool ui_talk_step(int dir);	// Up / Down set to Talk target: the next talk target (false: nothing to step through)
+#endif
 void ui_quick_draw(void);
 bool ui_quick_key(const input_event_t *ev);
 void ui_quick_enter(void);

@@ -194,6 +194,28 @@ static void test_helpers(void)
 	// the measured floor (43) stays shut at the loosest squelch level (opens below 64), a strong carrier (8) opens the
 	// tightest (below 40): core/radio/radio_sm.h RADIO_SQL_*
 	CHECK(fd6818_noise(43) >= 64 && fd6818_noise(8) < 40);
+
+	// The carrier limits: glitch over 140 narrow / 120 wide is no carrier
+	CHECK(fd6818_sql_carrier(30, 140, 100, false));
+	CHECK(!fd6818_sql_carrier(30, 141, 100, false));
+	CHECK(!fd6818_sql_carrier(30, 121, 100, true));
+	CHECK(fd6818_sql_carrier(30, 0xAB78, 100, true));	// the glitch count's low byte only
+	// Noise: 82.5 - 0.38 x raw (raw 100, -110 dBm: 44), at most 45, at least 41 narrow / 39 wide
+	CHECK(fd6818_sql_carrier(44, 0, 100, false));
+	CHECK(!fd6818_sql_carrier(45, 0, 100, false));
+	// Raw 104: 42.98, so 43 is over. Raw 105 (an odd raw, half a dB): 42.6
+	CHECK(fd6818_sql_carrier(42, 0, 104, false));
+	CHECK(!fd6818_sql_carrier(43, 0, 104, false));
+	CHECK(!fd6818_sql_carrier(43, 0, 105, false));
+	CHECK(fd6818_sql_carrier(45, 0, 40, false));
+	CHECK(!fd6818_sql_carrier(46, 0, 40, false));
+	CHECK(fd6818_sql_carrier(41, 0, 220, false));
+	CHECK(!fd6818_sql_carrier(42, 0, 220, false));
+	CHECK(fd6818_sql_carrier(39, 0, 220, true));
+	CHECK(!fd6818_sql_carrier(40, 0, 220, true));
+	// All 8 bits of the noise: a reading of 136 is noise, not 8
+	CHECK(!fd6818_sql_carrier(136, 0, 100, false));
+	CHECK(fd6818_sql_carrier(0xFF08, 0, 100, false));
 }
 
 static void test_frames(void)
@@ -264,7 +286,9 @@ static void test_sequences(void)
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
 	int i = find_last(0x43);
 	CHECK(i >= 0 && chip.log[i].val == 0x4048);
-	CHECK(chip.log[chip.n - 1].reg == 0x47 && chip.log[chip.n - 1].val == 0x0140);
+	i = find_last(0x47);
+	CHECK(i >= 0 && chip.log[i].val == 0x0140);
+	CHECK(chip.log[chip.n - 1].reg == 0x51 && chip.log[chip.n - 1].val == 0);	// sub-audio off (test_dmr_tone_off)
 	for (int k = 0; k < chip.n; k++) {
 		CHECK(chip.log[k].reg < 0x80);	// the earlier 0xC7 entry was a read cycle
 	}
@@ -550,10 +574,11 @@ static void test_dm1801pro(void)
 	// and ends on the 0x2B mode word
 	chip.n = 0;
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
-	CHECK(chip.n == 6 && chip.log[0].reg == 0x47 && chip.log[0].val == 0x0140 && chip.log[1].reg == 0x48 &&
+	CHECK(chip.n == 6 + 3 && chip.log[0].reg == 0x47 && chip.log[0].val == 0x0140 && chip.log[1].reg == 0x48 &&
 		chip.log[1].val == 0xB2F5 && chip.log[2].reg == 0x7E && chip.log[2].val == 0xB03F &&
 		chip.log[3].reg == 0x2B && chip.log[3].val == 0x0700);
 	CHECK(chip.log[5].reg == 0x3F && chip.log[5].val == 0x0000);
+	CHECK(chip.log[8].reg == 0x51 && chip.log[8].val == 0);	// then the sub-audio off
 	chip.n = 0;
 	fd6818_set_mode(&dev, FD6818_MODE_FM);
 	CHECK(chip.n == 6 && chip.log[3].reg == 0x48 && chip.log[3].val == 0xB386 && chip.log[5].reg == 0x2B &&
@@ -567,6 +592,31 @@ static void test_dm1801pro(void)
 	fd6818_dmr_burst(&dev, false, dev.variant->bw_dmr);
 	CHECK(chip.n == 1 && chip.log[0].reg == 0x30 && chip.log[0].val == 0xBFF1);
 	CHECK(chip.protocol_errors == 0);
+}
+
+// Issue 685: an FM channel's receive tone left 0x51 = 0x9045 after the change to DMR. Bit 15 also keys the chip's
+// sub-audio transmitter, so the tone rode on the 4FSK and no burst decoded. Entering DMR turns the sub-audio off on
+// every set-up, whatever tone the FM channel had
+static void test_dmr_tone_off(void)
+{
+	static const fd6818_variant_t *const set_ups[] = { &fd6818_variant_default, &fd6818_variant_b, &fd6818_variant_b_dmr6943 };
+	static const struct { fd6818_tone_t type; uint16_t value; } tones[] = {
+		{ FD6818_TONE_CTCSS, 2336 }, { FD6818_TONE_DCS, 023 }, { FD6818_TONE_DCS_INV, 0754 },
+	};
+	for (size_t v = 0; v < sizeof set_ups / sizeof set_ups[0]; v++) {
+		for (size_t t = 0; t < sizeof tones / sizeof tones[0]; t++) {
+			fd6818_t dev;
+			reset_chip();
+			fd6818_attach_variant(&dev, bus(), set_ups[v]);
+			fd6818_init(&dev);
+			fd6818_set_mode(&dev, FD6818_MODE_FM);
+			fd6818_set_rx_tone(&dev, tones[t].type, tones[t].value);
+			CHECK((chip.regs[0x51] & 0x8000u) != 0);
+			fd6818_set_mode(&dev, FD6818_MODE_DMR);
+			CHECK(chip.regs[0x51] == 0);
+			CHECK(chip.protocol_errors == 0);
+		}
+	}
 }
 
 // A variant with burst tables switches straight between the two states: only the table, no idle, no bandwidth
@@ -720,8 +770,49 @@ static void test_detect(void)
 	chip.css = NULL;
 }
 
+// FM transmit on both set-ups: 0x24 = 0 after the variant's table, 0x40 from the set-up's base plus the calibration
+// byte, and the 0x50 TX audio words
+static void test_fm_tx(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach(&dev, bus());
+	chip.regs[0x24] = 0x8C7E;
+	fd6818_fm_tx_prepare(&dev);
+	CHECK(chip.log[chip.n - 1].reg == 0x24 && chip.regs[0x24] == 0);
+	fd6818_fm_tx_cal(&dev, 0xE9);
+	CHECK(chip.regs[0x40] == 0x34E9);
+	fd6818_tx_audio(&dev, true);
+	CHECK(chip.regs[0x50] == 0x3B18);
+	fd6818_tx_audio(&dev, false);
+	CHECK(chip.regs[0x50] == 0xBB18);
+
+	reset_chip();
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
+	chip.regs[0x24] = 0x8C7E;
+	fd6818_fm_tx_prepare(&dev);
+	CHECK(chip.n == 1 && chip.regs[0x24] == 0);	// set-up B has no table of its own
+	fd6818_fm_tx_cal(&dev, 0x90);
+	CHECK(chip.regs[0x40] == 0x3510);		// 0x3480 + 0x90: a sum, the carry reaches bit 8
+	CHECK(fd6818_variant_b_dmr6943.r40_tx == fd6818_variant_b.r40_tx);
+	// A second key-up before any receive keeps the receive word; the RX state puts it back, once
+	fd6818_set_state(&dev, FD6818_STATE_TX);
+	fd6818_fm_tx_prepare(&dev);
+	fd6818_set_state(&dev, FD6818_STATE_RX);
+	CHECK(chip.regs[0x24] == 0x8C7E);
+	int n = chip.n;
+	fd6818_set_state(&dev, FD6818_STATE_RX);
+	bool rewritten = false;
+	for (int i = n; i < chip.n; i++) {
+		rewritten |= chip.log[i].reg == 0x24;
+	}
+	CHECK(!rewritten);
+	CHECK(chip.protocol_errors == 0);
+}
+
 int main(void)
 {
+	test_fm_tx();
 	test_setup_b();
 	test_detect();
 	test_burst_split();
@@ -732,6 +823,7 @@ int main(void)
 	test_frames();
 	test_sequences();
 	test_rx_tones();
+	test_dmr_tone_off();
 	test_rx_sleep();
 	test_am();
 	test_am_agc();
