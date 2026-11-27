@@ -240,15 +240,22 @@ static uint8_t beep_level_now(const radio_sm_t *sm)
 {
 	uint8_t level = sm->set.beep_level;
 	const hal_radio_t *r = board.radio;
-	if (r == NULL || r->volume == NULL) {
+	if (r == NULL) {
 		return level;
 	}
-	if (!r->volume_pcm) {
-		return radio_beep_level(level, sm->volume_sent);
+	int16_t vol = sm->volume_sent;
+	if (r->volume == NULL) {
+		// An analog knob the MCU only reads: the knob scales the beep like the voice after it
+		if (r->volume_db10 == NULL) {
+			return level;
+		}
+		vol = sm->view.volume_knob;
+	} else if (!r->volume_pcm) {
+		return radio_beep_level(level, vol);
 	}
-	if (r->volume_db10 != NULL && sm->volume_sent > 0) {
+	if (r->volume_db10 != NULL && vol > 0) {
 		// The volume scales the beep in the speaker path: above the cap step, softer by the gain added there
-		level = radio_beep_pcm_level(level, r->volume_db10((uint8_t)sm->volume_sent),
+		level = radio_beep_pcm_level(level, r->volume_db10((uint8_t)vol),
 					     r->volume_db10(radio_volume_percent(RADIO_BEEP_VOLUME_STEP)));
 	}
 	return level;
