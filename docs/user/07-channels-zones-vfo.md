@@ -441,10 +441,13 @@ and room nodes hear it as they hear a commercial portable.
 - **Squelch**: YSF doesn't need it. The radio decodes a YSF signal whatever the squelch level and never plays noise;
   the DG-ID decides what plays. The squelch level only tells scan and dual watch when to stop on the channel. A
   room data transmission from a repeater shows its callsign and "Data" and goes into Recent.
-- **DG-ID**: quick settings tile **8**, or the first row of the Rooms page (# on Home). Type two digits or step with
-  Up/Down, **OK** sets it for receive and transmit (00 hears every DG-ID). In the VFO it stays until the radio is
-  switched off; on a stored channel it lasts until you change channel. To keep a channel's DG-ID, set it in the
+- **DG-ID**: quick settings tile **8**, or the first row of the Rooms page (# on Home), sets the DG-ID PTT sends.
+  The second row of the Rooms page, **RX DG-ID**, sets the one heard: 00 hears every DG-ID, another value only calls
+  with that DG-ID. Type two digits or step with Up/Down, **OK** sets it. In the VFO they stay until the radio is
+  switched off; on a stored channel they last until you change channel. To keep a channel's DG-IDs, set them in the
   channel editor.
+- Through a hotspot or a gateway, leave RX DG-ID at 00: many answer on DG-ID 00 whatever DG-ID called them, and an
+  RX DG-ID of the group would keep the answer silent.
 
 Not in this first version: VW (full-rate voice, which the radio's voice chip doesn't run), Group Monitor, sending
 your position, and a repeater's news (voice messages, pictures). They are planned for later.
@@ -453,7 +456,7 @@ your position, and a repeater's news (voice messages, pictures). They are planne
 
 A YSF channel comes from a codeplug written on a computer ([YSF in the editor](04-programming.md#ysf)), a zone shared
 by another radio, the VFO (in YSF, open **Channels**, **New channel from current settings** and save it), or any
-channel: press **OK** on its Mode until it says YSF, set the DG-ID, and save. A channel made YSF starts with DG-ID 00.
+channel: press **OK** on its Mode until it says YSF, set the DG-ID and RX DG-ID, and save. A channel made YSF starts with both at 00.
 
 - **DG-ID** (0-99) is in the channel's settings: the radio sends it and hears only calls with it. 00 sends 0 and hears
   every DG-ID. (The codeplug can hold different DG-IDs for sending and hearing; the Codeplug Editor sets them apart.)

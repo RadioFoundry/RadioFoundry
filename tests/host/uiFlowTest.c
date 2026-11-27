@@ -166,16 +166,19 @@ static const flow_t flows[] = {
 	{ "E Mode: the saved YSF channel opens as YSF", "ysf ok 5 ok down down ok long:ok back back back", "ok 5 ok",
 	  "screen=channel shows=YSF shows=DG-ID hides=Color_code", 3, false },
 	{ "E YSF DG-ID: typed", "ysf ok 5 ok down down ok down", "ok 4 2 ok", "focus=DG-ID shows=42", 4, false },
+	{ "E YSF RX DG-ID: typed", "ysf ok 5 ok down down ok down down", "ok 3 5 ok", "focus=RX_DG-ID shows=35", 4, false },
 	// Rooms (ysf.md 9): tile 3 on YSF opens it; the node's status, a typed room ID connected, the room list
 	{ "Q YSF: tile 3 is Rooms", "dlmode:ysf", "quick 3", "screen=rooms shows=Node shows=Room_ID", 2, false },
 	{ "T YSF: 0 in Tools is Rooms", "dlmode:ysf", "ok 6 0", "screen=rooms shows=Node", 3, false },
 	{ "H YSF: # on Home is Rooms", "dlmode:ysf", "ctx", "screen=rooms shows=Node", 1, false },
-	// The DG-ID: quick settings tile 8 (Width's place) and the Rooms page's first row; both ways, a channel's for now
+	// The DG-IDs: quick settings tile 8 (Width's place) and the Rooms page's first row send, its second row hears (00:
+	// every DG-ID, so a gateway's answer on another one still plays); a channel's for now
 	{ "Q YSF: tile 8 is the DG-ID", "dlmode:ysf", "quick 8", "screen=quick shows=DG-ID", 2, false },
-	{ "Q YSF: DG-ID typed", "dlmode:ysf", "quick 8 2 5 ok", "dgid=25 shows=25", 5, false },
+	{ "Q YSF: DG-ID typed", "dlmode:ysf", "quick 8 2 5 ok", "dgid=25 rxdgid=0 shows=25", 5, false },
 	{ "Q YSF: DG-ID stepped down from 00", "dlmode:ysf", "quick 8 down ok", "dgid=99", 4, false },
-	{ "W Rooms: DG-ID row typed", "dlmode:ysf quick 3", "ok 1 2 ok", "screen=rooms dgid=12 shows=12", 4, false },
+	{ "W Rooms: DG-ID row typed", "dlmode:ysf quick 3", "ok 1 2 ok", "screen=rooms dgid=12 rxdgid=0 shows=12", 4, false },
 	{ "W Rooms: DG-ID row, BACK leaves it", "dlmode:ysf quick 3", "ok 1 2 back", "screen=rooms dgid=-1", 4, false },
+	{ "W Rooms: RX DG-ID row typed", "dlmode:ysf quick 3", "down ok 1 2 ok", "screen=rooms rxdgid=12 dgid=0 shows=12", 5, false },
 	// Recent: a YSF call by its callsign and DG-ID; no DMR actions for it
 	{ "R YSF call in Recent", "dlmode:ysf ysfrx:N1ABC,12", "ok 3", "screen=recent shows=N1ABC shows=DG-ID_12", 2, false },
 	{ "YSF home: a room data transmission", "dlmode:ysf", "ysfrx:N0RPT,0,d", "screen=home shows=N0RPT shows=Data hides=Not_DN", 0, false },
@@ -188,14 +191,14 @@ static const flow_t flows[] = {
 	{ "H YSF idle: the last call heard", "dlmode:ysf ysfrx:N1ABC,12 ysfend", "", "screen=home shows=N1ABC shows=DG-ID_12", 0, false },
 	{ "R YSF: our own call echoed stays out", "dlmode:ysf ysfrx:N0CALL,0", "ok 3", "screen=recent hides=N0CALL", 2, false },
 	{ "R YSF call in Recent: no actions", "dlmode:ysf ysfrx:N1ABC,12", "ok 3 ctx", "screen=recent toast=No_actions_here", 3, false },
-	{ "W Rooms: OK on Node asks the node", "dlmode:ysf quick 3", "down ok", "screen=rooms wxcmd=0 shows=Waiting...", 2, false },
-	{ "W Rooms: the node's answer", "dlmode:ysf quick 3 down ok", "wxdx", "screen=rooms shows=NODE shows=TEST", 0, false },
+	{ "W Rooms: OK on Node asks the node", "dlmode:ysf quick 3", "down down ok", "screen=rooms wxcmd=0 shows=Waiting...", 3, false },
+	{ "W Rooms: the node's answer", "dlmode:ysf quick 3 down down ok", "wxdx", "screen=rooms shows=NODE shows=TEST", 0, false },
 	{ "W Rooms: a typed room connected", "dlmode:ysf quick 3", "2 7 2 9 9 down ok", "wxcmd=1 wxarg=27299", 7, false },
 	{ "W Rooms: connect without a room ID", "dlmode:ysf quick 3", "2 back back down ok", "wxcmd=-1 toast=Type_a_room_ID_first", 5, false },
-	{ "W Rooms: disconnect", "dlmode:ysf quick 3", "down down down down down ok", "wxcmd=2", 6, false },
-	{ "W Rooms: the room list", "dlmode:ysf quick 3", "down down down down down down ok wxrooms:3", "screen=room-list wxcmd=3 wxarg=1 shows=ROOM0 shows=ROOM2 shows=Next_page", 7, false },
-	{ "W Rooms: a room picked connects", "dlmode:ysf quick 3 down down down down down down ok wxrooms:3", "down ok", "screen=rooms wxcmd=1 wxarg=20001", 2, false },
-	{ "W Rooms: the next page", "dlmode:ysf quick 3 down down down down down down ok wxrooms:3", "down down down ok", "wxcmd=3 wxarg=4", 4, false },
+	{ "W Rooms: disconnect", "dlmode:ysf quick 3", "down down down down down down ok", "wxcmd=2", 7, false },
+	{ "W Rooms: the room list", "dlmode:ysf quick 3", "down down down down down down down ok wxrooms:3", "screen=room-list wxcmd=3 wxarg=1 shows=ROOM0 shows=ROOM2 shows=Next_page", 8, false },
+	{ "W Rooms: a room picked connects", "dlmode:ysf quick 3 down down down down down down down ok wxrooms:3", "down ok", "screen=rooms wxcmd=1 wxarg=20001", 2, false },
+	{ "W Rooms: the next page", "dlmode:ysf quick 3 down down down down down down down ok wxrooms:3", "down down down ok", "wxcmd=3 wxarg=4", 4, false },
 	{ "E YSF DG-ID: saved with the channel", "ysf ok 5 ok down down ok down ok 4 2 ok", "long:ok",
 	  "screen=channel writes=1 shows=42", 1, true },
 #endif

@@ -27,8 +27,9 @@ static uint32_t asked_serial;		// the reply serial then
 static uint32_t room_id;		// typed (0 none), kept while the radio runs
 static uint8_t id_len;			// digits typed in the current entry
 static bool id_editing;
-static uint8_t dg_edit;			// the DG-ID row's editor: the value typed
+static uint8_t dg_edit;			// a DG-ID row's editor: the value typed
 static bool dg_editing;
+static uint16_t dg_row;			// ... and which row: WX_DGID (transmit) or WX_RX_DGID
 #if CONFIG_CHANNEL_EDIT
 static char search_text[YSF_WX_TEXT_LEN + 1];
 #endif
@@ -65,7 +66,7 @@ static bool send(uint8_t cmd, uint32_t arg, const char *text)
 }
 
 // ── The Rooms page ──
-enum { WX_DGID, WX_NODE, WX_ROOM, WX_ROOM_ID, WX_CONNECT, WX_DISCONNECT, WX_ROOMS,
+enum { WX_DGID, WX_RX_DGID, WX_NODE, WX_ROOM, WX_ROOM_ID, WX_CONNECT, WX_DISCONNECT, WX_ROOMS,
 #if CONFIG_CHANNEL_EDIT
 	WX_SEARCH,
 #endif
@@ -79,7 +80,8 @@ static uint16_t wx_count(void)
 
 static void wx_item(uint16_t i, ui_item_t *it)
 {
-	static const tr_id_t labels[WX_COUNT] = { TRX(QUICK_LABEL_DGID, "DG-ID"), TRN(WX_LABEL_NODE, "Node"), TRN(WX_LABEL_ROOM, "Room"),
+	static const tr_id_t labels[WX_COUNT] = { TRX(QUICK_LABEL_DGID, "DG-ID"), TRX(YSF_LABEL_RX_DGID, "RX DG-ID"),
+		TRN(WX_LABEL_NODE, "Node"), TRN(WX_LABEL_ROOM, "Room"),
 		TRN(WX_LABEL_ROOM_ID, "Room ID"), TRN(WX_ROW_CONNECT, "Connect"), TRN(WX_ROW_DISCONNECT, "Disconnect"),
 		TRN(WX_ROW_ROOMS, "Rooms"),
 #if CONFIG_CHANNEL_EDIT
@@ -92,8 +94,12 @@ static void wx_item(uint16_t i, ui_item_t *it)
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {
 	case WX_DGID:
-		sb_u32(&b, dg_editing ? dg_edit : ui_view()->ysf.tx_dgid, 2);
-		if (dg_editing) {
+	case WX_RX_DGID:
+		if (dg_editing && dg_row == i)
+			sb_u32(&b, dg_edit, 2);
+		else
+			sb_u32(&b, i == WX_DGID ? ui_view()->ysf.tx_dgid : ui_view()->ysf.rx_dgid, 2);
+		if (dg_editing && dg_row == i) {
 			sb_chr(&b, '_');
 			it->flags |= UI_ITEM_EDIT;
 		}
@@ -155,21 +161,26 @@ static void wx_select(uint16_t i, bool hold)
 	(void)hold;
 	if (id_editing && i != WX_ROOM_ID)
 		id_editing = false;
-	if (dg_editing && i != WX_DGID)
+	if (dg_editing && i != dg_row)
 		dg_editing = false;
 	switch (i) {
 	case WX_DGID:
-		// OK edits (digits, two at most), OK again sets it: in the VFO it stays, on a channel until another
-		if (dg_editing) {
-			const radio_view_t *v = ui_view();
+	case WX_RX_DGID: {
+		// OK edits (digits, two at most), OK again sets it: in the VFO it stays, on a channel until another. Transmit
+		// and receive apart, as gateways and rooms use them: send to a group, hear every DG-ID (receive 00)
+		const radio_view_t *v = ui_view();
 
-			(void)ui_svc_ysf_dgid(dg_edit, v->vfo ? 0 : v->channel_number);
+		if (dg_editing) {
+			(void)ui_svc_ysf_dgid(i == WX_DGID ? dg_edit : v->ysf.tx_dgid, i == WX_RX_DGID ? dg_edit : v->ysf.rx_dgid,
+					      v->vfo ? 0 : v->channel_number);
 		} else {
-			dg_edit = ui_view()->ysf.tx_dgid;
+			dg_edit = i == WX_DGID ? v->ysf.tx_dgid : v->ysf.rx_dgid;
+			dg_row = i;
 		}
 		dg_editing = !dg_editing;
 		ui_dirty();
 		break;
+	}
 	case WX_NODE:
 	case WX_ROOM:
 		send(YSF_WX_DX, 0, NULL);

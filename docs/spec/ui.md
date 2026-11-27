@@ -231,12 +231,13 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   P25 writes a stored P25 channel from the radio's P25 settings ([p25-codeplug.md](p25-codeplug.md) 2.3).
 - An NXDN channel the same way: Mode "NXDN", then RAN and Rate in place of NAC, no Talkaround. Own ID over 65519 is
   refused ("NXDN IDs go up to 65519").
-- A YSF channel: Mode "YSF", then DG-ID in place of NAC; no TX contact, Own ID or Talkaround (YSF names the
-  radio by callsign and radio ID). DG-ID shows the sent DG-ID, then the heard one where they differ ("12/00"); OK opens
-  it, digits type 0-99, Up and Down step through 0-99, and OK sets both to the value (00 hears every DG-ID).
-- On a YSF channel quick settings tile 3 opens Rooms (no tones) and tile 8 is the DG-ID (no width): Up/Down step
-  0-99, digits type two, OK sets it both ways (`ui_svc_ysf_dgid`). In the VFO it stays; on a stored channel it lasts
-  until another channel is taken (`radio_ysf_settings_t.temp_chan`). # on Home opens Rooms (a YSF call has no
+- A YSF channel: Mode "YSF", then DG-ID (sent) and RX DG-ID (heard, 00 every one) in place of NAC; no TX contact,
+  Own ID or Talkaround (YSF names the radio by callsign and radio ID). OK opens a row, digits type 0-99, Up and Down
+  step through 0-99, and OK sets it.
+- On a YSF channel quick settings tile 3 opens Rooms (no tones) and tile 8 is the DG-ID sent (no width): Up/Down step
+  0-99, digits type two, OK sets it; the one heard stays (`ui_svc_ysf_dgid`). The Rooms page's RX DG-ID row sets the
+  one heard. In the VFO they stay; on a stored channel they last until another channel is taken
+  (`radio_ysf_settings_t.temp_chan`). # on Home opens Rooms (a YSF call has no
   caller's actions). Recent lists a YSF call by callsign and DG-ID (`ui_recent_t.ysf`); Hub > last caller, call back
   and # skip it, its actions toast "No actions here".
 - Settings > My radio adds, with `CONFIG_YSF`, two rows. YSF callsign: OK opens text entry (up to 10 characters); OK

@@ -3783,7 +3783,7 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_TONE)
 		kind = QT_YSF_ROOMS;	// no tones on YSF: tile 3 opens Rooms
 	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_BANDWIDTH)
-		kind = QT_DGID;		// nor a width: tile 8 is the DG-ID
+		kind = QT_DGID;		// nor a width: tile 8 is the transmit DG-ID
 	if (v->vfo && (kind == QT_MONITOR || kind == QT_PRIVACY))
 		return QT_SPLIT;	// the VFO's TX frequency; Monitor stays on its key, privacy on channels
 	return kind;

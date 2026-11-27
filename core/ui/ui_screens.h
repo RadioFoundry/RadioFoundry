@@ -152,7 +152,7 @@ enum {
 	QT_TO_VFO,		// on a channel, in place of QT_MODE: copy the channel to the VFO
 	QT_SPLIT,		// in the VFO, in place of QT_MONITOR (FM) / QT_PRIVACY (DMR): the TX frequency or offset
 	QT_YSF_ROOMS,		// YSF, in place of FM's Tone: the Rooms page
-	QT_DGID,		// YSF, in place of FM's Width: the DG-ID, both ways
+	QT_DGID,		// YSF, in place of FM's Width: the transmit DG-ID (receive on the Rooms page)
 
 };
 // The tile kind at position 0..8 (keys 1..9) for this channel or the VFO

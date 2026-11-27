@@ -2642,7 +2642,7 @@ static const ui_scr_def_t chlist_screen = {
 // ======================= One channel's settings, edited in place (ui.md 2.1) =======================
 // Without CONFIG_CHANNEL_EDIT the rows are read only and OK goes to the channel
 
-enum { CE_NAME, CE_NUMBER, CE_MODE, CE_CODE, CE_RATE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
+enum { CE_NAME, CE_NUMBER, CE_MODE, CE_CODE, CE_RX_DGID, CE_RATE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
        CE_BURST, CE_AES, CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
        CE_ZONES, CE_GO, CE_SHARE, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
 
@@ -2809,8 +2809,8 @@ static void ced_step_set(channel_t *c, uint8_t s)
 }
 
 #if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
-// The NAC or RAN row (CE_CODE) and the rate's: what the block holds for them; all of it in a mode the channel wasn't
-// stored in
+// The NAC, RAN or transmit DG-ID row (CE_CODE), the receive DG-ID's and the rate's: what the block holds for them;
+// all of it in a mode the channel wasn't stored in
 static bool ced_air_changed(uint8_t r)
 {
 	if (ced_step_of(&ced_ch) != ced_step_of(&ced_orig))
@@ -2827,7 +2827,7 @@ static bool ced_air_changed(uint8_t r)
 #endif
 #if CONFIG_YSF
 	if (ced_is_ysf(&ced_ch))
-		return r == CE_CODE && (a->ysf.rx_dgid != b->ysf.rx_dgid || a->ysf.tx_dgid != b->ysf.tx_dgid);
+		return r == CE_CODE ? a->ysf.tx_dgid != b->ysf.tx_dgid : r == CE_RX_DGID && a->ysf.rx_dgid != b->ysf.rx_dgid;
 #endif
 	(void)a;
 	(void)b;
@@ -2854,7 +2854,7 @@ static bool ced_changed(uint8_t r)
 		return ced_ch.kind != ced_orig.kind || ced_ch.system != ced_orig.system || ced_ch.aes_ref != ced_orig.aes_ref;
 #endif
 #if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
-	if (r == CE_CODE || r == CE_RATE)
+	if (r == CE_CODE || r == CE_RX_DGID || r == CE_RATE)
 		return ced_air_changed(r);
 #endif
 	const uint8_t *a = (const uint8_t *)&ced_ch + ced_fields[r].off, *b = (const uint8_t *)&ced_orig + ced_fields[r].off;
@@ -2991,10 +2991,11 @@ static void ced_build(void)
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
 		bool tone = r == CE_RX_TONE || r == CE_TX_TONE;
 		// P25, NXDN and YSF: no sub-audio tones or width; of the digital rows the talk target and unit ID (not
-		// YSF's: it names us by callsign), P25's talkaround; the NAC, RAN or DG-ID, NXDN's rate
+		// YSF's: it names us by callsign), P25's talkaround; the NAC, RAN or DG-IDs, NXDN's rate
 		bool air_row = air && ((r == CE_CONTACT && CONFIG_DMR && !ysf) || (r == CE_ID && !ysf) || (r == CE_DMO && p25) ||
-				       (r == CE_CODE && !into) || (r == CE_RATE && nxdn && !into));
-		if (r == CE_CODE || r == CE_RATE ? !air_row : air && (fm_only || (dmr_only && !air_row)))
+				       (r == CE_CODE && !into) || (r == CE_RX_DGID && ysf && !into) ||
+				       (r == CE_RATE && nxdn && !into));
+		if (r == CE_CODE || r == CE_RX_DGID || r == CE_RATE ? !air_row : air && (fm_only || (dmr_only && !air_row)))
 			continue;
 		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
 			continue;
@@ -3145,7 +3146,8 @@ static int32_t ced_val_or(int32_t stored)
 }
 
 #if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
-// The NAC (hex) or RAN, received then sent where they differ ("F7E/293"); editing, the value on the spinner
+// The NAC (hex) or RAN, received then sent where they differ ("F7E/293"), or the DG-ID sent; editing, the value on
+// the spinner
 static void sb_ced_code(sbuf_t *b, const channel_t *ch, bool editing)
 {
 	uint16_t rx = 0, tx = 0;
@@ -3163,10 +3165,8 @@ static void sb_ced_code(sbuf_t *b, const channel_t *ch, bool editing)
 	}
 #endif
 #if CONFIG_YSF
-	if (ced_is_ysf(ch)) {
-		rx = ced_air.ysf.rx_dgid;
-		tx = ced_air.ysf.tx_dgid;
-	}
+	if (ced_is_ysf(ch))
+		rx = tx = ced_air.ysf.tx_dgid;	// the DG-ID sent; the one heard has its own row
 #endif
 #if CONFIG_CHANNEL_EDIT
 	if (editing)
@@ -3191,7 +3191,8 @@ static void sb_ced_code(sbuf_t *b, const channel_t *ch, bool editing)
 static void chinfo_item(uint16_t i, ui_item_t *it)
 {
 	static const tr_id_t labels[CE_COUNT] = { TRN(LABEL_NAME, "Name"), TRN(CHAN_LABEL_NUMBER, "Number"),
-		TRN(LABEL_MODE, "Mode"), TRX(CHAN_LABEL_NAC, "NAC"), TRN(CHAN_LABEL_RATE, "Rate"), TRX(CHAN_LABEL_RX, "RX"), TRX(CHAN_LABEL_TX, "TX"), TRN(LABEL_POWER, "Power"),
+		TRN(LABEL_MODE, "Mode"), TRX(CHAN_LABEL_NAC, "NAC"), TRX(YSF_LABEL_RX_DGID, "RX DG-ID"),
+		TRN(CHAN_LABEL_RATE, "Rate"), TRX(CHAN_LABEL_RX, "RX"), TRX(CHAN_LABEL_TX, "TX"), TRN(LABEL_POWER, "Power"),
 		TRN(WORD_RX_ONLY, "RX only"), TRN(CHAN_LABEL_BANDWIDTH, "Bandwidth"),
 		TRN(CHAN_LABEL_RX_TONE, "RX CTCSS/DCS"), TRN(CHAN_LABEL_TX_TONE, "TX CTCSS/DCS"), TRX(WORD_VOX, "VOX"),
 		TRN(WORD_TONE_BURST, "Tone burst"), TRN(CHAN_AES_KEY, "AES key"), TRN(CHAN_LABEL_COLOR_CODE, "Color code"),
@@ -3261,6 +3262,11 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	case CE_CODE:
 		sb_ced_code(&b, ch, editing);
 		break;
+#if CONFIG_YSF
+	case CE_RX_DGID:
+		sb_u32(&b, editing ? (uint32_t)ced_val : ced_air.ysf.rx_dgid, 1);
+		break;
+#endif
 	case CE_RATE:
 #if CONFIG_NXDN
 		sb_str(&b, ced_air.nxdn.rate9600 ? "9600 bit/s" : "4800 bit/s");
@@ -3447,7 +3453,7 @@ static bool ced_write(uint16_t num, bool as_new)
 	// NXDN; unchanged, the tag is written as without the editor (a plain channel in P25 or NXDN takes the radio's
 	// settings, a copy its source's tag)
 	if ((ced_is_p25(&ced_ch) || ced_is_nxdn(&ced_ch) || ced_is_ysf(&ced_ch)) &&
-	    (ced_air_changed(CE_CODE) || ced_air_changed(CE_RATE)))
+	    (ced_air_changed(CE_CODE) || ced_air_changed(CE_RX_DGID) || ced_air_changed(CE_RATE)))
 		return ui_svc_write_channel_air(num, &ced_ch, ced_src, &ced_air);
 #endif
 	return ui_svc_write_channel(num, &ced_ch, ced_src);
@@ -3528,6 +3534,7 @@ static void ced_spin(int dir)
 	case CE_CC:
 		ced_val = (ced_val + dir + 16) % 16;
 		break;
+	case CE_RX_DGID:
 	case CE_CODE:
 		if (!ced_is_p25(&ced_ch)) {
 			ced_val = ced_is_ysf(&ced_ch) ? (ced_val + dir + CE_DGID_N) % CE_DGID_N : (ced_val + dir + CE_RAN_N) % CE_RAN_N;
@@ -3597,11 +3604,13 @@ static void ced_digit(char d)
 			ced_digits[ced_len] = 0;
 			break;
 		}
-		// An NXDN RAN is typed as a color code
+		// An NXDN RAN and a DG-ID are typed as a color code
 		// fall through
+	case CE_RX_DGID:
 	case CE_CC:
 	case CE_TOT: {
 		int32_t hi = ced_edit == CE_CC ? 15 :
+			     ced_edit == CE_RX_DGID ? CE_DGID_N - 1 :
 			     ced_edit == CE_CODE ? (ced_is_ysf(&ced_ch) ? CE_DGID_N - 1 : CE_RAN_N - 1) : CE_TOT_MAX;
 		v = ced_typed ? v : d - '0';
 		ced_val = v > hi ? d - '0' : v;
@@ -3639,8 +3648,11 @@ static bool ced_commit_code(void)
 #endif
 #if CONFIG_YSF
 	if (ced_is_ysf(&ced_ch)) {
-		// One DG-ID both ways: 00 sends 0 and hears every DG-ID
-		ced_air.ysf.rx_dgid = ced_air.ysf.tx_dgid = (uint8_t)v;
+		// The DG-ID row sends; receive has its own row (00 hears every DG-ID)
+		if (ced_edit == CE_RX_DGID)
+			ced_air.ysf.rx_dgid = (uint8_t)v;
+		else
+			ced_air.ysf.tx_dgid = (uint8_t)v;
 		return true;
 	}
 #endif
@@ -3689,6 +3701,7 @@ static void ced_commit(void)
 		break;
 #if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
 	case CE_CODE:
+	case CE_RX_DGID:
 		if (!ced_commit_code())
 			return;
 		break;
@@ -3863,6 +3876,14 @@ static void chinfo_select(uint16_t i, bool hold)
 			ced_val = ced_air.ysf.tx_dgid;
 #endif
 		break;
+#if CONFIG_YSF
+	case CE_RX_DGID:
+		ced_edit = r;
+		ced_len = 0;
+		ced_typed = false;
+		ced_val = ced_air.ysf.rx_dgid;
+		break;
+#endif
 #if CONFIG_NXDN
 	case CE_RATE: ced_air.nxdn.rate9600 = !ced_air.nxdn.rate9600; break;
 #endif

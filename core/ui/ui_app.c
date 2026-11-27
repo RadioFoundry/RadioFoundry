@@ -1447,7 +1447,7 @@ static void quick_close_editor(void)
 		ui_svc_setting_set(UI_SET_BRIGHTNESS, ui_st.brightness);
 #if CONFIG_YSF
 	if (kind == QT_DGID && ui_st.quick_edit)
-		(void)ui_svc_ysf_dgid(ui_st.dgid_edit, view->vfo ? 0 : view->channel_number);
+		(void)ui_svc_ysf_dgid(ui_st.dgid_edit, view->ysf.rx_dgid, view->vfo ? 0 : view->channel_number);
 #endif
 	ui_st.quick_edit = false;
 }
