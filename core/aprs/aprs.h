@@ -129,6 +129,7 @@ typedef struct {
 	bool msg_acked;
 	bool packet;		// packet mode is on (aprs.md 9.2): KISS on with the Packet mode, CONFIG_APRS_PACKET
 	uint8_t pk_block;	// aprs_block_t for the host's frames in packet mode (the selected channel)
+	uint32_t pk_hz;		// packet mode: the selected channel's frequency, where packets go (not the APRS frequency)
 	uint32_t duty_holds;	// packet transmissions held back by the duty cycle
 	char last_info[48];	// the information field of our last beacon (truncated)
 	uint32_t serial;	// bumped on every change worth a redraw

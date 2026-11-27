@@ -16,12 +16,21 @@
 #if CONFIG_APRS_AFSK
 #include "aprs/afsk.h"
 
+#if CONFIG_APRS_PACKET
+// KISS packet mode (aprs.md 9.2): a host's window of frames waits; two frames of 256 bytes of information each, with no
+// digipeater, fit one transmission even fully stuffed after a 300 ms TXDELAY (6144 symbols, 5.1 s: under the radio
+// core's 6 s APRS_SEND_MAX_MS); a received 256-byte frame escaped is up to 547 bytes
+#define QUEUE_LEN	4		// frames waiting for the air
+#define TONES_BYTES	768		// one transmission: preamble, frames, tail
+#define OUT_RING	1024		// KISS bytes for the host: received frames, iGate lines
+#else
 #define QUEUE_LEN	2		// frames waiting for the air
 #define TONES_BYTES	512		// one transmission: preamble, frames, tail (4096 symbols, 3.4 s)
 #if CONFIG_APRS_RX
 #define OUT_RING	512		// KISS bytes for the host: received frames, iGate lines
 #else
 #define OUT_RING	256		// only our own lines to APRS-IS
+#endif
 #endif
 
 typedef struct {

@@ -383,7 +383,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | APRS receive: demodulator, station list, digipeater | `APRS_RX` | 10,012 | — | DM-1701: FM receive audio on the I2S stream, squelch gated ([aprs](spec/aprs.md) 5.3). MD-380: not written |
 | GPS screen: sky plot, signal bars, grid locator (Tools > Position) | `GPS_SKY` | 6,200 | 5,332 | Needs GPS. 176 B of RAM |
 | APRS iGate rules (with tools/aprs_gate.py) | `APRS_IGATE` | 1,420* | — | Needs APRS receive. DM-1701: off by default |
-| KISS packet mode: any AX.25 frame on the selected channel (Winlink, BBS, connected mode) | `APRS_PACKET` | 1,104 | — | Needs APRS on FM. Measured on the MD-UV380, with 144 B of RAM |
+| KISS packet mode: any AX.25 frame on the selected channel (Winlink, BBS, connected mode) | `APRS_PACKET` | 1,032 | — | Needs APRS on FM. Measured on the MD-UV380, with 1.5 KB of RAM (the larger frame queue, tone buffer and host ring) |
 
 ## Host link and USB
 

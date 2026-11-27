@@ -471,6 +471,11 @@ station's position is dropped at 24 h, `STATION_POS_MS`, so its age never wraps)
 `board.afsk`, Power, Path and SSID are dimmed, and so is Frequency unless the build receives APRS. SSID (the last
 row, so the rows above keep their digits): 0-15, OK steps up and wraps 15 to 0, a long OK steps down.
 
+With `CONFIG_APRS_PACKET`, **KISS mode** (APRS, Packet; 9.2) is the row above SSID, so the rows above it keep their
+digits; dimmed while KISS on USB is off, and OK then says "KISS on USB is off". In packet mode the body adds
+"Packet mode: APRS waits." and, when the host's frames can't go, the selected channel's reason (`pk_block`:
+not FM, not amateur, scanning). The gallery's `aprs_packet` shows it.
+
 The page shows the rows the build has:
 
 | Build | Rows left out | Body |

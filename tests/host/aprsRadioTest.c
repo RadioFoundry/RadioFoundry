@@ -47,7 +47,7 @@ static struct {
 	int rx_calls_at_key;	// ... when the transmitter last keyed
 	subtone_t tx_tone;	// the subtone the transmitter last keyed with
 	// AFSK
-	uint8_t tones[600];
+	uint8_t tones[800];	// the largest tone buffer (aprs_int.h TONES_BYTES) and room
 	uint16_t nbits;
 	int starts, stops;
 	uint32_t afsk_end_ms;
@@ -1052,6 +1052,7 @@ static void test_packet_basics(void)
 	aprs_view_t v;
 	aprs_get_view(&v);
 	CHECK(v.packet && v.block == APRS_PACKET && v.pk_block == APRS_OK);
+	CHECK(v.pk_hz == CH_HZ);	// where packets go: the selected channel, not the APRS frequency
 	uint8_t frame[AX25_FRAME_MAX];
 	// An I frame: keyed on the selected channel, not the APRS frequency, and decoded off the air as sent
 	size_t n = pk_frame("Q1TST-1", 0x20, "hello", 5, frame, sizeof(frame));
@@ -1270,6 +1271,29 @@ static void test_packet_busy_channel(void)
 	run(3000);
 	CHECK(hw.starts == starts);
 	fake_tap.caps = 0;
+}
+
+// A host's window: four frames at once are all taken (queue of 4), and two frames of 256 bytes of information, the
+// worst case for bit stuffing (all 0xFF), go out in one transmission (aprs.md 9.2)
+static void test_packet_window(void)
+{
+	packet_setup();
+	static char info[AX25_INFO_MAX];
+	memset(info, 0xFF, sizeof(info));
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1TST-1", 0x20, info, sizeof(info), frame, sizeof(frame));
+	int starts = hw.starts;
+	nframes = 0;
+	int taken = 0;
+	for (int i = 0; i < 4; i++) {
+		taken += aprs_host_frame(frame, n, now) ? 1 : 0;
+	}
+	CHECK(taken == 4);
+	CHECK(wait_start(starts + 1, 3000));
+	CHECK(nframes == 2);			// two in the first transmission
+	wait_idle();
+	CHECK(wait_start(starts + 2, 5000) && nframes == 4);	// the other two in the next
+	wait_idle();
 }
 
 // The duty cycle: at most PACKET_DUTY_MS keyed in any minute; frames past it wait, and are dropped once stale
@@ -2642,6 +2666,7 @@ int main(void)
 	test_packet_channel_blocks();
 	test_packet_duty_cycle();
 	test_packet_no_retune_slot();
+	test_packet_window();
 #if CONFIG_APRS_RX
 	test_packet_busy_channel();
 #endif

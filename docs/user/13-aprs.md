@@ -40,6 +40,7 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Send via | AFSK (on FM), DMR, or both |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
 | Stations heard | Stations the radio heard (radios that can receive APRS), newest first. A station that sent its position shows how far away and which way it was from yours, when the radio has a position too; the age on that row is then the age of that position. Other rows show when the station was last heard. Objects and items a station sends don't count as its position, and a position more than a day old is dropped. Select one and choose Message to fill its callsign |
+| KISS mode | APRS (the default) or Packet: what the KISS TNC on USB is for. Packet sends any packet from the computer on the channel you're on, for Winlink and other packet programs; see [Packet and Winlink](#packet-and-winlink-kiss-packet-mode). Dimmed while KISS on USB is off |
 | SSID | The number after your callsign (`N0ABC-9`): 0 to 15, 7 by default. **OK** steps up, holding **OK** steps down; 0 sends the callsign alone. See SSID below. Dimmed on radios that can't send APRS over the air |
 
 A firmware built with only one way to send APRS shows only the rows for it. With APRS over DMR only there is no
@@ -190,3 +191,36 @@ In USB network mode the radio does both without the helper. APRS programs connec
 port 8001 directly ([Services on the radio](15-usb-network.md#services-on-the-radio)). The radio logs in to an
 APRS-IS server itself ([APRS-IS from the radio](15-usb-network.md#aprs-is-from-the-radio)). KISS on USB must be on
 for both.
+
+## Packet and Winlink (KISS packet mode)
+
+With **KISS mode** set to **Packet**, the radio is a plain 1200 baud KISS TNC for any packet program: Winlink with
+PAT, a packet BBS or node, keyboard-to-keyboard chat, Linux `kissattach`, BPQ. The program on the computer runs the
+connection; the radio sends and receives its packets on the channel you're on.
+
+Not yet tried on the air: it is checked in the host tests only so far.
+
+1. Pick an FM simplex channel in an amateur band, on a frequency your local packet stations use, or type it into the
+   FM VFO. Packet mode works on the channel or VFO you're on, never on the APRS frequency: the APRS page then says
+   "packet on" and that frequency. Winlink lists its packet gateways and their frequencies (PAT can show the ones near
+   you); a local BBS or node announces its own.
+2. Turn on **KISS on USB**, then set **KISS mode** to **Packet**.
+3. Point the program at the radio's USB serial port (`/dev/ttyACM0` on Linux, `/dev/tty.usbmodem...` on macOS, a
+   COM port on Windows), or at TCP port 8001 in USB network mode. On Linux, for example:
+   `sudo kissattach /dev/ttyACM0 radio`.
+
+While packet mode is on:
+
+- The radio sends packets only with your callsign as the sender (any SSID), on the channel's transmit frequency
+  and tone, at the radio's current power. A channel that isn't FM, isn't in an amateur band, or a running scan or
+  dual watch stops it; the APRS page says why.
+- It waits for a clear channel with the program's own TXDELAY, persistence and slot time settings, and keeps
+  listening while it waits.
+- Everything heard on the channel goes to the program. APRS positions heard there still show in Stations heard.
+- At most 30 seconds of transmitting in any minute.
+- Your PTT always wins: a packet waiting or going out is dropped, and the program sends it again.
+- APRS beacons, messages, the iGate and the digipeater wait. The page says "Packet mode: APRS waits." Set
+  KISS mode back to APRS to get them back.
+
+Program settings that work well: up to 256 bytes per packet (PACLEN) and up to 4 packets at a time (MAXFRAME); two
+full packets go out in one transmission.

@@ -740,6 +740,7 @@ void aprs_ax25_service(void)
 #if CONFIG_APRS_PACKET
 	aprs_s.v.packet = aprs_s.pk_on;
 	aprs_s.v.pk_block = aprs_s.pk_block;
+	aprs_s.v.pk_hz = aprs_s.ch_rx_hz;
 #endif
 	aprs_s.v.msg_pending = aprs_s.out.active;
 	aprs_s.v.msg_tries = aprs_s.out.tries;

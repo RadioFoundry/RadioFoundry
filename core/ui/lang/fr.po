@@ -873,6 +873,21 @@ msgid "No APRS tones on this radio; DMR positions work."
 msgstr "Pas de tons APRS - DMR OK"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_WHY_PACKET_MODE"
+msgid "Packet mode: APRS waits."
+msgstr "Mode paquets : APRS attend."
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_WHY_NOT_FM"
+msgid "Packet needs FM."
+msgstr "Paquets : FM requise."
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_WHY_SCANNING"
+msgid "Packet: scan is on."
+msgstr "Paquets : balayage actif."
+
+#: core/ui/ui_aprs.c
 msgctxt "WHY_APRS_NOT_IN_BUILD"
 msgid "APRS: not in this build"
 msgstr "APRS non supporté"
@@ -881,6 +896,11 @@ msgstr "APRS non supporté"
 msgctxt "APRS_BODY_NO_CALLSIGN"
 msgid "No callsign"
 msgstr "Aucun indicatif"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_BODY_PACKET_ON"
+msgid " packet on "
+msgstr " paquets sur "
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_ON"
@@ -973,6 +993,11 @@ msgid "Mute APRS audio"
 msgstr "Couper son APRS"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_KISS_MODE"
+msgid "KISS mode"
+msgstr "Mode KISS"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "NMEA sur USB"
@@ -986,6 +1011,11 @@ msgstr "Activé"
 msgctxt "APRS_VALUE_AS_CHANNEL"
 msgid "As channel"
 msgstr "Selon canal"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_VALUE_PACKET"
+msgid "Packet"
+msgstr "Paquets"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_TOAST_SENDING_POSITION"
@@ -1011,6 +1041,11 @@ msgstr "Balises activées"
 msgctxt "APRS_TOAST_BEACONS_OFF"
 msgid "Beacons off"
 msgstr "Balises désactivées"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_WHY_KISS_OFF"
+msgid "KISS on USB is off"
+msgstr "KISS via USB coupé"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_CANT_RECEIVE"

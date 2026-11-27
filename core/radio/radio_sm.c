@@ -5930,7 +5930,7 @@ void radio_sm_shown_view(const radio_sm_t *sm, radio_view_t *v) { (void)sm; (voi
 #define APRS_SLOT_MS		100	// CSMA slot time
 #define APRS_PERSIST		63	// p = (63 + 1) / 256 per clear slot
 #define APRS_KEYUP_MS		25	// carrier up before the tones (the preamble flags follow)
-#define APRS_SEND_MAX_MS	6000u	// longer than any tone buffer (4096 symbols = 3.4 s)
+#define APRS_SEND_MAX_MS	6000u	// longer than any tone buffer (6144 symbols = 5.1 s in a packet mode build)
 
 static bool aprs_can_start(const radio_sm_t *sm)
 {
