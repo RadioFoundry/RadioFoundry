@@ -173,6 +173,21 @@ typedef struct {
 
 extern const board_t board;
 
+#ifndef RFOUNDRY_CHANNEL_SWITCH
+#define RFOUNDRY_CHANNEL_SWITCH	0	// set by the Makefile from board.mk's BOARD_CHANNEL_SWITCH
+#endif
+
+// The radio has a channel switch read as a position (hal_input_t.position). A constant false in a build whose
+// board.mk doesn't say BOARD_CHANNEL_SWITCH := y, so the code behind it drops out
+static inline __attribute__((always_inline)) bool board_channel_switch(void)
+{
+#if RFOUNDRY_CHANNEL_SWITCH
+	return board.input != NULL && board.input->position != NULL;
+#else
+	return false;
+#endif
+}
+
 // The entries of board.bands in force now: the receive-only extension counts only while it is on
 static inline uint8_t board_band_count(void)
 {

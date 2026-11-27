@@ -1088,8 +1088,7 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 
-	bool empty_slot = board.input != NULL && board.input->position != NULL &&
-			  v->channel_number == 0 && v->ch.rx_hz == 0;
+	bool empty_slot = board_channel_switch() && v->channel_number == 0 && v->ch.rx_hz == 0;
 
 	// Number and name, baselines aligned. An empty slot has no codeplug record number.
 	int x = 0;
@@ -1116,8 +1115,7 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 
 static void draw_talk(const radio_view_t *v, bool label_first)
 {
-	if (!v->vfo && v->channel_number == 0 && v->ch.rx_hz == 0 &&
-	    board.input != NULL && board.input->position != NULL) {
+	if (board_channel_switch() && !v->vfo && v->channel_number == 0 && v->ch.rx_hz == 0) {
 		const ui_layout_t *L = &ui_layout;
 		const font_t *f = L->medium;
 		char fit[40];
@@ -2427,7 +2425,7 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	if (v->vfo)
 		sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
 	else
-		sb_str(&b, board.input != NULL && board.input->position != NULL &&
+		sb_str(&b, board_channel_switch() &&
 			v->channel_number == 0 && v->ch.rx_hz == 0 ?
 			TR(CHANNEL_UNPROGRAMMED, "Unprogrammed") : v->ch.name);
 	const font_t *f = large_font(buf, room, form, sizeof form);
@@ -2569,7 +2567,7 @@ static void dual_name(const ui_state_t *s, int i, char *buf, size_t len)
 // widest pill (PTT)
 static uint16_t dual_display_number(const ui_dual_pane_t *p)
 {
-	return board.input != NULL && board.input->position != NULL && p->zone_slot != 0 ? p->zone_slot : p->number;
+	return board_channel_switch() && p->zone_slot != 0 ? p->zone_slot : p->number;
 }
 
 static const font_t *dual_name_font(const ui_state_t *s, int i, const font_t *nf)

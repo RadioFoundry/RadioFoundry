@@ -46,19 +46,24 @@ static volatile uint16_t long_now = INPUT_LONG_MS;
 static volatile bool ptt_blocked;	// input_set_ptt_block
 static volatile uint32_t ptt_downs;	// PTT presses seen by the engine (debug link: input.ptt_downs)
 static volatile bool dtmf_blocked;	// input_set_dtmf_block
+#if RFOUNDRY_CHANNEL_SWITCH
 static volatile bool switch_menu;	// the UI owns switch detents while a screen covers Home
 static switch_follow_t sw_follow;	// the channel switch (hal_input_t.position), input task only
 static volatile int8_t switch_pos = -1;	// its settled position, for the debug link
 static volatile int32_t switch_hold = -1;	// input_switch_hold's zone, taken by the input task
-
 static uint8_t deferred_slot;	// slot attached to deferred encoder steps
+#endif
 
 static void emit(const input_event_t *ev, void *ctx)
 {
 	input_event_t event = *ev;
+#if RFOUNDRY_CHANNEL_SWITCH
 	if (event.action == ACT_ENC_STEP) {
 		event.slot = *(const uint8_t *)ctx;
 	}
+#else
+	(void)ctx;
+#endif
 	if (ev->action == ACT_PTT && ev->gesture == GESTURE_DOWN) {
 		// Every press is logged with where it came from: a transmission nobody asked for shows its cause
 		ptt_downs++;
@@ -70,7 +75,9 @@ static void emit(const input_event_t *ev, void *ctx)
 		// The UI is behind: keep the detents for the next scan instead of losing them (a full queue drops key
 		// events, but a lost encoder step is a wrong channel or row)
 		enc_carry = (int16_t)(enc_carry + ev->value);
+#if RFOUNDRY_CHANNEL_SWITCH
 		deferred_slot = event.slot;
+#endif
 		enc_deferred++;
 	}
 }
@@ -114,6 +121,7 @@ static uint32_t take_injected(uint32_t now, int8_t *enc)
 	return m;
 }
 
+#if RFOUNDRY_CHANNEL_SWITCH
 // A channel switch picks the zone position it points at (docs/spec/ui.md 3)
 static void switch_poll(uint32_t now)
 {
@@ -139,6 +147,7 @@ static void switch_poll(uint32_t now)
 		radio_req_switch_pos((uint16_t)pos);
 	}
 }
+#endif
 
 static void input_task(void *arg)
 {
@@ -150,9 +159,11 @@ static void input_task(void *arg)
 		uint32_t inj_keys = take_injected(now, &ienc);
 		uint32_t keys = board.input->scan();
 		int8_t enc = board.input->encoder != NULL ? board.input->encoder() : 0;	// keypad-only radios have none
+#if RFOUNDRY_CHANNEL_SWITCH
 		if (board.input->position != NULL) {
 			switch_poll(now);
 		}
+#endif
 		raw_keys = keys;
 		enc_total += enc;
 		if ((keys != 0) || (enc != 0)) {
@@ -162,8 +173,13 @@ static void input_task(void *arg)
 		}
 		uint32_t tm = timing;
 		input_engine_set_timing(&engine, (uint16_t)(tm >> 16), (uint16_t)tm);
+#if RFOUNDRY_CHANNEL_SWITCH
 		uint8_t slot = enc != 0 && switch_pos >= 0 ? (uint8_t)(switch_pos + 1) : deferred_slot;
 		deferred_slot = 0;
+		void *ctx = &slot;
+#else
+		void *ctx = NULL;
+#endif
 		int32_t steps = enc_carry + enc + ienc;
 		enc_carry = 0;
 		if (steps > 127 || steps < -127) {	// the rest waits for the next scan
@@ -176,7 +192,7 @@ static void input_task(void *arg)
 			keymap_pending = false;
 			taskEXIT_CRITICAL();
 		}
-		input_engine_step(&engine, keys | inj_keys, (int8_t)steps, now, emit, &slot);
+		input_engine_step(&engine, keys | inj_keys, (int8_t)steps, now, emit, ctx);
 		vTaskDelayUntil(&wake, pdMS_TO_TICKS(INPUT_SCAN_MS));
 	}
 }
@@ -188,7 +204,9 @@ void input_start(void)
 	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
 	memcpy(keymap_live, board.keymap, n * sizeof(keymap_live[0]));
 	input_engine_init(&engine, keymap_live, n, hal_millis());
+#if RFOUNDRY_CHANNEL_SWITCH
 	switch_follow_init(&sw_follow);
+#endif
 #if CONFIG_DTMF
 	input_engine_set_dtmf(&engine, dtmf_edge, NULL);
 #endif
@@ -278,17 +296,29 @@ int32_t input_encoder_total(void)
 
 void input_switch_hold(uint16_t zone)
 {
+#if RFOUNDRY_CHANNEL_SWITCH
 	switch_hold = zone;
+#else
+	(void)zone;
+#endif
 }
 
 void input_switch_menu(bool active)
 {
+#if RFOUNDRY_CHANNEL_SWITCH
 	switch_menu = active;
+#else
+	(void)active;
+#endif
 }
 
 int8_t input_switch_pos(void)
 {
+#if RFOUNDRY_CHANNEL_SWITCH
 	return switch_pos;
+#else
+	return -1;
+#endif
 }
 
 bool input_encoder_stats(hal_encoder_stats_t *st, uint32_t *deferred)
