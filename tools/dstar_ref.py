@@ -17,7 +17,7 @@ older English translation's appendix figures) and nothing else. It is deliberate
 
     tools/dstar_ref.py vectors > tests/vectors/dstar.txt     write the vectors the host test reads
     tools/dstar_ref.py --self-test                           check the reference against itself and the CRC catalog
-    tools/dstar_ref.py pulse                                 the GMSK pulse table of core/dstar/dstar_gmsk.c
+    tools/dstar_ref.py pulse                                 the Gaussian (BT 0.5) pulse table of core/air/air_softmodem_tx.c
 """
 import sys
 

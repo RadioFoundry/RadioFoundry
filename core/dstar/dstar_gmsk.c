@@ -3,26 +3,7 @@
 // GMSK for D-STAR DV (dstar_gmsk.h)
 #include <string.h>
 #include "dstar/dstar_gmsk.h"
-
-// The GMSK frequency pulse (a one-bit rectangle through the BT = 0.5 Gaussian filter) from 1.5 bits before a bit's
-// middle to 1.5 bits after, 64 points a bit and both ends, interpolated between points; a long run of one value sums
-// to 32767 within 3. tools/dstar_ref.py pulse makes it; dstarModemTest checks it against libm's erf. Past 1.5 bits the
-// pulse is under 1e-4 of its peak, so three bits make every sample
-static const int16_t pulse[193] = {
-	3, 3, 4, 5, 7, 8, 10, 13, 16, 19, 24, 29, 36, 43, 52, 63,
-	76, 92, 110, 131, 155, 184, 217, 256, 301, 352, 411, 477, 554, 640, 737, 847,
-	970, 1107, 1260, 1430, 1618, 1825, 2053, 2302, 2573, 2868, 3188, 3533, 3904, 4302, 4728, 5180,
-	5660, 6168, 6703, 7264, 7852, 8464, 9100, 9759, 10438, 11137, 11853, 12584, 13328, 14082, 14844, 15611,
-	16381, 17150, 17917, 18678, 19431, 20174, 20903, 21617, 22312, 22988, 23643, 24274, 24880, 25459, 26012, 26536,
-	27030, 27495, 27930, 28334, 28707, 29050, 29361, 29643, 29893, 30113, 30304, 30464, 30595, 30697, 30769, 30813,
-	30827, 30813, 30769, 30697, 30595, 30464, 30304, 30113, 29893, 29643, 29361, 29050, 28707, 28334, 27930, 27495,
-	27030, 26536, 26012, 25459, 24880, 24274, 23643, 22988, 22312, 21617, 20903, 20174, 19431, 18678, 17917, 17150,
-	16381, 15611, 14844, 14082, 13328, 12584, 11853, 11137, 10438, 9759, 9100, 8464, 7852, 7264, 6703, 6168,
-	5660, 5180, 4728, 4302, 3904, 3533, 3188, 2868, 2573, 2302, 2053, 1825, 1618, 1430, 1260, 1107,
-	970, 847, 737, 640, 554, 477, 411, 352, 301, 256, 217, 184, 155, 131, 110, 92,
-	76, 63, 52, 43, 36, 29, 24, 19, 16, 13, 10, 8, 7, 5, 4, 3,
-	3,
-};
+#include "dstar/dstar_air.h"
 
 static int16_t sat16(int32_t v)
 {
@@ -62,12 +43,15 @@ static uint32_t bit_step(uint32_t rate)
 	return (uint32_t)(((uint64_t)DSTAR_BAUD << 32) / rate);
 }
 
-static int8_t next_sym(dstar_gmsk_mod_t *m)
+// The modulator is the soft modem's transmitter on D-STAR's profile (air_softmodem_tx.c): the pulse and the arithmetic
+// that were here, so its output is the same sample for sample. What stays here is D-STAR's: bits to levels, and the
+// low-frequency restorer after the pulse
+static int bit_sym(void *ctx)
 {
+	dstar_gmsk_mod_t *m = ctx;
 	int b = m->pull ? m->pull(m->ctx) : -1;
 	if (b < 0) {
-		m->tail++;
-		return 0;
+		return AIR_SOFTMODEM_NO_SYM;
 	}
 	m->bits++;
 	return b ? 1 : -1;
@@ -79,46 +63,23 @@ bool dstar_gmsk_mod_init(dstar_gmsk_mod_t *m, uint32_t rate, int16_t amp, dstar_
 	if (rate < DSTAR_RATE_MIN || rate > DSTAR_RATE_MAX) {
 		return false;
 	}
-	m->step = bit_step(rate);
-	m->amp = amp;
 	m->pull = pull;
 	m->ctx = ctx;
-	// Nothing before the first bit; the first bit current and the second next
-	m->sym[1] = next_sym(m);
-	m->sym[2] = next_sym(m);
-	return true;
+	return air_softmodem_tx_init(&m->tx, &dstar_air_profile, rate, amp, bit_sym, m);
 }
 
 void dstar_gmsk_mod_trim(dstar_gmsk_mod_t *m, int32_t ppm)
 {
-	m->step = (uint32_t)((int64_t)m->step + ((int64_t)m->step * ppm) / 1000000);
+	air_softmodem_tx_trim(&m->tx, ppm);
 }
 
 size_t dstar_gmsk_mod(dstar_gmsk_mod_t *m, int16_t *out, size_t max)
 {
 	size_t n = 0;
-	// Done once the source has run dry and the last real bit's pulse is past: two bits after it went out of the
-	// current slot
-	while (n < max && m->tail < 3u) {
-		// The phase's top six bits pick the pulse point, the next 16 the way to the following one: the current bit
-		// is 64-128 into the table, the previous bit 128-192, the next 0-64. Without the interpolation the nearest
-		// point is up to 2.4 % of the deviation off
-		uint32_t i = m->phase >> 26, fr = (m->phase >> 10) & 0xFFFFu;
-		int32_t y = 0;
-		for (int b = 0; b < 3; b++) {
-			uint32_t at = i + 128u - 64u * (uint32_t)b;
-			int32_t p = pulse[at] + (int32_t)((((int32_t)pulse[at + 1u] - pulse[at]) * (int32_t)fr) >> 16);
-			y += m->sym[b] * p;
-		}
-		out[n++] = dstar_lfr(&m->lfr, (int32_t)(((int64_t)y * m->amp) >> 15));
+	int32_t v;
+	while (n < max && air_softmodem_tx_sample(&m->tx, &v)) {
+		out[n++] = dstar_lfr(&m->lfr, v);
 		m->samples++;
-		uint32_t was = m->phase;
-		m->phase += m->step;
-		if (m->phase < was) {
-			m->sym[0] = m->sym[1];
-			m->sym[1] = m->sym[2];
-			m->sym[2] = m->tail ? (m->tail++, (int8_t)0) : next_sym(m);
-		}
 	}
 	return n;
 }

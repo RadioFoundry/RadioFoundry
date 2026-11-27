@@ -7,6 +7,8 @@
  * kHz samples, as a radio's PCM path delivers them), the demodulator and the deframer. Voice frames carry known
  * pseudo-random bits, so the voice bits the deframer hands back give the bit error rate.
  *
+ * Then D-STAR on the soft modem (core/air): its transmitter is the modulator, sample for sample.
+ *
  * Impairments: carrier offset, the transmitter's bit clock off by some ppm, an inverted discriminator, a first-order
  * high-pass in the transmit or receive audio path (with and without the low-frequency restorer), the modulator run
  * at 8 kHz as on the radio. The assertions are margins under what the sweep measured; --sweep prints the BER table
@@ -22,6 +24,8 @@
 #include "dstar/dstar_gmsk.h"
 #include "dstar/dstar_frame.h"
 #include "dstar/dstar_engine.h"
+#include "dstar/dstar_air.h"
+#include "air/air_softmodem.h"
 
 static int failures = 0;
 
@@ -331,6 +335,13 @@ static int iso_pull(void *ctx)
 
 // The modulator's output (and so its pulse table) against the definition, libm's erf: every sample of a pattern at
 // 96 kHz equals the sum of the Gaussian-filtered rectangles of its bits, within the table's resolution
+// The same bits as levels, for the soft modem's transmitter
+static int iso_sym(void *ctx)
+{
+	int b = iso_pull(ctx);
+	return b < 0 ? AIR_SOFTMODEM_NO_SYM : b ? 1 : -1;
+}
+
 static void test_mod_shape(void)
 {
 	static const uint8_t pat[] = { 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0 };
@@ -556,6 +567,45 @@ static void test_demod_guard(void)
 	CHECK(guard_bits == 0, "%u bits from a demodulator never started", guard_bits);
 }
 
+// --- D-STAR on the soft modem (dstar_air.h): its transmitter is the modulator
+
+// A tap's functions are never called here: the fits only look for them
+static bool tap_start(void) { return true; }
+static uint16_t tap_read(int16_t *buf, uint16_t max) { (void)buf; (void)max; return 0; }
+static uint16_t tap_write(const int16_t *buf, uint16_t n) { (void)buf; return n; }
+
+static void test_softmodem(void)
+{
+	// The transmitter: the soft modem's on a tap of 2000 counts a kHz is the modulator at 2400 for 1200 Hz
+	static const hal_baseband_t tap = {
+		.rx_rate_hz = 8000, .rx_channels = 1, .rx_lo_hz = 0, .rx_hi_hz = 3400, .rx_counts_per_khz = 2000,
+		.rx_start = tap_start, .rx_read = tap_read,
+		.tx_rate_hz = 8000, .tx_lo_hz = 0, .tx_hi_hz = 3400, .tx_counts_per_khz = 2000,
+		.tx_start = tap_start, .tx_write = tap_write,
+	};
+	CHECK(air_softmodem_tx_fit(&dstar_air_profile, &tap) == AIR_FIT_TX, "tx fit");
+	air_profile_t rrc = dstar_air_profile;
+	rrc.shape = AIR_SHAPE_RRC;
+	CHECK(air_softmodem_tx_fit(&rrc, &tap) == 0, "a pulse not written is no fit");
+	hal_baseband_t blind = tap;
+	blind.tx_counts_per_khz = 0;
+	CHECK(air_softmodem_tx_fit(&dstar_air_profile, &blind) == 0, "no scale, no fit");
+	dstar_gmsk_mod_t mod;
+	air_softmodem_tx_t smt;
+	iso_n = sizeof iso_bits;
+	for (uint32_t i = 0; i < iso_n; i++) {
+		iso_bits[i] = (uint8_t)((i * 7u / 3u) & 1u);
+	}
+	iso_i = 0;
+	CHECK(dstar_gmsk_mod_init(&mod, 8000, 2400, iso_pull, NULL), "mod init");
+	int16_t a[400], b[400];
+	size_t na = dstar_gmsk_mod(&mod, a, 400);
+	iso_i = 0;
+	CHECK(air_softmodem_tx_open(&smt, &dstar_air_profile, &tap, iso_sym, NULL), "tx open");
+	size_t nb = air_softmodem_tx(&smt, b, 400);
+	CHECK(na == nb && memcmp(a, b, na * sizeof a[0]) == 0, "the modulator and the soft modem differ");
+}
+
 int main(int argc, char **argv)
 {
 	if (argc > 1 && strcmp(argv[1], "--sweep") == 0) {
@@ -567,6 +617,7 @@ int main(int argc, char **argv)
 	test_link();
 	test_engine();
 	test_demod_guard();
+	test_softmodem();
 	printf("%s dstarModemTest: %d failure(s)\n", failures ? "FAIL" : "ok", failures);
 	return failures ? 1 : 0;
 }

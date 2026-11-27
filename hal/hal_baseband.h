@@ -24,10 +24,13 @@ typedef struct {
 	// Up to max samples (frames x rx_channels) received since the last call; the board buffers 60 ms or more
 	uint16_t (*rx_read)(int16_t *buf, uint16_t max);
 	void (*rx_stop)(void);
-	// Transmit: samples to the modulator, signed 16 bit
+	// Transmit: samples to the modulator, signed 16 bit, positive = above the carrier unless tx_invert
 	uint32_t tx_rate_hz;
 	uint16_t tx_lo_hz, tx_hi_hz;
-	uint16_t tx_counts_per_khz;	// from the board's deviation calibration, on the tuned channel
+	uint16_t tx_counts_per_khz;	// from the board's deviation calibration, on the tuned channel; 0 unknown
+	bool tx_invert;			// the path inverts: a positive sample lowers the carrier
+	// From a sample written to it on air (what the board buffers): the caller keys this much longer after the last
+	uint16_t tx_latency_ms;
 	bool (*tx_start)(void);
 	// Queue n samples; returns how many it took (the board buffers 60 ms or more and holds the last value when dry)
 	uint16_t (*tx_write)(const int16_t *buf, uint16_t n);

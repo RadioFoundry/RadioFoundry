@@ -1969,9 +1969,10 @@ dstarTest: dstarTest.c $(DSTARFR) $(wildcard $(CORE)/dstar/*.h) $(CORE)/fec/conv
 
 # The GMSK modem on a simulated radio link (noise, offset, clock error, high-passed paths) and the engine
 TESTS   += dstarModemTest
-DSTARMD := $(DSTARFR) $(CORE)/dstar/dstar_gmsk.c $(CORE)/dstar/dstar_engine.c
+DSTARMD := $(DSTARFR) $(CORE)/dstar/dstar_gmsk.c $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_air.c \
+	   $(CORE)/air/air_softmodem_tx.c $(CORE)/air/air_softmodem.c
 
-dstarModemTest: dstarModemTest.c $(DSTARMD) $(wildcard $(CORE)/dstar/*.h)
+dstarModemTest: dstarModemTest.c $(DSTARMD) $(wildcard $(CORE)/dstar/*.h $(CORE)/air/*.h)
 	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarModemTest.c $(DSTARMD) -lm
 
 # D-STAR in the radio core (core/radio/radio_dstar.c): whole overs through the engine and the 2400 bit/s MBE codec
@@ -1980,6 +1981,7 @@ dstarModemTest: dstarModemTest.c $(DSTARMD) $(wildcard $(CORE)/dstar/*.h)
 # the middle of the reset
 TESTS   += radioDstarTest
 DSTARRC := $(CORE)/dstar/dstar_fec.c $(CORE)/dstar/dstar_frame.c $(MBE) $(MBE2400) $(FEC) radioDstarSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/dstar/dstar_gmsk.c \
+	   $(CORE)/dstar/dstar_air.c $(CORE)/air/air_softmodem_tx.c \
 	   $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_codeplug.c
 radioDstarTest: radioDstarTest.c $(DSTARRC) $(CORE)/radio/radio_dstar.c $(wildcard $(CORE)/dstar/*.h $(CORE)/radio/radio_dstar.h) \
                 $(wildcard $(CORE)/mbe/*.h) $(ROOT)/hal/hal_audio_tap.h

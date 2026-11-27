@@ -14,6 +14,7 @@
 #define RFOUNDRY_AIR_SOFTMODEM_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "../../hal/hal_air.h"
@@ -102,5 +103,51 @@ void air_softmodem_rx_reset(air_softmodem_t *m);
 // n samples of one channel, the first taken at t_us on the provider's clock. Calls out for each chunk that fills
 // and for what is left at the end of the call (a chunk never waits for the next call)
 void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, uint32_t t_us);
+
+// --- The transmitter (air_softmodem_tx.c, docs/spec/air-interface.md 6.1) ---
+//
+// Symbols to samples for a transmit tap (hal_baseband_t tx_write): each symbol's level times the profile's frequency
+// pulse at the tap's rate, any rate from 8 to 96 kHz (a smooth pulse carries at 1.67 samples a symbol). The pulse
+// written is the Gaussian at BT 0.5, the one D-STAR's GMSK modulator runs on. Integer only; no RTOS or board call:
+// the caller pulls samples from wherever its tap wants them (an interrupt, a task) and writes them to the tap.
+
+#define AIR_SOFTMODEM_TX_RATE_MIN	8000u
+#define AIR_SOFTMODEM_TX_RATE_MAX	96000u
+#define AIR_SOFTMODEM_NO_SYM		(-128)	// what a symbol source returns when it has no more
+
+// The next symbol in level units: +1 / -1 for two levels (+ is a positive deviation), +3, +1, -1, -3 for four;
+// AIR_SOFTMODEM_NO_SYM when there are no more. A mode maps its bits or dibits to levels (air_syms.h for dibits)
+typedef int (*air_softmodem_sym_t)(void *ctx);
+
+typedef struct {
+	const int16_t *pulse;		// the profile's, 64 points a symbol over three symbols
+	uint32_t step;			// symbol time per sample, 2^32 = one symbol
+	uint32_t phase;			// within the current symbol
+	int8_t sym[3];			// the previous, current and next symbol's level, 0 once they run out
+	uint8_t tail;			// symbols since the source ran out
+	int16_t amp;			// sample value of one level unit (the outer level on two levels, a third of it on four)
+	air_softmodem_sym_t pull;
+	void *ctx;
+	uint32_t syms, samples;
+} air_softmodem_tx_t;
+
+// What transmit through this tap gives a profile: AIR_FIT_TX, or 0 when the pulse isn't written, the tap has no
+// transmit half, its scale (tx_counts_per_khz) is unknown or its band or rate can't carry the profile
+uint32_t air_softmodem_tx_fit(const air_profile_t *p, const hal_baseband_t *bb);
+// Start a transmission of profile p on tap bb: the outer level at the profile's deviation by the tap's scale and
+// polarity. False when it doesn't fit
+bool air_softmodem_tx_open(air_softmodem_tx_t *m, const air_profile_t *p, const hal_baseband_t *bb,
+			   air_softmodem_sym_t pull, void *ctx);
+// The same with the sample rate and the outer level's sample value given (amp negative inverts): for a caller whose
+// path is not a hal_baseband_t (D-STAR's flat FM path, dstar_gmsk.h)
+bool air_softmodem_tx_init(air_softmodem_tx_t *m, const air_profile_t *p, uint32_t rate_hz, int16_t amp,
+			   air_softmodem_sym_t pull, void *ctx);
+// Shift the symbol clock by ppm (tests: a transmitter's clock error)
+void air_softmodem_tx_trim(air_softmodem_tx_t *m, int32_t ppm);
+// One sample, not saturated (for a caller that filters it further); false once the symbols ran out and the last
+// pulse has decayed
+bool air_softmodem_tx_sample(air_softmodem_tx_t *m, int32_t *out);
+// Up to max samples, saturated to 16 bits. Returns the number written; fewer than max (0 at last) at the end
+size_t air_softmodem_tx(air_softmodem_tx_t *m, int16_t *out, size_t max);
 
 #endif

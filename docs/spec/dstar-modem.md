@@ -198,6 +198,11 @@ the output against the definition to 0.2 % of full deviation. A long run sums to
 at 0.88 of it. The modulator pulls bits from the framer and writes samples at the path's rate, through the restorer
 when the board set one.
 
+The pulse and the arithmetic are the soft modem's transmitter's (`core/air/air_softmodem_tx.c`,
+[air-interface.md](air-interface.md) 6.1) on D-STAR's profile (`dstar_air.h`): `dstar_gmsk_mod` maps bits to levels, runs it and
+puts the restorer after it. Its output is the same, sample for sample, as when the pulse was D-STAR's own (checked at
+8 to 96 kHz, both polarities, with a clock trim and with the restorer: 369,601 samples, none different).
+
 ### 2.3 Demodulator
 
 | Stage | What | Why |

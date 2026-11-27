@@ -5,7 +5,8 @@
 // an I/Q path carries it. 1 is a positive deviation (JARL D-STAR standard, appendix 1.5); the board says whether its
 // paths invert.
 //   - the modulator turns air bits into Gaussian-shaped baseband at any rate above 9.6 kHz (8 kHz on the radios'
-//     PCM paths works too: the pulse is smooth enough that 1.67 samples a bit carry it)
+//     PCM paths works too: the pulse is smooth enough that 1.67 samples a bit carry it); it is the soft modem's
+//     transmitter (core/air/air_softmodem.h) on D-STAR's profile (dstar_air.h)
 //   - the demodulator takes discriminator samples at the same rates and hands soft bits to the deframer: the bit
 //     clock from the zero crossings (a phase and frequency loop, so the transmitter's clock may be a few hundred ppm
 //     off), the decisions sampled between samples by interpolation, the DC (a frequency offset) and the level tracked
@@ -20,6 +21,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "air/air_softmodem.h"
 
 #define DSTAR_BAUD		4800u
 #define DSTAR_DEV_HZ		1200u	// the deviation of a long run of one value
@@ -43,11 +45,7 @@ int16_t dstar_lfr(dstar_lfr_t *f, int32_t x);
 typedef int (*dstar_bit_pull_t)(void *ctx);
 
 typedef struct {
-	uint32_t step;		// bit time per sample, 2^32 = one bit
-	uint32_t phase;		// within the current bit
-	int8_t sym[3];		// the previous, current and next bit as +1 / -1, 0 once they run out
-	uint8_t tail;		// bits since the source ran out
-	int16_t amp;		// sample value of a full deviation
+	air_softmodem_tx_t tx;	// the soft modem's transmitter on D-STAR's profile (dstar_air.h)
 	dstar_bit_pull_t pull;
 	void *ctx;
 	dstar_lfr_t lfr;

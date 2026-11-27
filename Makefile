@@ -153,8 +153,9 @@ APP_SRC := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.c)))
 APP_ASM := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.S)))
 # D-STAR's radio header is coded by the shared convolutional code (core/fec/conv.c), which the core/fec glob brings in
 # only with the air interface
+# and its GMSK modulator is the soft modem's transmitter (core/air/air_softmodem_tx.c), on its own the same way
 ifeq ($(CONFIG_DSTAR)$(CONFIG_AIR),yn)
-APP_SRC += core/fec/conv.c
+APP_SRC += core/fec/conv.c core/air/air_softmodem_tx.c
 endif
 # The stub entry without the debug link: its listener uses the debug link's framing (dl_frame.c, no RTOS or board)
 ifeq ($(CONFIG_STUB_ENTRY)$(CONFIG_DEBUGLINK),yn)
