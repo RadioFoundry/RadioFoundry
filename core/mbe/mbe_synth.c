@@ -107,16 +107,20 @@ static void set_phases(mbe_frame_t *f, uint32_t seed)
 }
 
 #if CONFIG_MBE_OPTS
-// Regenerated phases (MBE_PHASE_REGEN): the minimum phase the spectral envelope implies, by a short discrete Hilbert
-// transform of the log amplitudes, th_l = -g sum_m (A_{l+m} - A_{l-m}) / m over m = 1..REGEN_TERMS (A held at its
-// first and last harmonic past the ends, floored REGEN_FLOOR under the frame's peak so silent harmonics don't swing
-// it), plus a fixed dispersion REGEN_DISP l^2: the minimum phase alone lines the harmonics up into one sharp pulse a
-// period, heard as a buzz. Continuous from frame to frame wherever the envelope is.
+// Regenerated phases (MBE_PHASE_REGEN): a share g of the minimum phase the spectral envelope implies, by a short
+// discrete Hilbert transform of the log amplitudes, th_l = g / pi sum_m (A_{l+m} - A_{l-m}) / m radians over
+// m = 1..REGEN_TERMS, A the natural log amplitude (held at the first and last harmonic past the ends, floored
+// REGEN_FLOOR under the frame's peak so silent harmonics don't swing the sum). A harmonic on a rising slope of the
+// envelope leads, one on a falling slope lags, as through the resonance that made the slope. Plus a small fixed
+// dispersion REGEN_DISP l^2: without one the harmonics line up into a pulse sharper than speech's (a crest factor
+// 1.5 dB over the input's on the test voices), heard as a buzz. Continuous from frame to frame wherever the envelope
+// is. g, the count of terms and the dispersion were set on the test voices by how well the output's waveform follows
+// the input's: the other sign of the sum, three times the share, or twice the dispersion all follow it worse
 #define REGEN_TERMS	8
 #define REGEN_FLOOR	(12 * 2048)	// log2 Q11: 72 dB
-#define REGEN_DISP	786		// 0.012 of a turn, 2^16 = one turn
-// g / m in turn units (2^16) per log2 Q11 unit, Q12: g = 0.44 (of a natural log), times ln 2 / (2 pi) * 2^16 / 2^11
-static const uint16_t regen_w[REGEN_TERMS] = { 6362, 3181, 2121, 1591, 1272, 1060, 909, 795 };
+#define REGEN_DISP	393		// 0.006 of a turn, 2^16 = one turn
+// g / (pi m) in turn units (2^16) per log2 Q11 unit, Q12: g = 0.44, times ln 2 / (2 pi) * 2^16 / 2^11
+static const uint16_t regen_w[REGEN_TERMS] = { 2025, 1013, 675, 506, 405, 338, 289, 253 };
 
 static int32_t regen_a(const mbe_frame_t *f, int l, int32_t floor)
 {
@@ -138,7 +142,7 @@ static void regen_phases(mbe_frame_t *f)
 
 		for (int m = 1; m <= REGEN_TERMS; m++)
 			acc += regen_w[m - 1] * (regen_a(f, l + m, amax) - regen_a(f, l - m, amax));
-		f->th[l - 1] = (uint16_t)((uint32_t)(REGEN_DISP * l * l) - (uint32_t)(acc >> 12));
+		f->th[l - 1] = (uint16_t)((uint32_t)(REGEN_DISP * l * l) + (uint32_t)(acc >> 12));
 	}
 }
 #endif

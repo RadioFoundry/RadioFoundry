@@ -40,12 +40,21 @@ front end that sets one adds its switch to `CONFIG_MBE_OPTS`; without that the f
 
 ### 1.2 Regenerated phases
 
-Harmonic l's phase offset is the minimum phase the spectral envelope implies, plus a fixed dispersion:
+Harmonic l's phase offset is a share of the minimum phase the spectral envelope implies, plus a fixed dispersion:
 
-th_l = -0.44 * sum over m = 1..8 of (A_{l+m} - A_{l-m}) / m + 0.012 * l^2 turns
+th_l = 0.44 / pi * sum over m = 1..8 of (A_{l+m} - A_{l-m}) / m radians + 0.006 * l^2 turns
 
 A is the natural log amplitude, held at the first and last harmonic past the ends and floored 72 dB under the frame's
-loudest. The dispersion term spreads the pulse the minimum phase alone makes once a period, which sounds as a buzz.
+loudest. The sum is a short discrete Hilbert transform of the log envelope: a harmonic on a rising slope leads, a
+harmonic on a falling slope lags, as through the resonance that shapes the envelope. Through a two-pole resonance
+the phases are about a third of the filter's own. The dispersion term spreads the pulse the harmonics otherwise make
+once a period, which is sharper than speech's and sounds as a buzz.
+
+| Choice | Measured on the test voices |
+|---|---|
+| The sign and the share 0.44 | the output's waveform follows the input's best (normalized correlation over voiced frames 0.86 and 0.78); the opposite sign 0.82 and 0.76, three times the share 0.84 and 0.77, no such term 0.84 and 0.77 |
+| The dispersion 0.006 | the crest factor within 1 dB of the input's; without the term 1.5 dB over, with twice the term the correlation falls to 0.82 and 0.73 |
+
 The phases follow the envelope from frame to frame and do not depend on the noise seed.
 
 ## 2. Synthesis (`mbe_synth.c`)

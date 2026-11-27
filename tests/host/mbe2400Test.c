@@ -355,6 +355,99 @@ static void test_core_options(void)
 	      "regenerated phases depend on the noise seed");
 }
 
+// One all-voiced frame with regenerated phases through the synthesis: the phase offsets it used, in turns
+static void regen_of(const double *log2a, int L, uint32_t w0, double *th)
+{
+	rig_t *r = malloc(sizeof *r);
+	mbe_params_t p;
+	int16_t pcm[MBE_FRAME_LEN];
+
+	rig_init(r);
+	memset(&p, 0, sizeof p);
+	p.w0 = w0;
+	p.L = (int16_t)L;
+	p.flags = MBE_PHASE_REGEN | MBE_NO_ENHANCE;
+	for (int l = 0; l < L; l++) {
+		p.a[l] = (int16_t)lrint(log2a[l] * 2048);
+		p.v[l] = 1;
+	}
+	mbe_synth_frame(&r->d.mbe, &p, 0, pcm);
+	for (int l = 0; l < L; l++)
+		th[l] = (int16_t)r->prev.th[l] / 65536.0;
+	free(r);
+}
+
+// The regenerated phases (docs/spec/mbe.md 1.2) against what they are defined as. A flat envelope leaves the
+// dispersion alone, k l^2. A slope of s log2 units a harmonic adds 0.44 / pi * 16 s ln 2 radians where all 8 terms
+// are inside the frame: a lead on a rising slope, a lag on a falling one. And through a resonance the phases follow
+// the resonator's own (a two-pole filter's, which is minimum phase): the same sign, about a third of the size
+static void test_regen_phase(void)
+{
+	enum { L = 38 };
+	double a[L], th[L], flat[L], k;
+	int bad = 0;
+
+	for (int l = 0; l < L; l++)
+		a[l] = 9;
+	regen_of(a, L, 0x03333333u, flat);
+	k = flat[0];
+	CHECK(k > 0.002 && k < 0.02, "dispersion %.4f of a turn at the first harmonic", k);
+	for (int l = 1; l <= 9; l++)		// the 16-bit phase wraps above
+		bad += fabs(flat[l - 1] - k * l * l) > 2e-4;
+	CHECK(bad == 0, "flat envelope: %d of 9 phases off k l^2", bad);
+	for (int sign = -1; sign <= 1; sign += 2) {
+		double want = sign * 0.44 / M_PI * 16 * 0.125 * log(2) / (2 * M_PI), worst = 0;
+
+		for (int l = 0; l < L; l++)
+			a[l] = 9 + sign * 0.125 * (l - L / 2);
+		regen_of(a, L, 0x03333333u, th);
+		for (int l = 9; l <= L - 8; l++) {
+			double d = th[l - 1] - flat[l - 1];
+
+			d -= floor(d + 0.5);
+			if (fabs(d - want) > worst)
+				worst = fabs(d - want);
+		}
+		CHECK(worst < 0.03 * fabs(want), "slope %+d: phases %.5f of a turn off %.5f", sign, worst, want);
+	}
+	for (int f0 = 80; f0 <= 125; f0 += 15) {
+		// H(z) = 1 / (1 - 2 r cos(wc) z^-1 + r^2 z^-2), a resonance at 1.8 kHz
+		double rr = 0.9, wc = 2 * M_PI * 1800 / 8000, sxy = 0, sxx = 0, syy = 0, mx = 0, my = 0, tru[L], slope, corr;
+		int n = 3400 / f0 > L ? L : 3400 / f0, cnt = 0;
+
+		for (int l = 1; l <= n; l++) {
+			double w = 2 * M_PI * l * f0 / 8000;
+			double re = 1 - 2 * rr * cos(wc) * cos(w) + rr * rr * cos(2 * w);
+			double im = 2 * rr * cos(wc) * sin(w) - rr * rr * sin(2 * w);
+
+			a[l - 1] = 9 - 0.5 * log2(re * re + im * im);
+			tru[l - 1] = -atan2(im, re) / (2 * M_PI);
+		}
+		regen_of(a, n, (uint32_t)(f0 * 536870.912), th);
+		regen_of((double[L]){ 0 }, n, (uint32_t)(f0 * 536870.912), flat);
+		// the harmonics with all 8 terms inside the frame
+		for (int l = 9; l <= n - 8; l++) {
+			th[l - 1] -= flat[l - 1];
+			th[l - 1] -= floor(th[l - 1] + 0.5);
+			mx += tru[l - 1];
+			my += th[l - 1];
+			cnt++;
+		}
+		mx /= cnt;
+		my /= cnt;
+		for (int l = 9; l <= n - 8; l++) {
+			sxy += (tru[l - 1] - mx) * (th[l - 1] - my);
+			sxx += (tru[l - 1] - mx) * (tru[l - 1] - mx);
+			syy += (th[l - 1] - my) * (th[l - 1] - my);
+		}
+		slope = sxy / sxx;
+		corr = sxy / sqrt(sxx * syy);
+		printf("# regenerated phases, resonance at %d Hz pitch: %.2f of the filter's, correlation %.2f\n", f0, slope, corr);
+		CHECK(corr > 0.9, "f0 %d: correlation %.2f with the resonator's phases", f0, corr);
+		CHECK(slope > 0.25 && slope < 0.5, "f0 %d: %.2f of the resonator's phases", f0, slope);
+	}
+}
+
 static int16_t *read_pcm(const char *path, size_t *frames)
 {
 	FILE *f = fopen(path, "rb");
@@ -566,6 +659,7 @@ int main(void)
 	test_other_frames();
 	test_quantizer();
 	test_core_options();
+	test_regen_phase();
 	test_concealment();
 	test_digital_silence();
 	test_voice("test_transmission");

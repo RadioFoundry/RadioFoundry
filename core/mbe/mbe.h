@@ -38,8 +38,8 @@
 // default) times the harmonic's share of the spectrum, w0 / 2^32, so it falls with the pitch. Read by the estimator
 // too (mbe_est_bands), so a front end's encoder codes the levels its decoder plays
 #define MBE_UV_DENSITY		0x0002
-// Voiced phases regenerated from the amplitudes (the minimum phase the spectral envelope implies, plus a fixed
-// dispersion), not random offsets scaled by the frame's unvoiced share
+// Voiced phases regenerated from the amplitudes (a share of the minimum phase the spectral envelope implies, plus a
+// fixed dispersion), not random offsets scaled by the frame's unvoiced share
 #define MBE_PHASE_REGEN		0x0004
 #endif
 
