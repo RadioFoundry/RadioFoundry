@@ -4208,6 +4208,11 @@ msgid "RX past bands"
 msgstr "RX fuera de banda"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_ROW_CLEAR_TUNING"
+msgid "Clear tuning"
+msgstr "Borrar ajuste radio"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_FREQ_TRIM"
 msgid "Freq trim"
 msgstr "Ajuste frec"
@@ -4431,6 +4436,21 @@ msgstr "Posición DMR: no disponible"
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "Diagnóstico: no disponible"
+
+#: core/ui/ui_menus.c
+msgctxt "TUNE_HOLD_TO_CLEAR"
+msgid "Hold OK to clear tuning"
+msgstr "Mantén OK para borrar el ajuste"
+
+#: core/ui/ui_menus.c
+msgctxt "TUNE_TOAST_CLEARED"
+msgid "Tuning cleared"
+msgstr "Ajuste de radio borrado"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_TUNE_BUSY"
+msgid "Tuning: try again shortly"
+msgstr "Ajuste: inténtalo en breve"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -5731,6 +5751,11 @@ msgstr "Restablecer: no se guardaron los ajustes"
 msgctxt "STORE_ERR_RESET_ERASE"
 msgid "Reset: native area couldn't be erased"
 msgstr "Restablecer: no se borró el área nativa"
+
+#: core/ui/ui_svc_storage.c
+msgctxt "STORE_ERR_TUNE_CLEAR"
+msgid "Tuning: the change couldn't be saved"
+msgstr "Ajuste: no se guardó el cambio"
 
 #: core/ui/ui_svc_storage.c
 msgctxt "STORE_ERR_KEYS_NOT_SAVED"

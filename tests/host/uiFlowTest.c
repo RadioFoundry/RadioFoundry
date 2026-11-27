@@ -446,6 +446,13 @@ static const flow_t flows[] = {
 	{ "S freq trim: past 10.0 ppm is refused", "trim ok 7 up ok up ok 1 0", "1", "toast=Up_to_10.0", 1, false },
 	{ "S freq trim: OK leaves", "trim ok 7 up ok up ok", "ok", "screen=group shows=Freq_trim", 1, false },
 	{ "S no freq trim without the hook", "", "ok 7 up ok", "hides=Freq_trim", 4, false },
+	// Clear tuning (UI_FEAT_TUNE), just above Freq trim: OK only says to hold, a hold clears
+	{ "S clear tuning: OK asks for a hold", "trim ok 7 up ok up up", "ok", "screen=group toast=Hold_OK_to_clear_tuning tune_clears=0",
+	  1, false },
+	{ "S clear tuning: a hold clears", "trim ok 7 up ok up up", "long:ok", "screen=group toast=Tuning_cleared tune_clears=1", 1,
+	  false },
+	{ "S clear tuning: a job that can't start says so", "trim tunebusy ok 7 up ok up up", "long:ok",
+	  "toast=Tuning:_try_again_shortly tune_clears=0", 1, false },
 #if CONFIG_BACKLIGHT_TEST
 	// Settings > Advanced > Backlight tests, under Diagnostics. The sim's display has the raw hooks (4096 counts, three
 	// rates, 7324 Hz standard), so the compare value page comes first

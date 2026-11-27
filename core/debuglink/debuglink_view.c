@@ -4,6 +4,7 @@
 // (DL_VIEW_VERSION is bumped when one changes meaning or goes away); new keys may appear anywhere in a section.
 #include "config.h"
 #include "board.h"
+#include "radio/radio_tune.h"
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "hostlink/hostlink.h"
@@ -84,7 +85,7 @@ static void tone(dl_text_t *t, const char *key, const subtone_t *s)
 
 static void core_section(const radio_view_t *v, dl_text_t *t)
 {
-	const char *pw = board_power_name(v->power, v->ch.tx_hz);
+	const char *pw = radio_tune_name(v->power, v->ch.tx_hz);
 	static const char *const sources[] = { "none", "builtin", "open-firmware" };
 
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
@@ -117,12 +118,31 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "power=%u\n", v->power);
 	dl_text_kv_str(t, "power_name", pw);
 	dl_text(t, "power_count=%u\n", board.power_count);
-	// Every level's name at the channel's transmit frequency (per band), so a host picks a level by its power
+	// Every level's factory name at the channel's transmit frequency (per band), so a host picks a level by its power
+	// (power_name above is the one shown, an owner's name from radio tuning included)
 	dl_text(t, "power_names=");
 	for (uint8_t l = 0; l < board.power_count; l++) {
 		dl_text(t, l ? "/%s" : "%s", board_power_name(l, v->ch.tx_hz));
 	}
 	dl_text(t, "\n");
+#if CONFIG_RADIO_TUNE
+	{
+		// Radio tuning (radio-tune.md 5): RAM words and names in use and their room, the modes the board trims the
+		// deviation of (bits of radio_mode_t), the transmit bands (bits of board.bands), and 1 when TX_DRIVE moves the
+		// drive of an FM transmission at once (else at the next key-up); then the battery as read before the gain trim
+		// and the board's empty and full voltages (0/0/0 without a battery)
+		uint8_t nw, nn;
+		bool bat = board_has_battery();
+		uint16_t txb = 0;
+		radio_tune_counts(&nw, &nn);
+		for (uint8_t i = 0; i < board_band_count() && i < 16u; i++) {
+			txb |= board.bands[i].tx ? (uint16_t)(1u << i) : 0u;
+		}
+		dl_text(t, "tune=%u/%u/%u/%u/%x/%x/%u/%u/%u/%u\n", nw, RADIO_TUNE_WORDS, nn, RADIO_TUNE_NAMES, board.tune, txb,
+			board.radio != NULL && board.radio->tx_drive_now != NULL ? 1u : 0u, v->battery_raw_mv,
+			bat ? board_battery_empty_mv() : 0u, bat ? board_battery_full_mv() : 0u);
+	}
+#endif
 	if (board.radio != NULL && board.radio->tx_drive_level != NULL) {
 		// The PA drive of each level at the channel's transmit frequency (power calibration)
 		dl_text(t, "tx_drive=");

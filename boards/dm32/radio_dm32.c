@@ -16,6 +16,7 @@
 #include "hrc_afsk.h"
 #include "radio/ref_trim.h"
 #include "radio/pa_keyup.h"
+#include "radio/radio_tune.h"
 
 #define DAC_C_INIT		0x06E2u
 
@@ -530,7 +531,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	}
 	wake();
 	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_drive = level_drive(hz, power);
+	tx_drive = radio_tune_drive(hz, power, level_drive(hz, power));
 	if (drive_override != 0u) {
 		tx_drive = drive_override;
 	}

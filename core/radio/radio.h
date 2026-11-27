@@ -526,8 +526,9 @@ typedef struct {
 	bool rx_sleeping;	// battery save: the receiver is off for now
 	// Battery
 	uint8_t battery;	// radio_batt_t
-	uint8_t battery_pct;	// board.power->battery_pct(), 0 if unknown
-	uint16_t battery_mv;
+	uint8_t battery_pct;	// charge, 0 if unknown
+	uint16_t battery_mv;	// with the tuning's gain trim
+	uint16_t battery_raw_mv;	// board.power->battery_mv() as read
 	uint16_t supply_mv;	// board.power->supply_mv() where the radio measures its supply (board_volts), else 0
 	bool power_off;		// the radio core asks to be switched off (critical battery, battery_off_s)
 	int8_t volume;		// percent last passed to hal_radio_t.volume (the knob, the override or the step), -1 = none yet

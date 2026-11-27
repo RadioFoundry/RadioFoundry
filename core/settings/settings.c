@@ -10,6 +10,9 @@
 // number. The set in force is the newest valid page 0 record and, for each other page, the newest valid record of that
 // page older than it (the one its save wrote just before). A save goes to the next free slot after the newest record;
 // when its sector is full, the next sector of the ring is erased and used (it only holds older records).
+// Radio tuning's record (page field SETTINGS_PAGE_TUNE, settings-store.md 2.2) shares the ring: the newest valid one is
+// in force, no save erases its sector, and a save that finds it behind the newest record's sector copies it forward
+// first, so it rides the ring's turns like the settings pages.
 #include <stddef.h>
 #include <string.h>
 #include "config.h"
@@ -26,6 +29,7 @@
 
 _Static_assert(SETTINGS_PAGE_BYTES == PAYLOAD_MAX, "a page is a slot's payload");
 _Static_assert(SETTINGS_PAGES <= SETTINGS_PAGES_MAX, "settings_t outgrew its pages");
+_Static_assert(SETTINGS_PAGES < SETTINGS_PAGE_TUNE, "a settings page would be read as the tune record");
 _Static_assert(sizeof(settings_t) % 4 == 0, "settings_t has tail padding");
 _Static_assert(offsetof(settings_t, dual_b) == SETTINGS_PAGE_BYTES, "page 1 starts at its first field");
 _Static_assert(offsetof(settings_t, ref_trim_ppb) % 2 == 0, "ref_trim_ppb is aligned");
@@ -137,6 +141,9 @@ static bool have_newest;		// stats.sector / stats.slot point at the newest valid
 static uint32_t valid_mask, save_mask;
 #define SECTORS_MAX	32u
 static uint32_t next_seq;		// the next record's sequence number: past every record in the ring
+// The tune record in force (settings_tune_*): where it is (sector < SECTORS_MAX, slot < SLOTS)
+static bool have_tune;
+static uint8_t tune_sec, tune_sl;
 // The slot buffer, used only under the storage lock (kept off the small housekeeping and start-up task stacks). One is
 // enough: next_slot's scan is over before put_record reads its record back, and settings_init calls neither. The
 // record put_record builds has its own
@@ -144,6 +151,9 @@ static uint8_t slot_buf[SLOT_SIZE];
 
 static uint16_t rec_page(const uint8_t *r) { return (uint16_t)((r[8] | (r[9] << 8)) >> SETTINGS_PAGE_SHIFT); }
 static uint16_t rec_layout(const uint8_t *r) { return (uint16_t)((r[8] | (r[9] << 8)) & 0x0FFFu); }
+static bool rec_tune(const uint8_t *r) { return rec_page(r) == SETTINGS_PAGE_TUNE && rec_layout(r) == SETTINGS_TUNE_LAYOUT; }
+// The sector the tune record in force sits in, as a protection bit (no save erases it)
+static uint32_t tune_mask(void) { return have_tune ? 1u << tune_sec : 0u; }
 
 settings_load_t settings_init(void)
 {
@@ -154,6 +164,7 @@ settings_load_t settings_init(void)
 	settings_defaults(&live);
 	inited = true;
 	have_newest = false;
+	have_tune = false;
 	valid_mask = 0;
 	have_flash = storage_ready() && m != NULL && m->settings_size >= 2u * STORAGE_SECTOR;
 	if (!have_flash) {
@@ -167,7 +178,7 @@ settings_load_t settings_init(void)
 	}
 	// First pass: the newest record of any page (where the next save follows) and the newest page 0 (the set)
 	bool have0 = false;
-	uint32_t seq0 = 0, seq_any = 0;
+	uint32_t seq0 = 0, seq_any = 0, seq_tune = 0;
 	uint16_t sec0 = 0, sl0 = 0;
 	storage_lock();
 	for (uint16_t sec = 0; sec < sectors; sec++) {
@@ -186,6 +197,12 @@ settings_load_t settings_init(void)
 				seq_any = q;
 				stats.sector = sec;
 				stats.slot = sl;
+			}
+			if (rec_tune(r) && (!have_tune || (int32_t)(q - seq_tune) > 0)) {
+				have_tune = true;
+				seq_tune = q;
+				tune_sec = (uint8_t)sec;
+				tune_sl = (uint8_t)sl;
 			}
 			if (rec_page(r) == 0 && (!have0 || (int32_t)(q - seq0) > 0)) {
 				have0 = true;
@@ -335,28 +352,33 @@ static bool next_slot(uint16_t *sector, uint16_t *slot, bool *erase)
 	*erase = true;
 	for (uint16_t i = 0; i < sectors; i++) {
 		*sector = have_newest ? (uint16_t)((sec + 1u + i) % sectors) : i;
-		if (((valid_mask | save_mask) & (1u << *sector)) == 0) {
+		if (((valid_mask | save_mask | tune_mask()) & (1u << *sector)) == 0) {
 			return true;
 		}
 	}
 	return false;
 }
 
-// One record (page `page`, n bytes of payload) to the next free slot, retried past slots that don't read back
-static bool put_record(uint16_t page, const uint8_t *payload, uint16_t n)
+// One record (layout field `layout`, n bytes of payload, or what fill writes) to the next free slot, retried past slots
+// that don't read back. payload may be in slot_buf: it is copied before the slot scan reuses that
+static bool put_record(uint16_t layout, const uint8_t *payload, uint16_t n, uint16_t (*fill)(uint8_t *p, uint16_t cap))
 {
 	static uint8_t r[SLOT_SIZE];
 	uint32_t seq = next_seq;
-	uint16_t layout = (uint16_t)(SETTINGS_LAYOUT | (page << SETTINGS_PAGE_SHIFT));
 
 	memset(r, 0xFF, sizeof(r));
+	if (fill != NULL) {
+		n = fill(&r[HDR], PAYLOAD_MAX);
+		n = n < PAYLOAD_MAX ? n : PAYLOAD_MAX;
+	} else {
+		memcpy(&r[HDR], payload, n);
+	}
 	put32(&r[0], MAGIC);
 	put32(&r[4], seq);
 	r[8] = (uint8_t)layout;
 	r[9] = (uint8_t)(layout >> 8);
 	r[10] = (uint8_t)n;
 	r[11] = (uint8_t)(n >> 8);
-	memcpy(&r[HDR], payload, n);
 	put32(&r[HDR + n], storage_crc32(0, r, HDR + n));
 
 	for (int attempt = 0; attempt < RETRIES; attempt++) {
@@ -390,15 +412,44 @@ static bool put_record(uint16_t page, const uint8_t *payload, uint16_t n)
 	return false;
 }
 
+// The tune record to the next free slot (a new one from fill, else a copy of the one in force); in force once it reads
+// back, the one before it kept until then. Under the storage lock
+static bool put_tune(uint16_t (*fill)(uint8_t *p, uint16_t cap))
+{
+	const uint8_t *payload = NULL;
+	uint16_t n = 0;
+	if (fill == NULL) {
+		if (!have_tune || read_slot(tune_sec, tune_sl, slot_buf) != SLOT_VALID || !rec_tune(slot_buf)) {
+			return false;
+		}
+		payload = &slot_buf[HDR];
+		n = (uint16_t)(slot_buf[10] | (slot_buf[11] << 8));
+	}
+	if (!put_record((uint16_t)(SETTINGS_TUNE_LAYOUT | (SETTINGS_PAGE_TUNE << SETTINGS_PAGE_SHIFT)), payload, n, fill)) {
+		return false;
+	}
+	have_tune = true;
+	tune_sec = (uint8_t)stats.sector;
+	tune_sl = (uint8_t)stats.slot;
+	return true;
+}
+
 // Every page, the last first and page 0 last: page 0's commit makes the set the one in force
 static bool save(const settings_t *s)
 {
 	bool ok = true;
 
 	storage_lock();
+	// The tune record behind the sector the ring writes in now: copied forward before the pages, so it never pins an
+	// old sector and page 0 stays the newest record. A copy that fails leaves it where it is, still kept. Built
+	// without CONFIG_RADIO_TUNE too: a build without radio tuning keeps the owner's trims for one with it
+	if (have_tune && have_newest && tune_sec != stats.sector) {
+		(void)put_tune(NULL);
+	}
 	save_mask = 0;
 	for (unsigned k = SETTINGS_PAGES; ok && k-- > 0;) {
-		ok = put_record((uint16_t)k, (const uint8_t *)s + k * SETTINGS_PAGE_BYTES, page_len(k));
+		ok = put_record((uint16_t)(SETTINGS_LAYOUT | (k << SETTINGS_PAGE_SHIFT)),
+				(const uint8_t *)s + k * SETTINGS_PAGE_BYTES, page_len(k), NULL);
 	}
 	if (ok) {
 		valid_mask = save_mask;
@@ -452,6 +503,7 @@ static void attach(uint32_t now_ms)
 		sectors = SECTORS_MAX;
 	}
 	have_newest = false;
+	have_tune = false;
 	valid_mask = 0;
 	next_seq = 1;
 	stats.seq = 0;
@@ -530,4 +582,32 @@ void settings_get_stats(settings_stats_t *s)
 	*s = stats;
 	s->dirty = dirty;
 	storage_quick_unlock();
+}
+
+bool settings_tune_save(uint16_t (*fill)(uint8_t *p, uint16_t cap))
+{
+	if (!have_flash || fill == NULL) {
+		return false;
+	}
+	storage_lock();
+	save_mask = 0;
+	bool ok = put_tune(fill);
+	save_mask = 0;
+	storage_unlock();
+	return ok;
+}
+
+bool settings_tune_load(void (*take)(const uint8_t *p, uint16_t n))
+{
+	bool ok = false;
+	if (!have_flash || !have_tune) {
+		return false;
+	}
+	storage_lock();
+	if (read_slot(tune_sec, tune_sl, slot_buf) == SLOT_VALID && rec_tune(slot_buf)) {
+		take(&slot_buf[HDR], (uint16_t)(slot_buf[10] | (slot_buf[11] << 8)));
+		ok = true;
+	}
+	storage_unlock();
+	return ok;
 }

@@ -4208,6 +4208,11 @@ msgid "RX past bands"
 msgstr "RX fuori banda"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_ROW_CLEAR_TUNING"
+msgid "Clear tuning"
+msgstr "Cancella regolazione"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_FREQ_TRIM"
 msgid "Freq trim"
 msgstr "Trim freq."
@@ -4431,6 +4436,21 @@ msgstr "Posizione DMR: non in questa build"
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "Diagnostica: non in questa build"
+
+#: core/ui/ui_menus.c
+msgctxt "TUNE_HOLD_TO_CLEAR"
+msgid "Hold OK to clear tuning"
+msgstr "Tieni OK per cancellare"
+
+#: core/ui/ui_menus.c
+msgctxt "TUNE_TOAST_CLEARED"
+msgid "Tuning cleared"
+msgstr "Regolazione cancellata"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_TUNE_BUSY"
+msgid "Tuning: try again shortly"
+msgstr "Regolazione: riprova a breve"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -5731,6 +5751,11 @@ msgstr "Ripristino: impostazioni non salvabili"
 msgctxt "STORE_ERR_RESET_ERASE"
 msgid "Reset: native area couldn't be erased"
 msgstr "Ripristino: area nativa non cancellabile"
+
+#: core/ui/ui_svc_storage.c
+msgctxt "STORE_ERR_TUNE_CLEAR"
+msgid "Tuning: the change couldn't be saved"
+msgstr "Regolazione: modifica non salvata"
 
 #: core/ui/ui_svc_storage.c
 msgctxt "STORE_ERR_KEYS_NOT_SAVED"

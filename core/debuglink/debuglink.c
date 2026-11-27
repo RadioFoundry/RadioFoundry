@@ -7,6 +7,7 @@
 #include "config.h"
 #include "radio/beep.h"
 #include "board.h"
+#include "radio/radio_tune.h"
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -115,7 +116,7 @@ static const char *state_name(uint8_t s)
 static bool summary_line(uint8_t i, char *buf, uint8_t len)
 {
 	const radio_view_t *v = &hostlink_view;
-	const char *pw = board_power_name(v->power, v->ch.tx_hz);
+	const char *pw = radio_tune_name(v->power, v->ch.tx_hz);
 	switch (i) {
 	case 0:
 		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s",
@@ -506,6 +507,9 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		break;
 	case DL_OP_VFO_SET:
 		radio_req_vfo_set(get32(a));
+		if (len >= 9u) {
+			radio_req_vfo_tx(get32(a + 4));	// the TX frequency too, 0 simplex (else a split's offset carries)
+		}
 		break;
 	case DL_OP_VFO_STEP:
 		radio_req_vfo_step((int8_t)a[0]);
@@ -733,6 +737,60 @@ static void reboot_now(void)
 
 // --- the settings / journal region (docs/spec/debuglink.md 3.13) ---
 
+#if CONFIG_RADIO_TUNE
+// The entries in radio tuning's RAM table now
+static uint8_t tune_entries(void)
+{
+	uint8_t nw, nn;
+	radio_tune_counts(&nw, &nn);
+	return (uint8_t)(nw + nn);
+}
+
+// Radio tuning (radio-tune.md 4): the RAM table in and out, saved to and loaded from the settings ring
+static size_t cmd_tune(const uint8_t *req, uint16_t len, uint8_t *out)
+{
+	settings_stats_t st;
+	settings_get_stats(&st);
+	if (st.load == SETTINGS_RAM || st.load == SETTINGS_FOREIGN) {
+		return status_only(out, DL_ST_UNAVAILABLE);	// no ring of ours to keep a record in: live trims only
+	}
+	switch (req[0]) {
+	case DL_STORAGE_OP_TUNE_PUT:
+		if (len < 2u || (len - 2u) % RADIO_TUNE_ENTRY != 0u) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		radio_tune_put((req[1] & 1u) != 0u, req + 2, (uint8_t)((len - 2u) / RADIO_TUNE_ENTRY));
+		break;
+	case DL_STORAGE_OP_TUNE_GET: {
+		if (len != 2u) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		uint8_t n = tune_entries(), k = 0;
+		for (uint8_t i = req[1]; i < n && k < DL_TUNE_GET_MAX; i++, k++) {
+			radio_tune_get(i, out + 2 + k * RADIO_TUNE_ENTRY);
+		}
+		out[0] = DL_ST_OK;
+		out[1] = n;
+		return 2u + k * RADIO_TUNE_ENTRY;
+	}
+	case DL_STORAGE_OP_TUNE_LOAD:
+		radio_tune_load();
+		break;
+	case DL_STORAGE_OP_TUNE_SAVE:
+	case DL_STORAGE_OP_TUNE_CLEAR:
+		if (!(req[0] == DL_STORAGE_OP_TUNE_SAVE ? radio_tune_save() : radio_tune_clear())) {
+			return status_only(out, DL_ST_BUSY);	// the write failed: the record before stays in force
+		}
+		break;
+	default:
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	out[0] = DL_ST_OK;
+	out[1] = tune_entries();
+	return 2;
+}
+#endif
+
 static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	const hal_flash_map_t *m = storage_map();
@@ -798,6 +856,16 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		out[1] = DL_REBOOT_OK;
 		return 2;
 	}
+	case DL_STORAGE_OP_TUNE_PUT:
+	case DL_STORAGE_OP_TUNE_GET:
+	case DL_STORAGE_OP_TUNE_LOAD:
+	case DL_STORAGE_OP_TUNE_SAVE:
+	case DL_STORAGE_OP_TUNE_CLEAR:
+#if CONFIG_RADIO_TUNE
+		return cmd_tune(req, len, out);
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
+#endif
 	default:
 		return status_only(out, DL_ST_BAD_ARG);
 	}

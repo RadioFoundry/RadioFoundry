@@ -21,6 +21,7 @@
 #include "radio/ref_trim.h"
 #include "radio/apc_ramp.h"
 #include "radio/pa_keyup.h"
+#include "radio/radio_tune.h"
 
 // DAC C biases the modem's AF input. The radio's own value: with the other HR_C7000 boards' 0x06E2 the modem missed the sync of
 // about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
@@ -429,7 +430,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	}
 	// Levels 0..2 are the factory's low, mid and high rows, as the radio's own power setting picks them
 	// (hardware-dm1801pro.md 6.4)
-	tx_drive = dm1801pro_pa_drive(hz, power);
+	tx_drive = radio_tune_drive(hz, power, dm1801pro_pa_drive(hz, power));
 	if (drive_override != 0u) {
 		tx_drive = drive_override;
 	}

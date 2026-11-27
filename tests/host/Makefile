@@ -23,6 +23,8 @@ export ASAN_OPTIONS ?= abort_on_error=0:detect_stack_use_after_return=1:strict_s
 export UBSAN_OPTIONS ?= print_stacktrace=1:halt_on_error=1
 CFLAGS  := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers -Iout/gen '-D__attribute__(x)='  # the firmware's linker section attributes are ARM ELF only;
 # out/gen: the language tables and the text keys i18n.h includes (below)
+# Radio tuning off but in radioTuneTest: the rest see the factory values through radio_tune.h's stubs
+CFLAGS  += -DCONFIG_RADIO_TUNE=0
 
 DATA    := $(CORE)/dmr/dmrData.c
 FRAME   := $(CORE)/hotspot/dmrDataFrame.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/fec/dmrSoftComb.c
@@ -421,6 +423,14 @@ radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CO
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -DCONFIG_DUAL_WATCH=0 -o $@ $(RFTEST) -lm
 
+# The same with CONFIG_RADIO_TUNE: the carrier and battery trims through the radio core (test_tune)
+TESTS   += radioFeaturesTestTune
+radioFeaturesTestTune: $(RFTEST) $(CORE)/radio/radio_tune.c $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) \
+                       $(wildcard $(CORE)/usbaudio/*.h)
+	$(CC) $(filter-out -DCONFIG_RADIO_TUNE=0,$(CFLAGS)) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 \
+		-DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 -DCONFIG_NET_USRP=1 -DCONFIG_RADIO_TUNE=1 -o $@ $(RFTEST) \
+		$(CORE)/radio/radio_tune.c -lm
+
 # A volume potentiometer read on an ADC, as a position
 TESTS   += volumePotTest
 
@@ -516,7 +526,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestNoAm radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestNoAm radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual radioFeaturesTestTune roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest volumePotTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -530,6 +540,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestNoAm radioCoreTestP25
 	./radioCoreTestAprsDmr
 	./radioFeaturesTest
 	./radioFeaturesTestNoDual
+	./radioFeaturesTestTune
 	./roamTest
 	./radioListenBandsTest
 	./inputTest
@@ -745,7 +756,7 @@ UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c 
 ABOUT_H := out/gen/rfoundry_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
 UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
-           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
+           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE -DCONFIG_RADIO_TUNE=0
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 TESTS   += uiFlowTestSatellite
@@ -1508,6 +1519,27 @@ SAT_SERVICE := $(CORE)/satellite/service.c $(SAT_ORBIT)
 satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) \
 		$(wildcard $(CORE)/debuglink/*.h $(CORE)/satellite/*.h $(CORE)/storage/*.h) sim/sim_flash.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SATELLITE_TLE=1 -o $@ satelliteStoreTest.c $(SAT_STORE)
+
+# Radio tuning (core/radio/radio_tune.c, docs/spec/radio-tune.md)
+TESTS   += radioTuneTest
+RADIO_TUNE_SRC := $(CORE)/radio/radio_tune.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c sim/sim_flash.c
+radioTuneTest: radioTuneTest.c $(RADIO_TUNE_SRC) $(CORE)/radio/radio_tune.h $(CORE)/settings/settings.h $(ROOT)/hal/hal_flash.h $(ROOT)/hal/hal_radio.h \
+		$(wildcard $(CORE)/storage/*.h) sim/sim_flash.h
+	$(CC) $(filter-out -DCONFIG_RADIO_TUNE=0,$(CFLAGS)) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DEBUGLINK=1 -DCONFIG_RADIO_TUNE=1 -o $@ radioTuneTest.c $(RADIO_TUNE_SRC)
+
+# The debug link's command handlers (core/debuglink/debuglink.c, whole): the RADIO dispatcher's feature operations and
+# STORAGE radio tuning operations on simulated NOR; what those paths don't reach links to sim/debuglink_unreached.c
+TESTS   += debuglinkCmdTest
+DLCMD_SRC := $(CORE)/radio/radio_tune.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c sim/sim_flash.c sim/debuglink_unreached.c
+debuglinkCmdTest: debuglinkCmdTest.c $(DLCMD_SRC) $(CORE)/debuglink/debuglink.c $(wildcard $(CORE)/debuglink/*.h) \
+		$(CORE)/radio/radio_tune.h $(wildcard $(CORE)/storage/*.h) sim/sim_flash.h
+	$(CC) $(filter-out -DCONFIG_RADIO_TUNE=0,$(CFLAGS)) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DEBUGLINK=1 -DCONFIG_RADIO_TUNE=1 -o $@ debuglinkCmdTest.c $(DLCMD_SRC)
+
+run: run-radio-tune
+run-radio-tune: radioTuneTest debuglinkCmdTest
+	./radioTuneTest
+	./debuglinkCmdTest
+.PHONY: run-radio-tune
 
 run: run-satellite
 run-satellite: satelliteStoreTest satelliteChannelsTest satelliteOrbitTest satelliteServiceTest

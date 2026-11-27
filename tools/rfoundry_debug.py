@@ -169,7 +169,10 @@ APRS_FIELDS = {name: i for i, name in enumerate(
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
-STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
+(STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM, STORAGE_OP_TUNE_PUT, STORAGE_OP_TUNE_LOAD, STORAGE_OP_TUNE_SAVE,
+ STORAGE_OP_TUNE_CLEAR, STORAGE_OP_TUNE_GET) = range(8)
+TUNE_ENTRY = 8                      # bytes per radio tuning entry (docs/spec/radio-tune.md 3)
+TUNE_PER_REQUEST = 7                # entries a TUNE_PUT or TUNE_GET carries
 AUDIO_PROBE = 0x10
 (PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES, PROBE_RAM_READ,
  PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC, PROBE_MOD, PROBE_RAMFEED, PROBE_PIN_TONE, PROBE_PIN_SCAN, PROBE_PIN_PWM) = range(15)
@@ -240,6 +243,7 @@ OP_PA_KEYUP = 37
 OP_VFO_SFR = 38
 OP_P25 = 42
 OP_NXDN = 43
+OP_TUNE_SET = 44                    # radio tuning RAM table (docs/spec/radio-tune.md)
 P25_TALKAROUND = {"auto": 0, "on": 1, "off": 2}
 CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3}
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
@@ -776,6 +780,58 @@ class DebugLink:
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
         self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
 
+    # ── radio tuning (CONFIG_RADIO_TUNE; docs/spec/radio-tune.md) ──
+    def _tune(self, op, payload=b""):
+        """A STORAGE radio tuning operation: the entries in the RAM table after it. UNAVAILABLE without a settings ring;
+        BUSY when a save failed (the record before stays in force)"""
+        return self.request(STORAGE, bytes([op]) + payload)[1][0]
+
+    def tune_put(self, entries):
+        """Put the entries (8 bytes each, radio-tune.md 3) in the RAM table in place of what it holds (STORAGE
+        TUNE_PUT): live at once, saved only by tune_save. Returns the entries the table kept"""
+        entries = [bytes(e) for e in entries]
+        n = self._tune(STORAGE_OP_TUNE_PUT, b"\x01")
+        for i in range(0, len(entries), TUNE_PER_REQUEST):
+            n = self._tune(STORAGE_OP_TUNE_PUT, b"\x00" + b"".join(entries[i:i + TUNE_PER_REQUEST]))
+        return n
+
+    def tune_get(self):
+        """The RAM table as entries (STORAGE TUNE_GET), as a save writes them"""
+        out, n = [], None
+        while n is None or len(out) < n:
+            _, r = self.request(STORAGE, bytes([STORAGE_OP_TUNE_GET, len(out)]))
+            n, body = r[0], r[1:]
+            if not body:
+                break
+            out += [body[k:k + TUNE_ENTRY] for k in range(0, len(body), TUNE_ENTRY)]
+        return out
+
+    def tune_save(self):
+        """Save the RAM table as the record in the settings ring (STORAGE TUNE_SAVE)"""
+        return self._tune(STORAGE_OP_TUNE_SAVE)
+
+    def tune_load(self):
+        """Load the saved record into the RAM table again, undoing live tries (STORAGE TUNE_LOAD)"""
+        return self._tune(STORAGE_OP_TUNE_LOAD)
+
+    def tune_clear(self):
+        """Clear every trim: the RAM table emptied and an empty record saved (STORAGE TUNE_CLEAR)"""
+        return self._tune(STORAGE_OP_TUNE_CLEAR)
+
+    TUNE_SET_WORDS = 15     # words a request holds: the 64-byte request less op, first and total
+
+    def tune_set(self, words, first=0, total=None):
+        """RADIO TUNE_SET: words (u32 each, radio-tune.md 4) at first.. of a RAM table of total; [] empties the table.
+        Live from the next use; the stored record comes back with tune_load or a restart"""
+        total = len(words) + first if total is None else total
+        if not words:
+            self.radio(OP_TUNE_SET, struct.pack("<BB", first, total))
+        for i in range(0, len(words), self.TUNE_SET_WORDS):
+            part = words[i:i + self.TUNE_SET_WORDS]
+            if i:
+                time.sleep(0.06)    # the radio request rate limit
+            self.radio(OP_TUNE_SET, struct.pack(f"<BB{len(part)}I", first + i, total, *part))
+
     # ── the air interface (CONFIG_AIR_RAW, docs/spec/debuglink.md 3.28) ──
     def air_status(self):
         return parse_kv(self.request(AIR, bytes([AIR_OP_STATUS]))[1].decode("ascii", "replace"))
@@ -1303,8 +1359,9 @@ class DebugLink:
     def vfo(self, on):
         self.radio(OP_VFO, bytes([1 if on else 0]))
 
-    def vfo_set(self, hz):
-        self.radio(OP_VFO_SET, struct.pack("<I", int(hz)))
+    def vfo_set(self, hz, tx_hz=None):
+        """The VFO's RX frequency; TX keeps a split's offset where it can, unless tx_hz is given (0: simplex)"""
+        self.radio(OP_VFO_SET, struct.pack("<I", int(hz)) + (b"" if tx_hz is None else struct.pack("<I", int(tx_hz))))
 
     def vfo_step(self, d):
         self.radio(OP_VFO_STEP, struct.pack("<b", d))

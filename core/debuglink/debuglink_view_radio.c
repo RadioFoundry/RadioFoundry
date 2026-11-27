@@ -11,6 +11,7 @@
 #include "radio/spk_aux.h"
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
+#include "radio/radio_tune.h"
 #include "radio/ref_trim.h"
 #include "radio/tx_limit.h"
 #include "radio/pa_keyup.h"
@@ -540,7 +541,24 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		if (board.radio == NULL || board.radio->tx_drive == NULL) {
 			return DL_ST_UNAVAILABLE;
 		}
-		return board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8))) ? DL_ST_OK : DL_ST_BAD_ARG;
+		if (!board.radio->tx_drive((uint16_t)(a[0] | (a[1] << 8)))) {
+			return DL_ST_BAD_ARG;
+		}
+		// During an FM transmission also at once, so a drive is tuned against a wattmeter live (0 is the PA off
+		// there: the one in progress keeps its drive)
+		if ((a[0] | a[1]) != 0 && radio_get_state() == RS_TX && board.radio->tx_drive_now != NULL) {
+			(void)board.radio->tx_drive_now((uint16_t)(a[0] | (a[1] << 8)));
+		}
+		return DL_ST_OK;
+#if CONFIG_RADIO_TUNE
+	case DL_OP_TUNE_SET:
+		// first u8, total u8, words u32 x n: radio tuning's RAM table (radio_tune.h), live from the next use; the
+		// stored record comes back with STORAGE TUNE_LOAD or a restart
+		if (len < 2 || (len - 2u) % 4u != 0u) {
+			return DL_ST_BAD_ARG;
+		}
+		return radio_tune_set(a[0], a[1], a + 2, (uint8_t)((len - 2u) / 4u)) ? DL_ST_OK : DL_ST_BAD_ARG;
+#endif
 	case DL_OP_PA_KEYUP: {
 		// dead_pm, knee_us, slope_us, window_us, settle_us, pa_us and (optional, else 0) ease_pm, each u16: the DMR
 		// PA key-up constants (radio/pa_keyup.h), RAM only, from the next key-up; no argument = the board's again
@@ -659,7 +677,7 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			radio_set_mic_gain((uint8_t)v);
 			return DL_ST_OK;
 		}
-		if (a[0] == DL_SETTING_REF_TRIM) {	// as the mic gain: the UI stores it, this sets it in RAM only
+		if (a[0] == DL_SETTING_REF_TRIM) {	// stored and applied as the menu does (the Radio Tuning page's oscillator)
 			int16_t ppb = (int16_t)v;
 			if (ppb < -REF_TRIM_MAX_PPB || ppb > REF_TRIM_MAX_PPB) {
 				return DL_ST_BAD_ARG;
@@ -667,6 +685,8 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			if (!ref_trim_available()) {
 				return DL_ST_UNAVAILABLE;
 			}
+			settings_begin()->ref_trim_ppb = ref_trim_clamp(ppb);
+			settings_end(hal_millis());
 			if (radio_set_ref_trim(ppb)) {
 				radio_req_retune();
 			}

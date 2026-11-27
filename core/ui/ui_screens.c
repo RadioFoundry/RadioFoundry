@@ -4,6 +4,7 @@
 // docs/ux/wireframes). Regions top to bottom: status strip, place, talk target, activity, hint row.
 #include <string.h>
 #include "board.h"
+#include "radio/radio_tune.h"
 #include "ui_screens.h"
 #include "fmt.h"
 #include "i18n.h"
@@ -266,7 +267,7 @@ void ui_layout_init(void)
 
 const char *ui_power_name(uint8_t p, uint32_t tx_hz)
 {
-	return board_power_name(p, tx_hz);
+	return radio_tune_name(p, tx_hz);
 }
 
 static uint8_t channel_power(const radio_view_t *v)

@@ -1,0 +1,229 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<section class="wrap section page-head">
+	<p class="eyebrow"><a href="{{home}}tools/index.html">{{t tools.title}}</a></p>
+	<h1>{{t tools.tune.title}}</h1>
+	<p class="lead">{{t tools.tune.text}}</p>
+</section>
+<section class="wrap section tune" id="tune">
+	<div class="card tune-ready">
+		<h2>{{t tools.tune.ready.title}} <button class="tune-q" type="button" popovertarget="tune-help-ready" aria-label="{{t tools.tune.help}}">?</button></h2>
+		<ul class="tune-checklist">
+			<li>{{t tools.tune.ready.load}}</li>
+			<li>{{t tools.tune.ready.meter}}</li>
+			<li>{{t tools.tune.ready.power}}</li>
+		</ul>
+		<label class="tune-confirm"><input type="checkbox" id="tune-confirm"> <span>{{t tools.tune.ready.confirm}}</span></label>
+	</div>
+
+	<div id="tune-work" hidden>
+		<div class="tune-bands" role="tablist" id="tune-bands" aria-label="{{t tools.tune.bands}}"></div>
+
+		<div class="card tune-freqs">
+			<div class="tune-freqs-head">
+				<h2>{{t tools.tune.freqs.title}} <button class="tune-q" type="button" popovertarget="tune-help-freqs" aria-label="{{t tools.tune.help}}">?</button></h2>
+				<span class="small muted" id="tune-band-range"></span>
+			</div>
+			<svg class="tune-strip" id="tune-strip" viewBox="0 0 600 64" role="img" aria-labelledby="tune-strip-label"><title id="tune-strip-label">{{t tools.tune.freqs.strip}}</title></svg>
+			<div class="tune-chips" id="tune-chips"></div>
+			<form class="tune-add" id="tune-add" hidden>
+				<label><span>{{t tools.tune.freqs.add_label}}</span>
+					<input id="tune-add-mhz" inputmode="decimal" autocomplete="off" required></label>
+				<button class="btn" type="submit">{{t tools.tune.freqs.add_ok}}</button>
+				<button class="btn btn-quiet" type="button" id="tune-add-cancel">{{t tools.tune.cancel}}</button>
+				<span class="small tune-add-err" id="tune-add-err" role="alert"></span>
+			</form>
+			<p class="small muted tune-cap" id="tune-cap"></p>
+		</div>
+
+		<div class="tune-levels-head">
+			<h2 id="tune-levels-title"></h2>
+			<button class="tune-q" type="button" popovertarget="tune-help-levels" aria-label="{{t tools.tune.help}}">?</button>
+			<span class="tune-spacer"></span>
+			<label class="small tune-hold"><span>{{t tools.tune.hold}}</span>
+				<select id="tune-hold"><option value="3000" selected>3 s</option><option value="5000">5 s</option><option value="9000">9 s</option></select></label>
+			<label class="small"><input type="checkbox" id="tune-advanced"> {{t tools.tune.advanced}}</label>
+		</div>
+		<div class="tune-levels" id="tune-levels"></div>
+
+		<div class="card tune-trims" id="tune-freq" hidden>
+			<h2>{{t tools.tune.freq.title}} <button class="tune-q" type="button" popovertarget="tune-help-freq" aria-label="{{t tools.tune.help}}">?</button></h2>
+			<p class="small muted">{{t tools.tune.freq.text}}</p>
+			<div class="tune-rows" id="tune-freq-rows"></div>
+		</div>
+
+		<div class="card tune-trims" id="tune-dev" hidden>
+			<h2>{{t tools.tune.dev.title}} <button class="tune-q" type="button" popovertarget="tune-help-dev" aria-label="{{t tools.tune.help}}">?</button></h2>
+			<p class="small muted">{{t tools.tune.dev.text}}</p>
+			<div class="tune-rows" id="tune-dev-rows"></div>
+		</div>
+
+		<div class="card tune-trims" id="tune-batt" hidden>
+			<h2>{{t tools.tune.batt.title}} <button class="tune-q" type="button" popovertarget="tune-help-batt" aria-label="{{t tools.tune.help}}">?</button></h2>
+			<p class="small muted">{{t tools.tune.batt.text}}</p>
+			<p class="tune-batt-live" aria-live="polite"><strong id="tune-batt-volts">{{t tools.tune.batt.waiting}}</strong>
+				<span class="small muted" id="tune-batt-raw"></span></p>
+			<div class="tune-rows">
+				<div class="tune-row" data-batt="0">
+					<div class="tune-row-head">
+						<strong class="tune-row-title">{{t tools.tune.batt.reading}}</strong>
+						<span class="badge tune-badge"></span>
+						<span class="small muted tune-row-sub"></span>
+					</div>
+					<form class="tune-batt-form" novalidate>
+						<label class="tune-field"><span>{{t tools.tune.batt.measured}}</span>
+							<span class="tune-unit"><input class="tune-batt-in" inputmode="decimal" autocomplete="off"><em>V</em></span></label>
+						<button class="btn btn-primary" type="submit">{{t tools.tune.batt.set}}</button>
+						<button class="btn btn-quiet tune-reset" type="button">{{t tools.tune.reset}}</button>
+					</form>
+					<p class="small muted tune-hint" aria-live="polite">{{t tools.tune.batt.reading_hint}}</p>
+				</div>
+				<div class="tune-row" data-batt="2">
+					<div class="tune-row-head">
+						<strong class="tune-row-title">{{t tools.tune.batt.full}}</strong>
+						<span class="badge tune-badge"></span>
+						<span class="small muted tune-row-sub"></span>
+					</div>
+					<form class="tune-batt-form" novalidate>
+						<label class="tune-field"><span>{{t tools.tune.batt.voltage}}</span>
+							<span class="tune-unit"><input class="tune-batt-in" inputmode="decimal" autocomplete="off"><em>V</em></span></label>
+						<button class="btn btn-primary" type="submit">{{t tools.tune.batt.set}}</button>
+						<button class="btn tune-batt-now" type="button">{{t tools.tune.batt.use_now}}</button>
+						<button class="btn btn-quiet tune-reset" type="button">{{t tools.tune.reset}}</button>
+					</form>
+					<p class="small muted tune-hint" aria-live="polite">{{t tools.tune.batt.full_hint}}</p>
+				</div>
+				<div class="tune-row" data-batt="1">
+					<div class="tune-row-head">
+						<strong class="tune-row-title">{{t tools.tune.batt.empty}}</strong>
+						<span class="badge tune-badge"></span>
+						<span class="small muted tune-row-sub"></span>
+					</div>
+					<form class="tune-batt-form" novalidate>
+						<label class="tune-field"><span>{{t tools.tune.batt.voltage}}</span>
+							<span class="tune-unit"><input class="tune-batt-in" inputmode="decimal" autocomplete="off"><em>V</em></span></label>
+						<button class="btn btn-primary" type="submit">{{t tools.tune.batt.set}}</button>
+						<button class="btn tune-batt-now" type="button">{{t tools.tune.batt.use_now}}</button>
+						<button class="btn btn-quiet tune-reset" type="button">{{t tools.tune.reset}}</button>
+					</form>
+					<p class="small muted tune-hint" aria-live="polite">{{t tools.tune.batt.empty_hint}}</p>
+				</div>
+			</div>
+		</div>
+
+		<details class="card tune-saved" id="tune-saved">
+			<summary><h2>{{t tools.tune.saved.title}}</h2> <span class="small muted" id="tune-saved-sum"></span></summary>
+			<p class="small muted">{{t tools.tune.saved.text}}</p>
+			<div class="tune-table-wrap"><table class="tune-table" id="tune-saved-table">
+				<thead><tr><th>{{t tools.tune.saved.band}}</th><th>{{t tools.tune.saved.freq}}</th><th>{{t tools.tune.saved.what}}</th><th>{{t tools.tune.saved.value}}</th><th>{{t tools.tune.saved.state}}</th><th></th></tr></thead>
+				<tbody></tbody>
+			</table></div>
+			<div class="tune-saved-actions">
+				<button class="btn" type="button" id="tune-export">{{t tools.tune.export}}</button>
+				<label class="btn">{{t tools.tune.import}}<input type="file" id="tune-import" accept=".json,application/json" hidden></label>
+				<span class="tune-spacer"></span>
+				<button class="btn btn-danger" type="button" id="tune-clear">{{t tools.tune.clear}}</button>
+			</div>
+		</details>
+	</div>
+
+	<div class="tune-dock">
+		<div class="card tune-lost" id="tune-lost" role="alert" hidden>
+			<h2><span class="tune-spin" aria-hidden="true"></span> {{t tools.tune.lost.title}}</h2>
+			<p id="tune-lost-text">{{t tools.tune.lost.text}}</p>
+			<p>{{t tools.tune.lost.why}}</p>
+			<ul>
+				<li>{{t tools.tune.lost.fix_choke}}</li>
+				<li>{{t tools.tune.lost.fix_cable}}</li>
+				<li>{{t tools.tune.lost.fix_port}}</li>
+				<li>{{t tools.tune.lost.fix_load}}</li>
+				<li>{{t tools.tune.lost.fix_replug}}</li>
+			</ul>
+			<p class="small muted">{{t tools.tune.lost.kept}}</p>
+			<div class="tune-lost-actions">
+				<button class="btn btn-primary" type="button" id="tune-retry">{{t tools.tune.lost.retry}}</button>
+				<button class="btn btn-quiet" type="button" id="tune-give-up">{{t tools.tune.lost.stop}}</button>
+			</div>
+		</div>
+		<div class="tune-bar" id="tune-bar" data-conn="idle">
+			<span class="tune-led" id="tune-conn" aria-hidden="true"></span>
+			<span class="tune-bar-text"><strong id="tune-conn-text" role="status" aria-live="polite">{{t tools.tune.conn.idle}}</strong>
+				<span class="small muted" id="tune-radio-name"></span></span>
+			<span class="tune-spacer"></span>
+			<span class="badge badge-testing" id="tune-dirty" hidden>{{t tools.tune.dirty}}</span>
+			<button class="tune-q" type="button" popovertarget="tune-help-live" aria-label="{{t tools.tune.help}}">?</button>
+			<button class="btn btn-quiet" type="button" id="tune-discard" hidden>{{t tools.tune.discard}}</button>
+			<button class="btn btn-primary" type="button" id="tune-save" hidden>{{t tools.tune.save}}</button>
+			<button class="btn btn-primary" type="button" id="tune-connect-btn">{{t tools.tune.connect}}</button>
+			<p id="tune-status" class="small tune-status" role="status" aria-live="polite">{{t tools.tune.status.start}}</p>
+		</div>
+	</div>
+
+	<template id="tune-level-tpl">
+		<article class="card tune-level">
+			<header class="tune-level-head">
+				<input class="tune-name" maxlength="6" spellcheck="false" autocomplete="off">
+				<span class="small muted tune-factory"></span>
+				<span class="badge tune-badge"></span>
+			</header>
+			<div class="tune-fields">
+				<label class="tune-field"><span>{{t tools.tune.target}}</span>
+					<span class="tune-unit"><input class="tune-target" inputmode="decimal" autocomplete="off"><em>W</em></span></label>
+				<label class="tune-field"><span>{{t tools.tune.reading}}</span>
+					<span class="tune-unit"><input class="tune-reading" inputmode="decimal" autocomplete="off"><em>W</em></span></label>
+				<output class="tune-error"></output>
+			</div>
+			<div class="tune-adjust">
+				<span class="tune-adjust-label">{{t tools.tune.adjust}}</span>
+				<button class="btn tune-step" type="button" data-step="-1" aria-label="{{t tools.tune.less}}">−</button>
+				<input class="tune-slider" type="range" step="1" aria-label="{{t tools.tune.adjust}}">
+				<button class="btn tune-step" type="button" data-step="1" aria-label="{{t tools.tune.more}}">+</button>
+				<input class="tune-num" type="number" step="1" aria-label="{{t tools.tune.adjust}}">
+				<span class="small muted tune-drive"></span>
+			</div>
+			<div class="tune-actions">
+				<button class="btn btn-primary tune-key" type="button">{{t tools.tune.key}}</button>
+				<button class="btn tune-suggest" type="button" disabled>{{t tools.tune.suggest}}</button>
+				<button class="btn btn-quiet tune-reset" type="button">{{t tools.tune.reset}}</button>
+			</div>
+			<p class="small muted tune-hint" aria-live="polite"></p>
+		</article>
+	</template>
+
+	<template id="tune-row-tpl">
+		<div class="tune-row">
+			<div class="tune-row-head">
+				<strong class="tune-row-title"></strong>
+				<span class="badge tune-badge"></span>
+				<span class="small muted tune-row-sub"></span>
+			</div>
+			<div class="tune-adjust">
+				<button class="btn tune-step" type="button" data-step="-1" aria-label="{{t tools.tune.less}}">−</button>
+				<input class="tune-slider" type="range" step="1" aria-label="{{t tools.tune.adjust}}">
+				<button class="btn tune-step" type="button" data-step="1" aria-label="{{t tools.tune.more}}">+</button>
+				<span class="tune-unit"><input class="tune-num" type="number" aria-label="{{t tools.tune.adjust}}"><em class="tune-unit-label"></em></span>
+				<button class="btn btn-primary tune-key" type="button">{{t tools.tune.key}}</button>
+				<button class="btn btn-quiet tune-reset" type="button">{{t tools.tune.reset}}</button>
+			</div>
+			<p class="small muted tune-hint" aria-live="polite"></p>
+		</div>
+	</template>
+
+	<div popover id="tune-help-live" class="tune-pop"><h3>{{t tools.tune.help.live_title}}</h3><p>{{t tools.tune.help.live}}</p><p>{{t tools.tune.help.save}}</p></div>
+	<div popover id="tune-help-ready" class="tune-pop"><h3>{{t tools.tune.ready.title}}</h3><p>{{t tools.tune.help.ready}}</p></div>
+	<div popover id="tune-help-freqs" class="tune-pop"><h3>{{t tools.tune.freqs.title}}</h3><p>{{t tools.tune.help.freqs}}</p><p>{{t tools.tune.help.freqs2}}</p></div>
+	<div popover id="tune-help-levels" class="tune-pop"><h3>{{t tools.tune.help.levels_title}}</h3><p>{{t tools.tune.help.levels}}</p><p>{{t tools.tune.help.limits}}</p><p>{{t tools.tune.help.names}}</p></div>
+	<div popover id="tune-help-freq" class="tune-pop"><h3>{{t tools.tune.freq.title}}</h3><p>{{t tools.tune.help.osc}}</p><p>{{t tools.tune.help.carrier}}</p><p>{{t tools.tune.help.counter}}</p></div>
+	<div popover id="tune-help-dev" class="tune-pop"><h3>{{t tools.tune.dev.title}}</h3><p>{{t tools.tune.help.dev}}</p></div>
+	<div popover id="tune-help-batt" class="tune-pop"><h3>{{t tools.tune.batt.title}}</h3><p>{{t tools.tune.help.batt}}</p><p>{{t tools.tune.help.batt_rest}}</p><p>{{t tools.tune.help.batt_effect}}</p></div>
+	<dialog class="tune-dialog" id="tune-dialog">
+		<form method="dialog">
+			<h3 id="tune-dialog-title"></h3>
+			<p id="tune-dialog-text"></p>
+			<div class="tune-dialog-actions">
+				<button class="btn" value="cancel">{{t tools.tune.cancel}}</button>
+				<button class="btn btn-danger" value="ok" id="tune-dialog-ok"></button>
+			</div>
+		</form>
+	</dialog>
+</section>

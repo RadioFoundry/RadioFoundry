@@ -130,10 +130,9 @@ static hal_radio_t fake_radio = {	// not const: test_mute gives it speaker_mute
 
 static void p_led(uint8_t which, bool on) { (void)which; (void)on; }
 static uint16_t p_battery_mv(void) { return 7600; }
-static uint8_t p_battery_pct(void) { return 80; }
 static uint8_t p_mic(void) { return 0; }
 static const hal_power_t fake_power = {
-	.led = p_led, .battery_mv = p_battery_mv, .battery_pct = p_battery_pct, .mic_level = p_mic,
+	.led = p_led, .battery_mv = p_battery_mv, .mic_level = p_mic,
 };
 
 // The tones back to frames, as a receiver would

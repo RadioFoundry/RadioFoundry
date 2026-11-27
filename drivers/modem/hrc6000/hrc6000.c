@@ -274,7 +274,9 @@ bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg)
 	ok &= hrc6000_set_ref_offset(dev, cfg->ref_offset, true);
 	ok &= hrc_write(dev, 4, 0x49, 0xFF);	// modulation limits
 	ok &= hrc_write(dev, 4, 0x4A, 0xFF);
-	ok &= hrc_write(dev, 4, 0x35, dev_coef.voice);
+	// The voice deviation coefficient (modem-hrc6000.md 8), scaled by the owner's trim
+	int32_t voice = (dev_coef.voice * (1000 + cfg->dev_pm) + 500) / 1000;
+	ok &= hrc_write(dev, 4, 0x35, (uint8_t)(voice < 1 ? 1 : voice > 0xFF ? 0xFF : voice));
 	if (cfg->tone == HRC6000_TONE_CTCSS) {
 		ok &= hrc_write(dev, 4, 0xA0, dev_coef.ctcss);
 	} else if (cfg->tone == HRC6000_TONE_DCS) {

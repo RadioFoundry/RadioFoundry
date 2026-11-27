@@ -12,6 +12,7 @@
 #include "net/net_svc.h"
 #include "net/tcp.h"
 #include "board.h"
+#include "radio/radio_tune.h"
 #include "hal_time.h"
 #include "radio/radio.h"
 #include "codeplug/codeplug.h"
@@ -126,7 +127,7 @@ void http_status_json(dl_text_t *t)
 	static const char *const states[] = { "idle", "rx", "tx", "tx_denied" };
 	const radio_view_t *v = net_radio_view();
 	const channel_t *ch = &v->ch;
-	const char *pw = board_power_name(v->power, v->ch.tx_hz);
+	const char *pw = radio_tune_name(v->power, v->ch.tx_hz);
 	dl_text(t, "{\"radio\":");
 	dl_json_str(t, board.name);
 	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"codeplug\":%u,\"zone\":%u,"

@@ -124,29 +124,6 @@ static uint16_t battery_mv(void)
 	return (uint16_t)filtered_mv;
 }
 
-// 2S Li-ion, resting voltage to charge (per cell 4.10 V full .. 3.20 V empty, doubled)
-static const struct { uint16_t mv; uint8_t pct; } curve[] = {
-	{ 6400, 0 }, { 6800, 4 }, { 7000, 10 }, { 7200, 22 }, { 7400, 42 },
-	{ 7600, 60 }, { 7800, 75 }, { 8000, 88 }, { 8200, 100 },
-};
-
-static uint8_t battery_pct(void)
-{
-	uint32_t mv = battery_mv();
-	const uint32_t n = sizeof(curve) / sizeof(curve[0]);
-	if (mv <= curve[0].mv) {
-		return 0;
-	}
-	for (uint32_t i = 1; i < n; i++) {
-		if (mv < curve[i].mv) {
-			uint32_t span = curve[i].mv - curve[i - 1].mv;
-			uint32_t rise = curve[i].pct - curve[i - 1].pct;
-			return (uint8_t)(curve[i - 1].pct + (mv - curve[i - 1].mv) * rise / span);
-		}
-	}
-	return 100;
-}
-
 // Volume potentiometer (spec 11.2): each radio has its own readings (uvf_variant)
 static int8_t volume(void)
 {
@@ -197,7 +174,6 @@ const hal_power_t uvf_power = {
 	.init = init,
 	.latch = latch,
 	.battery_mv = battery_mv,
-	.battery_pct = battery_pct,
 	.volume = volume,
 	.switch_on = switch_on,
 	.led = led,

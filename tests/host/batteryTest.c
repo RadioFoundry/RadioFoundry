@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The battery average and charge estimate (drivers/power/battery): the first reading fills the average, readings come
-// at most every BATTERY_AVG_MS, a step moves the average by 1/8 per reading, and the percent's ends and middle
+// The battery average (drivers/power/battery): the first reading fills the average, readings come at most every
+// BATTERY_AVG_MS, and a step moves the average by 1/8 per reading
 #include <stdio.h>
 #include "power/battery/battery.h"
 
@@ -37,9 +37,6 @@ int main(void)
 	reading = 7800;
 	CHECK(battery_avg_mv(&w, 0xFFFFFF00u + BATTERY_AVG_MS, read_mv) == 7100);
 
-	CHECK(battery_linear_pct(6000, 6400, 8200) == 0 && battery_linear_pct(6400, 6400, 8200) == 0);
-	CHECK(battery_linear_pct(7300, 6400, 8200) == 50 && battery_linear_pct(8200, 6400, 8200) == 100);
-	CHECK(battery_linear_pct(9000, 6400, 8200) == 100);
 	if (failures) {
 		printf("batteryTest: %d failures\n", failures);
 		return 1;

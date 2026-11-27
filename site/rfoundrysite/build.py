@@ -379,6 +379,7 @@ class Site:
 			self.flash_page(lang)
 			self.tools_page(lang)
 			self.satellite_tle_page(lang)
+			self.radio_tune_page(lang)
 			self.support_pages(lang)
 			self.codeplug_page(lang)
 			self.docs_pages(lang)
@@ -774,6 +775,24 @@ class Site:
 			   '<script type="module" src="{{root}}static/js/tletool.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "tools/satellite/index.html", self.t(lang, "tools.satellite.title"),
 			  self.tpl.render("satellite_tle", {}, lang), "tools", scripts=scripts, nav="tools")
+
+	def radio_tune_page(self, lang):
+		"""Tools > Radio tuning (static/js/tunetool.js, docs/spec/radio-tune.md): everything about the radio comes from
+		the radio; the page carries only each board's display name"""
+		strings = json.dumps(self.i18n.subset(lang, ("tools.title", "tools.tune.", "flash.err.")),
+				     ensure_ascii=False).replace("</", "<\\/")
+		names = {}
+		for b in self.boards:
+			board = b.get("flash", {}).get("board")
+			if board and board not in names:
+				names[board] = b["name"]
+		radios = json.dumps(names, ensure_ascii=False).replace("</", "<\\/")
+		scripts = ('<script type="application/json" id="i18n">%s</script>'
+			   '<script type="application/json" id="tune-radios">%s</script>'
+			   '<script type="module" src="{{root}}static/js/tunetool.js?v=%s"></script>' % (strings, radios, self.asset_version))
+		self.page(lang, "tools/tuning/index.html", self.t(lang, "tools.tune.title"),
+			  self.tpl.render("radio_tune", {}, lang), "tools", description=self.t(lang, "tools.tune.card_text"),
+			  scripts=scripts, nav="tools")
 
 	def support_pages(self, lang):
 		"""Support: the FAQ, the reminder to update, and the support download (static/js/supportpage.js) with the About

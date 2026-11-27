@@ -42,6 +42,7 @@ is `tools/bringup.py list --radio <id>`.
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | partial, needs re-run |
 | `ref_trim` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass, needs re-run | partial, needs re-run |
+| `radio_tune` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded | pass, needs re-run | partial, needs re-run |
 | `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not recorded | pass, needs re-run | partial, needs re-run |
 | `tone_burst_key` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
@@ -276,6 +277,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |
 | `VOX` | … | ● | ● | … | ● | ● | ● | … |
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `RADIO_TUNE` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `GPS` | ● | ● | ✕ | ● | ● | ● | ● | ✕ |
@@ -427,6 +429,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 |---|---|---:|---:|---|
 | Settings menu on the radio | `UI_SETTINGS` | 13,984 | 11,000 |  |
 | Diagnostics page | `DIAG` | 4,216 | 4,556 |  |
+| Radio tuning: the owner's trims of each power level's drive, each mode's deviation and carrier frequency, level names, and the battery reading's gain and empty and full voltages, kept outside the codeplug | `RADIO_TUNE` | 1,380 | 1,196 | Needs `DEBUGLINK`. RAM: 156 B on the DM-1701, 136 B on the MD-380; 1,940 B flash and 136 B RAM on the DM-32UV. Deviation trims on radios that mark the mode in `board_t.tune` (the core view's `tune`): FM on the HR_C6000 radios. The site's Radio Tuning page works through the debug link ([radio-tune.md](spec/radio-tune.md)). Untested on a radio |
 | Satellite TLE catalog, pass prediction and Doppler compensation | `SATELLITE_TLE` | 28,184 | 27,724 | Needs `DEBUGLINK`. RAM: 1,280 B on DM-1701 (656 B linked, 624 B from the existing heap), 1,272 B on MD-380 (648 B linked, 624 B heap), and 1,264 B on DM-32UV (656 B linked, 608 B heap). Heap figures include allocation overhead and are already reserved in linked RAM. The DM-1701 and MD-UV380 maximal builds keep it on; the MD-9600 maximal build leaves it off to fit app flash. Default builds keep it on ([satellite.md](spec/satellite.md)). |
 | Support info on About and the debug link (build source, chips, image hash) | `SUPPORT_INFO` | 3,016 | 2,572 | About 515 bytes of RAM, most of it About's longer text. Read only when About opens or a host asks ([support-info.md](spec/support-info.md)) |
 | Backlight test pages | `BACKLIGHT_TEST` | 1,320* | 1,196* | Off by default; bench work ([backlight-curve.md](testing/backlight-curve.md)) |

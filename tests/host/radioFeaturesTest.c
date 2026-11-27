@@ -16,6 +16,7 @@
 #include "radio/vibe.h"
 #include "usbaudio/audio_mux.h"
 #include "radio/battery.h"
+#include "radio/radio_tune.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
 #include "dmr/ambe/ambeVoice.h"
@@ -199,7 +200,6 @@ static const hal_radio_t fake_radio_no_dtmf = {
 
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 static uint16_t p_battery_mv(void) { return hw.battery_mv; }
-static uint8_t p_battery_pct(void) { return hw.battery_mv >= 7400 ? 50 : 5; }
 static uint8_t p_mic(void) { return hw.mic; }
 static void p_vibrate(uint16_t ms)
 {
@@ -210,13 +210,13 @@ static void p_vibrate(uint16_t ms)
 	hw.vibes++;
 }
 static const hal_power_t fake_power = {
-	.led = p_led, .battery_mv = p_battery_mv, .battery_pct = p_battery_pct, .mic_level = p_mic,
+	.led = p_led, .battery_mv = p_battery_mv, .mic_level = p_mic,
 	.vibrate = p_vibrate,
 };
 // A mobile that measures its DC input (supply_mv) and has no battery; the battery hooks stay to show they aren't read
 static uint16_t p_supply_mv(void) { return hw.battery_mv; }
 static const hal_power_t fake_supply_power = {
-	.led = p_led, .battery_mv = p_battery_mv, .battery_pct = p_battery_pct, .mic_level = p_mic,
+	.led = p_led, .battery_mv = p_battery_mv, .mic_level = p_mic,
 	.vibrate = p_vibrate, .supply_mv = p_supply_mv,
 };
 
@@ -694,7 +694,7 @@ static void test_battery_module(void)
 	batt_t b;
 	batt_init(&b);
 	CHECK(batt_update(&b, 7800, 6400, 6000, 1000) == BATT_EV_NONE && b.level == BATT_OK);
-	CHECK(batt_update(&b, 0, 6400, 6000, 2000) == BATT_EV_NONE && b.mv == 7800);	// no reading
+	CHECK(batt_update(&b, 0, 6400, 6000, 2000) == BATT_EV_NONE && b.level == BATT_OK);	// no reading
 	// One sag is not a flat battery; three in a row are
 	CHECK(batt_update(&b, 6300, 6400, 6000, 3000) == BATT_EV_NONE);
 	CHECK(batt_update(&b, 6500, 6400, 6000, 4000) == BATT_EV_NONE && b.level == BATT_OK);
@@ -731,6 +731,16 @@ static void test_battery_module(void)
 	CHECK(batt_backlight_pct(80, 30, 120, 120000, BATT_OK) == 0);
 	CHECK(batt_backlight_pct(80, 0, 0, 999999, BATT_OK) == 80);
 	CHECK(batt_backlight_pct(80, 30, 120, 0, BATT_LOW) == BATT_DIM_PCT);
+	// The charge: a Li-ion curve between empty and full, moved by the owner's offsets
+	CHECK(batt_pct(6300, 6400, 8200, 0, 0) == 0 && batt_pct(6400, 6400, 8200, 0, 0) == 0);
+	CHECK(batt_pct(6700, 6400, 8200, 0, 0) == 3 && batt_pct(7400, 6400, 8200, 0, 0) == 42);
+	CHECK(batt_pct(8100, 6400, 8200, 0, 0) == 94 && batt_pct(8200, 6400, 8200, 0, 0) == 100);
+	CHECK(batt_pct(9000, 6400, 8200, 0, 0) == 100);
+	CHECK(batt_pct(8000, 6400, 8200, 0, -200) == 100);	// a battery that charges to 8.0 V reads full there
+	CHECK(batt_pct(7200, 6400, 8200, 400, 0) == 7);	// empty at 6.8 V: the curve's steps 156 mV apart
+	CHECK(batt_pct(8000, 6400, 8200, 1000, -900) == 88);	// closer than BATT_SPAN_MV: the board's own
+	CHECK(batt_scale(8000, 0) == 8000 && batt_scale(8000, 25) == 8200 && batt_scale(8000, -50) == 7600);
+
 }
 
 // ---- the beep engine on its own ----
@@ -3637,7 +3647,7 @@ static void test_battery(void)
 {
 	start();
 	run(1500);
-	CHECK(sm.view.battery == RADIO_BATT_OK && sm.view.battery_mv == 8000 && sm.view.battery_pct == 50);
+	CHECK(sm.view.battery == RADIO_BATT_OK && sm.view.battery_mv == 8000 && sm.view.battery_pct == 88);
 	beep_stats_t b0, b1;
 	beep_get_stats(&b0);
 	hw.battery_mv = 6300;
@@ -3667,6 +3677,62 @@ static void test_battery(void)
 	hw.battery_mv = 7800;
 	run(2000);
 	CHECK(!sm.view.power_off && sm.view.battery == RADIO_BATT_OK);
+}
+
+// Radio tuning through the radio core (radio-tune.md 2): the carrier trim of the mode keyed lands on the transmit
+// frequency, and the battery trims move the reading, the level and the percentage. Built with CONFIG_RADIO_TUNE in
+// radioFeaturesTestTune only
+#if CONFIG_RADIO_TUNE
+static void tune_words(const uint32_t *w, uint8_t n)
+{
+	uint8_t b[4 * 4];
+	for (uint8_t i = 0; i < n; i++) {
+		b[4 * i] = (uint8_t)w[i];
+		b[4 * i + 1] = (uint8_t)(w[i] >> 8);
+		b[4 * i + 2] = (uint8_t)(w[i] >> 16);
+		b[4 * i + 3] = (uint8_t)(w[i] >> 24);
+	}
+	CHECK(radio_tune_set(0, n, b, n));
+}
+#endif
+
+static void test_tune(void)
+{
+#if CONFIG_RADIO_TUNE
+	start();
+	// FM +120 Hz, DMR -300 Hz at 146.52 MHz: FM keys with its own trim only
+	const uint32_t freq[] = { RADIO_TUNE_WORD(146500u, RADIO_TUNE_FREQ, RADIO_MODE_FM, 120u),
+				  RADIO_TUNE_WORD(146500u, RADIO_TUNE_FREQ, RADIO_MODE_DMR, (uint32_t)-300) };
+	tune_words(freq, 2);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146520120);
+	req(RREQ_PTT, 0);
+	run(4000);
+
+	// Gain +100 permille: 7000 mV reads 7700, 67 % on the curve; 6300 mV reads 6930, over the low warning (6400)
+	const uint32_t gain[] = { RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, RADIO_TUNE_BATT_GAIN, 100u) };
+	tune_words(gain, 1);
+	hw.battery_mv = 7000;
+	run(1500);
+	CHECK(sm.view.battery_mv == 7700 && sm.view.battery_pct == 67);
+	hw.battery_mv = 6300;
+	run(3500);
+	CHECK(sm.view.battery == RADIO_BATT_OK && sm.view.battery_mv == 6930);
+
+	// Empty +300 mV, full -200 mV, no gain: only the percentage moves
+	const uint32_t ends[] = { RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, RADIO_TUNE_BATT_EMPTY, 300u),
+				  RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, RADIO_TUNE_BATT_FULL, (uint32_t)-200) };
+	tune_words(ends, 2);
+	hw.battery_mv = 8000;
+	run(1500);
+	CHECK(sm.view.battery_mv == 8000 && sm.view.battery_pct == 100);
+	hw.battery_mv = 6700;
+	run(1500);
+	CHECK(sm.view.battery_mv == 6700 && sm.view.battery_pct == 0);
+
+	CHECK(radio_tune_set(0, 0, NULL, 0));	// the table empty again for the tests after
+	hw.battery_mv = 8000;
+#endif
 }
 
 // CAP_NO_BATTERY: the monitor never reads the board, never warns, never refuses a transmission and never asks for
@@ -4917,6 +4983,7 @@ int main(void)
 	test_vox();
 	test_vox_burst();
 	test_battery();
+	test_tune();
 	test_no_battery();
 	test_supply_voltage();
 	test_battery_save();

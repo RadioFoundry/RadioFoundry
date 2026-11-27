@@ -32,11 +32,12 @@ settings start from the defaults at every boot and nothing can be written.
 The settings ring and journal go where no open-firmware tool reads or writes, and the CPS shim refuses to write there.
 Each board fixes the values in its `hal_flash_map_t`, and its hardware page lists the map. The usual order, low to
 high, is the open-firmware EEPROM image, the settings ring (32 KB, 8 sectors), the journal (2 sectors), the
-open-firmware flash image (up to `openfw_end`), the native codeplug (1 MB) and, on boards with room, a 256 KB staging
-area. A board that keeps its calibration in the vendor layout lists no calibration window. A map assumes its chip's
-size: when the probed chip is smaller than the map's highest area (`hal_flash_map_end`), the driver offers the board's
-map for a smaller part if it has one and the chip holds it (`hal_flash_map_for`), else no map, and an address past the
-chip fails rather than wrapping to a lower one. A map without a native area makes the factory reset skip that step. The boards are in
+open-firmware flash image (up to `openfw_end`), the native codeplug (1 MB) and, on boards with room, a 256 KB span for
+the staging area and, at its end, the radio tuning area. A board that keeps its calibration in the vendor layout lists
+no calibration window. A map assumes its chip's size: when the probed chip is smaller than the map's highest area
+(`hal_flash_map_end`), the driver offers the board's map for a smaller part if it has one and the chip holds it
+(`hal_flash_map_for`), else no map, and an address past the chip fails rather than wrapping to a lower one. A map
+without a native area makes the factory reset skip that step. The boards are in
 [feature-matrix.md](../feature-matrix.md).
 
 The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes. A
@@ -76,7 +77,8 @@ so with two pages a sector is erased once every 64 saves.
 ### 2.1 Pages
 
 `settings_t` is longer than one slot's payload, so it is stored as pages: page k holds bytes `236 * k` on.
-`SETTINGS_PAGES` is the number its size needs (2 now, 412 bytes); the page field allows 16 (3776 bytes). Each page is
+`SETTINGS_PAGES` is the number its size needs (2 now, 412 bytes); the page field allows 15 (3540 bytes), since page 15
+is radio tuning's record (2.2). Each page is
 a record with its own length, so `settings_t` grows by appending fields, and a short page fills the fields it has.
 
 | Rule | Why |
@@ -89,6 +91,26 @@ a record with its own length, so `settings_t` grows by appending fields, and a s
 
 Firmware from before pages reads a page 1 record as an ordinary record of layout 0x1001, which it doesn't know, and
 never sees it as newest: page 0 is always written last.
+
+### 2.2 Radio tuning's record
+
+Radio tuning's trims ([radio-tune.md](radio-tune.md) 3) are one more record in the ring: page field 15
+(`SETTINGS_PAGE_TUNE`), layout 1 (`SETTINGS_TUNE_LAYOUT`), a payload of up to 236 bytes. The radio tuning code
+fills and reads the payload; the settings store keeps the record, and `settings_t` has no field for the trims.
+
+| Rule | Why |
+|---|---|
+| Load: the valid tune record with the highest sequence number | The newest save of the trims |
+| A tune save (`settings_tune_save`) writes one record with the next sequence number, through the same slot walk, commit and read-back as a settings save | A cut leaves the tune record before in force; the settings set in force never changes |
+| No save erases the sector that holds the tune record in force | The trims survive every settings save |
+| A settings save first copies the tune record into the sector the save writes in, when the record is in an older sector, then writes the pages | The record moves round the ring with the settings, so wear stays even and the record never holds a sector back for good. Page 0 stays the newest record |
+| A factory reset (the settings back to their defaults) and a settings record of another layout leave the tune record alone | Trims belong to the radio, not to the settings |
+| An empty payload | No trims (Clear tuning) |
+
+A firmware without the tune record loads pages below `SETTINGS_PAGES` only, so the tune record is never part of its
+set, and page 0 is still the newest record after any settings save. That firmware does not protect the record: its
+saves erase the record's sector in their turn round the ring. A radio upgraded from such a firmware keeps every
+setting (`loaded`) and starts with no trims.
 
 **When**: `settings_begin()` returns the live copy under a short RAM-only lock (`storage_quick_lock`) and
 `settings_end(now)` releases it. If anything changed, it notes the time. No flash operation happens inside, so the

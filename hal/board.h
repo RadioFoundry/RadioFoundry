@@ -86,6 +86,9 @@ typedef struct {
 	const board_power_band_t *power_bands;
 	uint8_t power_band_count;
 	uint8_t power_default;
+	// Radio tuning (core/radio/radio_tune.h): the modes whose transmit deviation the board scales by radio_tune_dev,
+	// bit 1 << mode each; 0 none
+	uint8_t tune;
 	const hal_display_t *display;
 	const hal_input_t *input;
 	const keymap_entry_t *keymap;
@@ -136,6 +139,9 @@ typedef struct {
 	// battery_critical_mv it refuses to transmit (and may switch off). 0 = no warning of that kind
 	uint16_t battery_low_mv;
 	uint16_t battery_critical_mv;
+	// The resting voltages of an empty (0 %) and a full (100 %) battery; 0 = 2S Li-ion (BOARD_BATTERY_*_MV)
+	uint16_t battery_empty_mv;
+	uint16_t battery_full_mv;
 	// Optional: the open-firmware CPS shim's view of the radio (hal_cps.h)
 	const hal_cps_t *cps;
 	// Optional: the USB network personality (hal_netif.h); NULL when not built
@@ -295,6 +301,19 @@ static inline bool board_offset_carries(uint32_t old_rx, uint32_t new_rx, uint32
 {
 	int band = board_tx_band(new_rx);
 	return band >= 0 && board_tx_band(old_rx) == band && board_tx_band(new_tx) == band;
+}
+
+#define BOARD_BATTERY_EMPTY_MV	6400	// 2S Li-ion: 3.20 V a cell
+#define BOARD_BATTERY_FULL_MV	8200	// ... 4.10 V a cell
+
+static inline uint16_t board_battery_empty_mv(void)
+{
+	return board.battery_empty_mv != 0 ? board.battery_empty_mv : BOARD_BATTERY_EMPTY_MV;
+}
+
+static inline uint16_t board_battery_full_mv(void)
+{
+	return board.battery_full_mv != 0 ? board.battery_full_mv : BOARD_BATTERY_FULL_MV;
 }
 
 // The voltage the radio measures: its battery, its DC input (no battery, hal_power_t.supply_mv set), or neither

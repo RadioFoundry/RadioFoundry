@@ -209,7 +209,16 @@ enum {
 					// inside the three ranges
 	DL_STORAGE_OP_CLAIM,		// token u32 (the chip UID's low word) -> reason u8 (as REBOOT's); the erase follows in
 					// the housekeeping task: poll the view's storage.region
+	// Radio tuning (CONFIG_RADIO_TUNE, docs/spec/radio-tune.md 4): the RAM table and its record in the settings ring.
+	// Each answers entries u8 (in the table now), or UNAVAILABLE without a settings ring (and in a build without it)
+	DL_STORAGE_OP_TUNE_PUT,		// flags u8 (bit 0: empty the table first), entries 8 B x n (<= 7): into the table,
+					// live at once; entries the radio can't use are left out
+	DL_STORAGE_OP_TUNE_LOAD,	// the saved record into the table again (live tries undone)
+	DL_STORAGE_OP_TUNE_SAVE,	// the table as the record in force; BUSY when the write failed (the one before stays)
+	DL_STORAGE_OP_TUNE_CLEAR,	// no trims: the table emptied and an empty record saved
+	DL_STORAGE_OP_TUNE_GET,		// first u8 -> entries u8, then up to DL_TUNE_GET_MAX entries of the table from first
 };
+#define DL_TUNE_GET_MAX		7u
 
 // DL_CMD_APRS operations (first payload byte; docs/spec/debuglink.md 3.16)
 enum {

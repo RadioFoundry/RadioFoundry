@@ -1280,6 +1280,194 @@ static void test_read_field(void)
 	      settings_zs_accept_of(s.zs_offers) == settings_zs_accept(&s));
 }
 
+// --- radio tuning's record (settings-store.md 2.2) ---
+
+static uint8_t tune_val;		// what fill writes: n bytes of tune_val
+static uint16_t tune_n;
+static int tune_got;			// what take saw: the value, -1 none, -2 a payload not all one value
+
+static uint16_t tune_fill(uint8_t *p, uint16_t cap)
+{
+	uint16_t n = tune_n < cap ? tune_n : cap;
+	memset(p, tune_val, n);
+	return n;
+}
+
+static void tune_take(const uint8_t *p, uint16_t n)
+{
+	tune_got = n == 0 ? 0 : p[0];
+	for (uint16_t i = 0; i < n; i++) {
+		if (p[i] != p[0] || n != tune_n) {
+			tune_got = -2;
+		}
+	}
+}
+
+static int tune_now(void)
+{
+	tune_got = -1;
+	settings_tune_load(tune_take);
+	return tune_got;
+}
+
+static bool tune_put(uint8_t v)
+{
+	tune_val = v;
+	return settings_tune_save(tune_fill);
+}
+
+static uint8_t squelch_now(void)
+{
+	settings_t s;
+	settings_read(&s);
+	return s.squelch;
+}
+
+// Saved, loaded, kept by settings saves round the ring and by a factory reset, cleared; a ring from a firmware before
+// the tune record loads as it did
+static void test_tune_record(void)
+{
+	settings_stats_t st;
+	const unsigned sectors = map.settings_size / STORAGE_SECTOR;
+
+	// A ring as a firmware without the tune record leaves it (settings pages only): upgraded, every setting kept
+	sim_flash_create(FLASH_SIZE, &map);
+	boot();
+	tune_n = 200;
+	CHECK(tune_now() == -1);
+	settings_begin()->squelch = 3;
+	settings_end(1);
+	CHECK(settings_flush());
+	boot();
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_LOADED && squelch_now() == 3 && tune_now() == -1);
+	CHECK(tune_put(0x41));
+	CHECK(tune_now() == 0x41);
+	boot();
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_LOADED && squelch_now() == 3 && tune_now() == 0x41);
+	CHECK(tune_put(0x42) && tune_put(0x43));
+	boot();
+	CHECK(tune_now() == 0x43 && squelch_now() == 3);	// the newest
+
+	// 1000 settings saves: the record rides the ring's turns, and wear stays even
+	uint32_t e0[32];
+	for (unsigned k = 0; k < sectors; k++) {
+		e0[k] = sim_flash_erases(map.settings_addr + k * STORAGE_SECTOR);
+	}
+	for (uint32_t i = 1; i <= 1000; i++) {
+		settings_begin()->vfo_rx_hz = 430000000u + i;
+		settings_end(i * 10);
+		CHECK(settings_flush());
+		if (i % 97 == 0) {
+			boot();
+			CHECK(tune_now() == 0x43);
+		}
+	}
+	settings_get_stats(&st);
+	CHECK(st.failures == 0);
+	uint32_t lo = 0xFFFFFFFFu, hi = 0;
+	for (unsigned k = 0; k < sectors; k++) {
+		uint32_t e = sim_flash_erases(map.settings_addr + k * STORAGE_SECTOR) - e0[k];
+		lo = e < lo ? e : lo;
+		hi = e > hi ? e : hi;
+	}
+	CHECK(hi - lo <= 1 && lo >= 14);
+	printf("tune record: 1000 saves, %u..%u erases per sector, carried every turn\n", lo, hi);
+	boot();
+	CHECK(tune_now() == 0x43);
+
+	// A factory reset (the settings back to their defaults) keeps it
+	settings_t *w = settings_begin();
+	settings_defaults(w);
+	settings_end(20000);
+	CHECK(settings_flush());
+	boot();
+	CHECK(squelch_now() == SETTINGS_UNSET8 && tune_now() == 0x43);
+	// Cleared: an empty record in force
+	tune_n = 0;
+	CHECK(tune_put(0));
+	boot();
+	CHECK(tune_now() == 0);
+	CHECK(sim_flash_violations() == 0);
+
+	// No settings ring: nothing saved, nothing loaded
+	sim_flash.map = NULL;
+	CHECK(!storage_init());
+	settings_init();
+	CHECK(!tune_put(1) && tune_now() == -1);
+	sim_flash.map = &map;
+}
+
+// A power cut at every unit of a tune save, and of the settings saves that carry it: the old or the new record, whole,
+// and the settings as they were
+static void tune_cut_run(bool tune_save, unsigned saves_before)
+{
+	uint8_t *snapshot = malloc(FLASH_SIZE);
+	int old_seen = 0, new_seen = 0;
+
+	sim_flash_create(FLASH_SIZE, &map);
+	boot();
+	tune_n = 200;
+	settings_begin()->squelch = 4;
+	settings_end(1);
+	CHECK(settings_flush());
+	CHECK(tune_put(0x51));
+	for (unsigned i = 1; i <= saves_before; i++) {
+		settings_begin()->vfo_rx_hz = 1000u + i;
+		settings_end(1 + i);
+		CHECK(settings_flush());
+	}
+	memcpy(snapshot, sim_flash_data, FLASH_SIZE);
+	uint32_t u0 = sim_flash_units();
+	if (tune_save) {
+		CHECK(tune_put(0x52));
+	} else {
+		settings_begin()->vfo_rx_hz = 777u;
+		settings_end(9999);
+		CHECK(settings_flush());
+	}
+	uint32_t total = sim_flash_units() - u0;
+	for (uint32_t cut = 1; cut <= total; cut++) {
+		memcpy(sim_flash_data, snapshot, FLASH_SIZE);
+		boot();
+		sim_flash_cut_after(cut);
+		if (tune_save) {
+			tune_put(0x52);
+		} else {
+			settings_begin()->vfo_rx_hz = 777u;
+			settings_end(9999);
+			settings_flush();
+		}
+		boot();
+		int t = tune_now();
+		if (t == 0x52) {
+			new_seen++;
+		} else if (t == 0x51) {
+			old_seen++;
+		} else {
+			printf("FAIL tune: cut after %u of %u units loads %d\n", cut, total, t);
+			failures++;
+		}
+		CHECK(squelch_now() == 4);
+		CHECK(tune_put(0x53) && tune_now() == 0x53);	// and it keeps working
+	}
+	CHECK(old_seen > 0 && (new_seen > 0 || !tune_save));
+	printf("tune record cuts (%s after %u saves): %u cut points, old %d new %d\n", tune_save ? "tune save" :
+	       "settings save", saves_before, total, old_seen, new_seen);
+	free(snapshot);
+}
+
+static void test_tune_cuts(void)
+{
+	tune_cut_run(true, 0);
+	tune_cut_run(true, 6);		// the record in the next sector after an erase
+	// A settings save that copies the record forward first: sector 0 holds the mark, the first save's pages, the tune
+	// record and 6 saves; the 7th went to sector 1, so the next save finds the record behind and copies it
+	tune_cut_run(false, 7);
+	tune_cut_run(false, 6);		// one that erases sector 1 instead
+}
+
 int main(void)
 {
 	test_journal_basic();
@@ -1303,6 +1491,8 @@ int main(void)
 	test_settings_bad_records();
 	test_settings_worn_sector();
 	test_write_across_sectors();
+	test_tune_record();
+	test_tune_cuts();
 	sim_flash_free();
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);
 	return failures ? 1 : 0;

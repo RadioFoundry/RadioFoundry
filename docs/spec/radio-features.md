@@ -660,7 +660,12 @@ step code.
 ### 5.1 Battery
 
 The radio core reads `battery_mv` every second (not while transmitting nor for 3 s after: the sag under TX is not the
-battery's state) and shows `battery_mv`, `battery_pct` (the board's) and `battery` (ok / low / critical). Thresholds
+battery's state) and shows `battery_mv`, `battery_pct` and `battery` (ok / low / critical). The core works out
+`battery_pct` from a Li-ion curve between the board's empty and full voltages (`board.battery_empty_mv`,
+`battery_full_mv`; 0 means 2S Li-ion, 6.4 V and 8.2 V, `BOARD_BATTERY_EMPTY_MV`, `BOARD_BATTERY_FULL_MV`): 0, 2, 4,
+10, 22, 42, 60, 75, 88 and 100 % at nine even steps from empty to full (`batt_pct`, `core/radio/battery.c`). The
+owner's battery trims ([radio-tune.md](radio-tune.md) 2) correct the reading by a gain, which `battery_mv` and the
+thresholds use, and move empty and full. The view's `battery_raw_mv` is the board's reading before the gain. Thresholds
 are per board (`board.battery_low_mv`, `battery_critical_mv`; 0 means no warnings; values in each radio's hardware
 page). Three readings in a row
 below a threshold lower the level; it goes back up 200 mV above it.
@@ -800,7 +805,7 @@ one value holds on every band; the Hz it comes to grows with the frequency.
 The value is held in parts per billion (ppb, 100 a step), an int16: `hal_radio_t.ref_trim`, `settings_t.ref_trim_ppb`,
 the debug link. The UI stores it and applies it at start-up and on each change with `radio_set_ref_trim()`, which
 clamps, rounds to the step and calls `hal_radio_t.ref_trim` when the value differs from the one the board has (the
-board starts at 0, so a start-up with no trim calls nothing). The debug link's SETTING op 35 sets it in RAM only.
+board starts at 0, so a start-up with no trim calls nothing). The debug link's SETTING op 35 sets and stores it as the menu does (the site's Radio Tuning page uses this op).
 
 | Board | Trim |
 |---|---|
