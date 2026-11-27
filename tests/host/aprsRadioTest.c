@@ -948,6 +948,44 @@ static void test_host_kiss_nmea(void)
 }
 
 // The last try's ack wait ends while the frequency is blocked: the message is over, not pending forever
+// APRS mode (the default KISS mode) still takes only UI frames, now that AX.25 decode takes every frame type
+// (docs/spec/aprs.md 3, 9.2): an I frame from our call is refused, a received S frame is counted bad and not passed on
+static void test_kiss_aprs_mode_ui_only(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.kiss = true;
+	aprs_set_cfg(&c, now);
+	ax25_frame_t f;
+	uint8_t frame[AX25_FRAME_MAX];
+	memset(&f, 0, sizeof(f));
+	ax25_addr_parse("Q1ABC", 5, &f.dst);
+	ax25_addr_parse("Q1TST-1", 7, &f.src);
+	f.dst.h = true;
+	f.control = 0x20;		// I frame
+	f.pid = AX25_PID_NONE;
+	f.info = (const uint8_t *)"hello";
+	f.info_len = 5;
+	size_t n = ax25_encode(&f, frame, sizeof(frame));
+	aprs_view_t v0, v;
+	aprs_get_view(&v0);
+	CHECK(n == 21 && !aprs_host_frame(frame, n, now));
+	aprs_get_view(&v);
+	CHECK(v.host_dropped == v0.host_dropped + 1);
+#if CONFIG_APRS_RX
+	f.control = 0x41;		// RR: an S frame, 15 bytes
+	f.info_len = 0;
+	n = ax25_encode(&f, frame, sizeof(frame));
+	CHECK(n == 15);
+	aprs_get_view(&v0);
+	aprs_rx_frame(frame, n, now);
+	aprs_get_view(&v);
+	CHECK(v.rx_bad == v0.rx_bad + 1 && v.rx_frames == v0.rx_frames && v.host_out == v0.host_out);
+#endif
+}
+
 static void test_message_ends_blocked(void)
 {
 	reset();
@@ -2280,6 +2318,7 @@ int main(void)
 	test_tx_power();
 	test_tx_power_own();
 	test_host_kiss_nmea();
+	test_kiss_aprs_mode_ui_only();
 	test_messages();
 	test_message_ends_blocked();
 	test_third_party_messages();

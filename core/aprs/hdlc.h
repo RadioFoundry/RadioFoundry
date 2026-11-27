@@ -13,7 +13,7 @@
 #include "aprs/ax25.h"
 
 #define HDLC_FLAG		0x7Eu
-#define HDLC_FRAME_MIN		(2u * AX25_ADDR_BYTES + 2u + 2u)	// two addresses, control, PID, FCS
+#define HDLC_FRAME_MIN		(2u * AX25_ADDR_BYTES + 1u + 2u)	// two addresses, control, FCS (an S or U frame)
 #define HDLC_BUF_MAX		(AX25_FRAME_MAX + 2u)			// a frame and its FCS
 
 // Tone sequence bits: bit i of the buffer is byte i / 8, bit i % 8 (LSB first)
