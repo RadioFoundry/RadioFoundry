@@ -270,4 +270,7 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
    name until the set passes them (DMR not written takes all of DMR's family with it).
 
-`CONFIG_P25_ROAM` (default: `CONFIG_P25_TRUNK`) adds receive-only quality/signal site search through the shared roaming engine. The zone roaming flag enables it; the radio's roaming threshold and hysteresis apply. See [P25 trunking](spec/p25-trunking.md).
+`CONFIG_P25_ROAM` (default: `CONFIG_P25_TRUNK`) adds receive-only quality/signal site search through the shared
+roaming engine. P25 roaming needs `CONFIG_P25_TRUNK` and `CONFIG_DMR_ROAMING`, which provides the shared zone toggle and
+roaming controls. The zone roaming flag enables it; the radio's roaming threshold and hysteresis apply.
+See [P25 trunking](spec/p25-trunking.md).

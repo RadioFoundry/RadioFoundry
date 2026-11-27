@@ -340,7 +340,7 @@ CONFIG_AIR_RAW ?= n
 # channel grants followed, and where the system allows it registration, voice requests and transmit on the grant
 # (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
 CONFIG_P25_TRUNK ?= $(CONFIG_P25)
-# Passive weak-signal site search on receive-only trunked systems.
+# Passive weak-signal site search on receive-only trunked systems. Needs P25_TRUNK and DMR_ROAMING.
 CONFIG_P25_ROAM ?= $(CONFIG_P25_TRUNK)
 # the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/position/nmea_sky.c,
 # core/ui/ui_gps.c, docs/spec/position.md 3). Needs GPS; off, Tools > Position is a page of text
@@ -421,6 +421,7 @@ $(if $(and $(call feature_on,NXDN_SCRAMBLER),$(if $(call feature_on,NXDN),,x)),$
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_P25=y or CONFIG_NXDN=y (an air-framed mode)))
 $(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))
 $(if $(and $(call feature_on,P25_ROAM),$(if $(call feature_on,P25_TRUNK),,x)),$(error CONFIG_P25_ROAM=y needs CONFIG_P25_TRUNK=y))
+$(if $(and $(call feature_on,P25_ROAM),$(if $(call feature_on,DMR_ROAMING),,x)),$(error CONFIG_P25_ROAM=y needs CONFIG_DMR_ROAMING=y))
 $(if $(and $(call feature_on,P25),$(if $(call feature_on,DMR),,x)),$(error CONFIG_P25=y needs CONFIG_DMR=y (its talk groups are the codeplug's contacts)))
 $(if $(and $(call feature_on,NXDN),$(if $(call feature_on,DMR),,x)),$(error CONFIG_NXDN=y needs CONFIG_DMR=y (its voice is the DMR vocoder's)))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_DEBUGLINK=y))

@@ -12,7 +12,7 @@
 #ifndef RFOUNDRY_P25_FOLLOW_H
 #define RFOUNDRY_P25_FOLLOW_H
 
-#include "../config.h"
+#include "config.h"
 #include <stdbool.h>
 #include <stdint.h>
 #if CONFIG_P25_ROAM
@@ -86,7 +86,7 @@ typedef struct {
 	uint8_t ngroups;	// more talk groups followed
 	uint8_t flags;		// P25_FOLLOW_*
 	const uint16_t *groups;
-	#if CONFIG_P25_ROAM
+#if CONFIG_P25_ROAM
 	roam_t *roam;	// shared policy, caller-owned; NULL disables
 	bool roam_enabled;	// the radio's per-zone roaming flag
 #endif
