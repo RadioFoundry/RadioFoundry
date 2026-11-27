@@ -26,6 +26,7 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "rfchip_db25d.h"
+#include "rf/fd6818/fd6818.h"
 #include "rf/bk4819/bk4819.h"
 #include "modem/hrc7000/hrc7000.h"
 
@@ -676,6 +677,39 @@ static bool tx_tone_key(bool down)
 	return true;
 }
 
+// The squelch's reading (radio/sql_rssi.h): the signal strength against the calibration page's thresholds, and on an
+// FD6818 its noise and glitch limits too. Without usable thresholds, the chip's noise reading as before. The thresholds
+// change only with the frequency: read from the page once per tune
+static uint32_t sql_hz;
+static bool sql_known, sql_ok;
+static int16_t sql_open[RADIO_SQUELCH_MAX];
+
+static uint8_t sql_noise(int16_t rssi_dbm)
+{
+	bool fd = db25d_main_is_fd6818();
+	if (!sql_known || sql_hz != rx_hz) {
+		sql_hz = rx_hz;
+		sql_known = true;
+		sql_ok = db25d_cal_squelch_open_dbm(rx_hz, fd, sql_open);
+	}
+	if (!sql_ok) {
+		return (uint8_t)(last_noise_raw & 0x7Fu);
+	}
+	uint8_t n = radio_sql_rssi_noise(sql_open, rssi_dbm);
+	if (n >= RADIO_SQL_NO_CARRIER) {
+		return n;
+	}
+	// Signal strength alone opens on what an antenna picks up on an empty channel: the chip's noise and glitch
+	// verdict has to say carrier too (hardware-db25d.md, squelch). The BK4819's own squelch makes that verdict, its
+	// RSSI threshold (0x78) left at the reset value far below the page's
+	// FM only: in DMR the noise reading doesn't follow the signal (gotchas 17.3), and the hotspot's listen-before-talk
+	// reads this squelch
+	bool carrier = mode != RADIO_MODE_FM
+		       || (fd ? fd6818_sql_carrier(last_noise_raw, db25d_main_glitch(), last_rssi_raw, rx_bw == RADIO_BW_25K)
+			      : (last_css_raw & BK4819_CSS_SQ_LINK) != 0u);
+	return carrier ? n : RADIO_SQL_NO_CARRIER;	// no carrier: over every level's close line, level 1's too
+}
+
 static void status(radio_status_t *st)
 {
 	if (!supported) {
@@ -697,7 +731,7 @@ static void status(radio_status_t *st)
 	// At the main chip's input: the front end's gain isn't taken out yet (needs the calibration page). Both chip
 	// kinds read RSSI as half dB with a 160 dB offset
 	st->rssi_dbm = bk4819_rssi_dbm(last_rssi_raw);
-	st->noise = (uint8_t)(last_noise_raw & 0x7Fu);
+	st->noise = sql_noise(st->rssi_dbm);
 	st->carrier = false;
 	st->tone_ok = db25d_main_tone_heard(last_css_raw, rx_tone.type);
 }

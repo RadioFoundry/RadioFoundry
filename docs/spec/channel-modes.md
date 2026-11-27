@@ -283,6 +283,11 @@ Key 0x0100 + n, n = 0-254 (0xFF is "none" in a tag).
 Listen only is a per-system choice of the user. It is not a sharing rule: a share carries the flag as set (8), and a
 receiver never forces it. A channel's own TX flag (2.1) still applies on a system that allows the transmit side.
 
+A type's mode module may name network IDs the radio refuses to transmit on (`noTx(fields)`). For such a system the
+editor shows listen only, locks the Transmit choice, hides the fields only a transmitter reads (the module marks them
+`txOnly`) and writes the flag clear on save and export. The firmware enforces the rule whatever is stored. The P25
+trunked type's IDs are in [p25-codeplug.md](p25-codeplug.md) 3.
+
 ### 7.2 System entries
 
 Key 0x0200 + n, n = 0-255: the parts of a system that come in numbers. Each entry names its system and a class, so one

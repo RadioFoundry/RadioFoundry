@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT1846S RF transceiver driver (docs/spec/hardware-dm1701.md section 5; AT1846S datasheet and programming guide)
 #include "at1846s.h"
+#include <stddef.h>
 #include "rf/subaudio/subaudio.h"
 
 #define REG_PAGE	0x7F
@@ -45,7 +46,7 @@ static const reg_val_t init_regs[] = {
 	{ 0x5A, 0x06DB },
 	{ 0x63, 0x16AD },	// pre-emphasis bypass threshold
 	{ 0x0F, 0x8A24 },
-	{ 0x05, 0x8763 },
+	{ 0x05, AT1846S_R05_NORMAL },
 	{ 0x30, 0x40A4 },	// prepare calibration
 	{ 0x30, 0x40A6 },	// calibration enable
 };
@@ -187,9 +188,31 @@ void at1846s_cache_clear(at1846s_t *dev)
 	dev->page = -1;
 }
 
+uint16_t at1846s_r05(const at1846s_spur_cfg_t *cfg, uint32_t hz)
+{
+	if (cfg == NULL) {
+		return AT1846S_R05_NORMAL;
+	}
+	for (uint8_t i = 0; i < cfg->spurs_n; i++) {
+		if (cfg->spurs[i].hz == hz) {
+			return cfg->spurs[i].r05;
+		}
+	}
+	if (cfg->step_hz != 0u && hz % cfg->step_hz == 0u) {
+		return cfg->step_r05;
+	}
+	return AT1846S_R05_NORMAL;
+}
+
+void at1846s_set_spurs(at1846s_t *dev, const at1846s_spur_cfg_t *cfg)
+{
+	dev->spur = cfg;
+}
+
 void at1846s_attach(at1846s_t *dev, const at1846s_bus_t *bus)
 {
 	dev->bus = bus;
+	dev->spur = NULL;
 	at1846s_cache_clear(dev);
 	dev->bw = -1;
 	dev->mode = -1;
@@ -324,12 +347,12 @@ static at1846s_bw_t cur_bw(const at1846s_t *dev)
 	return dev->bw == AT1846S_BW_25K ? AT1846S_BW_25K : AT1846S_BW_12K5;
 }
 
-bool at1846s_set_freq(at1846s_t *dev, uint32_t hz)
+bool at1846s_set_freq(at1846s_t *dev, uint32_t hz, uint32_t ch_hz)
 {
 	uint32_t word = at1846s_freq_word(hz);
 	bool ok = at1846s_write_force(dev, 0, REG_CTRL, at1846s_state_value(cur_bw(dev), AT1846S_STATE_IDLE));
 	dev->state = AT1846S_STATE_IDLE;
-	ok &= at1846s_write_force(dev, 0, 0x05, 0x8763);
+	ok &= at1846s_write_force(dev, 0, 0x05, at1846s_r05(dev->spur, ch_hz));
 	ok &= at1846s_write_force(dev, 0, 0x29, (uint16_t)((word >> 16) & 0x3FFFu));
 	ok &= at1846s_write_force(dev, 0, 0x2A, (uint16_t)(word & 0xFFFFu));
 	ok &= at1846s_write(dev, 0, 0x49, 0x0C15);	// squelch open / shut thresholds

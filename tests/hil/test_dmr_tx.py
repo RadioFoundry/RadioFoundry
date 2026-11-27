@@ -44,7 +44,9 @@ test_dmr_tx_permit_before_key: a 3 s over plays the talk permit (beep.played gre
 three voice LC headers from us that decode, each within 1.5 dB of the over's median burst level, with no burst 2 dB or
 more under it. On a board that holds its beeps off the air (the HR_C7000 TX gate, its "pg" diagnostics line) the
 permit plays before the key-up, and the gate closed (g + 1) and never found the beep still sounding (l) or ring play
-on (ra). Other boards play it once the voice is on air (radio-features.md 4), so the over must be whole around it.
+on (ra). Other boards play it once the voice is on air (radio-features.md 4), so the over must be whole around it, and
+the mic the board hands the vocoder is muted while it plays (the speaker reaches the mic, issue 532): at least
+PERMIT_MUTED_BLOCKS blocks of the over went out as silence (voice.tx_mic_muted).
 
 test_dmr_privacy_tx: Motorola basic privacy key 1 loaded (RADIO op 19), a 3 s over: every voice LC header and
 terminator from us that the SDR or the bench modem decoded carries the privacy service option (so & 0x40), every
@@ -407,6 +409,7 @@ def _gate(radio):
 
 
 PERMIT_LEVEL_DB = 1.5     # a header's level against the over's median (a beep on air or a late gate would dent it)
+PERMIT_MUTED_BLOCKS = 6   # the permit's blocks after its first (7 x 20 ms), at least: its echo after it adds 3 more
 
 
 @pytest.mark.feature("beep")
@@ -418,7 +421,8 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
     that decode, each at the over's level (within PERMIT_LEVEL_DB of the median burst), and no burst more than 2 dB
     below it. A board that holds its beeps off the air (CAP_BEEP_NOT_ON_AIR, the HR_C7000 TX gate) plays it before it
     keys (docs/spec/dmr-modem.md): the gate closes once and never finds the beep still sounding or ring play on. A
-    board without the gate (no "pg" line) plays it with the voice on air."""
+    board without the gate (no "pg" line) plays it with the voice on air, the mic muted meanwhile (the speaker
+    reaches the mic): voice.tx_mic_muted counts the blocks sent as silence."""
     gate = _gate(radio)
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     own = int(d["dmr.own_id"])
@@ -432,6 +436,14 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
         assert after["g"] - gate["g"] >= 1, "the TX gate never closed for the over"
         assert after["l"] == gate["l"], f"the key-up found the beep still sounding ({gate['l']} -> {after['l']})"
         assert after["ra"] == gate["ra"], f"ring play was on while the gate was closed ({gate['ra']} -> {after['ra']})"
+    else:
+        muted = radio.view(["dmr"]).get("voice.tx_mic_muted")
+        print(f"voice.tx_mic_muted {muted}")
+        if muted is None:
+            warnings.warn("older firmware without voice.tx_mic_muted: the mic gate is not judged")
+        else:
+            assert int(muted) >= PERMIT_MUTED_BLOCKS, \
+                f"{muted} mic blocks muted for the permit: the speaker's beep reaches the air through the mic"
 
     bursts = sdr.get("bursts", [])
     ours = [b for b in bursts if (b.get("lc") or {}).get("src") == own]

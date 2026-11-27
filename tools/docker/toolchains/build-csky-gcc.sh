@@ -5,7 +5,8 @@
 # Builds the csky-elf toolchain (tools/build-csky-toolchain.sh) for this host's architecture in a throwaway builder
 # container (Dockerfile.csky-build), then the toolchain image (Dockerfile.csky-gcc) from the installed prefix. Runs on
 # Linux with docker or on an Apple silicon Mac with Apple's container (common.sh); about 15 minutes on 8 cores.
-#   tools/docker/toolchains/build-csky-gcc.sh [GCC_VERSION] [WORK]  (defaults: 15.2.0, $TMPDIR/rfoundry-csky-gcc)
+#   tools/docker/toolchains/build-csky-gcc.sh [GCC_VERSION] [WORK]
+# Defaults: the GCC platform/hrc7000/platform.toml [toolchain] version pins (CI's), $TMPDIR/rfoundry-csky-gcc.
 # Image: rfoundry/csky-gcc<major>:<VERSION>-<yyyymmdd>, with -arm64 on an arm64 host (TAG overrides it).
 # The build tree (peak about 4 GB) stays in WORK, outside the image store; the build stops when WORK's disk gets under
 # MIN_FREE_GB (default 1) free. KEEP=1 leaves WORK and the builder image.
@@ -13,7 +14,7 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
 . "$HERE/common.sh"
-GV=${1:-15.2.0}
+GV=${1:-$("$ROOT/tools/platform_toolchain.sh" hrc7000 version)}
 W=${2:-${TMPDIR:-/tmp}/rfoundry-csky-gcc}
 TAG=${TAG:-rfoundry/csky-gcc${GV%%.*}:$GV-$(date +%Y%m%d)$SUFFIX}
 MIN_FREE_GB=${MIN_FREE_GB:-1}

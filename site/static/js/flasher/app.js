@@ -55,7 +55,7 @@ import * as diag from "../diag.js";
 import { initReporting, reportLine, reportingActive, errorNotice, reportButton, setAdapter } from "../report.js";
 import * as adapter from "./adapter.js";
 import * as crumbs from "./trail.js";
-import { missingApi, kitPanel, kitLine } from "./manual.js";
+import { missingApi, kitPanel, kitLine, supportNotices } from "./manual.js";
 import { showBetaNotice } from "./beta.js";
 import { DROP_OK, START_KEEP, currentBuild, planUpdate } from "./update.js";
 import { readDfuInfo, choiceFor, hwoptAction, pendingHwopt, majorsFor, runsOriginal, BOOTLOADER } from "./origversion.js";
@@ -846,8 +846,8 @@ function betaNotice() {
 	const beta = S.data?.site?.beta, href = betaLink(beta, location.href, VERSION_REF);
 	if (!href) return null;
 	return h("div", { class: "notice info beta-notice", role: "note" },
-		h("p", {}, h("strong", {}, t("flash.beta.title", { ref: beta })), " ", t("flash.beta.text")),
-		h("p", {}, h("a", { href }, t("flash.beta.link", { ref: beta }))));
+		h("p", {}, h("strong", {}, t("flash.testbuild.title", { ref: beta })), " ", t("flash.testbuild.text")),
+		h("p", {}, h("a", { href }, t("flash.testbuild.link", { ref: beta }))));
 }
 
 // A radio still in development (board.toml [status] below supported): on every step after it is picked
@@ -880,10 +880,9 @@ async function reset() {
 // start
 
 function startView() {
-	// one banner: both APIs missing (Safari, Firefox), or the one that is
+	// one banner: both APIs missing (Safari), or the one that is (Firefox: no WebUSB)
 	const usb = S.sim || usbSupported(), serial = S.sim || serialSupported();
-	const support = !usb && !serial ? [notice(t("flash.support.none"), "bad")]
-		: [!usb && notice(t("flash.support.usb"), "bad"), !serial && notice(t("flash.support.serial"), "bad")].filter(Boolean);
+	const support = supportNotices({ usb, serial }).map(([key, level]) => notice(t(key), level));
 	if (support.length) support.push(notice(t("flash.kit.start"), "info"));
 	const choice = (task, icon) => h("button", { class: "choice", type: "button", onclick: () => { S.task = task; S.step = 0; render(); } },
 		h("strong", {}, `${icon} ${t(`flash.task.${task}`)}`), h("span", { class: "small muted" }, t(`flash.task.${task}.text`)));

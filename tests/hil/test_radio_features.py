@@ -24,8 +24,9 @@ Pass criteria:
 - test_vibrate_counts: (CONFIG_VIBRATE builds) a VIBRATE emergency request: on a radio with a motor (vibe.motor=1)
   vibe.played grows by 1 within 1 s and vibe.busy falls back to 0 within 3 s; without one vibe.played stays put.
 - test_volume_op: RADIO op 30 (the speaker volume). volume.src none (no software volume): the op answers
-  unavailable. knob: step 3 gives volume.src=override, volume.override=3 and volume.sent=19 (round(3 * 100 / volume.max))
-  within 1 s, then "knob" gives volume.src=knob and override -1. soft: step 3 gives volume.step=3 and
+  unavailable (and volume.knob, where the radio reads its knob, is 0..100). knob: step 3 gives volume.src=override,
+  volume.override=3 and volume.sent=19 (round(3 * 100 / volume.max)) within 1 s, then "knob" gives volume.src=knob and
+  override -1. soft: step 3 gives volume.step=3 and
   volume.sent=19, and the old step is put back (the op stores it like the UI).
 - test_zone_scan_cancel: (zone of 2+ channels) scan=zone within 1 s; at least 2 different zone positions within 4 s
   unless the scan stopped on a busy channel (scan_phase probe / hold / resume); CANCEL: scan=off and back on the
@@ -280,6 +281,8 @@ def test_volume_op(radio):
         with pytest.raises(DebugLinkError) as e:
             radio.link.volume(3)
         assert e.value.status == 4, e.value
+        if "volume.knob" in f0:  # a knob the radio reads but can't set the level for
+            assert 0 <= as_int(f0["volume.knob"], -1) <= 100, f0
         return
     vmax = as_int(f0["volume.max"], 16)
     want = (3 * 100 + vmax // 2) // vmax

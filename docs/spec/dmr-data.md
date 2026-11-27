@@ -479,7 +479,7 @@ The packet is an ordinary data packet with SAP 3 in its header; the first data b
 | Octets | Field | Ours |
 |---|---|---|
 | 0-1 | IPv4 identification | the same counter as our SAP 4 packets; a confirmed retry keeps it |
-| 2 | SAID (7-4), DAID (3-0) | SAID 0 (radio network: the source is the source LLID), DAID 0, or 2 (group network) for a talkgroup |
+| 2 | SAID (7-4), DAID (3-0) | the CAI network of each address (TS 102 361-3 5.1.1): 0 the radio network (12.<LLID>), 1 its peripheral network (13.<LLID>: the host on a radio's USB link), 2 the group network (225.<LLID>, DAID only). SAID 1 for the host's packets, 0 for the radio's own and in passthrough ([usb-network.md](usb-network.md) 3.1) |
 | 3 | opcode MSB (7), SPID (6-0) | opcode 00 (the only format defined); SPID 1 = 5016 (UTF-16BE text), 2 = 5017 (LIP), 98 = 4007 (TMS, the manufacturer specific ID MOTOTRBO uses: an over the air capture, `dmrDataTest`), 0 = in an extended header |
 | 4 | opcode LSB (7), DPID (6-0) | the same for the destination port |
 | 5-6 | extended header 1 | the source port when SPID is 0, else the destination port when DPID is 0 |
@@ -487,14 +487,15 @@ The packet is an ordinary data packet with SAP 3 in its header; the first data b
 
 Not sent, rebuilt by the receiver: version, IHL 5, TOS 0, total length, flags 0, fragment offset 0, TTL (64, a
 talkgroup 1), protocol 17,
-both checksums, the UDP length (from the packet length), and both addresses: the source ID's 12.x.y.z and the
-destination ID's 12.x.y.z or, for a talkgroup, 225.x.y.z (the ID's 24 bits under the CAI network octet).
+both checksums, the UDP length (from the packet length), and both addresses: the ID's 24 bits under the CAI network
+octet SAID or DAID names, 12.x.y.z, 13.x.y.z or, for a talkgroup, 225.x.y.z. Any other value reads as the radio
+network (the group network for a talkgroup).
 
 IPv4 addresses are carried apart from the DMR IDs (`dmrDataEncodeIP`, `dmrDataServiceSendIP`, `ipGatewayIPToAir` take a
 source and a destination address and a TTL). The radio's own packets (TMS, ARS, LRRP, text, SNMP answers) use the IDs'
 addresses, so their bytes are as before. A packet from the host may not: the off-net route sends to a gateway radio's
 ID with the real destination address ([usb-network.md](usb-network.md) 3.1). So a UDP packet goes compressed only when
-both of its addresses are exactly the IDs' CAI addresses; any other goes with the full header, whatever `udpCompress`
+both of its addresses are exactly the IDs' CAI addresses (the radio's, its peripheral's or the talkgroup's); any other goes with the full header, whatever `udpCompress`
 says. `dmrDataGetIP` and `dmrDataGetUDP` return the addresses: from the header for SAP 4, rebuilt from the IDs for
 SAP 3. On receive a packet is for an ID itself only when its IP destination is exactly the ID's CAI address: an off-net
 host's address may have the same 24 bits under another first octet. A packet to our DMR ID for another address is
@@ -833,6 +834,9 @@ entry.
 | Off, or no valid key | clear |
 | Motorola BP | encrypted: privacy header, algorithm 0 |
 | Anytone BP | no data form: every data list is refused |
+| AES-256 (an AES channel) | no data form yet: every data list is refused |
+
+An AES channel's rule comes from `radio_aes_data_config` (`core/radio/radio_aes.c`), not from the basic privacy key.
 
 ### 13.1 Privacy header
 
@@ -864,8 +868,12 @@ computed over the ciphertext, so a receiver without the key still checks and ack
 - TX: `queueTx` is the one place every list passes (`dmrDataPrivacyAllows`). With an encrypting scheme every data
   header except responses and proprietary headers must be followed by a privacy header. With a blocking scheme any
   data header is refused. ETSI defined short data (5.2) has no privacy header, so it is refused under an encrypting
-  scheme. CSBKs (call alert, radio check, emergency alarm) and responses still go. A refused SMS
-  fails at once; other requests fail or time out as when the channel is busy.
+  scheme. CSBKs (call alert, radio check, emergency alarm) and responses still go: they carry only the IDs, which an
+  encrypted call sends in the clear too. A refused SMS fails at once with `DMR_DATA_EV_SMS_BLOCKED`, not
+  `DMR_DATA_EV_SMS_FAILED`; other requests fail or time out as when the channel is busy.
+- Before a send the UI reads why the channel can't send now (`radio_view_t` `data_deny` for signaling,
+  `packet_deny` for packet data, which also gives `TXDENY_DATA_ENCRYPTED` under a blocking scheme) and shows the
+  reason as PTT does, so a send that never went out is never shown as "No answer".
 - Confirmed IP sends one preamble fewer with the privacy header, so the air MTU (12.8) still fits in 64 bursts.
 - RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm. Otherwise (no key, an
   MI-based algorithm) it is dropped and never shown; confirmed data is still acknowledged. A wrong BP key gives

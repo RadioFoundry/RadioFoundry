@@ -12,6 +12,7 @@
 // when its sector is full, the next sector of the ring is erased and used (it only holds older records).
 #include <stddef.h>
 #include <string.h>
+#include "config.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
 
@@ -39,6 +40,11 @@ static uint32_t changed_ms;
 static settings_stats_t stats;
 static bool inited;			// live holds the defaults or a loaded record
 static uint16_t sectors;		// ring length
+#if CONFIG_RADIO_DETOUR
+static bool held;			// settings_hold: nothing is saved until settings_release
+#else
+#define held	false
+#endif
 
 void settings_defaults(settings_t *s)
 {
@@ -453,7 +459,11 @@ static void attach(uint32_t now_ms)
 	stats.slot = 0;
 	stats.skipped = 0;
 	stats.load = SETTINGS_DEFAULTS;
-	memset(&saved, 0xFF, sizeof(saved));	// nothing stored: unlike anything live holds, so the first poll saves
+	// Nothing stored: unlike anything live holds, so the first poll saves. Under a hold, saved is the state the
+	// release goes back to: kept, and the release leaves the blank area to be saved (settings_release)
+	if (!held) {
+		memset(&saved, 0xFF, sizeof(saved));
+	}
 	dirty = true;
 	changed_ms = now_ms - SETTINGS_SAVE_DELAY_MS;
 	have_flash = true;
@@ -465,15 +475,54 @@ void settings_poll(uint32_t now_ms)
 	if (storage_claim_pending() && storage_claim()) {
 		attach(now_ms);
 	}
-	if (dirty && have_flash && (now_ms - changed_ms) >= SETTINGS_SAVE_DELAY_MS) {
+	if (dirty && have_flash && !held && (now_ms - changed_ms) >= SETTINGS_SAVE_DELAY_MS) {
 		save_now();
 	}
 }
 
 bool settings_flush(void)
 {
+	if (held) {
+		return false;	// nothing is saved: what is stored is the state before the hold, the one the radio returns to
+	}
 	return save_now() && !dirty;
 }
+
+#if CONFIG_RADIO_DETOUR
+bool settings_hold(void)
+{
+	storage_quick_lock();
+	ensure();
+	// Unsaved changes would be dropped with the hold's: the caller waits for the save. Without a flash nothing is
+	// ever saved: the hold's start is the state a release goes back to
+	bool ok = !dirty || !have_flash;
+	if (ok) {
+		if (!have_flash) {
+			saved = live;
+			dirty = false;
+		}
+		held = true;
+	}
+	storage_quick_unlock();
+	return ok;
+}
+
+void settings_release(bool discard)
+{
+	storage_quick_lock();
+	if (held && discard) {
+		live = saved;
+		dirty = have_flash && !have_newest;	// an area claimed during the hold holds no record yet
+	}
+	held = false;
+	storage_quick_unlock();
+}
+
+bool settings_held(void)
+{
+	return held;
+}
+#endif
 
 void settings_get_stats(settings_stats_t *s)
 {

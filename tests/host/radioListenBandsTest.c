@@ -316,18 +316,16 @@ static void test_helpers(void)
 	CHECK(radio_am_channel(&ch));
 	ch.mode = RADIO_MODE_DMR;
 	CHECK(!radio_am_channel(&ch));
-	// 8.33 kHz: the exact 25/3 kHz grid, snapping first; other steps add
-	CHECK(radio_am_step(118000000, 1, RADIO_AM_STEP_833) == 118008333);
-	CHECK(radio_am_step(118008333, 1, RADIO_AM_STEP_833) == 118016667);
-	CHECK(radio_am_step(118016667, 1, RADIO_AM_STEP_833) == 118025000);
-	CHECK(radio_am_step(118025000, -1, RADIO_AM_STEP_833) == 118016667);
-	CHECK(radio_am_step(118010000, 1, RADIO_AM_STEP_833) == 118016667);	// 118.010 snaps to 118.00833 first
-	CHECK(radio_am_step(118100000, 1, RADIO_AM_STEP_25K) == 118125000);
-	CHECK(radio_am_step(146520000, -1, 12500) == 146507500);
+	// 8.33 kHz: the exact 25/3 kHz grid, snapping first
+	CHECK(radio_am_step_833(118000000, 1) == 118008333);
+	CHECK(radio_am_step_833(118008333, 1) == 118016667);
+	CHECK(radio_am_step_833(118016667, 1) == 118025000);
+	CHECK(radio_am_step_833(118025000, -1) == 118016667);
+	CHECK(radio_am_step_833(118010000, 1) == 118016667);	// 118.010 snaps to 118.00833 first
 	// Many 8.33 steps don't drift: 30 up lands on 118.250 exactly
 	uint32_t hz = 118000000;
 	for (int i = 0; i < 30; i++) {
-		hz = radio_am_step(hz, 1, RADIO_AM_STEP_833);
+		hz = radio_am_step_833(hz, 1);
 	}
 	CHECK(hz == 118250000);
 
@@ -537,11 +535,14 @@ static void test_bcast_channel(void)
 	run(100);
 	CHECK(sm.view.state == RS_RX && bc.audio && !hw.audio && sm.view.rssi_dbm == 35 + RADIO_BCAST_DBUV_DBM);
 
-	// Receive only, whatever the codeplug says
+	// Receive only, whatever the codeplug says. The refusal silences the station while PTT is held, as it silences an
+	// open squelch on a receive-only FM channel (#1130), and the station plays again after
 	ptt(true);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BCAST && hw.tx_calls == 0);
+	CHECK(!bc.audio && !hw.audio);
 	ptt(false);
-	CHECK(!hw.audio);
+	run(100);
+	CHECK(sm.view.state == RS_RX && bc.audio && !hw.audio);
 
 	// A 2 m channel: the receiver is switched off and the channel receiver tuned again
 	req(RREQ_ZONE_POS, 2);

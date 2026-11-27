@@ -17,7 +17,7 @@
 #define RADIO_AM_HI_HZ		137000000u
 
 // Air band channel steps: 25 kHz, and the 8.33 kHz spacing (25 kHz / 3) used in Europe. RADIO_AM_STEP_833 is the
-// step value that means "the 8.33 kHz grid" (radio_am_step keeps the frequency on the exact grid)
+// step value that means "the 8.33 kHz grid" (radio_am_step_833 keeps the frequency on the exact grid)
 #define RADIO_AM_STEP_25K	25000u
 #define RADIO_AM_STEP_833	8333u
 
@@ -29,8 +29,8 @@ bool radio_am_capable(void);
 bool radio_am_channel(const channel_t *ch);
 // Transmitting on hz is refused because it is in the air band of a radio that receives AM there
 bool radio_am_tx_refused(uint32_t hz);
-// One VFO step from hz in dir with step_hz. The 8.33 kHz step moves on the exact 25/3 kHz grid (rounded to the Hz,
-// snapping an off-grid frequency to the nearest grid point first); other steps add step_hz
-uint32_t radio_am_step(uint32_t hz, int dir, uint32_t step_hz);
+// One 8.33 kHz VFO step from hz in dir, on the exact 25/3 kHz grid (rounded to the Hz, snapping an off-grid frequency
+// to the nearest grid point first)
+uint32_t radio_am_step_833(uint32_t hz, int dir);
 
 #endif

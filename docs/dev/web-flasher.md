@@ -208,7 +208,7 @@ and the events don't. Both requests carry `adapter`, and the PATCH carries `trai
 | Field | Content |
 |---|---|
 | `languages` | The browser's language preferences (`navigator.languages`, the first 5; else `navigator.language`), such as `["en-US", "en"]`. The backend keeps at most 10 tags of 35 characters and an older one ignores the field |
-| `adapter` | `{vid, pid, chip, product}` of the USB device in use (`adapter.js`). `chip` from the vendor id: `FTDI` (0403, and 2100 for RT Systems cables), `CH340` (1a86), `CP210x` (10c4), `PL2303` (067b), `radio USB` (the radio's own port), `DFU bootloader`, else `other`. `product` only from WebUSB. Never a serial number |
+| `adapter` | `{vid, pid, chip, product}` of the USB device in use (`adapter.js`). `chip` from the vendor id: `FTDI` (0403, and 2100 for RT Systems cables), `CH340` (1a86), `CP210x` (10c4), `PL2303` (067b), `AIOC` (1209:7388), `radio USB` (the radio's own port), `DFU bootloader`, else `other`. `product` only from WebUSB. Never a serial number |
 | `trail` | The newest 200 breadcrumbs (`diag.trail()`, scrubbed, 300 characters each), the oldest dropped to keep the keepalive request under 64 KB |
 
 ### Breadcrumbs
@@ -912,5 +912,8 @@ steps ([installing](../user/02-installing.md#windows-the-bootloader-driver)), op
 bootloader once, and again with any failed connect: without the driver Chrome either doesn't list the bootloader or
 can't open it. The device name comes from `[flash.dfu] product` in the board's `board.toml`.
 
-Other browsers (Safari, Firefox) can still choose and build the firmware; the step that needs the radio then offers
-the [manual install kit](#the-manual-install-kit).
+Firefox has Web Serial but no WebUSB: radios that install over the programming cable install as in Chrome, and the
+start page warns (`flash.support.usb`, a warning, not an error) that radios installing over USB (DFU) need another
+browser. Safari has neither. Without the API a step needs, the browser can still choose and build the firmware, and
+that step offers the [manual install kit](#the-manual-install-kit). The banner comes from `supportNotices` in
+`manual.js`; each step checks its own API with `missingApi`.

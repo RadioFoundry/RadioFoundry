@@ -17,25 +17,26 @@ ip = ipaddress.IPv4Address
 
 
 class Candidates(unittest.TestCase):
-    def test_individual_addresses_pair_by_the_last_bit(self):
-        self.assertEqual(debuglink.radio_address_candidates([], [ip("12.47.131.134")]), [ip("12.47.131.135")])
-        self.assertEqual(debuglink.radio_address_candidates([], [ip("12.47.131.135")]), [ip("12.47.131.134")])
+    def test_the_radio_is_the_hosts_id_in_the_radio_network(self):
+        self.assertEqual(debuglink.radio_address_candidates([], [ip("13.47.131.134")]), [ip("12.47.131.134")])
+        self.assertEqual(debuglink.radio_address_candidates([], [ip("13.47.131.135")]), [ip("12.47.131.135")])
 
     def test_fixed_link_is_the_host_minus_one(self):
         self.assertEqual(debuglink.radio_address_candidates([], [ip("192.168.10.2"), ip("10.9.8.2")]),
                          [ip("192.168.10.1"), ip("10.9.8.1")])
 
     def test_a_host_without_a_radio_adapter_sends_nothing(self):
-        # the system names the radio's adapter and there is none: no other network is probed, 12.x or the fixed
+        # the system names the radio's adapter and there is none: no other network is probed, 13.x or the fixed
         # link's default range included
         with mock.patch.object(debuglink, "host_addresses", side_effect=AssertionError("not asked")):
             self.assertEqual(debuglink.radio_address_candidates(None, []), [])
-        self.assertEqual(debuglink.radio_address_candidates([ip("192.168.10.2"), ip("12.0.0.9")], []), [])
+        self.assertEqual(debuglink.radio_address_candidates([ip("192.168.10.2"), ip("13.0.0.9")], []), [])
 
     def test_where_the_adapter_is_unknown_only_the_radio_range_counts(self):
-        hosts = [ip("192.168.3.136"), ip("192.168.10.2"), ip("100.95.94.3"), ip("12.0.39.21"), ip("12.0.39.21")]
+        hosts = [ip("192.168.3.136"), ip("192.168.10.2"), ip("100.95.94.3"), ip("13.0.39.21"), ip("13.0.39.21"),
+                 ip("12.0.39.20")]
         with mock.patch.object(debuglink, "network_adapter_addresses", return_value=None):
-            self.assertEqual(debuglink.radio_address_candidates(hosts), [ip("12.0.39.20")])
+            self.assertEqual(debuglink.radio_address_candidates(hosts), [ip("12.0.39.21")])
             self.assertEqual(debuglink.radio_address_candidates([ip("192.168.10.2"), ip("10.0.0.5")]), [])
 
 

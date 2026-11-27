@@ -150,6 +150,11 @@ bool morse_poll(morse_t *m, uint32_t now_ms)
 	while (!m->done && (int32_t)(now_ms - m->until) >= 0) {
 		bool key;
 		uint8_t units;
+		if (now_ms - m->until > m->dot_ms) {
+			// A poll more than a dot late (the caller was held up): the next segment starts now. Catching up would
+			// shorten or skip the overdue elements, which is heard as a rush and garbles the text
+			m->until = now_ms;
+		}
 		if (!next_segment(m, &key, &units)) {
 			break;
 		}

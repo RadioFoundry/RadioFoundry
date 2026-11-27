@@ -12,6 +12,11 @@ const CHIPS = new Map([[0x0403, "FTDI"], [CH340_VID, "CH340"], [0x10C4, "CP210x"
 // The vendor ids a port chooser offers for programming cables. One list for every page: a cable a chooser leaves out
 // can't be picked, whatever the other pages do
 export const CABLE_VIDS = [...CHIPS.keys()];
+// Adapters matched by exact VID/PID (0x1209 is the shared pid.codes VID, so AIOC matches its own PID only)
+const AIOC = { vid: 0x1209, pid: 0x7388 };
+export const CABLE_FILTERS = [...CABLE_VIDS.map((usbVendorId) => ({ usbVendorId })), { usbVendorId: AIOC.vid, usbProductId: AIOC.pid }];
+// Whether a vendor id's cables speak FTDI's protocol (WebUSB drives them itself, usbserial.js), under FTDI's own id or not
+export const isFtdi = (vid) => CHIPS.get(vid) === "FTDI";
 // the radio's own USB serial port (RadioFoundry, the stub and the open-firmware CPS all enumerate with it)
 const RADIO_USB = { vid: 0x1FC9, pid: 0x0094 };
 
@@ -19,6 +24,7 @@ const id16 = (n) => (Number.isInteger(n) && n >= 0 && n <= 0xFFFF ? n : null);
 
 function chipOf(vid, pid) {
 	if (vid === RADIO_USB.vid && pid === RADIO_USB.pid) return "radio USB";
+	if (vid === AIOC.vid && pid === AIOC.pid) return "AIOC";
 	return CHIPS.get(vid) || (vid === null ? "" : "other");
 }
 

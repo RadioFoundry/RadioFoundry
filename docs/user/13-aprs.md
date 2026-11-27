@@ -32,7 +32,7 @@ frequency, your position and its source, and when the next beacon goes out. If t
 |---|---|
 | Send position now | One position at once |
 | Automatic beacons | On: positions go out by themselves (see Triggers) |
-| Frequency | Your region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand 144.575, Japan 144.660, China 144.640 MHz, or Custom (`tools/rfoundry_debug.py aprs set region custom`, then `aprs set freq_hz 144390000`) |
+| Frequency | Your region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand 144.575, Japan 144.660, China 144.640 MHz, or Custom. Press OK to step through them. After China, the radio asks for a custom frequency: type the digits (145570 for 145.570 MHz) and press OK. Press OK without typing to keep the custom frequency you set before. Back takes back a digit, then cancels. You can also set the frequency in the Codeplug Editor's APRS table (TX MHz); the radio takes the new frequency at start-up and whenever a codeplug is written |
 | Power | As channel: APRS transmits at the radio's current power level. Or pick a level of its own, for example a low one for a nearby digipeater. Dimmed on radios that can't send APRS over the air |
 | Path | How far digipeaters pass your packets on: None, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1 or WIDE2-2. See Path below. Dimmed on radios that can't send APRS over the air |
 | Interval | How often: Off, 1, 2, 5, 10 or 30 minutes |

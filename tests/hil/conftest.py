@@ -138,6 +138,9 @@ def pytest_addoption(parser):
                      "bandwidth, one over per step")
     g.addoption("--mic-gain-window", type=float, default=30.0,
                 help="test_mic_gain: seconds the SDR bench records per over (unplug, key, talk, release in it)")
+    g.addoption("--dmrip-relay", default=os.environ.get("RFOUNDRY_DMRIP_RELAY"), metavar="route|HOST[:PORT]",
+                help="test_debuglink_dmrip over the air: the IP gateway's way to the radio (route: this host's route "
+                     "to 12.0.0.0/8; HOST[:PORT]: a relay)")
     hil_config.add_options(g)
     bringup_plugin.add_options(parser)
 
