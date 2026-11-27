@@ -4756,21 +4756,21 @@
      "db25d",
      null,
      "testing",
-     "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+     "Untested on this hardware: its FD6818 transceiver and LO settings have not been checked on a radio, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
     ],
     "D66": [
      "FD6818 transceiver and LO (2021-2023)",
      "db25d",
      null,
      "testing",
-     "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+     "Untested on this hardware: its FD6818 transceiver and LO settings have not been checked on a radio, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
     ],
     "D6T": [
      "FD6818 transceiver, AT1141 LO (2021-2023)",
      "db25d",
      null,
      "testing",
-     "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
+     "Untested on this hardware: its FD6818 transceiver and LO settings have not been checked on a radio, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
     ]
    },
    "anytone_models": {},

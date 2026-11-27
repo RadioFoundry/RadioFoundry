@@ -309,6 +309,17 @@ class Commands(unittest.TestCase):
                 self.assertEqual(rc, 2, out)
                 self.assertIn("you said", out)
 
+    def test_detect_names_the_image(self):
+        # a variant another board's image runs on is named with that board, not "no image"
+        codes = other_board()
+        self.assertTrue(codes, "the check needs a variant of another board")
+        for code in codes:
+            runs = B.variant_boards[code]
+            rc, out = self.run_cli(["detect", "--board", B.id], at.FakeRadio(model=model_of(code)))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("with the %s image" % runs, out)
+            self.assertNotIn("no RadioFoundry image", out)
+
     def test_restore_stock(self):
         with tempfile.TemporaryDirectory() as d:
             data = app_image(3000, seed=4)

@@ -13,6 +13,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "../cortexm/msp_stack.h"
+#include "../cortexm/dwt_clock.h"
 
 static uint64_t cycles;
 static uint32_t last;
@@ -21,12 +22,7 @@ static uint64_t cycles_now(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();
-	// A stopped counter (a debugger that cleared TRCENA) would freeze the clock and every wait on it: restart it
-	if ((DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) == 0 || (CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) == 0) {
-		CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-		DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-	}
-	uint32_t now = DWT->CYCCNT;
+	uint32_t now = dwt_cycles(last);	// restarted if a debugger stopped it
 	cycles += (uint32_t)(now - last);
 	last = now;
 	uint64_t c = cycles;

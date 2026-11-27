@@ -115,6 +115,8 @@
 #define PIN_SR_LATCH		GPIOE, MCU_PIN(5)
 #define PIN_SPK_MUTE		GPIOA, MCU_PIN(7)	// high = speaker muted
 #define PIN_TX_ENABLE		GPIOE, MCU_PIN(6)	// high while transmitting
+// PC4: low in receive; high when RX and TX frequencies straddle 300 MHz (inferred; not done here)
+#define PIN_RF_SPLIT		GPIOC, MCU_PIN(4)
 
 // The PA drive (DAC0 on PA4) and the tone timer output (PB9)
 #define PIN_PA_DAC		GPIOA, MCU_PIN(4)

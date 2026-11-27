@@ -15,6 +15,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "../cortexm/msp_stack.h"
+#include "../cortexm/dwt_clock.h"
 #include "time_fold.h"
 
 static time_fold_t clk;
@@ -22,7 +23,7 @@ static time_fold_t clk;
 // Folded up to now; the caller's reads under the same mask
 static void fold(void)
 {
-	time_fold(&clk, DWT->CYCCNT, SystemCoreClock / 1000000u);
+	time_fold(&clk, dwt_cycles(clk.last), SystemCoreClock / 1000000u);	// restarted if a debugger stopped it
 }
 
 void gd32_time_init(void)
@@ -65,7 +66,7 @@ void hal_delay_us(uint32_t us)
 		us -= n;
 		uint32_t start = DWT->CYCCNT;
 		uint32_t cycles = n * per_us;
-		while ((uint32_t)(DWT->CYCCNT - start) < cycles) {
+		for (uint32_t now = start; (uint32_t)((now = dwt_cycles(now)) - start) < cycles;) {
 		}
 		if (n >= 1000u) {
 			(void)hal_millis();

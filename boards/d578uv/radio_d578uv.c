@@ -127,9 +127,6 @@
 #define SR_RX_AUDIO		0x40u	// receive audio gate
 #define SR_RX			(SR_BOOT | SR_RX_DEMOD | SR_RX_AUDIO)
 
-// PC4: low in receive; high when RX and TX frequencies straddle 300 MHz (inferred; not done here)
-#define PIN_RF_SPLIT		GPIOC, MCU_PIN(4)
-
 // Calibration (7): the current one of two blocks, its UHF and VHF blocks cached, the rest read when needed
 #define CAL_A			0x02F60000u
 #define CAL_B			0x02F80000u

@@ -21,7 +21,8 @@ BUILD ?= $(ROOT)/build/stub-gd32f30x
 # Link-time optimization across the engine's ops and the port's callbacks, as the STM32F4 stub
 CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
 	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes \
-	-I../common -I$(ROOT)/platform/gd32f30x $(call TP_INCLUDES,-I$(ROOT)/third_party/cmsis-core/Include)
+	-I../common -I$(ROOT)/platform/gd32f30x $(call TP_INCLUDES,-I$(ROOT)/third_party/cmsis-core/Include) \
+	$(TP_PREFIX_MAP)
 LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -nostdlib -nostartfiles -Wl,--gc-sections -T gd32stub.ld \
 	-Wl,-Map=$(BUILD)/gd32stub.map -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 

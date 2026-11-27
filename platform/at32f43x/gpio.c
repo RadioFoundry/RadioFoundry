@@ -41,7 +41,9 @@ static inline __attribute__((always_inline)) uint32_t ones(uint16_t pins)
 	return m;
 }
 
-// Each pin's drive strength: 01 large, 10 normal, the one the board asked for (RM, ODRVR)
+// Each pin's drive strength: 01 large, 10 normal, the one the board asked for (RM, ODRVR). One mask pass, inlined,
+// not two put2 calls: pin_cfg is on the crash path (board_rf_safe), and the larger frame pushed the idle and UI
+// tasks over their stacks
 static inline __attribute__((always_inline)) uint32_t drive(at32_gpio_t *port, uint16_t pins)
 {
 	uint32_t all = ones(pins);

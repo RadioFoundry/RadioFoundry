@@ -1371,8 +1371,9 @@ def cmd_detect(args):
         why = board.variant_blocked(got)
         say("         %s" % ("RadioFoundry can't be installed on it yet: %s" % why if why else
                             "RadioFoundry installs on it" if runs == board.id else
+                            "RadioFoundry installs on it with the %s image (board %s)" % (runs, runs) if runs else
                             "no RadioFoundry image for this variant: only its stock firmware can be written"))
-        note = board.variant_notice(got) if not why and runs == board.id else None
+        note = board.variant_notice(got) if not why and runs else None
         if note:
             say("         %s" % note)
         return 0

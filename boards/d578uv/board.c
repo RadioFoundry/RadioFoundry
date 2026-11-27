@@ -179,13 +179,20 @@ void board_early_init(void)
 	mcu_clock_init(CRYSTAL_HZ, CORE_HZ);
 	// PA15, PB3 and PB4 are the NAND's MISO and the RF bus: free them from JTAG, keep SWD
 	mcu_jtag_release();
-	// Normal drive on the lines whose circuits were designed for normal drive (an MCU with one drive strength ignores this): the
-	// power key, side key, auxiliary select, speaker mute, RF bus, power latch, PC4, rail, USB pull-up, TX enable and
-	// LCD read strobe
-	mcu_pin_drive_normal(GPIOA, MCU_PIN(0) | MCU_PIN(1) | MCU_PIN(5) | MCU_PIN(7));
-	mcu_pin_drive_normal(GPIOB, MCU_PIN(3) | MCU_PIN(4));
-	mcu_pin_drive_normal(GPIOC, MCU_PIN(3) | MCU_PIN(4));
-	mcu_pin_drive_normal(GPIOE, MCU_PIN(0) | MCU_PIN(2) | MCU_PIN(6) | MCU_PIN(15));
+	// Normal drive on the lines whose circuits were designed for normal drive (an MCU with one drive strength ignores
+	// this)
+	mcu_pin_drive_normal(PIN_POWER_KEY);
+	mcu_pin_drive_normal(PIN_KEY_SINGLE);
+	mcu_pin_drive_normal(PIN_AUX_CS);
+	mcu_pin_drive_normal(PIN_SPK_MUTE);
+	mcu_pin_drive_normal(PIN_RF_SCLK);
+	mcu_pin_drive_normal(PIN_RF_SDIO);
+	mcu_pin_drive_normal(PIN_POWER_LATCH);
+	mcu_pin_drive_normal(PIN_RF_SPLIT);
+	mcu_pin_drive_normal(PIN_RAIL);
+	mcu_pin_drive_normal(PIN_USB_PULLUP);
+	mcu_pin_drive_normal(PIN_TX_ENABLE);
+	mcu_pin_drive_normal(PIN_LCD_RD);
 }
 
 void board_init(void)
