@@ -49,11 +49,11 @@ BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (a mobile)
 # set's languages and fonts take that RAM); satellite tracking and signaling tones (off by default, above); voice capture (off by default, a
 # bench tool; about 330 bytes); and PPP, which stands in for the
 # USB network adapter on radios without one
-MAXIMAL_SKIP := NET_PPP NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_RADIO_UDP SATELLITE_TLE \
+MAXIMAL_SKIP := NET_PPP NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS SATELLITE_TLE \
 	SNMP P25_TRUNK SIG_TONES VOICE_CAPTURE
 # (they follow the IP gateway, the debug link and beeps by default, so the maximal configuration turns them off by
 # name)
-MAXIMAL_VARS := CONFIG_NET_RADIO_UDP=n CONFIG_SATELLITE_TLE=n CONFIG_SIG_TONES=n
+MAXIMAL_VARS := CONFIG_SATELLITE_TLE=n CONFIG_SIG_TONES=n
 # What the hardware can do but this radio's driver or glue doesn't yet
 BOARD_NOT_WRITTEN += HOTSPOT	# needs the voice frames on the MCU: the baseband's frame bypass isn't written
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# needs the hotspot (above)

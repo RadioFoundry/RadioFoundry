@@ -228,7 +228,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_HTTP` | ● | ● | ● | ● | ● | ● | ● | ○ | ○ | ○ |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ● | ○ | ○ | ○ |
 | `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ● | ○ | ○ | ○ |
-| `NET_RADIO_UDP` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ● | ○ | ○ | ○ |
 | `NET_APRSIS` | ● | ● | ● | ● | ● | ● | ● | ○ | ○ | ○ |
 | `NET_USRP` | … | ● | … | … | ● | ● | ● | … | … | … |

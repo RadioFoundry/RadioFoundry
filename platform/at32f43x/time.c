@@ -21,6 +21,11 @@ static uint64_t cycles_now(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();
+	// A stopped counter (a debugger that cleared TRCENA) would freeze the clock and every wait on it: restart it
+	if ((DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) == 0 || (CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) == 0) {
+		CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+		DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+	}
 	uint32_t now = DWT->CYCCNT;
 	cycles += (uint32_t)(now - last);
 	last = now;
@@ -51,11 +56,6 @@ uint32_t hal_micros(void)
 void hal_delay_us(uint32_t us)
 {
 	uint64_t end = cycles_now() + (uint64_t)us * (SystemCoreClock / 1000000u);
-	// A stopped counter (a debugger that cleared TRCENA) would spin here forever: restart it
-	if ((DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) == 0 || (CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) == 0) {
-		CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-		DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-	}
 	while (cycles_now() < end) {
 	}
 }
