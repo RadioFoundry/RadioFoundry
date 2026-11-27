@@ -728,17 +728,18 @@ over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios wi
 Once the repeater answers and the voice goes out, red is solid as for any transmission. The tick and the poll keep
 calling `outputs()` while a signal runs, so it keeps time when nothing else changes.
 
-**LED flash** (`radio_settings_t.led_flash`, Settings > Display, off by default): the green LED flashes every few
-seconds, so a radio with its backlight off still shows what it is doing. The setting is an interval in seconds (0 =
-off, at most `RADIO_LED_PERIOD_MAX_S`); the menu offers 2, 5, 10, 30 or 60 s. While a scan or dual watch runs
-(`CONFIG_SCAN`) the radio flashes once, `RADIO_LED_BLINK_MS` (50 ms) long, each period. Otherwise, while the radio is on
-and not transmitting, it flashes twice, `RADIO_LED_BEAT_GAP_MS` (80 ms) apart, like a heartbeat, so the two are told
-apart at a glance. The flash shows only where no other signal lights an LED: a reception (green), a transmission
-(red), a stuck PTT line, a TX deny and a repeater wake-up always win, and it does not run during a transmission. The
-pattern is taken from the clock (`now` modulo the interval, from the start of the first flash). While the setting is
-on, `outputs()` runs on every tick, as during a deny flash; off, nothing is added. A board whose `led` does nothing (no
-status LED) shows nothing. Stored in `settings_t.led_flash` (the first byte of the old `reserved11[2]`, settings-store.md
-3; an older record reads 0 = off). Debug link setting 38. Host test `radioCoreTest` `test_led_blink`.
+**Scan pulse and heartbeat** (`radio_settings_t.led_scan_pulse` and `led_heartbeat`, Settings > Display, off by
+default): the green LED flashes every few seconds, so a radio with its backlight off still shows what it is doing. Each
+setting is an interval in seconds (0 = off, at most `RADIO_LED_PERIOD_MAX_S`); the menus offer 2, 5 or 10 s for the pulse
+and 5, 10, 30 or 60 s for the heartbeat. The **scan pulse** is one flash, `RADIO_LED_BLINK_MS` (50 ms) long, while a scan
+or dual watch runs (`CONFIG_SCAN`). The **heartbeat** is two flashes of that length, `RADIO_LED_BEAT_GAP_MS` (80 ms)
+apart, while the radio is on and not transmitting; it also covers a scan when the pulse is off. While a scan runs and
+the pulse is set, the pulse is what shows. Either shows only where no other signal lights an LED: a reception (green), a
+transmission (red), a stuck PTT line, a TX deny and a repeater wake-up always win, and neither runs during a
+transmission. The pattern is taken from the clock (`now` modulo the interval, from the start of the first flash), and
+While either setting is on, `outputs()` runs on every tick, as during a deny flash; with both off nothing is added. A board whose `led` does nothing
+(no status LED) shows nothing. Stored in `settings_t.led_scan_pulse` and `led_heartbeat` (`reserved11`, settings-store.md
+3; an older record reads 0 = off). Debug link settings 38 and 39. Host test `radioCoreTest` `test_led_blink`.
 
 The green state before the timed signals also goes to the board as `hal_radio_t.rx_open` (optional, sent on change):
 receive audio from a signal is open, P25 and NXDN calls included. A board whose own noise reaches the audio only with

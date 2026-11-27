@@ -6710,10 +6710,15 @@ static const int16_t v_dual_wait[] = { 500, 1000, 1500, 2000, 3000, 5000 };	// m
 static const tr_id_t n_dual_wait[] = { TRX(VALUE_0_5_S, "0.5 s"), TRX(VALUE_1_S, "1 s"), TRX(VALUE_1_5_S, "1.5 s"),
 	TRX(VALUE_2_S, "2 s"), TRX(VALUE_3_S, "3 s"), TRX(VALUE_5_S, "5 s") };
 #endif
-// LED flash: the interval in seconds
-static const int16_t v_led_flash[] = { 0, 2, 5, 10, 30, 60 };
-static const tr_id_t n_led_flash[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_2_S, "2 s"), TRX(VALUE_5_S, "5 s"),
-	TRX(VALUE_10_S, "10 s"), TRX(VALUE_30_S, "30 s"), TRX(VALUE_60_S, "60 s") };
+// Scan pulse and Heartbeat: the interval in seconds
+#if CONFIG_SCAN
+static const int16_t v_led_scan[] = { 0, 2, 5, 10 };
+static const tr_id_t n_led_scan[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_2_S, "2 s"), TRX(VALUE_5_S, "5 s"),
+	TRX(VALUE_10_S, "10 s") };
+#endif
+static const int16_t v_led_beat[] = { 0, 5, 10, 30, 60 };
+static const tr_id_t n_led_beat[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_5_S, "5 s"), TRX(VALUE_10_S, "10 s"),
+	TRX(VALUE_30_S, "30 s"), TRX(VALUE_60_S, "60 s") };
 static const int16_t v_autooff[] = { 0, 30, 60, 120 };
 static const tr_id_t n_autooff[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_30_MIN, "30 min"), TRX(VALUE_1_H, "1 h"),
 	TRX(VALUE_2_H, "2 h") };
@@ -6829,7 +6834,12 @@ static const set_item_t s_display[] = {
 	TOGGLE(TRN(SET_LABEL_TG_NAME_FIRST, "Talkgroup name first"), "talk line label TG number Home",
 		UI_SET_LABEL_FIRST),
 #endif
-	LIST(TRN(SET_LABEL_LED_FLASH, "LED flash"), "led blink", UI_SET_LED_FLASH, v_led_flash, n_led_flash),
+#if CONFIG_SCAN
+	LIST(TRN(SET_LABEL_LED_SCAN_PULSE, "Scan pulse"), "led blink", UI_SET_LED_SCAN_PULSE,
+		v_led_scan, n_led_scan),
+#endif
+	LIST(TRN(SET_LABEL_LED_HEARTBEAT, "Heartbeat"), "led blink", UI_SET_LED_HEARTBEAT,
+		v_led_beat, n_led_beat),
 	// Last, so the rows above keep their places; its search words are "language" in other languages, for a user who
 	// can't read the English
 	ACTION(TRN(SET_LABEL_LANGUAGE, "Language"), "idioma langue sprache lingua taal jezyk", SA_LANGUAGE),
