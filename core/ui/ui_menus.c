@@ -3264,7 +3264,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		break;
 #if CONFIG_YSF
 	case CE_RX_DGID:
-		sb_u32(&b, editing ? (uint32_t)ced_val : ced_air.ysf.rx_dgid, 1);
+		sb_u32(&b, (uint32_t)(editing ? ced_val_or(ced_air.ysf.rx_dgid) : ced_air.ysf.rx_dgid), 1);
 		break;
 #endif
 	case CE_RATE:
