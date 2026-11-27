@@ -71,7 +71,7 @@ HR_C7000 ones; `tools/cps_client.py --offset`).
 | 1 | SPI flash at the physical address (the STM32 tools add the +128 KB offset themselves). Up to 32768 bytes per request (2045 in the original firmware, open-firmware-cps.md 2.1). The VFO A record (EEPROM 0x7590) is replaced by the live VFO (2.3) |
 | 2 | the 64 KB EEPROM image (`openfw_eeprom` + addr), same rules |
 | 5 | MCU ROM from `board.cps->rom_base`, inside `rom_size` (per radio, table below) |
-| 9 | radio info, 46 bytes, structure version 3 (`open-firmware-cps.md` 4): radio type from `board.cps->radio_type()` (table below), git hash, build date `YYYYMMDDhhmmss`, flash id `0x40 << 8 \| log2(size)` (W25Q128: `0x4018`), features 0 |
+| 9 | radio info, 46 bytes, structure version 3 (`open-firmware-cps.md` 4): radio type from `board.cps->radio_type()` (table below), git hash, build date `YYYYMMDDhhmmss` (the commit's time in UTC, as `git_time=` in `debuglink.md`; empty without git), flash id `0x40 << 8 \| log2(size)` (W25Q128: `0x4018`), features 0 |
 | 10 | SPI flash security registers (`board.cps->security_read`) |
 | 6, 7, 8, other | `-` (screen capture, WAV and AMBE are not offered) |
 

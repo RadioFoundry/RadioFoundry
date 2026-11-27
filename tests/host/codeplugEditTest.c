@@ -670,6 +670,16 @@ static void test_aprs_path(void)
 	      sim_flash_data[EE + 0x1588u + 0x09] == 0);	// one byte written
 	CHECK(!codeplug_set_aprs_ssid(1, 16) && !codeplug_set_aprs_ssid(2, 3) && !codeplug_set_aprs_ssid(0, 3));
 	CHECK(sim_flash_data[EE + 0x1588u + 0x40u] == 0xFF);
+	// The frequency at 0x37: BCD of 10 Hz units, LE; none (0) in this record
+	CHECK(codeplug_aprs(1, &a) && a.tx_hz == 0);
+	ser = codeplug_serial();
+	CHECK(codeplug_set_aprs_freq(1, 145570000u) && codeplug_serial() == ser + 1u);
+	CHECK(memcmp(&sim_flash_data[EE + 0x1588u + 0x37], "\x00\x70\x55\x14", 4) == 0);
+	CHECK(sim_flash_data[EE + 0x1588u + 0x36] == 0xFF && sim_flash_data[EE + 0x1588u + 0x3B] == 0);	// 4 bytes written
+	CHECK(codeplug_aprs(1, &a) && a.tx_hz == 145570000u && a.ssid == 12 && strcmp(a.comment, "Mobile") == 0);
+	CHECK(!codeplug_set_aprs_freq(2, 145570000u));	// no record: none made
+	sim_flash_data[EE + 0x1588u + 0x37] = 0x0A;	// not BCD: no frequency
+	CHECK(codeplug_aprs(1, &a) && a.tx_hz == 0);
 }
 #endif
 

@@ -20,6 +20,18 @@ void md380_lcd_pins_fsmc(void);
 
 // DMR voice PCM to the speaker (radio_md380.c; audio_md380.c's hal_audio_t.speaker_pcm calls it)
 void md380_speaker_pcm(bool on);
+// The volume knob is in its silent zone at the bottom: the amplifier stays off for every sound (power_md380.c volume())
+void md380_speaker_knob_mute(bool mute);
+// The volume knob's readings (power_md380.c volume()): the bottom, mid-rotation and the top. radio_md380.c's
+// knob_db10 is computed from them
+#define MD380_VOL_MIN	2
+#define MD380_VOL_MID	327
+#define MD380_VOL_MAX	1970
+// The speaker's second output (spkaux_md380.c, with CONFIG_BEEP): whether DMR is on air (the codec output has no
+// level), and the amplifier and speaker mute for it (SPK_AUX_*, radio_md380.c)
+bool md380_speaker_aux_active(void);
+void md380_speaker_aux(uint8_t state);
+extern const hal_spk_aux_t md380_spk_aux;
 // The HR_C5000's I2S clocks on or off (radio_md380.c; audio_md380.c switches them with the PCM stream)
 void md380_i2s_clock(bool on);
 

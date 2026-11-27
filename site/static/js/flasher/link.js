@@ -624,7 +624,8 @@ export function silence(link) {
 // The open-firmware CPS's radio info (open-firmware-cps.md 4: area 9, little endian): {structVersion, radioType, git,
 // built, flashId, features}, or null when the bytes aren't that structure. Checked field by field, so a reply of another
 // protocol that happens to start with "R" isn't taken for it. The revision or the build date must be there: our shim
-// (core/cps/cps_openfw.c) always fills both, so all zeros after the struct version is not that structure
+// (core/cps/cps_openfw.c) always fills the revision ("unknown" without git) and leaves the date empty when built
+// without git, so all zeros after the struct version is not that structure
 export const RADIO_INFO_LEN = 46;
 // The memory chip's size from the radio info's flash part id, whose low byte is the JEDEC capacity code (log2 of the
 // size: 0x4018 is 16 MB); null when the radio gives none

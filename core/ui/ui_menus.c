@@ -6763,11 +6763,20 @@ static const int16_t v_updown[] = { 0, 1, 2 };
 static const tr_id_t n_updown[] = { TRN(SET_VALUE_UPDOWN_CHANNEL, "Channel"), TRN(WORD_ZONE, "Zone"),
 	TRN(KEYFN_VALUE_TALK_TARGET, "Talk target") };
 #if CONFIG_VFO
-static const int16_t v_step[] = { 0, 250, 500, 625, 833, 1000, 1250, 2000, 2500, 5000, 10000 };	// 10 Hz units
+// 1 step = 10 Hz
+static const int16_t v_step[] = { 0, 250, 500, 625,
+#if CONFIG_AM_RX
+	// 8.33 kHz is the air band's channel spacing
+	833,
+#endif
+	1000, 1250, 2000, 2500, 5000, 10000 };
 static const tr_id_t n_step[] = { TRN(VALUE_AUTO, "Auto"), TRX(VALUE_2_5_KHZ, "2.5 kHz"), TRX(VALUE_5_KHZ, "5 kHz"),
-	TRX(VALUE_6_25_KHZ, "6.25 kHz"), TRX(VALUE_8_33_KHZ, "8.33 kHz"), TRX(VALUE_10_KHZ, "10 kHz"),
-	TRX(VALUE_12_5_KHZ, "12.5 kHz"), TRX(VALUE_20_KHZ, "20 kHz"), TRX(VALUE_25_KHZ, "25 kHz"),
-	TRX(VALUE_50_KHZ, "50 kHz"), TRX(VALUE_100_KHZ, "100 kHz") };
+	TRX(VALUE_6_25_KHZ, "6.25 kHz"),
+#if CONFIG_AM_RX
+	TRX(VALUE_8_33_KHZ, "8.33 kHz"),
+#endif
+	TRX(VALUE_10_KHZ, "10 kHz"), TRX(VALUE_12_5_KHZ, "12.5 kHz"), TRX(VALUE_20_KHZ, "20 kHz"),
+	TRX(VALUE_25_KHZ, "25 kHz"), TRX(VALUE_50_KHZ, "50 kHz"), TRX(VALUE_100_KHZ, "100 kHz") };
 #endif
 #if CONFIG_VFO && CONFIG_BCAST_FM
 static const int16_t v_bcast_step[] = { 200, 100 };	// kHz

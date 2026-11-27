@@ -1,5 +1,5 @@
 {
- "_about": "本文件是本语言的扩展译文：功能名称、分组和构建变体的说明来自代码库（config/features.mk、docs/feature-matrix.md），共享的 en.json 不收录这些键，因此其他语言仍回退到英文原文。",
+ "_about": "本文件是本语言的扩展译文：功能名称、分组和构建变体的说明来自代码库（config/features.mk、docs/feature-matrix.md、boards/*/board.toml），共享的 en.json 不收录这些键，因此其他语言仍回退到英文原文。",
  "group.radio-and-voice": "无线电与语音",
  "group.dmr-data": "DMR 数据",
  "group.network-usb-network-adapter-and-ip-over-dmr": "网络（USB 网卡与 DMR 承载 IP）",

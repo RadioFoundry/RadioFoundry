@@ -352,6 +352,24 @@ void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value)
 	}
 }
 
+bool fd6818_sql_carrier(uint16_t r65, uint16_t r6a, uint16_t r67, bool wide)
+{
+	if ((r6a & 0xFFu) > (wide ? 120u : 140u)) {
+		return false;
+	}
+	// 82.5 - 0.38 x raw in hundredths, one division: rounding 0.38 x raw first would let a noise 1 over the limit pass
+	int32_t raw = (int32_t)(r67 & 0x1FFu);
+	int32_t limit = (8250 - 38 * raw) / 100;
+	if (limit > 45) {
+		limit = 45;
+	}
+	int32_t floor = wide ? 39 : 41;
+	if (limit < floor) {
+		limit = floor;
+	}
+	return (int32_t)(r65 & 0xFFu) <= limit;
+}
+
 bool fd6818_tone_found(uint16_t r0c, fd6818_tone_t type)
 {
 	switch (type) {

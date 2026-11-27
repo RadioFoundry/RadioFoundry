@@ -194,6 +194,28 @@ static void test_helpers(void)
 	// the measured floor (43) stays shut at the loosest squelch level (opens below 64), a strong carrier (8) opens the
 	// tightest (below 40): core/radio/radio_sm.h RADIO_SQL_*
 	CHECK(fd6818_noise(43) >= 64 && fd6818_noise(8) < 40);
+
+	// The carrier limits: glitch over 140 narrow / 120 wide is no carrier
+	CHECK(fd6818_sql_carrier(30, 140, 100, false));
+	CHECK(!fd6818_sql_carrier(30, 141, 100, false));
+	CHECK(!fd6818_sql_carrier(30, 121, 100, true));
+	CHECK(fd6818_sql_carrier(30, 0xAB78, 100, true));	// the glitch count's low byte only
+	// Noise: 82.5 - 0.38 x raw (raw 100, -110 dBm: 44), at most 45, at least 41 narrow / 39 wide
+	CHECK(fd6818_sql_carrier(44, 0, 100, false));
+	CHECK(!fd6818_sql_carrier(45, 0, 100, false));
+	// Raw 104: 42.98, so 43 is over. Raw 105 (an odd raw, half a dB): 42.6
+	CHECK(fd6818_sql_carrier(42, 0, 104, false));
+	CHECK(!fd6818_sql_carrier(43, 0, 104, false));
+	CHECK(!fd6818_sql_carrier(43, 0, 105, false));
+	CHECK(fd6818_sql_carrier(45, 0, 40, false));
+	CHECK(!fd6818_sql_carrier(46, 0, 40, false));
+	CHECK(fd6818_sql_carrier(41, 0, 220, false));
+	CHECK(!fd6818_sql_carrier(42, 0, 220, false));
+	CHECK(fd6818_sql_carrier(39, 0, 220, true));
+	CHECK(!fd6818_sql_carrier(40, 0, 220, true));
+	// All 8 bits of the noise: a reading of 136 is noise, not 8
+	CHECK(!fd6818_sql_carrier(136, 0, 100, false));
+	CHECK(fd6818_sql_carrier(0xFF08, 0, 100, false));
 }
 
 static void test_frames(void)

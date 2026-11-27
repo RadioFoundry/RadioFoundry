@@ -99,6 +99,8 @@ To TX: RX paths off, 50 us, tune, the page's TX-on delay, PA select of the band 
 reverse) with PTA23 low, 200 us, the band's TX supply, then the PA ramp up (4.4). To RX: the main chip to its RX state, the page's TX-off delay, the ramp down, both supplies and both PA selects low, PTA23 high, 300 us, the retune, the RX path of
 the band, the band flags (4.3, register 0x33), 200 us.
 
+The switch and supply pins are GPIOs: IO_DIPLEX1 bits 9–18 (PTA23–PTA27; bits 11 and 12 are the speaker enables, 3.3), 23–24 (PTA30) and 27–29 (PTB2–PTB4), IO_DIPLEX2 bits 22–23 (PTC18, PTC19). These are the reset values; RadioFoundry sets them in `io_init`, since a loader that left a pad on its peripheral would leave the RX or TX path dead.
+
 Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
 in `main()`: TX supplies PTA27 and PTB2 low, PA selects PTA26 and PTB3 low, DAC B 0 and powered down, PTA23 high; on
 the fault and reset paths also the modem's FM_PTT and LAYER2_TXRX_CTRL 0. The first stage (`boot/db25d`) drives the
@@ -112,8 +114,8 @@ the radio stopped before the display was lit, until a power cycle; that fault is
 |---|---|
 | PTB18, PTB20, PTB21, PTB22, PTB23 (50, 52-55) | Key matrix drive lines, idle high, driven low one at a time |
 | PTB9, PTB10, PTB11 (41-43) | Key matrix sense lines, low = closed. PTB9 and PTB10 also carry one key each wired straight to ground (low with every drive line high) |
-| PTA9 (9) | Also read as a GPIO by the key code: the mic connector's line that carries PTT and the radio's RXD. RadioFoundry counts a low PTA9 as PTT only 50 ms or more after the last good UART byte and held low that way for 20 ms (`drivers/input/sharedptt`, [gotchas](gotchas.md) 16.2), then on three scans in a row; the diagnostics line `mic` ends with `ign N`, the low scans ignored. The three-scan filter alone let debug link polling key the radio; with the gate, 30 s of polling gave `ign 5` and no PTT press (2026-10-19, measured) |
-| PTC11 (75) | Hand mic PTT: high at idle, low while held. With no mic in the front jack it reads low from power-on and never changes (0 edges in 25 s, cable in or out), which keyed the radio at every start without a mic (issue #230). RadioFoundry counts a low PTC11 as PTT only once the line has read high for 100 ms since power-on, a mic plugged in (`drivers/input/plugptt`); the diagnostics line `mic` ends with `mic` once armed, `nomic` before. Plugging the mic in later arms it then. Pulling the mic out while armed reads as a held PTT, which the transmit timeout ends (with TX timeout Off, nothing ends it until power-off). On the radio (2026-10-27): no mic at power-on, no key-up (`nomic`); mic plugged in, `mic`, PTT keys and releases. The mic's digit and P keys change neither PTA9 nor PTC11 at a 10 ms scan; how they reach the radio is open (measured) |
+| PTA9 (9) | Also read as a GPIO by the key code: the mic connector's line that carries PTT and the radio's RXD. RadioFoundry counts a low PTA9 as PTT only 50 ms or more after the last good UART byte and held low that way for 20 ms (`drivers/input/sharedptt`, [gotchas](gotchas.md) 16.2), then on three scans in a row; the diagnostics line `mic` ends with `ign N`, the low scans ignored. The gate also needs PTA9 to have idled high for 100 ms, after the lines settle in the key scan's first 250 ms, before a low counts, as PTC11 does: a line a mic or cable holds low from power-on never keys (issue #716), and after 2 s shows as a stuck line. Some hand mics pull PTA9 low for PTT. A good byte just before the low (the contact's bounce, or a mic's own byte) is no reason to refuse the press; only a byte and a send of the radio's own since the last high read are ([gotchas](gotchas.md) 16.5). The interrupt edge on this pin gives the same rule, a press is a fall from idle high. The three-scan filter alone let debug link polling key the radio; with the gate, 30 s of polling gave `ign 5` and no PTT press (2026-10-19, measured) |
+| PTC11 (75) | Hand mic PTT: high at idle, low while held. The pad has a pull-up, IOMGR_REN1 bit 9 (the LCD_DB4 pad; 0 = on), and IO_DIPLEX2 bit 15 = 1 selects the GPIO; RadioFoundry sets both in `io_init` (`board.c`). Before the pull-up was on, the line floated: with no mic in the front jack the line read low from power-on and never changed (0 edges in 25 s, cable in or out), which keyed the radio at every start without a mic (issue #230), and a mic without its own pull-up never read high, so its PTT never keyed. With the pull-up the line should read high with an empty jack too (not yet checked on a radio). RadioFoundry counts a low PTC11 as PTT only once the line has read high for 100 ms, after the key scan's first 250 ms (`drivers/input/plugptt`), so a line held low from power-on never keys. Diagnostics line `mic`: `mic AC a L/N c L/N ign N`, where A and C are 1 once PTA9 and PTC11 are armed, L is the line's level and N its edges. On the radio (2026-10-27, before the pull-up): no mic at power-on, no key-up (PTC11 not armed); mic plugged in, armed, PTT keys and releases. The mic's digit and P keys change neither PTA9 nor PTC11 at a 10 ms scan; how they reach the radio is open (measured) |
 | PTB5 / PTB8 (37 / 40) | Rotary encoder A / B, GPIO B interrupt. The key scan watches it for a lost interrupt and serves the bank itself if one is lost (`platform/hrc7000/gpio_watch.c`, [gotchas.md](gotchas.md) 16.4; state in the debug link view, [debuglink.md](debuglink.md) 3.7) |
 | PTB12 (44) | Power key sense, low = pressed |
 | PTB13 (45) | Power latch: set at start-up, cleared to switch off |
@@ -203,6 +205,10 @@ The firmware reads register 0 of each chip at boot and writes the letters into i
 | 0x1100 (AT1141 PLL) | - | 'T' |
 | 0x4819 (BK4819) | 'B' | 'B' |
 | other | soft reset and read again | same |
+
+The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches the main transceiver as chip 0 and
+the LO as chip 1, page 0, registers 0x00-0x7F: `rfoundry_debug.py reg 0 0x0C` reads the main chip's squelch and
+sub-audio status.
 
 ### 4.3 BK4819 registers (address: value, in order)
 
@@ -617,6 +623,8 @@ map, [hardware-dm32.md](hardware-dm32.md) 8). Page select 0x7F (1 = page 1).
 | 0x7813 | 0x3A = 0x00E0, 0x40 = 0x38D0, 0x43 = 0x5009, 0x4D = 0x347D, page 1 0x16 = 0x02FE; a VCO section (below); `38` / `39`; 0x40 = 0; `03` = 0, 0xC1FA | `03` = 0 | `03` = 0, 0xC1FA |
 | AT1141 | Band split and PLL words (`at1141.h`), 0x30 = 0x4006, 0x4046 | 0x30 = 0x4006 | 0x30 = 0x4006, 0x4046, no wait |
 
+The AT1141 LO's output level is 0x26 = 0x7F40 (`at1141_level` 0), set once after its init, not the driver's default level 2 (0x4140).
+
 The 0x7813's section is the first of 32 44 63 88 126 176 251 353 at or above the LO's integer MHz (else 8); each
 writes 0x3C, 0x3D, 0x40, 0x1A, 0x2A:
 
@@ -738,7 +746,10 @@ not listed is unused.
 | SIG_CENTER (modem 0x108) | Written at every receive set-up, FM and DMR (4.6). (c << 24) or (c << 16) or ((m & 0xFF) << 8) or (m & 0xFF), with c = the TX center byte and m below |
 | RF_MOD_BIAS_CTRL (modem 0x114) | ((m & 0x3FF) << 16) or a. m = round((1.228 + c × 0.422 / 128) × 1023 / 3.3): 381 at c = 0, 512 at c = 128, close to the DM-32's c + 384. a = the interpolated first byte of 0x067 |
 | BK4819 squelch (reg 0x78) | For level n (1–9), v = low byte of entry n of the segment's 0x0CF table: v is the open threshold in dB below 0 dBm at the main chip. Register = (o << 8) or (o − 4), o = 2 × (160 − v), i.e. open at −v dBm and close 2 dB lower. Level 0 uses v = 136 |
+| FD6818 squelch (reg 0x78) | The same v: o = min(255, 2 × (169 − v)), register = (o << 8) or (o − 5), i.e. open at 9 − v dBm, 9 dB above the BK4819 for the same v. The FD6818 also needs its glitch (reg 0x6A low byte) at most 140 narrow or 120 wide, and its noise (reg 0x65 bits 7:0) at most 82.5 − 0.38 × RSSI (RSSI as reg 0x67 bits 8:0), limited to 41–45 narrow or 39–45 wide |
 | Untuned radio | No page: the vendor firmware keeps running, values unknown |
+
+**Squelch.** The main chip sits behind the IF filter, so its noise reading stays low on an empty channel, and the core's squelch on that reading stayed open on DB25-D radios in the field (issue #975). RadioFoundry reports the squelch's reading (`hal_radio.h` noise) from the signal strength against the page's thresholds instead (`core/radio/sql_rssi.c`): the reading crosses the core's line for level n exactly at level n's open threshold, so the core's one squelch opens where the page says. The core closes a level where the level below opens, so a level's hysteresis is the page's step to the level below (1 dB on the pages seen); level 1 closes 3 dB under its threshold. Equal neighboring entries are moved 1 dB apart. Signal strength alone opens on what an antenna picks up on an empty channel (issue #1176), so in FM the chip's noise and glitch verdict has to say carrier too, or the reading is held over every level's close line. On a BK4819 the verdict is reg 0x0C bit 1, the chip's own squelch with its noise (0x4F) and glitch (0x4E) limits and an RSSI threshold (0x78) left at the reset value, far below every page level. On an FD6818 the limits are the glitch and noise ones above (`fd6818_sql_carrier`). FD6818 thresholds stop at -33 dBm, where the chip's register does; levels capped there are moved 1 dB apart like other equal entries, so the top levels can need up to -25 dBm. Without a page, or with a tighter level that opens on less signal, the chip's noise reading is used as before. Not yet checked on a radio.
 
 RadioFoundry's use: the reader (`boards/db25d/calibration_db25d.c`) copies the chosen page into RAM at boot and never writes
 either copy. The program-flash copy is memory-mapped, so it's read directly: it is a plain

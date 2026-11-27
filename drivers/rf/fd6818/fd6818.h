@@ -104,6 +104,7 @@ typedef struct {
 #define FD6818_REG_CSS_THRESH	0x52
 #define FD6818_REG_NOISE	0x65
 #define FD6818_REG_RSSI		0x67
+#define FD6818_REG_GLITCH	0x6A	// glitch count, low byte (fd6818_sql_carrier)
 #define FD6818_REG_TONE1	0x71
 
 // 0x30 states: always through idle between RX and TX (8.3). RX and TX are requests to fd6818_set_state: the variant's
@@ -166,6 +167,11 @@ static inline uint8_t fd6818_noise_plus(uint16_t r65, uint8_t offset)
 	return n > 255u ? 255u : (uint8_t)n;
 }
 static inline uint8_t fd6818_noise(uint16_t r65) { return fd6818_noise_plus(r65, FD6818_NOISE_OFFSET); }
+// The chip's own carrier limits for a squelch that opens on signal strength: the glitch count (0x6A low byte) at most
+// 140 on a 12.5 kHz or digital channel, 120 on a 25 kHz one, and the noise (0x65 low byte) at most
+// 82.5 - 0.38 x the RSSI raw value (0x67 bits 8:0), capped at 45 and floored at 41 (narrow) or 39 (wide). False: no
+// carrier, however strong the signal (docs/spec/hardware-db25d.md, squelch)
+bool fd6818_sql_carrier(uint16_t r65, uint16_t r6a, uint16_t r67, bool wide);
 
 // --- Register access (one frame each, inside the critical section) ---
 
