@@ -47,6 +47,7 @@ typedef struct {
 	ax25_addr_t me;
 	bool me_ok;
 	uint8_t block;
+	bool cp_writing;	// aprs_to_codeplug runs: the record and its markers in settings may differ for a moment
 	qframe_t q[QUEUE_LEN];
 	uint8_t qn;
 	uint8_t taken;		// frames in the transmission under way

@@ -729,6 +729,7 @@ void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2) { return false; }
 bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid) { return false; }
+bool codeplug_set_aprs_freq(uint8_t n, uint32_t hz) { return false; }
 #endif
 #if CONFIG_APRS
 // ... and no host link

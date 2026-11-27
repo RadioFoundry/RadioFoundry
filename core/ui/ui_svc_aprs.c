@@ -22,7 +22,8 @@ void ui_svc_aprs_cfg(aprs_cfg_t *c)
 	aprs_get_cfg(c);
 }
 
-// The path and the SSID also live in the codeplug's APRS record (aprs.md 11): written there by the housekeeping task
+// The path, the SSID and the frequency also live in the codeplug's APRS record (aprs.md 11): written there by the
+// housekeeping task
 static void codeplug_job(void *ctx)
 {
 	(void)ctx;
@@ -34,7 +35,7 @@ void ui_svc_aprs_set_cfg(const aprs_cfg_t *c)
 	aprs_cfg_t old;
 	aprs_get_cfg(&old);
 	aprs_set_cfg(c, hal_millis());
-	if (c->path != old.path || c->ssid != old.ssid) {
+	if (c->path != old.path || c->ssid != old.ssid || c->region != old.region || c->freq_hz != old.freq_hz) {
 		(void)storage_job_post(codeplug_job, NULL);	// busy with another job: the codeplug keeps its own
 	}
 }

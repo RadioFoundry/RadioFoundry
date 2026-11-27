@@ -1705,7 +1705,7 @@
  "editor.col.lat": "Latitud",
  "editor.col.lon": "Longitud",
  "editor.col.sfr": "Repetidor de frecuencia única",
- "editor.aprs.channel_freq": "Canal",
+ "editor.aprs.radio_freq": "Ajuste de la radio",
  "editor.call.group": "Grupo",
  "editor.call.private": "Privada",
  "editor.call.all": "Llamada general",

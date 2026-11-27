@@ -908,6 +908,16 @@ msgid "  Sent "
 msgstr "  Inviato "
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_TYPING"
+msgid "0-9 type  OK set  Back"
+msgstr "0-9 digita  OK imposta  Indietro"
+
+#: core/ui/ui_aprs.c
+msgctxt "HINT_0_9_PICK_BACK"
+msgid "0-9 pick  Back"
+msgstr "0-9 scegli  Indietro"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_ROW_SEND_NOW"
 msgid "Send position now"
 msgstr "Invia posizione ora"
@@ -1006,11 +1016,6 @@ msgstr "Beacon off"
 msgctxt "APRS_WHY_CANT_RECEIVE"
 msgid "This radio can't receive APRS"
 msgstr "Questa radio non riceve APRS"
-
-#: core/ui/ui_aprs.c
-msgctxt "HINT_0_9_PICK_BACK"
-msgid "0-9 pick  Back"
-msgstr "0-9 scegli  Indietro"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_TITLE_HEARD"
