@@ -8,6 +8,9 @@
 #   make -C stub/at32f43x BUILD=DIR      elsewhere
 #   make -C stub/at32f43x check          build, then fail if the copy embedded in stub/f4stub.py differs (ci.sh runs it)
 ROOT := ../..
+TP_ROOT := $(ROOT)
+include $(ROOT)/platform/third_party.mk
+$(TP_CHECK)
 ARM_GCC_DIR ?= $(firstword $(wildcard $(HOME)/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/) /usr/bin/)
 CROSS ?= $(ARM_GCC_DIR)arm-none-eabi-
 CC := $(CROSS)gcc
@@ -18,7 +21,7 @@ BUILD ?= $(ROOT)/build/stub-at32f43x
 # Link-time optimization across the engine's ops and the port's callbacks, as the STM32F4 stub
 CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
 	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes \
-	-I../common -I$(ROOT)/platform/at32f43x -I$(ROOT)/third_party/cmsis-core/Include
+	-I../common -I$(ROOT)/platform/at32f43x $(call TP_INCLUDES,-I$(ROOT)/third_party/cmsis-core/Include)
 LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -nostdlib -nostartfiles -Wl,--gc-sections -T at32stub.ld \
 	-Wl,-Map=$(BUILD)/at32stub.map -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 
