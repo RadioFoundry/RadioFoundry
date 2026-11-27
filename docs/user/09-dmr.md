@@ -291,8 +291,9 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
   fail with an 8-bit key: use **ETSI** or **TMS** ([Messages](10-messages-and-signaling.md)). 16-bit basic privacy has no form for data, so with a 16-bit key
   the radio sends no text messages or other data: a message you send fails. Scrambled data the radio can't read is
   not shown.
-- **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
-  off again.
+- **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home names the scheme in a blue badge at the
+  right end of the channel's name: **BP8** or **BP16** (on a long name, a padlock). Basic privacy is a fixed
+  keystream, not encryption: the badge says which so it is never mistaken for AES. **Back** on Home turns it off again.
 
 Most countries don't allow encrypted or scrambled messages on amateur frequencies: read
 [Encryption on amateur frequencies](04-programming.md#encryption-on-amateur-frequencies) before using basic privacy or AES

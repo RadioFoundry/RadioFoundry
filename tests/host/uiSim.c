@@ -43,6 +43,13 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_dmr_lastheard", "call:9991234,91,g wait:11000" },
 	{ "home_reply", "call:9991234,91,g" },
 	{ "home_fm", "down" },
+#if CONFIG_DMR_AES
+	{ "home_encrypted", "aeschan" },	// an AES channel: its type in a badge on the name's line
+#endif
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+	// Basic privacy on (the 1-255 key 123, the Quick tile): BP8 in the badge
+	{ "home_privacy", "ok 7 4 ok down ok 1 2 3 ok long:back quick 6 back" },
+#endif
 	{ "home_temporary", "down quick 1 2 up back" },
 	{ "home_vfo", "ok 4 up ok" },
 	{ "home_vfo_entry", "ok 4 up ok 4 4 6" },
@@ -241,6 +248,12 @@ static const struct { const char *name, *script; } audit_extra[] = {
 	{ "settings_power", "ok 7 7" DOWN12 },
 	{ "settings_keys", "ok 7 8" DOWN12 },
 	{ "settings_my_radio", "ok 7 0" DOWN12 },
+#if CONFIG_DMR_AES
+	{ "home_large_text_aes", "aeschan large:on" },	// the badge under the name, or the padlock on its line
+#endif
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+	{ "home_large_text_privacy", "ok 7 4 ok down ok 1 2 3 ok long:back large:on quick 6 back" },
+#endif
 	{ "settings_signaling", "ok 7 up up ok" DOWN12 },
 	{ "settings_advanced", "ok 7 up ok" DOWN12 },
 	{ "about_scrolled", "ok 7 up ok ok" DOWN12 DOWN12 },
@@ -284,6 +297,9 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_contact_actions", "ok 1 ctx" },
 	{ "w_find", "2 7" },
 	{ "w_find_number", "1 6 7 7 6 4 1 5" },
+#if CONFIG_DMR_AES
+	{ "w_large_text_aes", "aeschan large:on" },
+#endif
 	{ "w_channels", "ok 4" },
 	{ "w_zone", "ok 4 ctx" },
 	{ "w_zone_end", "ok 4 ctx up" },

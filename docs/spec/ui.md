@@ -92,7 +92,17 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   says "TG": "Private 9991234" while transmitting (just "Private" where that doesn't fit), "Private to you" or
   "Private to Joe Smith" while receiving. The TX screen's target line follows the short form rule above, and its
   detail line ends in "Private" or "Group". The word is the cue, not a color: the privacy (encryption) marker is
-  "Priv" in blue, and a private call is not encrypted.
+  blue, and a private call is not encrypted.
+- Home names the encryption the channel transmits with in a reverse badge (the text in the background color on a block
+  of the privacy blue) at the right end of the channel name's line: AES256 on an AES channel with its key, BP8 (the
+  1-255 key) or BP16 (the 16-bit key) with basic privacy. The name keeps its place and shrinks to a smaller font
+  before the badge gives way; where even the small font would not fit beside it, a hand-drawn padlock (7x8, 9x12 or
+  12x16, by the font) stands in and the chips line names the scheme. A clear channel, or an AES channel with no key bound (it won't transmit), shows
+  neither.
+  On an AES channel the top bar's mode word says DMR, as with basic privacy: the badge names the encryption.
+  Large-text Home shows the same mark: the badge in the medium font under the channel name where the name's line
+  leaves room for it, else the padlock at the right end of the name's line (the name takes a smaller font before it
+  is shortened). The VFO shows neither, as on normal Home.
 - NXDN Home shows an ENC marker with the caller and destination when a scrambled call plays. It shows "Encrypted: not played" when
   the radio receives an encrypted call and holds its audio.
 
