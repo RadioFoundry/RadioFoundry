@@ -8,6 +8,7 @@
 #include "fmt.h"
 #include "i18n.h"
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
@@ -214,14 +215,22 @@ void ui_layout_init(void)
 	}
 
 #if CONFIG_LANG_ZH
-	// A CJK character is 16 px tall (core/ui/cjk_font.h), so a line that may hold Chinese needs a 16 px font. Where the
+	// A CJK character is 16 px tall (core/ui/cjk_font.h), so a line that may hold Chinese needs a 16 px font, and only
+	// while the language in use is a wide one: English and Spanish keep the tighter layout in the same build. Where the
 	// layout already draws its words in one (the 240 px class), only the smallest font, which text pages use, moves up to
-	// it - and only while the language in use is a wide one, so English and Spanish keep their layout in the same build.
-	// Where the layout draws its words in the 5x8 or 6x12 font (the 128x64 and 160x128 classes) Chinese cannot be shown
-	// at all: there is no room for 16 px lines, so the layout stays as it is and the board must not build the language
-	// in (BOARD_UNSUPPORTED, docs/build-config.md)
-	if (L->small->h >= CJK_FONT_H && L->tiny->h < CJK_FONT_H && lang_wide(lang_current()))
-		L->tiny = L->small;
+	// it. Where it draws them in the 6x12 font (the 160 px class), those words move up to the 8x16 one, which costs Home
+	// its zone line and a list two rows on a 160x120 panel (docs/spec/ui.md 2.5). A 128x64 panel has no room for a 16 px
+	// line at all: its layout stays as it is and the board must not build the language in (BOARD_UNSUPPORTED,
+	// docs/build-config.md)
+	if (lang_wide(lang_current())) {
+		if (L->small->h >= CJK_FONT_H) {
+			if (L->tiny->h < CJK_FONT_H)
+				L->tiny = L->small;
+		} else if (w >= 150) {		// the 160 px class: 8x16 for lists, labels, the strip and the hints
+			L->small = f8;
+			L->tiny = f8;
+		}
+	}
 #endif
 
 	// A pixel between the status strip and what is below it, and a pixel between list rows on displays 100 px and
@@ -1111,10 +1120,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 #endif
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
-	char buf[40];
+	char buf[60];	// a channel's three forms: up to 57 bytes ("1296.94375 MHz +300.125M" ...)
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
 	color_t c = ui_col.fg;
+	bool arrow = true;
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		sb_str(&b, TR(WHY_DMR_NOT_IN_BUILD, "DMR: not in this build"));
 		c = ui_col.warn;
@@ -1123,7 +1133,10 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		   v->p25.trunk != RADIO_P25_TRUNK_OFF) {
 		// What the follower does, and with the transmit side on, how far it is from talking: registering, the
 		// talk group once PTT can ask for it, a request's state
-		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0;
+		// A blocked system is listen only whatever the flag says: it reads as one, never as "Registering". Idle on
+		// the control channel, a system that can't transmit (blocked, or set to listen only) says "RX only", as a
+		// conventional RX-only channel does; a call still reads "Following TG n"
+		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0 && v->p25.treg != P25_REG_BLOCKED;
 		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
 			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
 			c = ui_col.dim;
@@ -1144,7 +1157,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg != P25_REG_NO_TX) {
 			sb_str(&b, "TG ");
 			sb_u32(&b, v->p25.talk, 1);
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && !txs) {
+			sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
+			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL) {
+			// the transmit side is on but this control channel has no inbound frequency
 			sb_str(&b, TR(HOME_STATE_P25T_CONTROL, "Control channel"));
 		} else if (v->p25.treq == P25_REQ_TALK) {
 			sb_str(&b, "TG ");
@@ -1176,15 +1193,29 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		sb_u32(&b, v->nxdn.talk, 1);
 #endif
 	} else {
-		// " MHz" goes before the frequency is cut (font.h alternates)
+		// A channel shows the frequency it listens on, as dual watch does, and a repeater's offset after it: no
+		// other row has either (#1031). Where PTT goes, with the arrow, only while PTT is held (transmitting, or
+		// refused: an out-of-band refusal needs the TX frequency in view) and in the VFO, whose receive frequency
+		// is the large one above. " MHz", then the offset, go before the frequency is cut (font.h alternates)
+		arrow = v->vfo || v->state == RS_TX || v->state == RS_TX_DENIED;
+		uint32_t hz = arrow ? v->ch.tx_hz : v->ch.rx_hz;
 		sb_str(&b, TEXT_ALT_OPEN);
-		sb_freq(&b, v->ch.tx_hz);
-		sb_str(&b, " MHz" TEXT_ALT_NEXT);
-		sb_freq(&b, v->ch.tx_hz);
+		sb_freq(&b, hz);
+		sb_str(&b, " MHz");
+		if (!arrow && v->ch.tx_hz != v->ch.rx_hz) {
+			sb_chr(&b, ' ');
+			sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+			sb_str(&b, TEXT_ALT_NEXT);
+			sb_freq(&b, hz);
+			sb_chr(&b, ' ');
+			sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+		}
+		sb_str(&b, TEXT_ALT_NEXT);
+		sb_freq(&b, hz);
 		sb_str(&b, TEXT_ALT_CLOSE);
 	}
 	// Too wide: shorter text, never a smaller font
-	int x = gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);	// no space, on purpose: as on DMR's talk line
+	int x = arrow ? gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim) : 0;	// no space, on purpose: as on DMR's talk line
 	char fit[40];
 	gfx_text_fit(f, buf, gfx_width() - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
@@ -1355,11 +1386,11 @@ static uint8_t trunk_why(const radio_view_t *v)
 }
 #endif
 
-static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
+const char *ui_deny_text(const radio_view_t *v, uint8_t why, char *buf, size_t len)
 {
 	sbuf_t b;
 	sb_init(&b, buf, len);
-	switch (v->tx_deny) {
+	switch (why) {
 	case TXDENY_RX_ONLY: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
 	case TXDENY_BAND: {
 		char bands[32];
@@ -1371,6 +1402,8 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_TIMEOUT: sb_str(&b, TR(DENY_WHY_TIMEOUT, "TX time-out reached")); break;
 	case TXDENY_CEASED: sb_str(&b, TR(DENY_WHY_SYSTEM_STOPPED, "System stopped TX")); break;
 	case TXDENY_NO_FREQ: sb_str(&b, TR(DENY_WHY_NO_TX_FREQ, "No TX frequency set")); break;
+	case TXDENY_AES_KEY: sb_str(&b, TR(WHY_AES_KEY, "AES key or TX disabled")); break;
+	case TXDENY_AES_WAIT: sb_str(&b, TR(WHY_AES_WAIT, "AES: saving, try again")); break;
 	case TXDENY_MODE: sb_str(&b, TR(WHY_MODE_NOT_IN_BUILD, "Mode: not in this build")); break;
 	case TXDENY_NO_CODEC: sb_str(&b, TR(WHY_NO_CODEC, "No codec: voice off")); break;
 	case TXDENY_NO_DMR: sb_str(&b, TR(DENY_WHY_MODEM_NOT_RUNNING, "DMR modem not running")); break;
@@ -1386,6 +1419,10 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_REFUSED: sb_str(&b, TR(DENY_WHY_RADIO_REFUSED, "Radio refused to send")); break;
 	case TXDENY_BENCH: sb_str(&b, TR(DENY_WHY_AIR_BENCH, "Air bench: PTT off")); break;
 	case TXDENY_AIR_NO_TX: sb_str(&b, TR(DENY_WHY_AIR_NO_TX, "This mode: receive only")); break;
+	case TXDENY_NOT_DMR: sb_str(&b, TR(SHARE_BANNER_TRY_ON_DMR, "Try again on a DMR channel")); break;
+	case TXDENY_DATA_ENCRYPTED:
+		sb_str(&b, TR(DENY_WHY_DATA_ENCRYPTED, "Encrypted channels can't send text"));
+		break;
 #if CONFIG_P25_TRUNK || CONFIG_DMR_TRUNK
 	case TXDENY_TRUNK:
 		switch (trunk_why(v)) {
@@ -1394,6 +1431,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_TRUNK_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
 		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
+		case RADIO_TRUNK_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "RX-only system: no TX")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
 		case RADIO_TRUNK_WHY_OTHER_KIND: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_KIND, "Incompatible system")); break;
 		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
@@ -1440,8 +1478,8 @@ static const char *deny_action(const radio_view_t *v)
 			return TR(DENY_FIX_CHECK_SYSTEM, "Check system settings");
 		if (trunk_why(v) == RADIO_TRUNK_WHY_REG_REFUSED)
 			return TR(DENY_FIX_ASK_TO_ADD_ID, "Ask to add your ID");	// the system doesn't know it
-		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND)
-			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps
+		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND || trunk_why(v) == RADIO_TRUNK_WHY_BLOCKED)
+			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps, nor a retry
 		return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 #endif
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
@@ -1574,7 +1612,7 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 	sbuf_t nb;
 	sb_init(&nb, num, sizeof num);
 	sb_target(&nb, id, false, "");
-	size_t len = strlen(name);
+	size_t cells = ui_text_cells(name);
 	sb_str(b, TEXT_ALT_OPEN);
 	if (label_first) {
 		// "Main Ops TG 201 (9s)", "Main Ops TG 201", "Main Ops", "Main O…": the name is what the user reads
@@ -1590,10 +1628,9 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 		sb_str(b, num);
 		sb_str(b, TEXT_ALT_NEXT);
 		sb_str(b, name);
-		if (room >= 2 && room < len) {
+		if (room >= 2 && cells > room - 1) {
 			sb_str(b, TEXT_ALT_NEXT);
-			for (size_t i = 0; i < room - 1; i++)
-				sb_chr(b, name[i]);
+			sb_cut_text(b, name, room - 1);
 			sb_str(b, GLYPH_ELLIPSIS);
 		}
 		sb_str(b, TEXT_ALT_CLOSE);
@@ -1606,12 +1643,11 @@ static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *
 		sb_str(b, TEXT_ALT_NEXT);
 	}
 	sb_target(b, id, false, name);
-	if (room >= lead + 3 && room < lead + len) {
+	if (room >= lead + 3 && cells > room - lead - 1) {
 		sb_str(b, TEXT_ALT_NEXT);
 		sb_str(b, num);
 		sb_chr(b, ' ');
-		for (size_t i = 0; i < room - lead - 1; i++)
-			sb_chr(b, name[i]);
+		sb_cut_text(b, name, room - lead - 1);
 		sb_str(b, GLYPH_ELLIPSIS);
 	}
 	sb_str(b, TEXT_ALT_NEXT);
@@ -2259,7 +2295,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 	}
 	case RS_TX_DENIED:
 		// One line only: the pill already says NO TX, so the line gives the reason
-		gfx_text_fit(sm, deny_reason(v, buf, sizeof buf), w, fit, sizeof fit);
+		gfx_text_fit(sm, ui_deny_text(v, v->tx_deny, buf, sizeof buf), w, fit, sizeof fit);
 		if (two) {
 			gfx_text(big, 0, y, TR(ACTIVITY_STATE_CANT_TRANSMIT, "Can't transmit"), ui_col.warn);
 			gfx_text(sm, 0, y2, fit, ui_col.fg);
@@ -2295,12 +2331,30 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			break;
 		}
 #endif
+#if CONFIG_APRS_RX
+		{
+			aprs_view_t aprs_v;
+			if (ui_svc_aprs_view(&aprs_v) && aprs_v.last_msg_ms != 0 &&
+			    (v->last_rx_ms == 0 || aprs_v.last_msg_ms + 2000u >= v->last_rx_ms)) {
+				sb_str(&b, TR(APRS_ACTIVITY_LAST_MSG, "APRS: "));
+				sb_str(&b, aprs_v.last_msg_from);
+				sb_str(&b, " ");
+				sb_age(&b, s->now_ms - aprs_v.last_msg_ms);
+			} else if (v->last_rx_ms) {
+				sb_str(&b, TR(ACTIVITY_BODY_LAST, "Last activity "));
+				sb_age(&b, s->now_ms - v->last_rx_ms);
+			} else {
+				sb_str(&b, TR(ACTIVITY_EMPTY, "No activity yet"));
+			}
+		}
+#else
 		if (v->last_rx_ms) {
 			sb_str(&b, TR(ACTIVITY_BODY_LAST, "Last activity "));
 			sb_age(&b, s->now_ms - v->last_rx_ms);
 		} else {
 			sb_str(&b, TR(ACTIVITY_EMPTY, "No activity yet"));
 		}
+#endif
 		bool mon = v->monitor && L->activity_h >= 2 * sm->h;
 		y += (L->activity_h - (mon ? 2 : 1) * sm->h) / 2;	// centered in the activity area
 		gfx_text_fit(sm, buf, gfx_width(), fit, sizeof fit);
@@ -2772,13 +2826,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 			r3 -= sm->w / 2 + 1;
 		}
 		dual_row3(p, dual_r3, sizeof dual_r3);
-		bool more = true;
-		for (int level = 0; more; level++) {	// the longest form that fits, else the shortest, cut
-			gfx_text_alt(dual_r3, level, fit, sizeof fit, &more);
-			if (gfx_text_width(df, fit) <= r3 - x0)
-				break;
-		}
-		gfx_text_fit(df, fit, r3 - x0, buf, sizeof buf);
+		gfx_text_fit(df, dual_r3, r3 - x0, buf, sizeof buf);
 		int lx = gfx_text(df, x0, y3, buf, ui_col.dim);
 		if (ft->zone)
 			gfx_text(df, x0, y3 + df->h, p->zone, ui_col.dim);
@@ -3071,7 +3119,7 @@ void ui_draw_banner(const ui_state_t *s)
 		gfx_text(f, 2, ty, title[i], gfx_bpp() == 1 ? fg : bn->warn ? ui_col.warn : ui_col.fg);
 	for (int i = 0; i < nx; i++, ty += f->h)
 		gfx_text(f, 2, ty, text[i], fg);
-	const char *act = (bn->kind == UI_BANNER_MESSAGE || bn->kind == UI_BANNER_ZONE_OFFER) ?
+	const char *act = (bn->kind == UI_BANNER_MESSAGE || bn->kind == UI_BANNER_ZONE_OFFER || bn->kind == UI_BANNER_APRS_MESSAGE) ?
 		TR(BANNER_HINT_OPEN, "# Open") :
 		(bn->kind == UI_BANNER_CALL_ALERT || bn->kind == UI_BANNER_PRIVATE) ?
 			TR(BANNER_HINT_ACTIONS, "# Actions") : TR(BANNER_HINT_HIDE, "Back hide");
@@ -3581,7 +3629,8 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 	sb_str(&b, "CC");
 	sb_u32(&b, h->cc, 1);
 	sb_str(&b, " ");
-	sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
+	// What the hotspot keys; the radio's own power until the radio core has entered hotspot mode
+	sb_str(&b, ui_power_name(v->hotspot ? v->hs_power : v->power, h->tx_hz != 0 ? h->tx_hz : v->ch.tx_hz));
 	y = call_line(L->small, y, buf, ui_col.dim);
 	sb_init(&b, buf, sizeof buf);
 	if (h->src != 0) {

@@ -41,7 +41,7 @@ typedef struct {
 	// Hotspot frequencies may lie outside the amateur bands (docs/spec/gotchas.md 8.7): only the board's band
 	// limits apply. False if out of range (the host gets a NAK). A few register writes; must not block for long
 	bool (*set_freq)(uint32_t rx_hz, uint32_t tx_hz);
-	// Transmit power from the MMDVM RF level (0-255, 255 = full): map it to a board power step
+	// Transmit power from the MMDVM RF level: 0-254 map to a board power step, 255 keeps the radio's own power
 	void (*set_power)(uint8_t rf_level);
 	// Back to normal operation; the modem is stopped already and the call stack gets it back (may be posted)
 	void (*leave)(void);

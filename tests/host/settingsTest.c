@@ -375,6 +375,37 @@ static bool boot_any(void)
 	return ok;
 }
 
+// A detour's hold while the settings area is claimed: the release goes back to the state before the hold, and the
+// claimed area then gets that state saved (not the "nothing stored" filler the claim puts in saved)
+static void test_hold_claim(void)
+{
+	settings_stats_t st;
+	settings_t s;
+
+	sim_flash_create(FLASH_SIZE, &map);
+	junk(map.settings_addr + 2 * STORAGE_SECTOR, 3000, 7);
+	CHECK(!boot_any() && storage_region() == STORAGE_REGION_FOREIGN);
+	settings_begin()->squelch = 5;
+	settings_end(100);
+	CHECK(settings_hold());
+	settings_begin()->squelch = 9;		// the detour's change
+	settings_end(200);
+	CHECK(storage_claim_request());
+	settings_poll(6000);			// claimed during the hold: nothing saved yet
+	settings_get_stats(&st);
+	CHECK(st.saves == 0);
+	settings_release(true);
+	settings_read(&s);
+	CHECK(s.squelch == 5 && s.vfo_ts == 1);	// home, not 0xFF
+	settings_get_stats(&st);
+	CHECK(st.dirty);
+	settings_poll(20000);
+	CHECK(boot_any());
+	settings_read(&s);
+	CHECK(s.squelch == 5);
+	CHECK(sim_flash_violations() == 0);
+}
+
 static void test_foreign(void)
 {
 	uint8_t a[STORAGE_SECTOR];
@@ -929,8 +960,9 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, sig_dmr), 400 },
 		{ offsetof(settings_t, sig_fm), 403 },
 		{ offsetof(settings_t, reserved11), 406 },
+		{ offsetof(settings_t, aes_mi_res), 408 },
 	};
-	CHECK(sizeof(settings_t) == 408);
+	CHECK(sizeof(settings_t) == 412);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);
@@ -1212,6 +1244,42 @@ static void test_write_across_sectors(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+// settings_read_field: one field of the settings in force, whatever its width, as the struct holds it
+static void test_read_field(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	settings_t d, s;
+	settings_read(&d);
+	CHECK(SETTINGS_FIELD(brightness) == d.brightness && SETTINGS_FIELD(vfo_step_hz) == d.vfo_step_hz);
+	settings_t *w = settings_begin();
+	w->brightness = 0xA5;
+	w->auto_lock_s = 0xBEEF;
+	w->vfo_step_hz = 0xDEADBEEFu;
+	w->ref_trim_ppb = -1234;
+	w->lang[0] = 'i';
+	w->lang[1] = 't';
+	w->privacy_key[0] = 0x80000001u;
+	w->privacy_type[0] = 3;
+	settings_end(1);
+	settings_read(&s);
+	CHECK(SETTINGS_FIELD(brightness) == 0xA5 && SETTINGS_FIELD(auto_lock_s) == 0xBEEF &&
+	      SETTINGS_FIELD(vfo_step_hz) == 0xDEADBEEFu);
+	CHECK(SETTINGS_FIELD(ref_trim_ppb) == -1234 && SETTINGS_FIELD(ref_trim_ppb) == s.ref_trim_ppb);	// the sign comes back
+	CHECK(SETTINGS_FIELD(lang[0]) == 'i' && SETTINGS_FIELD(lang[1]) == 't');
+	CHECK(SETTINGS_FIELD(privacy_key[0]) == 0x80000001u && SETTINGS_FIELD(privacy_type[0]) == 3);
+	CHECK(SETTINGS_FIELD(zone_index) == s.zone_index && SETTINGS_FIELD(net_flags) == s.net_flags);
+	// the last byte of the struct, and ranges that aren't a field
+	CHECK(settings_read_field(sizeof(settings_t) - 1, 1) == ((const uint8_t *)&s)[sizeof(settings_t) - 1]);
+	CHECK(settings_read_field(sizeof(settings_t), 1) == 0 && settings_read_field(sizeof(settings_t) - 1, 2) == 0);
+	CHECK(settings_read_field((size_t)-1, 4) == 0 && settings_read_field(0, 3) == 0 && settings_read_field(0, 8) == 0);
+	// the value readers the fields feed give what the struct's do
+	CHECK(settings_theme_of(s.theme) == settings_theme(&s) && settings_updown_home_of(s.updown_home) == settings_updown_home(&s));
+	CHECK(settings_crash_contact_of(s.theme, s.updown_home) == settings_crash_contact(&s) &&
+	      settings_crash_mode_of(s.accent) == settings_crash_mode(&s) &&
+	      settings_zs_accept_of(s.zs_offers) == settings_zs_accept(&s));
+}
+
 int main(void)
 {
 	test_journal_basic();
@@ -1221,9 +1289,11 @@ int main(void)
 	test_settings_cuts();
 	test_settings_versions();
 	test_foreign();
+	test_hold_claim();
 	test_native_and_jobs();
 	test_settings_layout();
 	test_crash_bits();
+	test_read_field();
 	test_sound_flags();
 	test_map_end();
 	test_map_for();

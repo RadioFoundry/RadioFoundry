@@ -408,7 +408,9 @@ PIC_MASK_1 for v ≥ 64.
 Level mode still acts on the line rising (measured with timer 6, source 6, through the debug link's SoC register
 access, debuglink.md 3.24): a rise while the source is masked sets its INT_ST bit and is delivered when it is unmasked;
 after the request is taken, a line still high does not interrupt again, unmasked and with the INT_ST bit still set,
-until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9).
+until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9). Clearing the
+INT_ST bit while the source is masked does not drop a held rise: the request is still delivered at the unmask
+(measured on the modem's system source, 29). A source left masked stays silent.
 
 Dispatch: all 64 user vectors (32–95) point at one common entry; it saves context, writes 0x04 to PIC_COW1, takes the
 vector number from PSR bits 23:16, subtracts 32 and calls through a 64-entry software table.
@@ -622,8 +624,11 @@ The case's bezel hides the panel's edges: RadioFoundry's safe-area insets are 10
 was still clipped (measured in a half-resolution frame: 5 px left, 4 px right, 3 px top and 2 px bottom there).
 
 RadioFoundry drives the panel at full resolution in 16 colors: the core's frame buffer holds a 4-bit palette index per pixel
-(37.5 KB; RGB565 would take 150 KB), and each changed row goes out as RGB565 through the palette (`gfx.c`,
-`st7789_write_rows_indexed`).
+of the safe area inside the insets only (220 x 310, 34,100 B, where the whole panel would take 37.5 KB and RGB565 150 KB;
+`GFX_FB_SAFE_AREA` in `board.mk`, `hal_display_t.fb_safe_area`). Each changed row goes out as RGB565 through the
+palette into that window of the panel (`gfx.c`, `st7789_write_window_indexed`), and the insets are filled with the
+background color with the first frame and whenever the background changes (`st7789_fill`). Nothing is drawn in them.
+Screen captures (debug link, web page, screenshots) put them back in the background color.
 
 This board uses MADCTL 0xC0 (rotated 180°), inversion on and a 240 × 320 address window. The [panel reference](display-st7789.md#reset-and-initialization) gives the reset and initialization sequence. The original panel sequence allowed 10 ms around an inversion change.
 
@@ -695,7 +700,7 @@ like an AGC/gain table).
 | Order | mute (0x30 = 0000), band select (0x1A and 0x40), 0x38, 0x39, bandwidth (0x43), state (0x30) |
 | State register 0x30 | 0x0000 idle; 0xBFF1 RX on; 0xC1FE TX on. Always go through idle between RX and TX |
 | Bandwidth 0x43 | 0x3028 = 25 kHz FM; 0x4008 = 12.5 kHz FM; **0x4048 = DMR** (12.5 kHz with bit 6 set) |
-| FM TX extra writes | 0x3F = 0000, 0x40 = 34EA, 0x37 = 1D0F before switching to TX (analog only) |
+| FM TX extra writes | 0x3F = 0000, 0x40 = 34EA, 0x37 = 1D0F before switching to TX (analog only); then 0x24 = 0000 (its receive value back at the next switch to RX) and, with a valid calibration, 0x40 = 0x3400 \| the band's TX deviation byte (calibration +0x1C UHF / +0xAB VHF, the `BF_ROW_REG40` row). 0x50 = 3B18 after the switch to TX, BB18 when the transmission ends |
 
 Band select by frequency (f in 10 Hz units; first matching row wins):
 
@@ -1115,7 +1120,7 @@ at low power and an SDR on the frequency:
 | Codec | the program flash's code window matched the `DM32.NRFB.01.050 program flash` profile's SHA-256 (`8d7f57eb...`, `codec-dm32.md`): a second radio with this build carries the same code there |
 
 Not checked on this radio: CTCSS or DCS on transmit or receive, battery save (the receiver sleep row), registers 0x3D
-and 0x0C read back by hand, and air band AM (which set-up B doesn't have yet, below).
+and 0x0C read back by hand, and air band AM.
 
 | | Classic section (set-up A, 8.2-8.8) | Newer section (set-up B) |
 |---|---|---|
@@ -1124,8 +1129,13 @@ and 0x0C read back by hand, and air band AM (which set-up B doesn't have yet, be
 | 0x30 into RX / TX | idle, then 0xBFF1 / 0xC1FE | idle, 0x0200, then 0xBFF1 / 0xC1FE |
 | 0x1A, 0x40 | band words (8.3) | 0x1A not written; 0x40 = 0x34F0, on FM transmit 0x3480 + the calibration byte |
 | DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user); 0x6943 / 0xB2FD works both ways (user, 2) |
-| 0x50 around each switch to TX | not written | FM: 0xBB20 before, 0x3B20 after (user: after only); DMR burst: 0x3B18 after (user: 0x3B20) |
-| 0x2E / 0x2F at each receive tune | not written | 0x8608 / 0x1890 with CTCSS, 0x9608 / 0x9890 with DCS or none |
+| 0x50 around TX | 0x3B18 after each switch to TX (FM, and each DMR burst), 0xBB18 when the transmission ends (b15 = TX audio mute, b9:0 the limit) | same |
+| 0x40 on FM transmit | 0x3400 \| the calibration byte | 0x3480 + the calibration byte |
+| 0x24 (tone decoder input selects) | 0 on FM transmit, the value before it back at the next switch to RX | same |
+| 0x7D | 0xE35E (receive digital gain b12:8 = 3; the low byte the analog mic step) | 0xE92C (receive digital gain 9; the same mic step, from a 1F 22 26 29 2C table where set-up A's is 16 18 1A 1C 1E) |
+| FD6818 GPIO 5 | not set | function 1: 0x33 b9 and b1 clear, 0x34 b7:4 = 1 |
+| 0x28 | not written | 0x0A40, 0x0B40 while the FM squelch is open (b8 is documented read-only) |
+| 0x2E / 0x2F at each receive tune | not written | 0x9608 / 0x9890 with DCS, 0x8608 / 0x1890 with CTCSS or none |
 | HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable). Clear: DMR decodes (user, 2) |
 | Receiver sleep (8.8) | 0x37 = 0x1D11 / 0x1D00, wake 0x1F1F, 0x1F0F | 0x37 = 0x9D17 (FM) / 0x9D00 (DMR), wake 0x9D1F (user: idle only) |
 | 0x0C bit 9 (synthesizer locked) on set-up A | set at every frequency tried, 136-520 MHz | never set (user; user, 2: the start-up check chose B) |
@@ -1140,9 +1150,10 @@ for 0x0C bit 9 to read set three times in a row, 1 ms apart (the bit can read se
 settles). No lock: set-up B the same way. Set-up B locks on both sections, so A goes first, and when B locks A is tried
 once more with 60 ms, so a slow lock on the classic section isn't taken for the newer one. Neither locking leaves
 set-up A and refuses every transmission. The diagnostics line `flash ... cal ... rf X` names the result: `A`, `B`, or `-` for
-neither. Set-up B has no AM receive yet (8.7 is set-up A's).
+neither. Air band AM uses the 8.7 writes on both sections; set-up B's FM words for 0x13 and 0x4A (0x03DF, 0x5430) go
+back when AM ends.
 
-With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also the power-on 0x2F.
+With no receive tone RadioFoundry writes the CTCSS 0x2E / 0x2F pair.
 
 ## 9. Audio path
 
@@ -1182,6 +1193,14 @@ Values written at init; field meanings from the datasheet:
 | 0x30 | DR_ADC_AGC | 0x34 | AGC data byte |
 | modem 0x088 | LINEOUT_CTRL | 0x01 | line out 2 enabled |
 
+Mic level at the vocoder (measured 2026-11-19, a person at the mic, an over through this radio's AMBE+2 encoder
+captured on an SDR and decoded in software): speech at -31 dBFS (rms of the loudest 30 % of 100 ms blocks), 13 dB
+under another maker's handheld's digital voice decoded the same way (-18 dBFS); clear, only quiet. The encoder reaches
+full scale (the bench's speech clip on DMR), so the level is lost in the mic path: GCR_ADCL's 11 dB, with no other
+gain. The board leaves the register as it is (it also feeds the VOX meter) and asks for 12 dB on the PCM before the
+AMBE+2 encoder, with the core's peak limiter (`hal_radio_t.mic_pcm_db`, [radio-features.md](radio-features.md) 3.6).
+Expected: about -19 dBFS; not yet measured on air.
+
 APRS AFSK transmit (measured on the SDR bench, a UHF test frequency, 25 kHz, lowest power): the tones go out with
 the microphone on the DMR path (0x2E = 0) and the codec's microphone muted. On the FM path (0x2E = 1) the microphone
 rode on the tones (#828). The FD6818's audio input takes the tones hot, with mark about 4 dB under space: PCM 435
@@ -1196,8 +1215,8 @@ speaker plays FM through the HR_C7000 instead of straight from the FD6818. A fla
 For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
 
 - **Host port**: the SoC's USB controller has no connector (3.11), so the host port is the programming cable's UART0
-  at 115200 baud (3.1). USB audio and the network personality are out; serial audio (USRP in SLIP frames) is the
-  transport.
+  at 115200 baud (3.1). USB audio and the network personality are out. Serial audio (USRP over the link) would be the
+  transport, but its PCM needs more than 115200 baud carries: `NET_USRP` is not written for this radio.
 - **DMR**: the SoC's mic and speaker PCM buffers feed the CPU's AMBE codec, as on the STM32 radios
   ([modem-hrc7000.md](modem-hrc7000.md) 1, 6.2).
 - **FM**: the C7000's FM block demodulates receive audio and plays it through the codec DAC (AUDIO_CONTROL bit 6), and
@@ -1463,14 +1482,14 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 |---|---|---|
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/memory.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `boards/dm32/memory.ld` |
-| SRAM | one region, 0x10000..0x43A00 (211,456 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), `.ram_lo` (the state the core marks `RFOUNDRY_CPU_RAM`, the zeroed state of the radio task, APRS, hotspot rings and DMR data buffers, and the interrupt stack), data, bss (RTOS heap inside, the network buffers) and the start-up stack. 0x43A00..0x58000 (83,456 B) is the codec window and is not linked. See 17.1 | `boards/dm32/memory.ld`, `platform/hrc7000/common.ld` |
+| SRAM | one region, 0x10000..0x43A00 (211,456 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), `.ram_lo` (the state the core marks `RFOUNDRY_CPU_RAM`, the zeroed state of the radio task, APRS, hotspot rings and DMR data buffers, and the interrupt stack), data, bss (the network buffers), and the RTOS heap last, whose top 2 KB is the start-up stack until the scheduler runs. 0x43A00..0x58000 (83,456 B) is the codec window and is not linked. See 17.1 | `boards/dm32/memory.ld`, `platform/hrc7000/common.ld` |
 | Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E38 the codec's tables (copied at first use); 0x18004F90..0x18007EF0 `.modem_bss`, the cold state the core marks `RFOUNDRY_COLD_RAM` (17.1); 0x18007EF0..0x18008000 the crash log | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c`, `boards/dm32/memory.ld`, `platform/hrc7000/crash_hrc.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot; 4: APRS AFSK, tops up the prompt FIFO every 2 ms while sending | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c`, `platform/hrc7000/hrc_afsk.c` |
 | RTOS | FreeRTOS, port from the T-HEAD CK802 one: 17-word frame (r0-r13, r15, PSR, PC), switch at interrupt exit or by `vPortYield` | `platform/hrc7000/freertos/` |
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
-| Display | 240x320 in 16 colors (a 37.5 KB frame buffer of palette indexes); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
+| Display | 240x320 in 16 colors (a 33.3 KB frame buffer of palette indexes for the 220x310 safe area); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
 | Data flash | SPI0 plus manual CS. The driver accepts any JEDEC ID with a known capacity, including GD25Q128, Puya and Boya. See the [16 MiB flash layout](platform-hrc7000.md#data-flash-layout). On this board the open-firmware region ends at 0xF00000. Optional satellite snapshots occupy 0x71B000–0x71DFFF. The stub uses 0x71E000–0x71FFFF for its data-flash write test. The map has no calibration window or TFTP staging area. | [SPI0 driver](../../platform/hrc7000/flash_spi0.c) |
 | Calibration | 11, read only; a decoded copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
@@ -1490,7 +1509,7 @@ initializer (both are `NOLOAD`: an initial value would be dropped).
 |---|---|
 | `.vectors`, `.ramfunc` | the vector table (512 B) and the RAM code: interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue |
 | `.ram_lo` | the `RFOUNDRY_CPU_RAM` state (radio task, APRS, hotspot rings, DMR data) and the 2 KB interrupt stack |
-| `.data`, `.bss` | frame buffer 40 KB, RTOS heap 33 KB (every task stack and queue; `boards/dm32/freertos_board.h`), vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack |
+| `.data`, `.bss`, `.rtos_heap` | frame buffer 33.3 KB, vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame); then the RTOS heap, 33 KB (every task stack and queue; `boards/dm32/freertos_board.h`), last, with the start-up stack in its top 2 KB until the scheduler runs (`platform/hrc7000/common.ld`) |
 | `.modem_bss` (modem SRAM 0x18004F90..0x18007EF0, 12,128 B) | the `RFOUNDRY_COLD_RAM` state: the storage sector buffer (4 KB) and the open-firmware CPS request (2 KB); 5,984 B left |
 
 `.modem_bss` is a separate region (`MODEM_BSS` in `boards/dm32/memory.ld`) in the SRAM shared with the modem. It holds

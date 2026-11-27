@@ -57,7 +57,7 @@ void p25_tsbk_seal(uint8_t blk[P25_TSBK_BYTES])
 }
 
 // ── Blocks ──
-int p25_block_get(const uint8_t *unit, uint8_t k, uint8_t blk[P25_TSBK_BYTES])
+int p25_block_decode(const uint8_t *unit, uint8_t k, uint8_t blk[P25_TSBK_BYTES])
 {
 	uint8_t in[FEC_TRELLIS_OUT], out[FEC_TRELLIS_IN];
 	uint16_t at = (uint16_t)(BLOCK_AT + k * BLOCK_BITS);
@@ -68,6 +68,13 @@ int p25_block_get(const uint8_t *unit, uint8_t k, uint8_t blk[P25_TSBK_BYTES])
 	errs = fec_trellis_decode(FEC_TRELLIS_HALF, in, out);
 	for (unsigned i = 0; i < P25_TSBK_BYTES; i++)
 		blk[i] = (uint8_t)(out[4 * i] << 6 | out[4 * i + 1] << 4 | out[4 * i + 2] << 2 | out[4 * i + 3]);
+	return errs;
+}
+
+int p25_block_get(const uint8_t *unit, uint8_t k, uint8_t blk[P25_TSBK_BYTES])
+{
+	int errs = p25_block_decode(unit, k, blk);
+
 	if (p25_tsbk_crc(blk) != (uint16_t)(blk[10] << 8 | blk[11]))
 		return -1;
 	return errs;
@@ -446,7 +453,7 @@ uint16_t p25_isp_unit(uint8_t *unit, uint16_t nac, const uint8_t blk[P25_TSBK_BY
 	return n;
 }
 
-// ── Multi-block trunking: the header block (octet places unverified) ──
+// ── Multi-block trunking: the header block ──
 bool p25_mbt_parse(const uint8_t hdr[P25_TSBK_BYTES], p25_mbt_t *h)
 {
 	h->format = hdr[0] & 0x1F;
@@ -468,6 +475,67 @@ void p25_mbt_make(const p25_mbt_t *h, uint8_t hdr[P25_TSBK_BYTES])
 	p25_tsbk_seal(hdr);
 }
 
+uint32_t p25_packet_crc(const uint8_t *b, unsigned n)
+{
+	uint32_t crc = 0;
+
+	// GM(x) = 0x04C11DB7, most significant bit first, from zero; the remainder inverted (IM(x))
+	for (unsigned i = 0; i < n; i++) {
+		crc ^= (uint32_t)b[i] << 24;
+		for (unsigned k = 0; k < 8; k++)
+			crc = crc & 0x80000000u ? crc << 1 ^ 0x04C11DB7u : crc << 1;
+	}
+	return ~crc;
+}
+
+// Header: the alternate format, a trunking SAP, MFID 0, one data block, the opcode; LRA in octet 3, the system in
+// the low 12 bits of octets 4-5. Data: WACN 20 bits, 4 reserved, channel (T), channel (R) (not kept), service class,
+// packet CRC
+bool p25_mbt_net_parse(const uint8_t hdr[P25_TSBK_BYTES], const uint8_t data[P25_TSBK_BYTES], p25_tsbk_t *m)
+{
+	p25_mbt_t h;
+	uint32_t crc = (uint32_t)data[8] << 24 | (uint32_t)data[9] << 16 | (uint32_t)data[10] << 8 | data[11];
+
+	if (!p25_mbt_parse(hdr, &h) || h.format != P25_PDU_FMT_AMBTC || h.mfid != 0 || h.blocks != 1 ||
+	    h.opcode != P25_OP_NET_STS_BCST || p25_packet_crc(data, 8) != crc)
+		return false;
+	memset(m, 0, sizeof *m);
+	m->kind = P25_TSBK_NET;
+	m->opcode = P25_OP_NET_STS_BCST;
+	m->last = true;
+	m->u.net.lra = hdr[3];
+	m->u.net.sysid = (uint16_t)((hdr[4] & 0x0F) << 8 | hdr[5]);
+	m->u.net.wacn = (uint32_t)data[0] << 12 | (uint32_t)data[1] << 4 | data[2] >> 4;
+	m->u.net.ch = (uint16_t)(data[3] << 8 | data[4]);
+	m->u.net.ssc = data[7];
+	return true;
+}
+
+void p25_mbt_net_make(const p25_tsbk_t *m, uint8_t hdr[P25_TSBK_BYTES], uint8_t data[P25_TSBK_BYTES])
+{
+	p25_mbt_t h = { .format = P25_PDU_FMT_AMBTC, .sap = 61, .mfid = 0, .blocks = 1, .opcode = P25_OP_NET_STS_BCST };
+	uint32_t crc;
+
+	p25_mbt_make(&h, hdr);
+	hdr[1] |= 0xC0;
+	hdr[3] = m->u.net.lra;
+	hdr[4] = (uint8_t)((m->u.net.sysid >> 8) & 0x0F);
+	hdr[5] = (uint8_t)m->u.net.sysid;
+	p25_tsbk_seal(hdr);
+	memset(data, 0, P25_TSBK_BYTES);
+	data[0] = (uint8_t)(m->u.net.wacn >> 12);
+	data[1] = (uint8_t)(m->u.net.wacn >> 4);
+	data[2] = (uint8_t)((m->u.net.wacn & 0x0F) << 4);
+	data[3] = (uint8_t)(m->u.net.ch >> 8);
+	data[4] = (uint8_t)m->u.net.ch;
+	data[7] = m->u.net.ssc;
+	crc = p25_packet_crc(data, 8);
+	data[8] = (uint8_t)(crc >> 24);
+	data[9] = (uint8_t)(crc >> 16);
+	data[10] = (uint8_t)(crc >> 8);
+	data[11] = (uint8_t)crc;
+}
+
 // ── Channels to frequencies ──
 uint32_t p25_chan_hz(uint16_t ch, uint32_t base_hz, uint16_t spacing5, uint8_t slots)
 {
@@ -479,6 +547,51 @@ uint32_t p25_chan_hz(uint16_t ch, uint32_t base_hz, uint16_t spacing5, uint8_t s
 	if (!base_hz || step > UINT32_MAX - base_hz)
 		return 0;
 	return base_hz + step;
+}
+
+// Explicit status broadcasts: Aeroflex Advanced P25 Control Channel Functions, figures 5 and 6.
+bool p25_mbt_status(const p25_rx_unit_t *u, uint8_t normalized[P25_TSBK_BYTES])
+{
+	uint8_t hdr[P25_TSBK_BYTES], data[P25_TSBK_BYTES];
+	p25_mbt_t h;
+	if (u->duid != P25_DUID_PDU || u->nsyms < p25_blocks_syms(2) ||
+	    p25_block_get(u->air, 0, hdr) < 0 || !p25_mbt_parse(hdr, &h) ||
+	    h.format != P25_PDU_FMT_AMBTC || h.blocks != 1 || (h.mfid != 0 && h.mfid != 1) ||
+	    !(hdr[0] & 0x20) || (h.opcode != P25_OP_NET_STS_BCST && h.opcode != P25_OP_RFSS_STS_BCST))
+		return false;
+	if (p25_block_decode(u->air, 1, data) < 0)
+		return false;
+	// The data block carries a packet CRC-32, not the header's CRC-16.
+	uint32_t crc = 0;
+	for (unsigned i = 0; i < 8; i++) {
+		crc ^= (uint32_t)data[i] << 24;
+		for (unsigned b = 0; b < 8; b++)
+			crc = (crc & 0x80000000u) ? (crc << 1) ^ 0x04C11DB7u : crc << 1;
+	}
+	uint32_t want = (uint32_t)data[8] << 24 | (uint32_t)data[9] << 16 | (uint32_t)data[10] << 8 | data[11];
+	if (~crc != want)
+		return false;
+	p25_tsbk_t m = { .opcode = h.opcode };
+	uint16_t sysid = (uint16_t)((hdr[4] & 15u) << 8 | hdr[5]);
+	if (h.opcode == P25_OP_NET_STS_BCST) {
+		m.kind = P25_TSBK_NET;
+		m.u.net.lra = hdr[3];
+		m.u.net.sysid = sysid;
+		m.u.net.wacn = (uint32_t)data[0] << 12 | (uint32_t)data[1] << 4 | data[2] >> 4;
+		m.u.net.ch = (uint16_t)(data[3] << 8 | data[4]);
+		m.u.net.ssc = data[7];
+	} else {
+		m.kind = P25_TSBK_RFSS;
+		m.u.site.lra = hdr[3];
+		m.u.site.flags = (hdr[4] >> 4) & 1u;
+		m.u.site.sysid = sysid;
+		m.u.site.rfss = data[0];
+		m.u.site.site = data[1];
+		m.u.site.ch = (uint16_t)(data[2] << 8 | data[3]);
+		m.u.site.ssc = data[6];
+	}
+	p25_tsbk_make(&m, normalized);
+	return true;
 }
 
 #endif

@@ -107,6 +107,11 @@ source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "ha
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"
 
+[feature.dmr_aes]
+switch = "DMR_AES"
+spec = "docs/spec/dmr-voice.md"
+manual = "A receiver of another make with the same AES-256 key and key ID plays our over from key-up and when it joins after key-up, simplex and through a repeater (the missing-key refusal is test_dmr_aes.py)"
+
 [feature.dmr_data_privacy]
 requires = "DMR_PRIVACY"
 # Packet data under a privacy key: the privacy header, the user data encrypted, or held back
@@ -304,6 +309,10 @@ switch = "APRS_RX"
 hardware = "FM receive audio sampled by the processor (the AFSK input path)"
 spec = "docs/spec/aprs.md"
 
+[feature.aprs_mute]
+requires = "APRS_RX"
+spec = "docs/spec/aprs.md"
+
 [feature.aprs_igate]
 switch = "APRS_IGATE"
 spec = "docs/spec/aprs.md"
@@ -433,10 +442,6 @@ switch = "NET_WEBCTL"
 spec = "docs/spec/tcp-services.md"
 planned_tests = ["tests/hil/test_webctl.py::test_webctl_keys_ptt_audio"]
 
-[feature.net_radio_udp]
-switch = "NET_RADIO_UDP"
-spec = "docs/spec/tcp-services.md"
-
 [feature.net_rigctl]
 switch = "NET_RIGCTL"
 spec = "docs/spec/tcp-services.md"
@@ -539,6 +544,11 @@ spec = "docs/spec/ui.md"
 switch = "LANG_ZH"
 spec = "docs/spec/ui.md"
 
+[feature.cjk_glyphs]
+switch = "CJK_GLYPHS"
+spec = "docs/spec/ui.md"
+source = ["core/ui/cjk_font.c", "core/ui/cjk_font_data.c"]
+
 [feature.lang_default_es]
 switch = "LANG_DEFAULT_ES"
 spec = "docs/spec/ui.md"
@@ -584,6 +594,12 @@ source = ["tools/rfoundry/rfoundry"]
 switch = "AIR_RAW"
 spec = "docs/spec/debuglink.md"
 source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
+
+[feature.debuglink_dmrip]
+switch = "DEBUGLINK_DMRIP"
+spec = "docs/spec/debuglink.md"
+source = ["core/debuglink/debuglink_dmrip.c", "core/debuglink/dl_dmrip.c", "core/debuglink/dl_dmrip.h",
+          "tools/rfoundry/rfoundry/dmrip.py"]
 
 [feature.audio_probe]
 switch = "AUDIO_PROBE"

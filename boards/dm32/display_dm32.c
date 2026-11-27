@@ -2,7 +2,10 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DM-32UV display: 240x320 ST7789-class TFT on the SoC's i8080 LCD controller, backlight on GPIO 0x0F / PWM0
 // (docs/spec/hardware-dm32.md 3.6, 3.10, 7). Full resolution in 16 colors: the core's frame buffer holds a palette
-// index per pixel (37.5 KB; RGB565 would take 150 KB), and each row goes out as RGB565 through the palette.
+// index per pixel, and each row goes out as RGB565 through the palette. With GFX_FB_SAFE_AREA (board.mk) the frame
+// buffer holds only the safe area inside the bezel's insets (220 x 310, 33.3 KB instead of the panel's 37.5 KB;
+// RGB565 would take 150 KB): its rows go to that window of the panel, and the insets are filled with the background
+// color whenever it changes (hal_display_t fb_safe_area).
 //
 // The LCD data lines DB0-DB4 are also the keypad rows. Every LCD burst holds dm32_lcdbus_lock() and hands the bus
 // pins to the controller itself, so the key scan may leave them as GPIOs when it unlocks.
@@ -22,6 +25,12 @@
 
 #define PANEL_W			240u
 #define PANEL_H			320u
+#define SAFE_W			(PANEL_W - CONFIG_DISPLAY_INSET_LEFT - CONFIG_DISPLAY_INSET_RIGHT)
+#define SAFE_H			(PANEL_H - CONFIG_DISPLAY_INSET_TOP - CONFIG_DISPLAY_INSET_BOTTOM)
+#if GFX_FB_SAFE_AREA
+// config.mk sizes the frame buffer from the same insets; this catches the two drifting apart
+_Static_assert((SAFE_W + 1u) / 2u * SAFE_H <= GFX_FB_BYTES, "the safe area's frame buffer exceeds GFX_FB_BYTES");
+#endif
 
 static bool ready;
 
@@ -127,8 +136,29 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	if (!ready || fb == NULL) {
 		return;
 	}
+#if GFX_FB_SAFE_AREA
+	st7789_write_window_indexed(&panel, (const uint8_t *)fb, palette, CONFIG_DISPLAY_INSET_LEFT,
+				    CONFIG_DISPLAY_INSET_TOP, SAFE_W, y0, y1);
+#else
 	st7789_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
+#endif
 }
+
+#if GFX_FB_SAFE_AREA
+// The four insets in the background color: the strips above and below the safe area across the whole width, then the
+// two beside it (st7789_fill skips an empty one)
+static void fill_insets(uint16_t color)
+{
+	if (!ready) {
+		return;
+	}
+	const uint16_t l = CONFIG_DISPLAY_INSET_LEFT, t = CONFIG_DISPLAY_INSET_TOP;
+	st7789_fill(&panel, 0, 0, PANEL_W, t, color);
+	st7789_fill(&panel, 0, (uint16_t)(t + SAFE_H), PANEL_W, PANEL_H, color);
+	st7789_fill(&panel, 0, t, l, (uint16_t)(t + SAFE_H), color);
+	st7789_fill(&panel, (uint16_t)(l + SAFE_W), t, PANEL_W, (uint16_t)(t + SAFE_H), color);
+}
+#endif
 
 const hal_display_t dm32_display = {
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
@@ -136,6 +166,10 @@ const hal_display_t dm32_display = {
 	.width = PANEL_W,
 	.height = PANEL_H,
 	.bpp = 4,
+#if GFX_FB_SAFE_AREA
+	.fb_safe_area = true,
+	.fill_insets = fill_insets,
+#endif
 	.init = init,
 	.flush_indexed = flush,
 	.set_backlight = set_backlight,

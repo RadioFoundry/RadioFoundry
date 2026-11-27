@@ -12,8 +12,10 @@
 #ifndef RFOUNDRY_SETTINGS_H
 #define RFOUNDRY_SETTINGS_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 
 #define SETTINGS_LAYOUT		1	// bumped only when a field changes meaning or moves (old records then reset)
 #define SETTINGS_SAVE_DELAY_MS	2000
@@ -253,6 +255,9 @@ typedef struct {
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
 	uint8_t reserved11[2];		// 0
+	// DMR AES: the end of the MI positions reserved for our overs (dmrAesSeq_t, dmr-voice.md 5.1; appended: an older
+	// record reads 0, no position yet). A restart starts here, past every position sent
+	uint32_t aes_mi_res;
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -279,7 +284,8 @@ typedef struct {
 
 // Zone shares are accepted unless the user turned them off: 0 (a record from before, or never set) and the old Ask
 // (1) both accept
-static inline bool settings_zs_accept(const settings_t *s) { return s->zs_offers != SETTINGS_ZS_OFF; }
+static inline bool settings_zs_accept_of(uint8_t zs_offers) { return zs_offers != SETTINGS_ZS_OFF; }
+static inline bool settings_zs_accept(const settings_t *s) { return settings_zs_accept_of(s->zs_offers); }
 
 // The DMR VFO's talk target (docs/spec/settings-store.md 3): a 24-bit ID and a private call flag, packed into bytes
 // that were reserved or held a small value, so the record stays 236 bytes and an older record reads as "none" (0).
@@ -340,21 +346,29 @@ static inline void settings_set_aprs_cp_ssid(settings_t *s, uint8_t ssid_plus_1)
 // talkgroup number first, 1: its name first)
 #define SETTINGS_SMALL_MASK	0x03u
 #define SETTINGS_HOME_LABEL_FIRST	0x80u
-static inline uint8_t settings_theme(const settings_t *s) { return s->theme & SETTINGS_SMALL_MASK; }
-static inline uint8_t settings_updown_home(const settings_t *s)
+// Each reader has an _of form that takes the field's value, for a caller that read just that field (SETTINGS_FIELD)
+static inline uint8_t settings_theme_of(uint8_t theme) { return theme & SETTINGS_SMALL_MASK; }
+static inline uint8_t settings_theme(const settings_t *s) { return settings_theme_of(s->theme); }
+static inline uint8_t settings_updown_home_of(uint8_t updown_home)
 {
-	return (s->updown_home & 3u) <= 2u ? s->updown_home & 3u : 0;
+	return (updown_home & 3u) <= 2u ? updown_home & 3u : 0;
 }
+static inline uint8_t settings_updown_home(const settings_t *s) { return settings_updown_home_of(s->updown_home); }
 
 // The crash report (docs/spec/crash-log.md 5.2), packed into spare bits so the record stays 236 bytes and an older
 // record reads as off with no target: the mode (0 off, 1 ask, 2 send at once) in accent bits 4-5; the target's
 // codeplug contact number (0 none, else 1..CODEPLUG_CONTACTS_MAX, 11 bits) bits 0-5 in theme bits 2-7 and bits 6-10
 // in updown_home bits 2-6. Firmware from before reads theme and updown_home with these bits as out of range: dark
 // and Up/Down = channel
-static inline uint8_t settings_crash_mode(const settings_t *s) { return (s->accent >> 4) & 3u; }
+static inline uint8_t settings_crash_mode_of(uint8_t accent) { return (accent >> 4) & 3u; }
+static inline uint8_t settings_crash_mode(const settings_t *s) { return settings_crash_mode_of(s->accent); }
+static inline uint16_t settings_crash_contact_of(uint8_t theme, uint8_t updown_home)
+{
+	return (uint16_t)((theme >> 2) | (((updown_home >> 2) & 0x1Fu) << 6));
+}
 static inline uint16_t settings_crash_contact(const settings_t *s)
 {
-	return (uint16_t)((s->theme >> 2) | (((s->updown_home >> 2) & 0x1Fu) << 6));
+	return settings_crash_contact_of(s->theme, s->updown_home);
 }
 static inline void settings_set_crash_mode(settings_t *s, uint8_t mode)
 {
@@ -403,7 +417,7 @@ static inline void settings_set_tones_off(settings_t *s, uint8_t off)
 // settings_t.net_flags (the USB network personality; 0 = as before)
 #define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)
 #define SETTINGS_NET_PASSTHROUGH	0x02u	// the PC is the endpoint of the radio's own IP data (docs/spec/usb-network.md 5.2)
-#define SETTINGS_NET_FIXED_LINK		0x04u	// the link is a fixed private pair (net_link_ip), not 12.<ID>/32 (5.3)
+#define SETTINGS_NET_FIXED_LINK		0x04u	// the link is a fixed private pair (net_link_ip), not 12.<ID> / 13.<ID>/32 (5.3)
 // settings_t.rs_flags
 #define SETTINGS_RS_ROGER_BEEP		0x01u
 #define SETTINGS_RS_TX_INHIBIT		0x02u
@@ -455,6 +469,7 @@ static inline void settings_set_tones_off(settings_t *s, uint8_t off)
 #define SETTINGS_APRS2_DMR_UDT		0x08u	// digital APRS as an ETSI UDT location (else Motorola LRRP)
 #define SETTINGS_APRS2_TO_IS		0x10u	// our own beacons to APRS-IS through the host helper
 #define SETTINGS_APRS2_DMR_GPS		0x20u	// our position in DMR voice calls (ETSI GPS Info LC, CONFIG_DMR_GPS)
+#define SETTINGS_APRS2_MUTE		0x40u	// the speaker stays off on the APRS frequency (decoding goes on)
 // aprs_misc bit 7: the position service's settings are set (core/position: aprs_lat, aprs_lon, aprs_alt_m,
 // aprs_pos_src, the ambiguity and SETTINGS_APRS2_DMR_GPS). They are also taken when aprs_stored is 1
 #define SETTINGS_APRS_MISC_POSITION	0x80u
@@ -486,14 +501,39 @@ settings_load_t settings_init(void);
 
 // A consistent copy
 void settings_read(settings_t *out);
+// One field of the settings in force, zero-extended: size bytes (1, 2 or 4) at byte offset of settings_t, copied under the
+// same lock as settings_read. For a caller deep in a task's stack, where a whole settings_t (a few hundred bytes) doesn't
+// fit; 0 for any other size or a range outside the struct. SETTINGS_FIELD(brightness) says it with the field's name and
+// type: a signed field comes back with its sign
+uint32_t settings_read_field(size_t offset, size_t size);
+#define SETTINGS_FIELD(f) ((__typeof__(((settings_t *)0)->f))settings_read_field(offsetof(settings_t, f), \
+							      sizeof(((settings_t *)0)->f)))
+// A 32-bit field equals value both in force and in the last saved record, checked under one lock.
+bool settings_u32_is_saved(size_t offset, uint32_t value);
 // Change: begin returns the live copy (under a short lock), end releases it and notes the time if anything changed
 settings_t *settings_begin(void);
 void settings_end(uint32_t now_ms);
 
 // Save once the changes have rested SETTINGS_SAVE_DELAY_MS (call it every 100 ms or so)
 void settings_poll(uint32_t now_ms);
-// Save now if anything changed; true when nothing is left unsaved
+// Save now if anything changed; true when nothing is left unsaved. False while held (settings_hold): nothing is saved,
+// so a caller that needs the change stored (a factory reset, a zone add or delete) doesn't go on
 bool settings_flush(void);
+
+#if CONFIG_RADIO_DETOUR
+// The detour's hold (docs/spec/debuglink.md 7.4): from settings_hold to settings_release nothing is saved, neither by
+// settings_poll nor by settings_flush (a power-off keeps the stored state from before the hold). Hold fails (false)
+// while changes wait for their save. Release with discard puts the live copy back to what is stored, dropping every
+// change made during the hold
+bool settings_hold(void);
+void settings_release(bool discard);
+bool settings_held(void);
+#else
+static inline bool settings_held(void)
+{
+	return false;
+}
+#endif
 
 void settings_get_stats(settings_stats_t *s);
 

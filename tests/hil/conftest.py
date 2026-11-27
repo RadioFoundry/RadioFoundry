@@ -138,6 +138,9 @@ def pytest_addoption(parser):
                      "bandwidth, one over per step")
     g.addoption("--mic-gain-window", type=float, default=30.0,
                 help="test_mic_gain: seconds the SDR bench records per over (unplug, key, talk, release in it)")
+    g.addoption("--dmrip-relay", default=os.environ.get("RFOUNDRY_DMRIP_RELAY"), metavar="route|HOST[:PORT]",
+                help="test_debuglink_dmrip over the air: the IP gateway's way to the radio (route: this host's route "
+                     "to 12.0.0.0/8; HOST[:PORT]: a relay)")
     hil_config.add_options(g)
     bringup_plugin.add_options(parser)
 
@@ -155,6 +158,7 @@ def pytest_configure(config):
         config.args += sorted(d for d in glob.glob(os.path.join(ROOT, "boards", "*", "hil"))
                               if glob.glob(os.path.join(d, "test_*.py")))
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
+    config.addinivalue_line("markers", "rf_fallback: the test checks --allow-rf itself if its fallback needs to transmit")
     config.addinivalue_line("markers", "bench_service: uses the bench board's transmitter or receiver through a "
                             "session (needs --bench-api, skips without one)")
     config.addinivalue_line("markers", "sdr_rx: uses the bench board's receiver and no transmitter. With bench_modem "

@@ -94,7 +94,16 @@ them.
 Read by the trunking follower ([p25-trunking.md](p25-trunking.md) 6).
 
 The generic header ([channel-modes.md](channel-modes.md) 7.1), with identity length 5 and flag bit 1 (transmit side)
-clear by default: a system without it is listen only, and the radio never registers or transmits on it. The own ID is the radio's unit ID on the system, 0 = the radio-wide one (1). The type's block:
+clear by default: a system without it is listen only, and the radio never registers or transmits on it. The own ID is the radio's unit ID on the system, 0 = the radio-wide one (1).
+
+The radio never registers, affiliates or transmits on a system whose WACN is 0xBEE00 through 0xBEEFF (`WACN & 0xFFF00
+== 0xBEE00`) or whose system ID is 0x00A, whatever flag bit 1 says. The values are `P25_WACN_NO_TX`,
+`P25_WACN_NO_TX_MASK` and `P25_SYSID_NO_TX` in `core/p25/p25.h`. The editor shows such a system as listen only: its
+form locks Transmit, hides the own ID, the control channels' TX frequency and the plan's TX offset, and the saved
+record has flag bit 1 clear. Nothing else is erased: the own ID, the TX frequencies, the TX offsets and the
+no-registration bit stay as entered. A test compares the editor's constants with `core/p25/p25.h`.
+
+The type's block:
 
 | Offset | Size | Field |
 |---|---|---|

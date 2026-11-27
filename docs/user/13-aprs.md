@@ -104,12 +104,19 @@ stations go into **Stations heard**, messages to your callsign appear in **Messa
 turned it on) passes packets on. Messages from internet stations (an APRS messaging service, for example) reach you
 through a nearby iGate. They appear under the sender's callsign, and the acknowledgment goes back to that sender.
 
+When a message arrives, a banner ("APRS message from &lt;callsign&gt;") appears on the home screen for about 8 seconds.
+The home screen's last-activity area also shows the sender's callsign and how long ago the message came in, in place
+of the usual "Last activity Xm ago".
+
 - It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.
   On other FM channels nothing is decoded.
 - The volume knob doesn't matter: a radio turned all the way down still decodes.
 - On a radio that decodes only what opens the squelch ([Radio reference](23-radios.md)), a packet must be strong enough to open it. Keep the squelch at its usual level, not tight.
 - Battery saving pauses while the radio listens for APRS: a sleeping receiver misses packets.
 - Receiving is on by default. Turn it off with `tools/rfoundry_debug.py aprs set rx 0` (FM only).
+- **Mute APRS audio** (the APRS page, above SSID): the speaker stays off on the APRS frequency, so packets and
+  noise there aren't heard; decoding, Stations heard and the green LED go on. Hold the monitor key to listen anyway.
+  Other channels play as usual.
 
 On a DMR channel, a DMR APRS position another radio sends (some makes send it as an NMEA position) also goes into
 **Stations heard**, whoever it is addressed to: usually the APRS gateway, as on FM every station heard is listed. It

@@ -100,9 +100,9 @@ selected setting.
 | Automatic (default) | Uses Tier III control-channel short data for up to 23 characters on a Tier III channel without data privacy. Longer messages and messages on other channels use ETSI IP text. |
 | ETSI | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
 | ETSI short | Radios that only show ETSI short data messages. Delivery is confirmed |
-| Motorola | MOTOTRBO radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
+| TMS | Commercial radios and dispatch software set to TMS text messages. Delivery is confirmed. Not in builds made without TMS support |
 
-If your radio was set up before ETSI became the default and its data settings were saved, it keeps sending Motorola
+If your radio was set up before ETSI became the default and its data settings were saved, the radio keeps sending TMS
 messages until you change the setting.
 
 ## Call alert
@@ -133,6 +133,9 @@ range.
 
 Your radio answers radio checks from others while **Settings > Connections > Answer radio checks** is on, the default.
 An answer is a short transmission the radio makes without you pressing PTT; turn the setting off if you don't want that.
+
+Radio checks work both ways with commercial DMR portables. Radio checks between a newer and an older RadioFoundry
+build get no answer until both radios are updated.
 
 ## Registration (ARS) and location (LRRP)
 

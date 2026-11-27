@@ -15,7 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
-| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 boards have not run on a radio, one V4A/V5 report has DMR transmit dropping out (#750), and SFR loses inbound voice frames. |
 | [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio. |
 | [Baofeng DM-36](#baofeng-dm-36) | DM36UV, DM36PRO, DM36 PLUS, DM36Ultra, MD36UV, AT36D, GT36D | Boot and debug link verified over the programming cable. Two-way FM and DMR voice checks are pending on this build. |
 <!-- end generated -->
@@ -104,8 +104,10 @@ The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware ha
 On a radio whose volume knob RadioFoundry reads, turning the knob shows the volume at the bottom of the screen (at the
 top on a screen that uses its bottom row, such as Quick settings): a bar of 16 steps and the step number. It goes away 3 s after you stop turning, and the screen under it carries on (a call,
 a menu). It also turns the backlight on. On a radio without a knob, the **Volume** key opens the volume screen
-instead. A radio whose volume control works after the radio chip (`volume.src` none) can't know the level, and shows
-nothing.
+instead. A radio whose volume control works after the radio chip (`volume.src` none) shows the bar only where
+RadioFoundry can read the knob's position. The knob alone sets the loudness there, so **Knob when locked** is not shown
+and a PC can't set the volume. The bar goes down to 0 only where the bottom of the knob's travel is known to be silent;
+otherwise its lowest step is 1.
 
 <img src="../ux/screens/160x128/volume_bar.png" width="200" alt="The volume bar at the bottom of Home after turning the knob">
 
@@ -217,6 +219,21 @@ can't, the radio comes back after 2 s and shows "Couldn't switch off / Turn the 
 A 160 x 128 color screen with the top 8 rows hidden: 160 x 120 visible. The screenshots in this
 manual are this size.
 
+### DM-1701 languages
+
+The default image is English and Spanish. Chinese builds beside it: the app region is sectors 3-9, 720 KB, and the
+two languages leave room with the debug link on
+([the feature matrix](../feature-matrix.md#whole-images)). Pick Chinese as the Radio language when you install with the
+web flasher ([Installing](02-installing.md)), or build it:
+
+```
+make BOARD=dm1701 CONFIG_LANG_ZH=y CONFIG_LANG_DEFAULT_ZH=y
+```
+
+The CI build (`board.toml [ci] extra`) builds the same image. A Chinese line is 16 pixels high, so while the radio is
+in Chinese the screen shows 5 list rows instead of 7 and Home has no zone line; English and Spanish keep the tighter
+layout.
+
 ### What the DM-1701 lacks
 
 - No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed
@@ -224,7 +241,7 @@ manual are this size.
   has one, to PA9. The radio finds it at start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module))
   and powers it only while **Settings > Location > GPS** is on.
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
-- No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
+- No APRS iGate (passing heard packets to APRS-IS) in the default image: `CONFIG_APRS_IGATE` is off by default.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 
 ### Verified on the DM-1701
@@ -302,6 +319,11 @@ steps through 100 mW, 1 W and 5 W. The radio refuses to transmit without a valid
 
 A 2-cell Li-ion pack, with the same percentage curve and the same thresholds as the DM-1701: low below 6.2 V,
 critical below 6.0 V. The voltage scale is assumed, not measured.
+
+### MD-380 speaker and programming cable
+
+The USB programming cable plugs into the speaker and microphone jack. The speaker is off while it is in: unplug it to
+hear the radio.
 
 ### MD-380 power switch
 
@@ -463,7 +485,11 @@ A 240 x 320 color screen. RadioFoundry uses its full resolution, with smooth (an
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
 - No VOX yet: the board code that reads the microphone level isn't written.
-- Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
+- The microphone reaches the digital voice codec quieter than on other radios (measured 13 dB under another
+  maker's handheld), so DMR adds 12 dB at **Mic gain** 5 and holds a loud voice back rather than letting it distort.
+  **Mic gain** moves it 2 dB a step either way. Not yet checked on air.
+- No audio linking (USRP): its received audio needs about 17.6 KB/s, more than the programming cable's PPP link
+  carries (about 11.5 KB/s).
 - No beeps while transmitting: the radio's beep path would put them on the air. A beep still playing when the
   transmission ends is heard from then on. The DMR talk permit tone is a single short beep played just before the
   radio transmits, while the screen shows ADMITTED ([DMR](09-dmr.md#the-talk-permit-tone)).
@@ -669,6 +695,8 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 - Air band and FM broadcast receive
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
+- No audio linking (USRP): its received audio needs about 17.6 KB/s, more than the programming cable's PPP link
+  carries (about 11.5 KB/s).
 
 ## Retevis RT10
 
@@ -718,8 +746,9 @@ A programming cable can hold the line low by itself. Then the flash starts whene
 ## TYT MD-9600
 
 Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **In testing.** One image serves every board revision. V1-V3 boards
-(original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx) and
-V4A/V5 (V26.xx) boards have not, so receive or transmit may not work on them. SFR is not supported yet.
+(original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx)
+boards have not. On one V4A/V5 (V26.xx) radio DMR transmit drops out ([#750](https://github.com/RadioFoundry/RadioFoundry/issues/750)),
+so receive or transmit may not work on these boards. SFR is not supported yet.
 
 The radio detects a V4A/V5 board by itself. It can't tell a V1-V3 board from a V4, so on those it asks once: the home
 screen says "Set: Board revision" and the radio won't transmit until you set it under Settings > Advanced > Hardware >

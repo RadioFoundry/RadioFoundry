@@ -20,21 +20,6 @@ static const char *word(uint8_t v, const char *const *names, uint8_t n)
 	return v < n ? names[v] : "?";
 }
 
-static unsigned deg_int(int32_t e7)
-{
-	return (unsigned)((e7 < 0 ? -(int64_t)e7 : e7) / 10000000);
-}
-
-static unsigned deg_frac(int32_t e7)
-{
-	return (unsigned)((e7 < 0 ? -(int64_t)e7 : e7) % 10000000);
-}
-
-static void deg(dl_text_t *t, const char *key, int32_t e7)
-{
-	dl_text(t, "%s=%s%u.%07u\n", key, e7 < 0 ? "-" : "", deg_int(e7), deg_frac(e7));
-}
-
 static void view_settings(dl_text_t *t)
 {
 	static const char *const vias[] = { "rf", "dmr", "both" };
@@ -50,7 +35,8 @@ static void view_settings(dl_text_t *t)
 		"set.aprs_power=%u\n", c.boot, c.level, c.txdelay, word(c.via, vias, 3), (unsigned)c.dmr_dst, c.power);
 	dl_text(t, "set.aprs_dmr_udt=%u\nset.aprs_kiss=%u\nset.aprs_rx=%u\nset.aprs_igate=%u\n",
 		c.dmr_udt, c.kiss, c.rx_on, c.igate);
-	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_to_is=%u\n", c.igate_tx, c.digi, c.to_is);
+	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_to_is=%u\nset.aprs_mute=%u\n", c.igate_tx, c.digi, c.to_is,
+		c.mute);
 }
 
 void debuglink_view_aprs(uint8_t part, dl_text_t *t)
@@ -73,8 +59,8 @@ void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 		(unsigned)v.freq_hz);
 	dl_text(t, "aprs.pos_src=%s\naprs.pos_valid=%u\n", word(v.pos_src, srcs, 4), v.pos_valid);
 	if (v.pos_valid) {
-		deg(t, "aprs.lat", v.lat);
-		deg(t, "aprs.lon", v.lon);
+		dl_text_deg(t, "aprs.lat", v.lat);
+		dl_text_deg(t, "aprs.lon", v.lon);
 		dl_text(t, "aprs.pos_age_s=%u\n", (unsigned)v.pos_age_s);
 	}
 	dl_text(t, "aprs.next_s=%d\naprs.last_why=%s\naprs.last_ms=%u\naprs.rf_active=%u\n",
@@ -167,6 +153,7 @@ static uint8_t set_field(uint8_t field, uint32_t val)
 	case DL_APRS_F_IGATE_TX: c.igate_tx = val != 0; break;
 	case DL_APRS_F_DIGI: c.digi = (uint8_t)val; break;
 	case DL_APRS_F_TO_IS: c.to_is = val != 0; break;
+	case DL_APRS_F_MUTE: c.mute = val != 0; break;
 	case DL_APRS_F_POWER:
 		if (val > board.power_count) {
 			return DL_ST_BAD_ARG;

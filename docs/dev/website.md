@@ -20,7 +20,9 @@ Use `--serve` to test the Satellite TLE Update page locally. A plain static serv
 
 The generator needs two Python packages, markdown-it-py and resvg_py (`pip install -r site/requirements.txt`, or prefix the
 command with `uv run --no-project --with-requirements site/requirements.txt`). The pages need no build step and no
-npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and runs the tests (Python step).
+npm packages: plain HTML, CSS and ES modules. The one outside library, Tom Select (the editor's searchable lists), is
+copied into `site/static/vendor/tom-select/`, whose README gives its version and how to update it.
+`tools/ci.sh` builds the site and runs the tests (Python step).
 
 Cloudflare Pages builds and deploys it (see [Hosting](#hosting)):
 
@@ -204,6 +206,11 @@ flasher, the Codeplug Editor and the Tools page get their strings from the same 
 (`<script id="i18n">`, read by `static/js/i18n.js`). Text that comes from the repository (feature help, variant
 reasons) is English at its source; a catalog can override it with `feature.<SWITCH>.title`, `feature.<SWITCH>.help`,
 `variant.<id>.title`, `variant.<id>.summary` or `group.<slug>`.
+
+A page embeds only the keys under the prefixes its builder gives `subset()` in `site/rfoundrysite/build.py`. A module
+several pages import (`flasher/dom.js`, `flasher/link.js`) asks for its own keys, so a page that imports one needs
+those prefixes too, or the visitor sees the key itself (#938). `site/tests/i18n_test.py` follows each page's imports
+and fails when a key written out in a `t()` call is not embedded; a key built from a variable is not checked.
 
 | `languages.json` field | Meaning |
 |---|---|

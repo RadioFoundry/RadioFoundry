@@ -58,6 +58,10 @@ enum {
 	DL_VIEW_P25,		// P25 on the channel: the call, settings, engine and voice counters (debuglink_view_p25.c)
 	DL_VIEW_P25_TRUNK,	// a trunked P25 channel's follower: system, channels, call followed, counters (the same file)
 	DL_VIEW_NXDN,		// NXDN on the channel: the call, settings, the provider's fit, engine counters (debuglink_view_nxdn.c)
+	// New sections go above: dmrip, only in builds with the switch, stays last so no other section's number moves
+#if CONFIG_DEBUGLINK_DMRIP
+	DL_VIEW_DMRIP,		// the debug link over the air: its counters and the detour (debuglink_dmrip.c)
+#endif
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -91,6 +95,23 @@ void debuglink_p25_reset(void);
 void debuglink_view_nxdn(const radio_view_t *v, dl_text_t *t);
 void debuglink_nxdn_reset(void);
 void debuglink_view_keys(dl_text_t *t);
+// RADIO operations (DL_CMD_RADIO, first payload byte; docs/spec/debuglink.md 3.6): 1-19, 25, 27, 28 in debuglink.c,
+// the rest in debuglink_view_radio.c
+enum {
+	DL_OP_CHANNEL_STEP = 1, DL_OP_ZONE_POS, DL_OP_ZONE, DL_OP_VFO, DL_OP_VFO_SET, DL_OP_VFO_STEP, DL_OP_POWER,
+	DL_OP_SQUELCH, DL_OP_BANDWIDTH, DL_OP_TONE, DL_OP_MONITOR, DL_OP_CLEAR_TEMP, DL_OP_REPLY_CANCEL, DL_OP_HOTSPOT_EXIT,
+	DL_OP_DMR_TARGET, DL_OP_DMR_CONTACT, DL_OP_DMR_CALL_BACK, DL_OP_DMR_TARGET_CLEAR, DL_OP_DMR_PRIVACY,
+	DL_OP_USB_NETWORK = 25,
+	DL_OP_USB_NET_SETTINGS = 27,	// flags u8, link IP u32 (stored; docs/spec/usb-network.md 5)
+	DL_OP_PPP = 28,			// on u8: PPP on the serial host port (docs/spec/ppp.md; CONFIG_NET_PPP builds)
+};
+// SETTING ids outside radio_settings_t (debuglink_view_radio.c)
+#define DL_SETTING_MIC_GAIN	29u	// the mic gain step (radio/mic_gain.h), RAM only
+#define DL_SETTING_ENC_OPTIONS	31u	// the vocoder's encode options (VOCODER_OPT_*), RAM only
+#define DL_SETTING_ZS_OFFERS	32u	// zone share offers (zone_share_api.h), RAM only
+#define DL_SETTING_REF_TRIM	35u	// the reference trim, ppb two's complement (radio/ref_trim.h), RAM only
+#define DL_SETTING_TONES_OFF	36u	// Settings > Sound tones (radio_settings_t.tones_off)
+#define DL_SETTING_GPS		37u	// Settings > Location > GPS (settings_t.gps, board_t.gps)
 enum {
 	DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24,
 	DL_OP_ROAM = 26, DL_OP_VIBRATE = 29, DL_OP_VOLUME = 30, DL_OP_DMR_FIELDS = 31, DL_OP_VFO_COPY = 32,
@@ -155,6 +176,25 @@ void debuglink_view_air(dl_text_t *t);
 // unavailable
 void debuglink_view_snmp(dl_text_t *t);
 size_t debuglink_cmd_snmp(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+#if CONFIG_DEBUGLINK_DMRIP
+// The debug link over the air (debuglink_dmrip.c, docs/spec/debuglink.md 7): the dmrip section, DL_CMD_DETOUR and
+// DL_CMD_DMRIP, and the host link task's hooks. Without the switch none of them is built: the commands are unknown and
+// the section isn't there
+void debuglink_view_dmrip(dl_text_t *t);
+size_t debuglink_cmd_detour(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+size_t debuglink_cmd_dmrip(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_dmrip_init(void);
+void debuglink_dmrip_poll(uint32_t now_ms);
+// A datagram over the air to our own DMR ID and address on DL_DMRIP_PORT (radio task, the gateway's air port table): copied,
+// answered later from debuglink_dmrip_poll to src_id at src_ip (dl_dmrip_reply_ip)
+void debuglink_dmrip_air(uint32_t src_id, uint32_t src_ip, uint16_t src_port, const uint8_t *p, int len);
+// One request through the debug link's dispatcher, as from the cable (the over-the-air transport checks first)
+size_t debuglink_dispatch(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+// The reply buffer (DL_HDR + DL_REPLY_MAX + 2 bytes) the cable's replies are framed in, shared by the over-the-air
+// transport, and its generation: it changes whenever the cable used the buffer
+uint8_t *debuglink_reply_buffer(void);
+uint32_t debuglink_reply_gen(void);
+#endif
 // The tasks section (debuglink_view_tasks.c): each task's least free stack in bytes. The formatting takes the table
 // apart from the snapshot (task_stack_snapshot) so the host tests can feed it
 void debuglink_view_tasks(dl_text_t *t);

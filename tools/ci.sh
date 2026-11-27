@@ -50,7 +50,7 @@
 #        fm-minimal         FM only: no DMR, USB, VFO, diagnostics, sub-audio tones
 #        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED: the
 #                           hardware can't), not written yet (BOARD_NOT_WRITTEN) or not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
-#                           and the bench diagnostics (MAXIMAL_SKIP here: AUDIO_PROBE), with the board's MAXIMAL_VARS
+#                           and the bench diagnostics (MAXIMAL_SKIP here: AUDIO_PROBE, AIR_RAW, DEBUGLINK_DMRIP), with the board's MAXIMAL_VARS
 #                           (the DM-1701: LTO=1). A switch that needs one of those is off too (config/features.mk's
 #                           checks: all of DMR's family where DMR isn't written)
 #        <value>            each build option value but the first (board.toml [[build_options]], e.g. a band),
@@ -69,7 +69,7 @@
 # Build trees: build/ci/<board>-<config>/ (logs next to them). The exit status is 0 only when nothing failed.
 set -u
 # Switches the maximal configuration leaves off on every board: bench diagnostics, never in a release
-MAXIMAL_SKIP="AUDIO_PROBE AIR_RAW"
+MAXIMAL_SKIP="AUDIO_PROBE AIR_RAW DEBUGLINK_DMRIP"
 cd "$(dirname "$0")/.." || exit 2
 
 QUICK=0
@@ -264,9 +264,9 @@ for f in sys.argv[1:]:
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
 			tests/hil/test_bench_envelope.py tests/hil/test_pa_cal.py tests/hil/test_pa_shape.py \
-			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py tests/hil/test_dmr_packets.py \
+			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py tests/hil/test_dmr_packets.py tests/hil/test_gps_nmea.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
-			ok "HIL skip, reconnect, TX guard, rig state, bench line and DMR packet helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+			ok "HIL skip, reconnect, TX guard, rig state, bench line, DMR packet and GPS NMEA helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
 		else
 			tail -20 "$OUT/hil-skip-test.log"
 			bad "HIL skip, reconnect, TX guard, rig state and bench line helper tests (see $OUT/hil-skip-test.log)"
@@ -602,6 +602,43 @@ for p in $(for x in ${SELECTED_PLATFORMS:-}; do echo "$x"; done | sort -u); do
 		fi
 	done
 done
+# A worktree that reads third_party/ from another checkout (platform/third_party.mk, tools/worktree.sh): a scratch
+# worktree of HEAD without submodules of its own must parse a build against this tree's copies, stop without them and
+# on a moved pin, answer the query targets, and stay clean through a checkout with submodule.recurse. make -n is
+# enough: the checks run while make reads the Makefile
+tp_dir=$PWD/third_party
+[ -n "$(ls -A "$tp_dir/FreeRTOS-Kernel" 2>/dev/null)" ] || tp_dir=${RFOUNDRY_THIRD_PARTY:-}
+tb=$(for x in ${SELECTED_PLATFORMS:-}; do reg list --platform "$x" | head -1; done | head -1)
+if [ -z "$tb" ] || [ -z "$tp_dir" ]; then
+	skip "shared third_party: no board built, or no checked-out third_party/ to share"
+else
+	tp_wt=$PWD/$OUT/tp-worktree
+	tp_log=$PWD/$OUT/tp-worktree.log
+	tp_fail=
+	# tpm DIR: make -n in the scratch worktree with RFOUNDRY_THIRD_PARTY=DIR (empty: unset)
+	tpm() { (cd "$tp_wt" && RFOUNDRY_THIRD_PARTY=$1 make -n BOARD="$tb" BUILD="$tp_wt/build") >> "$tp_log" 2>&1; }
+	git worktree remove --force "$tp_wt" 2> /dev/null || true
+	if ! tools/worktree.sh add "$tp_wt" --detach HEAD > "$tp_log" 2>&1; then tp_fail="tools/worktree.sh add failed"
+	elif ! tpm "$tp_dir"; then tp_fail="a build with RFOUNDRY_THIRD_PARTY stopped"
+	elif tpm ""; then tp_fail="a build without third_party/ went on"
+	elif ! (cd "$tp_wt" && RFOUNDRY_THIRD_PARTY="" make -s BOARD="$tb" print-vars VARS=TARGET) >> "$tp_log" 2>&1; then
+		tp_fail="print-vars needs third_party/"
+	elif ! git -C "$tp_wt" -c submodule.recurse=true checkout -q --detach HEAD >> "$tp_log" 2>&1 ||
+		[ -n "$(git -C "$tp_wt" status --porcelain 2>> "$tp_log")" ]; then
+		tp_fail="git status not clean after a checkout with submodule.recurse"
+	else
+		# a commit that moves the first submodule: the pin check must stop the build
+		m=$(git -C "$tp_wt" ls-tree HEAD third_party/ | awk 'NR == 1 { print $4 }')
+		git -C "$tp_wt" update-index --cacheinfo "160000,0000000000000000000000000000000000000001,$m" &&
+			git -C "$tp_wt" -c user.name=ci -c user.email=ci@localhost commit -q --no-verify -m "pin test" >> "$tp_log" 2>&1
+		if tpm "$tp_dir"; then tp_fail="a build went on with $m at another commit"
+		elif ! grep -q "\*\*\* .*${m#third_party/}" "$tp_log"; then tp_fail="the pin check did not name ${m#third_party/}"
+		fi
+	fi
+	git worktree remove --force "$tp_wt" 2>> "$tp_log" || true
+	if [ -z "$tp_fail" ]; then ok "shared third_party: a worktree without submodules builds $tb from $tp_dir"
+	else bad "shared third_party: $tp_fail (see $tp_log)"; fi
+fi
 echo
 cat "$REPORT"
 echo

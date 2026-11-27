@@ -51,16 +51,34 @@ def loose(name):
 	return name == name.lower() or name == name.capitalize()
 
 
-def pattern(name):
-	"""Regex for one name. A plain word matches in any case and with an s; the rest match exactly.
+# Around every name: not inside a longer word, a hyphenated word, a path or an identifier.
+BEFORE = r"(?<![\w\-./])"
+AFTER = r"(?![\w\-]|\.\w)"
 
-	Not inside a longer word, a hyphenated word, a path or an identifier."""
-	body = re.escape(name).replace("\\ ", r"\s+")
-	flags = 0
+
+def body(name):
+	"""(regex, flags) for the name itself, without BEFORE and AFTER."""
+	b = re.escape(name).replace("\\ ", r"\s+")
 	if loose(name):
-		flags = re.I
-		body += "s?"
-	return re.compile(r"(?<![\w\-./])" + body + r"(?![\w\-]|\.\w)", flags)
+		return b + "s?", re.I
+	return b, 0
+
+
+def pattern(name):
+	"""Regex for one name. A plain word matches in any case and with an s; the rest match exactly."""
+	b, flags = body(name)
+	return re.compile(BEFORE + b + AFTER, flags)
+
+
+def any_pattern(names):
+	"""One regex that matches wherever pattern(n) matches for some n, as a fast test before trying each.
+
+	BEFORE and AFTER sit outside the alternation, so a position that can't start a name fails once, not once per name."""
+	alts = []
+	for n in names:
+		b, flags = body(n)
+		alts.append("(?i:%s)" % b if flags & re.I else b)
+	return re.compile(BEFORE + "(?:" + "|".join(alts) + ")" + AFTER) if alts else None
 
 
 def check(data):
@@ -93,7 +111,9 @@ def check(data):
 def render(data, scope):
 	"""The Markdown of one generated page."""
 	title, intro = HEADER[scope]
+	# REUSE-IgnoreStart: the generated page's header, not this file's
 	out = ["<!-- SPDX-License-Identifier: MIT -->",
+	# REUSE-IgnoreEnd
 	       "<!-- Generated from docs/glossary.json by tools/glossary.py. Edit the data file, not this page. -->",
 	       "<!-- glossary: off -->", "", "# " + title, "", intro, ""]
 	for cat in data["categories"]:

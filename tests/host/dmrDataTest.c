@@ -393,9 +393,9 @@ static void testCSBKAnswers(void)
 {
 	dmrBurst_t burst;
 	const uint8_t alert[10] = { 0x9F, 0x10, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
-	const uint8_t check[10] = { 0xA4, 0x10, 0x00, 0x80, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
+	const uint8_t check[10] = { 0xA4, 0x10, 0x00, 0x00, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };// FID 0x10 form
 	const uint8_t ackExpected[10] = { 0xA0, 0x10, 0x00, 0x00, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };
-	const uint8_t checkExpected[10] = { 0xA4, 0x10, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
+	const uint8_t checkExpected[10] = { 0xA4, 0x10, 0x00, 0x80, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };
 	uint8_t other[10];
 
 	CHECK(dmrDataBuildCSBKAnswer(alert, 235, &burst) == 1);
@@ -410,7 +410,7 @@ static void testCSBKAnswers(void)
 	CHECK(dmrDataBuildCSBKAnswer(alert, 236, &burst) == 0);// someone else's
 	CHECK(dmrDataBuildCSBKAnswer(alert, 9997008, &burst) == 0);// our own, from the repeater
 	memcpy(other, check, 10);
-	other[3] = 0x00;
+	other[3] = 0x80;
 	CHECK(dmrDataBuildCSBKAnswer(other, 235, &burst) == 0);// an answer isn't answered
 	other[0] = 0xA0;
 	CHECK(dmrDataBuildCSBKAnswer(other, 235, &burst) == 0);// nor an ack
@@ -419,6 +419,77 @@ static void testCSBKAnswers(void)
 	CHECK(dmrDataBuildCSBKAnswer(other, 235, &burst) == 0);// unknown feature set
 	other[1] = 0x00;
 	CHECK(dmrDataBuildCSBKAnswer(other, 235, &burst) == 1);// ETSI
+}
+
+// Radio check CSBKs as heard on air (12 octets with the CRC) between radios 3229842 (0x314892) and 3229279 (0x31465F)
+// FID 0x10 form, between two commercial portables: 3229842 checks 3229279, which answers
+static const uint8_t rcMotoRequest[12] = { 0xA4, 0x10, 0x00, 0x00, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0xD5, 0xD3 };
+static const uint8_t rcMotoAnswer[12] = { 0xA4, 0x10, 0x00, 0x80, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0x7E, 0x2A };
+#define RC_CHECKER	3229842
+#define RC_CHECKED	3229279
+
+static uint32_t getId24(const uint8_t *p)
+{
+	return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
+}
+
+// The radio check forms (docs/spec/dmr-data.md 4): ours built byte for byte as the commercial portable sends it, the
+// captured CSBKs classified and answered as the radio on the other end does
+static void testRadioCheckForms(void)
+{
+	dmrBurst_t burst;
+	uint8_t c[10];
+	uint32_t peer = 0;
+
+	// Our CRC on the captured octets is the one heard
+	CHECK(dmrDataBuildCSBK(rcMotoRequest, &burst) == 1 && memcmp(burst.payload, rcMotoRequest, 12) == 0);
+	CHECK(dmrDataBuildCSBK(rcMotoAnswer, &burst) == 1 && memcmp(burst.payload, rcMotoAnswer, 12) == 0);
+
+	// Our request in the FID 0x10 form is the portable's
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, false, c);
+	CHECK(memcmp(c, rcMotoRequest, 10) == 0);
+
+	// The portable's request, to the checked radio, answered as the portable answers
+	CHECK(dmrDataRadioCheckKind(rcMotoRequest, RC_CHECKED, &peer) == DMR_RC_REQUEST && peer == RC_CHECKER);
+	CHECK(dmrDataBuildCSBKAnswer(rcMotoRequest, RC_CHECKED, &burst) == 1);
+	CHECK(memcmp(burst.payload, rcMotoAnswer, 12) == 0);
+	// ... not to the checker (our own request, repeated) nor anyone else
+	CHECK(dmrDataRadioCheckKind(rcMotoRequest, RC_CHECKER, &peer) == 0);
+	CHECK(dmrDataRadioCheckKind(rcMotoRequest, 235, &peer) == 0);
+	CHECK(dmrDataBuildCSBKAnswer(rcMotoRequest, RC_CHECKER, &burst) == 0);
+
+	// The portable's answer, to the checker: an answer only, never answered
+	peer = 0;
+	CHECK(dmrDataRadioCheckKind(rcMotoAnswer, RC_CHECKER, &peer) == DMR_RC_ANSWER && peer == RC_CHECKED);
+	CHECK(dmrDataBuildCSBKAnswer(rcMotoAnswer, RC_CHECKER, &burst) == 0);
+	CHECK(dmrDataRadioCheckKind(rcMotoAnswer, RC_CHECKED, &peer) == 0);// our own answer, repeated
+
+	// The ETSI form (FID 0x00): request octet 3 0x80, the checked radio in octets 4-6
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, true, c);
+	CHECK(c[0] == 0xA4 && c[1] == DMR_FID_ETSI && c[3] == 0x80 && getId24(&c[4]) == RC_CHECKED &&
+		  getId24(&c[7]) == RC_CHECKER);
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKED, &peer) == DMR_RC_REQUEST && peer == RC_CHECKER);
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKER, &peer) == 0);// our own request, repeated
+	CHECK(dmrDataBuildCSBKAnswer(c, RC_CHECKED, &burst) == 1);
+	CHECK(burst.payload[1] == DMR_FID_ETSI && burst.payload[3] == 0x00 && memcmp(&burst.payload[4], &c[4], 6) == 0);
+	c[3] = 0x00;// the answer, echoed ...
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKER, &peer) == DMR_RC_ANSWER && peer == RC_CHECKED);
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKED, &peer) == DMR_RC_ANSWER && peer == RC_CHECKER);// ... or IDs swapped
+	CHECK(dmrDataBuildCSBKAnswer(c, RC_CHECKED, &burst) == 0);
+	c[1] = 0x68;
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKER, &peer) == 0);// unknown feature set
+
+	// Another service on the opcode (octet 3 bits other than bit 7): neither a request nor answered
+	memcpy(c, rcMotoRequest, 10);
+	c[3] = 0x7E;
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKED, &peer) == 0);
+	CHECK(dmrDataBuildCSBKAnswer(c, RC_CHECKED, &burst) == 0);
+
+	// The checked radio of our request, in either form
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, false, c);
+	CHECK(dmrDataRadioCheckDst(c) == RC_CHECKED);
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, true, c);
+	CHECK(dmrDataRadioCheckDst(c) == RC_CHECKED);
 }
 
 // Confirmed Rate 1/2 packet as another radio would send it: 10 data bytes per block after the DBSN / CRC-9
@@ -488,15 +559,15 @@ static void testSap3(void)
 	dmrDataIP_t ip;
 
 	// SNMP GET from an ephemeral port: no IDs, both ports in the extended headers (9 octets)
-	CHECK(dmrDataCompressUDPHeader(0x1234, false, 50000, 161, h) == 9);
+	CHECK(dmrDataCompressUDPHeader(0x1234, DMR_UDPC_IDS(DMR_UDPC_ID_RADIO, DMR_UDPC_ID_RADIO), 50000, 161, h) == 9);
 	hex("1234000000c35000a1", want);
 	CHECK(memcmp(h, want, 9) == 0);
 	// ETSI text both ways to a group: IDs 1, DAID 2 (5 octets)
-	CHECK(dmrDataCompressUDPHeader(7, true, 5016, 5016, h) == 5);
+	CHECK(dmrDataCompressUDPHeader(7, DMR_UDPC_IDS(DMR_UDPC_ID_RADIO, DMR_UDPC_ID_GROUP), 5016, 5016, h) == 5);
 	hex("0007020101", want);
 	CHECK(memcmp(h, want, 5) == 0);
 	// LIP source (ID 2), destination without an ID: in extended header 1 (7 octets)
-	CHECK(dmrDataCompressUDPHeader(7, false, 5017, 6000, h) == 7);
+	CHECK(dmrDataCompressUDPHeader(7, DMR_UDPC_IDS(DMR_UDPC_ID_RADIO, DMR_UDPC_ID_RADIO), 5017, 6000, h) == 7);
 	hex("00070002001770", want);
 	CHECK(memcmp(h, want, 7) == 0);
 
@@ -550,8 +621,41 @@ static void testSap3(void)
 	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.length == 20);
 	l4[5] = sizeof(l4);
 
-	// A reserved opcode isn't read
 	static dmrDataPacket_t p;
+
+	// The peripheral network (13.x.y.z, the host behind a radio, TS 102 361-3 5.1.1): address ID 1 in the compressed
+	// header, SAID and DAID, and read back as those addresses. A group destination has none: the source alone
+	static const struct
+	{
+		bool group;
+		bool srcPc, dstPc;
+		int ids;					// the SAID and DAID octet, -1: the full header
+	} pcs[] = {
+		{ false, true, false, 0x10 }, { false, false, true, 0x01 }, { false, true, true, 0x11 }, { true, true, false, 0x12 },
+		{ true, true, true, -1 },
+	};
+	for (unsigned i = 0; i < sizeof(pcs) / sizeof(pcs[0]); i++)
+	{
+		const uint8_t *pdu;
+		uint8_t sap;
+		uint32_t srcIp = pcs[i].srcPc ? dmrDataPeripheralAddress(10005) : dmrDataIdAddress(false, 10005);
+		uint32_t dstIp = pcs[i].dstPc ? dmrDataPeripheralAddress(100) : dmrDataIdAddress(pcs[i].group, 100);
+		int len = dmrDataEncodeIP(pcs[i].group, 100, 10005, dstIp, srcIp, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4,
+									sizeof(l4), true, 9, &pdu, &sap);
+
+		CHECK((len > 0) && (sap == ((pcs[i].ids < 0) ? DMR_SAP_IP : DMR_SAP_UDPIP_COMPRESSION)));
+		p.sap = sap;
+		p.group = pcs[i].group;
+		p.dst = 100;
+		p.src = 10005;
+		memcpy(p.data, pdu, len);
+		p.length = len;
+		CHECK((pcs[i].ids < 0) || (p.data[2] == pcs[i].ids));
+		CHECK(dmrDataGetUDP(&p, &udp) && (udp.srcIp == srcIp) && (udp.dstIp == dstIp) && (udp.length == 60));
+	}
+	CHECK(dmrDataPeripheralAddress(0x01002715) == 0x0D002715u);
+
+	// A reserved opcode isn't read
 	p.sap = DMR_SAP_UDPIP_COMPRESSION;
 	hex("0001000101", p.data);
 	p.data[3] |= 0x80;
@@ -653,8 +757,9 @@ static void testIpAddresses(void)
 	n = dmrDataEncodeIP(false, 100, 10005, CAI_DST, OFF_NET, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true,
 						1, &pdu, &sap);
 	CHECK(sap == DMR_SAP_IP && validIp(pdu, n) && be32(&pdu[12]) == OFF_NET);
-	// ... or the ID's 24 bits under another first octet: not what a receiver of SAP 3 rebuilds
-	n = dmrDataEncodeIP(false, 100, 10005, 0x0D000064u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4),
+	// ... or the ID's 24 bits under another first octet (not 12 or 13, the radio and peripheral networks): not what a
+	// receiver of SAP 3 rebuilds
+	n = dmrDataEncodeIP(false, 100, 10005, 0x0E000064u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4),
 						true, 1, &pdu, &sap);
 	CHECK(sap == DMR_SAP_IP);
 
@@ -1290,6 +1395,7 @@ int main(void)
 	testCSBK();
 	testUDTLocation();
 	testCSBKAnswers();
+	testRadioCheckForms();
 	testConfirmedRx();
 	testSap3();
 	testIpAddresses();

@@ -7,8 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseUsers, fromApi, regionsOf, select, format, RadioIdApi, regionUrl, COUNTRIES } from "../static/js/codeplug/sources/radioid.js";
-import { writeIddb, eraseIddb, addContacts, iddbEnd, iddbSize } from "../static/js/codeplug/sources/output.js";
+import { parseUsers, fromApi, regionsOf, select, addRegion, format, RadioIdApi, regionUrl, COUNTRIES } from "../static/js/codeplug/sources/radioid.js";
+import { writeIddb, eraseIddb, fitIddb, addContacts, iddbEnd, iddbSize } from "../static/js/codeplug/sources/output.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
 import { empty, newContact } from "../static/js/codeplug/model.js";
 import { History } from "../static/js/editor/undo.js";
@@ -49,6 +49,21 @@ test("regionsOf and select: countries, states case-insensitively, prefixes, ID r
 	assert.deepEqual(select(u, { prefixes: ["qc3", " "] }).map((x) => x.id), [9991277]);
 	assert.deepEqual(select(u, { idMin: 9991000, idMax: 9991234 }).map((x) => x.id), [9991234]);
 	assert.equal(select(u, {}).length, 4);
+});
+
+test("adding a whole country again keeps the RadioID filter", () => {
+	const regions = addRegion([], "Canada", []);
+	const repeated = addRegion(regions, "Canada", []);
+	assert.deepEqual(repeated, [{ country: "Canada" }]);
+	assert.deepEqual(select(parseUsers(CSV), { regions: repeated }).map((u) => u.id), [9990102]);
+	assert.deepEqual(addRegion(repeated, "canada", ["Ontario"]), regions);
+});
+
+test("a whole country replaces its states and preserves other countries", () => {
+	const regions = [{ country: "united states", state: "Ohio" }, { country: "Canada" }];
+	assert.deepEqual(addRegion(regions, "United States", ["ohio", "Michigan", "michigan"]),
+		[...regions, { country: "United States", state: "Michigan" }]);
+	assert.deepEqual(addRegion(regions, "United States", []), [{ country: "Canada" }, { country: "United States" }]);
 });
 
 test("format: tokens, abbreviations, country codes, empty values drop with their separator", () => {
@@ -149,6 +164,40 @@ test("ID database: written into a new image, read back, sized against the radio,
 	assert.equal(writeIddb(m, Array.from({ length: s.fit + 3 }, (_, i) => user({ id: i + 1 })), { template: "{call}", textLen: 32, end }).dropped, 3);
 	eraseIddb(m);
 	assert.equal(m.iddb, null);
+});
+
+test("ID database too big for the radio: cut to fit in its format, lowest IDs kept; one that fits left alone", () => {
+	const end = iddb.AREA2 + 0x1000;
+	const many = Array.from({ length: 120000 }, (_, i) => user({ id: i + 1, call: `K${i}` }));
+	for (const fmt of ["N", "C"]) {
+		const m = empty();
+		writeIddb(m, many, { template: "{call} {first}", textLen: 16, fmt });
+		assert.ok(iddb.extent(m.base.bytes) > end);
+		const r = fitIddb(m, end);
+		assert.equal(r.count + r.dropped, many.length);
+		assert.ok(r.dropped > 0);
+		assert.equal(m.iddb.format, fmt);
+		assert.equal(m.iddb.count, r.count);
+		assert.ok(iddb.extent(m.base.bytes) <= end);
+		const back = iddb.read(m.base.bytes);
+		assert.deepEqual([back[0].id, back.at(-1).id], [1, r.count]);
+		assert.equal(back[0].text, "K0 Charlie");
+		assert.equal(fitIddb(m, end), null);
+	}
+	assert.equal(fitIddb(empty(), end), null);
+});
+
+test("ID database header the editor can't parse: reported unreadable until erased", () => {
+	const m = empty();
+	assert.equal(iddb.unreadable(m.base.bytes), false);
+	writeIddb(m, [user()], { template: "{call}", textLen: 16 });
+	assert.equal(iddb.unreadable(m.base.bytes), false);
+	m.base.bytes.fill(0, iddb.AREA1 + 8, iddb.AREA1 + 12);	// a count of 0
+	assert.equal(iddb.readHeader(m.base.bytes), null);
+	assert.equal(iddb.unreadable(m.base.bytes), true);
+	m.iddb = null;
+	eraseIddb(m);
+	assert.equal(iddb.unreadable(m.base.bytes), false);
 });
 
 test("contacts: private calls, existing IDs skipped, names in Latin-1 and 16 characters, the list's limit kept", () => {

@@ -31,6 +31,7 @@ typedef enum {
 	UI_BANNER_RESULT,	// result of something we sent (radio check answered, message delivered, ...)
 	UI_BANNER_INFO,		// anything else ("Hotspot started by host. Back to stop.")
 	UI_BANNER_ZONE_OFFER,	// another radio offers a zone or channel: CONTEXT opens the offer
+	UI_BANNER_APRS_MESSAGE,	// APRS message addressed to us: CONTEXT opens the APRS messages screen
 } ui_banner_kind_t;
 
 typedef struct {
@@ -297,6 +298,8 @@ uint32_t ui_freq_entry_hz(const char *digits, uint8_t len);
 uint32_t ui_freq_parse(const char *digits, uint8_t len);
 // Text for the board's bands ("136-174 400-480"), for hints; only the ones that may transmit when tx
 void ui_bands_text(char *out, size_t len, bool tx);
+// Why the radio can't send (why: tx_deny_t), as the user reads it; buf is returned
+const char *ui_deny_text(const radio_view_t *v, uint8_t why, char *buf, size_t len);
 // The board's power level name
 const char *ui_power_name(uint8_t level, uint32_t tx_hz);
 // A call from a dialing gateway on the trunked system in use (CONFIG_DMR_TRUNK_GW): the caller's number it gave

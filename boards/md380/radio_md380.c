@@ -88,10 +88,10 @@ static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 563, .knee_us = 91, .slope_
 					  .pa_us = KEYUP_MAX_AHEAD_US, .ease_pm = 0 };
 #endif
 
-// Receive the repeater's outbound between our bursts (the modem's tx_listen_split): after each burst the synthesizer goes to the receive LO and the receiver on; RF_TX_INTER comes LISTEN_LEAD_STEPS earlier, and
-// there the synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before
-#define LISTEN_LEAD_STEPS	25u	// 4:0x12 bits 5-0, about 100 us steps: 2.5 ms
-#define LISTEN_LEAD_US		(LISTEN_LEAD_STEPS * 100u)
+// Receive the repeater's outbound between our bursts (the modem's tx_listen_split): after each burst the synthesizer
+// goes to the receive LO and the receiver on; RF_TX_INTER comes earlier (4:0x12, LISTEN_LEAD_STEPS over its value),
+// and there the synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before
+#define LISTEN_LEAD_STEPS	15u	// half symbols over the value 4:0x12 runs with (10 on the bench): about 1.56 ms
 #define LISTEN_LOCK_MAX_US	2000u
 
 // Voice SPI2 (hardware-md380.md 4.4): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
@@ -511,14 +511,23 @@ bool md380_rf_dmr_switch(bool tx)
 		}
 		r.dmr_tx_tuned = true;
 		if (back) {
-			// From the receive LO: lock detect before the PA, normally well inside the lead
+			// From the receive LO: lock detect before the PA, normally well inside the lead (about 60 us). A wait
+			// past the lead keys the PA late on a locked carrier; no lock at all sends nothing for this burst (never
+			// an unlocked carrier), and the next burst retunes
 			while (!PIN_READ(PIN_PLL_LD) && hal_micros() - t0 < LISTEN_LOCK_MAX_US) {
+			}
+			if (!PIN_READ(PIN_PLL_LD)) {
+				r.diag.pll_fails++;
+				r.rf_skipped++;
+				r.dmr_tx_tuned = false;
+				return false;
 			}
 		}
 	}
 	if (r.dmr_lead) {
-		// RF_TX_INTER came LISTEN_LEAD_US early: the PA at the slot, as without the lead
-		while (hal_micros() - t0 < LISTEN_LEAD_US) {
+		// RF_TX_INTER came the lead early: the PA at the slot, as without the lead
+		uint32_t lead_us = hrc5000_tx_lead_us(&r.lead);
+		while (hal_micros() - t0 < lead_us) {
 		}
 	}
 	pa_timer_start();	// the key-up points, then the PA drop
@@ -628,7 +637,11 @@ static void dmr_enter(void)
 // input.
 static bool audio_wanted;
 static bool pcm_wanted;
+static volatile bool knob_muted;
 static SemaphoreHandle_t speaker_lock;
+#if CONFIG_BEEP && CONFIG_DMR
+static uint8_t aux_state;	// SPK_AUX_*: the PC8 PWM path's (spkaux_md380.c) hold on the amplifier
+#endif
 
 static void speaker_apply(void)
 {
@@ -638,6 +651,17 @@ static void speaker_apply(void)
 	}
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
+	if (knob_muted) {
+		fm = pcm = false;
+	}
+#if CONFIG_BEEP && CONFIG_DMR
+	if (aux_state != SPK_AUX_OFF && !knob_muted) {
+		// The PWM path while DMR is on air: the amplifier up, the speaker open only while it plays
+		PIN_WRITE(PIN_FM_MUTE, false);
+		PIN_WRITE(PIN_AMP_EN, true);
+		PIN_WRITE(PIN_SPK_MUTE, aux_state != SPK_AUX_OPEN);
+	} else
+#endif
 	if (fm || pcm) {
 		PIN_WRITE(PIN_FM_MUTE, fm);
 		PIN_WRITE(PIN_AMP_EN, true);
@@ -651,6 +675,27 @@ static void speaker_apply(void)
 		xSemaphoreGive(speaker_lock);
 	}
 }
+
+void md380_speaker_knob_mute(bool mute)
+{
+	if (mute != knob_muted) {
+		knob_muted = mute;
+		speaker_apply();
+	}
+}
+
+#if CONFIG_BEEP && CONFIG_DMR
+bool md380_speaker_aux_active(void)
+{
+	return r.tx_on && r.mode == RADIO_MODE_DMR;
+}
+
+void md380_speaker_aux(uint8_t state)
+{
+	aux_state = state;
+	speaker_apply();
+}
+#endif
 
 #ifdef MD380_I2S_PROBE
 // Bench knob (docs/testing/md380-bringup.md): edges on the I2S clock (PC10) and word select (PA15), read from the input
@@ -1072,6 +1117,27 @@ static void rx_sleep(bool sleep)
 	}
 }
 
+#if CONFIG_BEEP
+// The gain the volume knob gives the speaker at each 5 % of its position (hal_radio_t.volume_db10), in tenths of a dB
+// from the top. PA0 reads the wiper of the potentiometer that sets the level; at the speaker the knob gives about 0.79
+// of the wiper's dB (the reading over the top reading, from the position's two lines in power_md380.c volume()),
+// measured with a 1 kHz beep between a quarter turn, mid-rotation and the top (hardware-md380.md 6.1)
+_Static_assert(MD380_VOL_MIN == 2 && MD380_VOL_MID == 327 && MD380_VOL_MAX == 1970, "knob_db10 needs computing again");
+static const int16_t knob_db10[21] = {
+	-474, -279, -233, -206, -187, -172, -159, -149, -140, -132, -125,
+	-96, -76, -61, -48, -37, -28, -20, -13, -6, 0,
+};
+
+static int16_t volume_db10(uint8_t percent)
+{
+	if (percent >= 100) {
+		return 0;
+	}
+	unsigned i = percent / 5u, f = percent % 5u;
+	return (int16_t)(knob_db10[i] + (knob_db10[i + 1] - knob_db10[i]) * (int)f / 5);
+}
+#endif
+
 // The debug link's CHIP_REG (board.chip_reg): chip 1 is the HR_C5000, pages 1 and 4 (2 and 3 are the data and
 // vocoder FIFOs, which a read would drain). Straight on the bus, each access one transaction; the driver's next
 // set-up overwrites a write
@@ -1089,6 +1155,9 @@ bool md380_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool
 
 const hal_radio_t md380_radio = {
 	.init = init,
+#if CONFIG_BEEP
+	.volume_db10 = volume_db10,	// the knob is only read: beeps stop getting louder past the cap step
+#endif
 	.set_mode = set_mode,
 	.rx = rx,
 	.tx = tx,

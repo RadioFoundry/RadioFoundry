@@ -31,6 +31,28 @@ typedef struct {
 	bool fifo_fm;
 } audio_stream_stats_t;
 
+// The power of a second speaker output (hal_spk_aux_t.power)
+enum {
+	SPK_AUX_OFF = 0,	// amplifier off
+	SPK_AUX_ARMED = 1,	// amplifier on, speaker muted: the output settles at rest
+	SPK_AUX_OPEN = 2,	// speaker open: the output plays its queue, oldest block first
+};
+
+// A second output to the speaker, for while the stream's own can't be heard there (a speaker with no level while DMR
+// is on air). The core (core/radio/spk_aux.h) moves each speaker block with sound here while active() says so, powers
+// the output around it (lead_ms before the sound, tail_ms after) and sends silence down the stream instead. Audio task
+struct spk_aux_core;
+typedef struct hal_spk_aux {
+	bool (*active)(void);			// the stream's speaker output can't be heard now
+	void (*power)(uint8_t state);		// SPK_AUX_*
+	void (*write)(const int16_t *pcm);	// one block, queued behind the ones before it (the output holds 4 or more)
+	uint8_t lead_ms;	// the amplifier's settling before the speaker opens (the sound waits in the queue)
+	uint8_t tail_ms;	// the speaker muted before the amplifier goes off
+	// The core's step: SPK_AUX_CORE (core/radio/spk_aux.h). The core reaches its step only through here, so a board
+	// without the output links none of it
+	const struct spk_aux_core *core;
+} hal_spk_aux_t;
+
 typedef struct {
 	bool (*start)(audio_block_cb_t cb, void *ctx);
 	void (*stop)(void);
@@ -48,8 +70,11 @@ typedef struct {
 	// NULL: none is held past the block callback
 	bool (*spk_pending)(void);
 	// Optional: the speaker audio queued now is thrown away (the DMR engine is on air and the audio path is gated).
-	// A sound that must be heard whole waits until this is false. NULL: never
+	// A sound that must be heard whole waits until this is false. NULL: never. Set only where the path drops all
+	// speaker audio for the whole of a DMR transmission: the DMR mic gate lifts on such a board (radio_sm.c)
 	bool (*speaker_blocked)(void);
+	// Optional: a second output to the speaker for while the stream's can't be heard. NULL: none
+	const hal_spk_aux_t *spk_aux;
 	// Optional: the stream's timing (debug link view audio.*). NULL: not counted
 	void (*stream_stats)(audio_stream_stats_t *out);
 } hal_audio_t;
