@@ -38,6 +38,11 @@ static const beep_seg_t p_emergency[] = { { 1500, 160 }, { 900, 160 }, { 1500, 1
 static const beep_seg_t p_message[] = { { 1000, 60 }, { 0, 30 }, { 1300, 60 }, { 0, 30 }, { 1700, 90 } };
 // Two rising notes: back on the trunked system
 static const beep_seg_t p_system_back[] = { { 1000, 60 }, { 0, 60 }, { 1400, 60 } };
+// A fast 1400 / 1100 Hz trill, rung twice like a phone: a call alert paged this radio. Unlike the slow, wide
+// emergency warble
+static const beep_seg_t p_call_alert[] = { { 1400, 40 }, { 1100, 40 }, { 1400, 40 }, { 1100, 40 }, { 1400, 40 },
+					   { 1100, 40 }, { 0, 200 }, { 1400, 40 }, { 1100, 40 }, { 1400, 40 },
+					   { 1100, 40 }, { 1400, 40 }, { 1100, 40 } };
 // The speaker test (tests/hil/test_speaker.py): silence with the route up (a pop or a click there is the route's, not
 // the sweep's), the sweep, a short tail
 static const beep_seg_t p_sweep[] = { { 0, 400 }, { BEEP_HZ_SWEEP, 4000 }, { 0, 200 } };
@@ -61,6 +66,7 @@ static const struct {
 	[BEEP_TX_PERMIT_SHORT] = PAT(p_permit_short),
 	[BEEP_SWEEP] = PAT(p_sweep),
 	[BEEP_SYSTEM_BACK] = PAT(p_system_back),
+	[BEEP_CALL_ALERT] = PAT(p_call_alert),
 };
 
 // One period of a sine, Q15

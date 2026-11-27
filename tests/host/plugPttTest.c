@@ -57,7 +57,34 @@ int main(void)
 
 	// The clock wrapping while the line is high still arms it
 	p = (plug_ptt_t){ 0 };
-	CHECK(!scan(&p, false, 0xFFFFFFC0u, 200));
+	CHECK(!scan(&p, false, 0xFFFFFF00u, 500));
+	CHECK(p.armed);
+
+	// A line that reads high while it settles at start-up, then falls to rest low (a cable or mic holding it): never
+	// keys, however long it reads high inside the settle time
+	p = (plug_ptt_t){ 0 };
+	CHECK(!scan(&p, false, 0, PLUG_PTT_SETTLE_MS));
+	CHECK(!scan(&p, true, PLUG_PTT_SETTLE_MS, 60000));
+	CHECK(!p.armed);
+
+	// The settle time counts from the first scan, not from the clock's zero: a scan that starts late settles late
+	p = (plug_ptt_t){ 0 };
+	CHECK(!scan(&p, false, 3000, PLUG_PTT_SETTLE_MS));
+	CHECK(!scan(&p, true, 3000 + PLUG_PTT_SETTLE_MS, 5000));
+	CHECK(!p.armed);
+
+	// High through the settle time and after: arms PLUG_PTT_ARM_MS after settling, not before
+	p = (plug_ptt_t){ 0 };
+	CHECK(!scan(&p, false, 0, PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS - 10));
+	CHECK(!p.armed);
+	CHECK(!scan(&p, false, PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS - 10, 20));
+	CHECK(p.armed);
+
+	// The clock wrapping inside the settle time: settles, then arms, on time
+	p = (plug_ptt_t){ 0 };
+	CHECK(!scan(&p, false, 0xFFFFFF80u, PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS - 10));
+	CHECK(!p.armed);
+	CHECK(!scan(&p, false, 0xFFFFFF80u + PLUG_PTT_SETTLE_MS + PLUG_PTT_ARM_MS - 10, 20));
 	CHECK(p.armed);
 
 	if (failures) {

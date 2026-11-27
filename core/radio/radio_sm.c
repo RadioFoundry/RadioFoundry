@@ -244,15 +244,22 @@ static uint8_t beep_level_now(const radio_sm_t *sm)
 {
 	uint8_t level = sm->set.beep_level;
 	const hal_radio_t *r = board.radio;
-	if (r == NULL || r->volume == NULL) {
+	if (r == NULL) {
 		return level;
 	}
-	if (!r->volume_pcm) {
-		return radio_beep_level(level, sm->volume_sent);
+	int16_t vol = sm->volume_sent;
+	if (r->volume == NULL) {
+		// An analog knob the MCU only reads: the knob scales the beep like the voice after it
+		if (r->volume_db10 == NULL) {
+			return level;
+		}
+		vol = sm->view.volume_knob;
+	} else if (!r->volume_pcm) {
+		return radio_beep_level(level, vol);
 	}
-	if (r->volume_db10 != NULL && sm->volume_sent > 0) {
+	if (r->volume_db10 != NULL && vol > 0) {
 		// The volume scales the beep in the speaker path: above the cap step, softer by the gain added there
-		level = radio_beep_pcm_level(level, r->volume_db10((uint8_t)sm->volume_sent),
+		level = radio_beep_pcm_level(level, r->volume_db10((uint8_t)vol),
 					     r->volume_db10(radio_volume_percent(RADIO_BEEP_VOLUME_STEP)));
 	}
 	return level;
@@ -791,7 +798,9 @@ static void outputs(radio_sm_t *sm)
 	bool bcast = false;
 #if CONFIG_BCAST_FM
 	bcast = sm->view.bcast;
-	bool bcast_play = bcast && !tx && bcast_listening(sm);
+	// A refused PTT silences the station as it closes an FM channel's open squelch (open above), unless a call goes on
+	// playing through it (deny_rx); Monitor still plays it (#1130)
+	bool bcast_play = bcast && !tx && bcast_listening(sm) && (sm->view.state != RS_TX_DENIED || sm->deny_rx);
 	if (sm->bcast_on && sm->bcast_audio_out != (int8_t)((open || bcast_play) && bcast)) {
 		sm->bcast_audio_out = (int8_t)((open || bcast_play) && bcast);
 		board.bcast->audio((open || bcast_play) && bcast);
@@ -1441,10 +1450,11 @@ static uint32_t band_wrap(uint32_t hz, int dir)
 static void vfo_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 {
 	step_update(sm);
-#if CONFIG_AM_RX
-	int64_t hz = radio_am_step(sm->view.ch.rx_hz, dir, sm->view.vfo_step_hz);	// the 8.33 kHz grid kept exact
-#else
 	int64_t hz = (int64_t)sm->view.ch.rx_hz + (int64_t)dir * sm->view.vfo_step_hz;
+#if CONFIG_AM_RX
+	if (sm->view.vfo_step_hz == RADIO_AM_STEP_833) {
+		hz = radio_am_step_833(sm->view.ch.rx_hz, dir);	// the 8.33 kHz grid kept exact
+	}
 #endif
 #if CONFIG_BCAST_FM
 	if (sm->view.bcast) {
@@ -4557,7 +4567,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (t3m.ring_src == 0) {
 		t3_ring_next = 0;
 	} else if (t3_ring_next == 0 || (int32_t)(now_ms - t3_ring_next) >= 0) {
-		beep(sm, BEEP_MESSAGE);
+		beep(sm, BEEP_CALL_ALERT);	// the ring a call alert plays: one sound for a page
 		t3_ring_next = now_ms + 2000u;
 	}
 	// Our grant came while PTT is held: talk now
@@ -8866,7 +8876,6 @@ static void vfo_tx_request(radio_sm_t *sm, const radio_req_t *req, bool busy)
 #endif
 }
 
-#if CONFIG_AM_RX
 static void vfo_step_size_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
 	if ((req->arg == 0 || (req->arg >= 1000 && req->arg <= 1000000)) && (uint32_t)req->arg != sm->vfo_step_set) {
@@ -8877,7 +8886,6 @@ static void vfo_step_size_request(radio_sm_t *sm, const radio_req_t *req, uint32
 		changed(sm);
 	}
 }
-#endif
 
 static void ptt_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
@@ -9632,9 +9640,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 	case RREQ_VFO_SET: vfo_set_request(sm, req, busy, now_ms); break;
 	case RREQ_VFO_TX: vfo_tx_request(sm, req, busy); break;
-#if CONFIG_AM_RX
 	case RREQ_VFO_STEP_SIZE: vfo_step_size_request(sm, req, now_ms); break;
-#endif
 	case RREQ_PTT: ptt_request(sm, req, now_ms); break;
 	case RREQ_MONITOR: monitor_request(sm, req, now_ms); break;
 	case RREQ_POWER: power_request(sm, req); break;

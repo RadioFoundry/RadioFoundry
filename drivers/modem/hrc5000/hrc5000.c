@@ -79,7 +79,11 @@ enum {
 #ifndef HRC5000_SPK_VOICE
 #define HRC5000_SPK_VOICE	1
 #endif
-#define DAC_GAIN	0xC2
+// Speaker DAC gain (0x37): 0x80 | 0x40 for a positive step | the step (bits 4-0). At 0xC2 the codec output clips before
+// the volume control on decoded voice peaks, at any knob position. 0x93 puts decoded voice at the FM receive level
+// (FM doesn't pass this gain) at 3/4 and full volume, peaks intact. A step of 0 (0x80, 0xC0) mutes the output
+// (hardware-md380.md 6.1)
+#define DAC_GAIN	0x93
 #define RX_PATH_A	0x0E
 #define RX_PATH_B_DMR_RX	0xFD
 #define RX_PATH_B_OFF	0xFE	// receiver IF and audio disconnected: transmitting, and the FM modes
@@ -386,7 +390,9 @@ bool hrc5000_dmr_path(hrc5000_t *dev, bool tx, uint8_t mod2, uint8_t mod1, uint8
 	}
 	ok &= hrc_write(h, HRC_PAGE_SYS, REG_HP_OUT, voice ? HP_OUT_VOICE : HP_OUT);
 	ok &= hrc_set_mic_gain(h, mic_gain);
+#ifndef HRC5000_DAC_GAIN_KEEP	// bench knob (see hrc5000_speaker_voice)
 	ok &= hrc_write(h, HRC_PAGE_SYS, REG_DAC_GAIN, DAC_GAIN);
+#endif
 	ok &= hrc_write(h, HRC_PAGE_SYS, REG_RX_PATH_A, RX_PATH_A);
 	ok &= hrc_write(h, HRC_PAGE_SYS, REG_RX_PATH_B, tx ? RX_PATH_B_OFF : RX_PATH_B_DMR_RX);
 	if (tx) {
@@ -446,9 +452,11 @@ bool hrc5000_speaker_voice(hrc5000_t *dev, bool on)
 	dev->spk_voice = on;
 	bool ok = hrc_write(h, HRC_PAGE_SYS, REG_CODEC_CTL, on ? CODEC_CTL_VOICE : CODEC_CTL);
 	ok &= hrc_write(h, HRC_PAGE_SYS, REG_HP_OUT, on ? HP_OUT_VOICE : HP_OUT);
+#ifndef HRC5000_DAC_GAIN_KEEP	// bench knob: a call keeps the 0x37 written before it (rfoundry_debug.py reg), to tune
 	if (on) {
 		ok &= hrc_write(h, HRC_PAGE_SYS, REG_DAC_GAIN, DAC_GAIN);
 	}
+#endif
 	return ok;
 }
 

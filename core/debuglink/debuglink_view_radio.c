@@ -50,8 +50,8 @@ void debuglink_view_audio(dl_text_t *t)
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);
-	dl_text(t, "beep.shared=%u\nbeep.leads=%u\nbeep.warm=%u\nbeep.warms=%u\n", (unsigned)b.shared, (unsigned)b.leads,
-		beep_warm_on(), (unsigned)b.warms);
+	dl_text(t, "beep.shared=%u\nbeep.leads=%u\nbeep.warm=%u\nbeep.warms=%u\nbeep.last=%u\n", (unsigned)b.shared,
+		(unsigned)b.leads, beep_warm_on(), (unsigned)b.warms, (unsigned)b.last);
 	radio_settings_t rs;	// the features section is full: the Sound tones' switches go here
 	radio_get_settings(&rs);
 	dl_text(t, "beep.tones_off=%u\n", rs.tones_off);

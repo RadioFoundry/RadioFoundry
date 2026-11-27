@@ -25,12 +25,8 @@ bool radio_am_tx_refused(uint32_t hz)
 	return radio_am_capable() && radio_am_band(hz);
 }
 
-uint32_t radio_am_step(uint32_t hz, int dir, uint32_t step_hz)
+uint32_t radio_am_step_833(uint32_t hz, int dir)
 {
-	if (step_hz != RADIO_AM_STEP_833) {
-		int64_t next = (int64_t)hz + (int64_t)dir * step_hz;
-		return next < 0 ? 0 : next > (int64_t)UINT32_MAX ? UINT32_MAX : (uint32_t)next;
-	}
 	// Grid point n is n x 25000 / 3 Hz: snap to the nearest, move one, round to the Hz
 	int64_t n = ((int64_t)hz * 3 + 12500) / 25000;
 	n += dir;

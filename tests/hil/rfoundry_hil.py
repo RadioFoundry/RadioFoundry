@@ -2,6 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Helpers for the hardware-in-the-loop tests: the radio over its USB debug link (Radio), and the SDR bench with its
 bench board (SdrBench). See README.md."""
+import array
 import collections
 import contextlib
 import json
@@ -983,7 +984,7 @@ class _LineTx:
     """A bench board's tx or rx op (bench_line Request) as one of SdrBench's background jobs: .started once the board
     keyed (its "started" line) or started receiving (its rx header), .records an rx op's records, .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
 
-    def __init__(self, line, where, req):
+    def __init__(self, line, where, req, data=None):
         self.started = threading.Event()
         self.over = threading.Event()      # the done record came (the stream may stay open after it)
         self.done = None
@@ -991,7 +992,7 @@ class _LineTx:
         self.records = []
         self.pcm = {}               # an rx op's audio streams: name -> int16 LE bytes
         self.req_op = f"{req.get('op')} {req.get('mode', '')}".strip()                  # an rx op's records ({"block": ...})
-        self.req = line.Request(where, req, self._on)
+        self.req = line.Request(where, req, self._on, data=data)
 
     def _on(self, d, data):
         # A tx op's header comes before it waits for the modem: only its "started" line says it keyed. An rx op's
@@ -1385,11 +1386,12 @@ class SdrBench:
         return p
 
     # ── a bench board's transmitter (the line protocol's tx op, the gateway's bench-api.md 14.6) ──
-    def tx_start(self, mode, freq, program, max_s=10.0, **fields):
+    def tx_start(self, mode, freq, program, max_s=10.0, audio=None, **fields):
         """The TX board's signal mode (fm, am: its info's signal_modes) on freq (MHz), started in the background:
         program is a list of segments ({"kind": "tone", "hz": 1000, "s": 2}, "fsk", "dtmf", "sweep", "noise",
         "silence"), fields the mode's others (FM: ctcss, dcs, dev_hz, sub_dev_hz, lead_s, tail_s, repeat; AM: depth
-        ...; None left out). Returns once the board keyed: a _LineTx whose wait() gives the board's done record. Needs
+        ...; None left out). audio (FM): (rate, int16 samples) sent as the input, played where the program has a
+        {"kind": "pcm"} segment, or as the whole program when program is None. Returns once the board keyed: a _LineTx whose wait() gives the board's done record. Needs
         the lease (tests mark it bench_service and rf). A board without the mode skips."""
         name = mode.upper()
         if not self.allow_rf:
@@ -1403,15 +1405,21 @@ class SdrBench:
         self._api_reach(freq)
         self._api_claim(freq)
         req = {"op": "tx", "mode": mode, "freq": freq, "session": self._api_session, "max_s": max_s,
-               "program": program, "wait_max": self.wait_max,
-               "label": self.label or mode}
+               "wait_max": self.wait_max, "label": self.label or mode}
+        if program is not None:
+            req["program"] = program
+        data = None
+        if audio is not None:
+            rate, samples = audio
+            data = bytes(samples) if isinstance(samples, (bytes, bytearray)) else array.array("h", samples).tobytes()
+            req["pcm"] = {"rate": int(rate), "samples": len(data) // 2}
         if self.api_level is not None:
             req["power"] = self.api_level
         if mode == "fsk4":
             # A bench board can lose about the first 30 ms of a keying: lead with carrier so no symbols go there
             fields.setdefault("lead_s", 0.04)
         req.update({k: v for k, v in fields.items() if v is not None})
-        t = _LineTx(L, L.address(self.api), req)
+        t = _LineTx(L, L.address(self.api), req, data)
         self.bg.append(t)
         end = time.monotonic() + self.wait_max + 30      # it may queue behind another session's job
         while not t.started.wait(0.2) and not t.req.done.is_set() and time.monotonic() < end:
@@ -1426,9 +1434,9 @@ class SdrBench:
             raise RuntimeError(f"the bench board never keyed {name} on {freq} MHz: {t.req.replies[-3:]}")
         return t
 
-    def fm_tx_start(self, freq, program, max_s=10.0, **fields):
-        """tx_start of FM"""
-        return self.tx_start("fm", freq, program, max_s, **fields)
+    def fm_tx_start(self, freq, program, max_s=10.0, audio=None, **fields):
+        """tx_start of FM; audio (rate, int16 samples) as tx_start's"""
+        return self.tx_start("fm", freq, program, max_s, audio=audio, **fields)
 
     def fm_transmit(self, freq, program, max_s=10.0, **fields):
         """fm_tx_start, then its done record once the last sample went out"""

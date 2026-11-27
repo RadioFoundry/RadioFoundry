@@ -713,6 +713,13 @@ bool ui_dual_home_key(const input_event_t *ev)
 			return false;
 		if (ui_st.updown == 1)	// Settings > Keys > Up/Down: Zone
 			ui_dual_zone_step(ev->action == ACT_NAV_UP ? 1 : -1);
+#if CONFIG_DMR
+		// Talk target, as on the single Home: the selected DMR channel's talk targets (#1116); the knob still steps
+		// the channel
+		else if (ui_st.updown == 2 && !ui_view()->vfo && ui_view()->ch.mode == RADIO_MODE_DMR &&
+			 ui_talk_step(ev->action == ACT_NAV_UP ? 1 : -1))
+			;
+#endif
 		else
 			step_selected(ev->action == ACT_NAV_UP ? 1 : -1);
 		return true;

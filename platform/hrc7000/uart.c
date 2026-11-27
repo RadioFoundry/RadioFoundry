@@ -73,6 +73,7 @@ static volatile uint32_t rx_good_ms;	// hal_millis() at the last byte with no li
 static volatile bool rx_good_seen;
 static volatile uint32_t tx_last_ms;	// hal_millis() at the last write (hrc_host_uart_last_tx)
 static volatile bool tx_last_seen;
+static volatile bool tx_busy;		// a write is under way: its end is still to come (hrc_host_uart_last_tx)
 static volatile uint32_t rx_any_ms;	// hal_millis() at the last character, flagged or not (HRC_HOST_TX_IDLE_MS)
 static volatile bool rx_any_seen;
 static uint32_t tx_bytes, tx_stalls;	// a stall: the TX FIFO stayed full for TX_SPIN, the rest of the write dropped
@@ -329,17 +330,23 @@ static size_t wr(const uint8_t *buf, size_t len)
 			vTaskDelay(1);
 		}
 	}
+	// The whole write counts as the radio sending, from its first byte to its last, so a host that sends meanwhile and
+	// then clamps the line is still seen as a clamp after the radio's send (shared_ptt.h)
+	tx_busy = true;
 	note_tx();
+	size_t sent = 0;
+	bool done = false;
 	if (rtos && tx_irq) {
-		size_t sent = 0;
-		if (wr_irq(buf, len, &sent)) {
-			note_tx();
-			return sent;
+		done = wr_irq(buf, len, &sent);
+		if (!done) {
+			tx_irq = false;		// no byte went: this UART doesn't interrupt as expected, poll from now on
 		}
-		tx_irq = false;		// no byte went: this UART doesn't interrupt as expected, poll from now on
 	}
-	size_t sent = put(buf, len, rtos);
+	if (!done) {
+		sent = put(buf, len, rtos);
+	}
 	note_tx();
+	tx_busy = false;
 	return sent;
 }
 
@@ -387,6 +394,6 @@ bool hrc_host_uart_last_rx(uint32_t *ms)
 
 bool hrc_host_uart_last_tx(uint32_t *ms)
 {
-	*ms = tx_last_ms;
+	*ms = tx_busy ? hal_millis() : tx_last_ms;	// mid-write: sending now
 	return tx_last_seen;
 }

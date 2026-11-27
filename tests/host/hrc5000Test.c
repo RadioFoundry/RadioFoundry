@@ -257,7 +257,7 @@ static void test_modes(void)
 	CHECK(hrc5000_set_mode_fm_tx(&c5, true, 0x41, 0x42));
 	CHECK(last_write(0, 0x45) == 0x41 && last_write(0, 0x46) == 0x42 && last_write(0, 0x35) == 0x3C);
 	CHECK(last_write(0, 0x3F) == 0x04 && last_write(0, 0x34) == 0x3C && last_write(0, 0x3E) == 0x08);
-	CHECK(last_write(0, 0x37) == 0xC2 && last_write(0, 0x26) == 0xFE && last_write(0, 0x0F) == 0xC8);
+	CHECK(last_write(0, 0x37) == 0x93 && last_write(0, 0x26) == 0xFE && last_write(0, 0x0F) == 0xC8);
 	CHECK(last_write(1, 0x50) == 0x00 && last_write(1, 0x51) == 0x00 && last_write(0, 0x60) == 0x80);
 	CHECK(count_writes(0, 0x00) == 0);	// no reset
 	nx = 0;
@@ -289,7 +289,7 @@ static void test_modes(void)
 	CHECK(last_write(0, 0x39) == 0x02 && last_write(0, 0x3D) == 0x0A && last_write(0, 0x65) == 0x0A);
 	CHECK(last_write(0, 0x1D) == 0xFF && last_write(0, 0x1E) == 0xF1 && last_write(0, 0x64) == 0x00);
 	CHECK(last_write(0, 0x0D) == 0x8C && last_write(0, 0x0E) == 0x44 && last_write(0, 0x0F) == 0xC8);
-	CHECK(last_write(0, 0x37) == 0xC2 && last_write(0, 0x25) == 0x0E && last_write(0, 0x26) == 0xFD);
+	CHECK(last_write(0, 0x37) == 0x93 && last_write(0, 0x25) == 0x0E && last_write(0, 0x26) == 0xFD);
 	CHECK(last_write(0, 0x45) == 0x41 && last_write(0, 0x46) == 0x42);
 	CHECK(last_write(0, 0x81) == 0x19 && last_write(0, 0x85) == 0x00);
 	CHECK(last_write(0, 0x47) == 0x0F && last_write(0, 0x04) == 0x0F);	// the reference set again
@@ -309,7 +309,7 @@ static void test_modes(void)
 	// A received call that plays: LINEOUT on while the route is open, idle values back at the end, DMR only
 	nx = 0;
 	CHECK(hrc5000_speaker_voice(&c5, true));
-	CHECK(last_write(0, 0x0D) == 0x9C && last_write(0, 0x0E) == 0x4C && last_write(0, 0x37) == 0xC2);
+	CHECK(last_write(0, 0x0D) == 0x9C && last_write(0, 0x0E) == 0x4C && last_write(0, 0x37) == 0x93);
 	nx = 0;
 	CHECK(hrc5000_dmr_path(&c5, false, 0x41, 0x42, 0xC8));	// a RX/TX switch mid-call keeps them
 	CHECK(last_write(0, 0x0D) == 0x9C && last_write(0, 0x0E) == 0x4C);

@@ -2843,6 +2843,45 @@ static void test_beep_volume_cap(void)
 	board.power = &fake_power;
 }
 
+// An analog knob the MCU only reads (no volume hook, hal_power_t.volume gives its position) with the knob's gain
+// curve (volume_db10): the knob scales the beep in the speaker path, so the core softens the beep past the cap step's
+// position by the gain the knob adds there; up to the cap, beep_level as it is
+static int8_t knob_pos = -1;
+static int8_t p_knob(void) { return knob_pos; }
+
+static void test_beep_knob_cap(void)
+{
+	hal_radio_t knob_radio = fake_radio;
+	hal_power_t knob_power = fake_power;
+	knob_radio.volume_db10 = r_volume_db10;
+	knob_power.volume = p_knob;
+	board.radio = &knob_radio;
+	board.power = &knob_power;
+	audio_mux_reset();
+	start();
+	req(RREQ_ZONE_POS, 6);
+	settings(set_beep_80);
+	knob_pos = -1;			// not read yet: beep_level
+	run(100);
+	int pk = beep_peak();
+	CHECK(pk > 11500 && pk <= 12900);
+	knob_pos = 30;			// under the cap step's 44 %
+	run(100);
+	pk = beep_peak();
+	CHECK(pk > 11500 && pk <= 12900);
+	knob_pos = 100;
+	run(100);
+	int lv = beep_level_expected(80, 100);
+	pk = beep_peak();
+	CHECK(pk > lv * 160 * 9 / 10 && pk <= lv * 160 + 20);
+	knob_radio.volume_db10 = NULL;	// no curve: beep_level at any position
+	pk = beep_peak();
+	CHECK(pk > 11500 && pk <= 12900);
+	knob_pos = -1;
+	board.radio = &fake_radio;
+	board.power = &fake_power;
+}
+
 // rx_open (hal_radio_t): receive audio from a signal, which a board's backlight follows (#544). A beep alone, with no
 // carrier, never sets it; an open FM squelch and a DMR call do, and it clears when they end
 static int rx_open_calls;
@@ -4876,6 +4915,7 @@ int main(void)
 	test_tot_and_beeps();
 	test_beep_follows_volume();
 	test_beep_volume_cap();
+	test_beep_knob_cap();
 	test_bcl_inhibit();
 	test_dmr_busy_quiet();
 	test_rx_open();

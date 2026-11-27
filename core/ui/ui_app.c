@@ -673,6 +673,7 @@ static void handle_event(const ui_event_t *ev)
 		sb_str(&b, TR(ALERT_BANNER_FROM, "Call alert from "));
 		station(&b, ev);
 		banner(UI_BANNER_CALL_ALERT, false, ev->id, title, TR(HINT_PTT_REPLIES, "PTT replies"));
+		ui_svc_beep(UI_BEEP_CALL_ALERT);	// always: a page that rings nowhere is missed (no setting of its own)
 		vibrate(UI_VIBE_CALL);
 		break;
 	case UI_EV_PRIVATE_CALL:
@@ -1102,8 +1103,9 @@ void ui_scan_skip(void)
 
 #if CONFIG_DMR
 // Up / Down on Home set to "Talk target" (Settings > Keys): the channel's default talkgroup, then its listen list,
-// each a temporary talk target (the default ends it). False when there is nothing to step through
-static bool talk_step(int dir)
+// each a temporary talk target (the default ends it). False when there is nothing to step through. In dual watch the
+// view and the request are the selected channel's (ui_dual_view, RQ_SELECTED), so the dual watch Home uses it too
+bool ui_talk_step(int dir)
 {
 	static listen_list_t l;		// static: not on the task's stack
 	static uint16_t idx[CODEPLUG_LIST_LEN + 1];
@@ -1167,7 +1169,7 @@ bool ui_home_key(const input_event_t *ev)
 			return true;
 		}
 #if CONFIG_DMR
-		if (arrows && !view->vfo && ui_st.updown == 2 && view->ch.mode == RADIO_MODE_DMR && talk_step(nav_dir(ev)))
+		if (arrows && !view->vfo && ui_st.updown == 2 && view->ch.mode == RADIO_MODE_DMR && ui_talk_step(nav_dir(ev)))
 			return true;
 #endif
 		for (int i = steps(ev); i > 0; i--) {

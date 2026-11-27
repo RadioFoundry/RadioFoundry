@@ -143,17 +143,21 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		// The mic connector's lines: level and changes seen by the key scan (PTA9 is also the PC link's RXD)
 		uint16_t a9, c11;
 		uint8_t lv = db25d_mic_lines(&a9, &c11);
-		put(&o, "mic a9 ");
+		// The arm bits first: the counters grow, and a line past 32 characters is cut off on the screen
+		uint8_t armed = db25d_input_ptt_armed();	// a low counts as PTT: a9/c11 (hardware-db25d.md 3.3)
+		put(&o, "mic ");
+		put_u(&o, armed & 1u);
+		put_u(&o, (armed >> 1) & 1u);
+		put(&o, " a ");
 		put_u(&o, lv & 1u);
 		put(&o, "/");
 		put_u(&o, a9);
-		put(&o, " c11 ");
+		put(&o, " c ");
 		put_u(&o, (lv >> 1) & 1u);
 		put(&o, "/");
 		put_u(&o, c11);
 		put(&o, " ign ");
 		put_u(&o, db25d_input_ptt_ignored());
-		put(&o, db25d_input_mic_armed() ? " mic" : " nomic");
 		break;
 	}
 	case 10: {
