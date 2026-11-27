@@ -618,6 +618,7 @@ static void check_dmr_tx(md9600_rev_t r, uint32_t hz, uint8_t power)
 static void check_dmr_rx_back(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 {
 	fresh(r, true);
+	md9600_rf_set_dmr(&rf, true);
 	CHECK(md9600_rf_rx(&rf, rx_hz, false) == MD9600_RF_OK);
 	pa_allowed = true;
 	md9600_pll_plan_t rxp, txp;
@@ -630,6 +631,9 @@ static void check_dmr_rx_back(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 		CHECK(md9600_rf_burst_rx(&rf) == MD9600_RF_OK);
 		CHECK(delay_total == 0 && pa_off_now() && rf.state == MD9600_RF_RX && rf.lo_hz == rxp.lo_hz);
 		CHECK(count(EV_PLL, rxp.band) == rxp.count && level[rxp.band == MD9600_VHF ? MD9600_LN_R5_V : MD9600_LN_R5_U]);
+		uint8_t unused = rxp.band == MD9600_VHF ? MD9600_LN_R5_U : MD9600_LN_R5_V;
+		CHECK(level[unused] == !rf.desc->if_chip);
+		CHECK(!rf.desc->if_chip || find(0, EV_LINE, unused, 1) < 0);
 		if (!md9600_rev_desc(r)->if_chip) {
 			// V5: the band's IF route back, which the transmit side dropped
 			CHECK(level[rxp.band == MD9600_VHF ? MD9600_LN_V5_ROUTE_V : MD9600_LN_V5_ROUTE_U]);
@@ -647,6 +651,14 @@ static void check_dmr_rx_back(md9600_rev_t r, uint32_t rx_hz, uint32_t tx_hz)
 	if (rxp.band == MD9600_VHF) {
 		CHECK(dac_now[MD9600_DAC_APC_TUNE_V] == f_rx_tune(NULL, rx_hz));
 	}
+	// Returning from TX without a saved receive frequency still isolates the current band's receiver.
+	CHECK(md9600_rf_tx_tune(&rf, tx_hz, 0, false) == MD9600_RF_OK);
+	rf.rx_valid = false;
+	reset_log();
+	md9600_rf_tx_off(&rf);
+	CHECK(rf.state == MD9600_RF_RX && pa_off_now());
+	CHECK(level[txp.band == MD9600_VHF ? MD9600_LN_R5_V : MD9600_LN_R5_U]);
+	CHECK(level[txp.band == MD9600_VHF ? MD9600_LN_R5_U : MD9600_LN_R5_V] == !rf.desc->if_chip);
 	md9600_rf_sleep(&rf);
 	CHECK(md9600_rf_rx_resume(&rf) == MD9600_RF_E_STATE);	// not receiving: tx_off() sets receive up in full
 }
@@ -1231,6 +1243,10 @@ static void test_digital_receiver_isolation(void)
 		CHECK(md9600_rf_rx(&rf, 453387500u, false) == MD9600_RF_OK);
 		CHECK(level[MD9600_LN_R5_U]);
 		CHECK(level[MD9600_LN_R5_V] == !rf.desc->if_chip);
+		md9600_rf_sleep(&rf);
+		CHECK(md9600_rf_power_up(&rf) == MD9600_RF_OK);
+		CHECK(level[rf.band == MD9600_VHF ? MD9600_LN_R5_V : MD9600_LN_R5_U]);
+		CHECK(level[rf.band == MD9600_VHF ? MD9600_LN_R5_U : MD9600_LN_R5_V] == !rf.desc->if_chip);
 		CHECK(md9600_rf_rx(&rf, 146520000u, false) == MD9600_RF_OK);
 		CHECK(level[MD9600_LN_R5_V]);
 		CHECK(level[MD9600_LN_R5_U] == !rf.desc->if_chip);
@@ -1260,6 +1276,8 @@ int main(void)
 			check_dmr_rx_back((md9600_rev_t)r, 146520000u, 147120000u);
 			check_dmr_rx_back((md9600_rev_t)r, 461462500u, 461462500u);	// simplex
 			check_dmr_rx_back((md9600_rev_t)r, 146520000u, 146520000u);
+			check_dmr_rx_back((md9600_rev_t)r, 146520000u, 451875000u);	// cross-band RX uses its own band
+			check_dmr_rx_back((md9600_rev_t)r, 461462500u, 147120000u);
 		}
 	}
 #endif

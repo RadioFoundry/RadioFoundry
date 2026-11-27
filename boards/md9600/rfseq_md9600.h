@@ -150,8 +150,8 @@ typedef struct {
 // Hold everything off: PA loop and transmitter supplies first, then the receivers. rev must be usable (its driver
 // built) or MD9600_REV_UNKNOWN
 void md9600_rf_init(md9600_rf_t *rf, const md9600_rf_ops_t *ops, md9600_rev_t rev, bool confirmed);
-// After power-up: both receivers powered, the AK2365A reset pulse (V1-V4), the V4 VHF synthesizer kick, the LMX2571
-// reset (V4A / V5)
+// After power-up: receiver supplies selected for the mode and band, the AK2365A reset pulse (V1-V4), the V4 VHF
+// synthesizer kick, the LMX2571 reset (V4A / V5)
 md9600_rf_err_t md9600_rf_power_up(md9600_rf_t *rf);
 
 // Receive on hz (wide = 25 kHz). From any state: a running transmission is ramped down first
