@@ -126,6 +126,7 @@ const board_t board = {
 	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	.radio = &db25d_radio,
+	.chip_reg = db25d_chip_reg,
 	.power = &db25d_power,
 #if CONFIG_GPS
 	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard

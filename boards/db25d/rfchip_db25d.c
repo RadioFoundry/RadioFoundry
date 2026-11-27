@@ -257,6 +257,23 @@ bool db25d_main_is_fd6818(void)
 	return main_chip == CHIP_FD6818 || main_chip == CHIP_7813;
 }
 
+// Page 0 only: an FD6818-family page select and the access would be two frames, and the radio task's frames could
+// fall between them. Each frame is atomic (rfbus.h), so a single read or write is safe next to the radio task. Straight
+// on the bus: no driver follows a write, and its next set-up overwrites it
+bool db25d_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	chip_t k = chip == 0 ? main_chip : chip == 1 ? lo_chip : CHIP_NONE;
+	if (k == CHIP_NONE || page != 0 || reg > 0x7Fu || (write && *val > 0xFFFFu)) {
+		return false;	// CHIP_NONE also before db25d_rf_init identified the chips
+	}
+	rfbus_t *bus = chip == 0 ? &bus_main.bus : &bus_lo.bus;
+	if (write) {
+		rfbus_write(bus, reg, (uint16_t)*val);
+	}
+	*val = rfbus_read(bus, reg);
+	return true;
+}
+
 uint16_t db25d_main_glitch(void)
 {
 	return rfbus_read(&bus_main.bus, FD6818_REG_GLITCH);

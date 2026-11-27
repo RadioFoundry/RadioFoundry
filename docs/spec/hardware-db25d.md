@@ -206,6 +206,10 @@ The firmware reads register 0 of each chip at boot and writes the letters into i
 | 0x4819 (BK4819) | 'B' | 'B' |
 | other | soft reset and read again | same |
 
+The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches the main transceiver as chip 0 and
+the LO as chip 1, page 0, registers 0x00-0x7F: `rfoundry_debug.py reg 0 0x0C` reads the main chip's squelch and
+sub-audio status.
+
 ### 4.3 BK4819 registers (address: value, in order)
 
 The register meanings are the BK4819's public ones; the values are what the vendor firmware writes.
