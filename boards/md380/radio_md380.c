@@ -638,6 +638,9 @@ static void dmr_enter(void)
 static bool audio_wanted;
 static bool pcm_wanted;
 static SemaphoreHandle_t speaker_lock;
+#if CONFIG_BEEP && CONFIG_DMR
+static uint8_t aux_state;	// SPK_AUX_*: the PC8 PWM path's (spkaux_md380.c) hold on the amplifier
+#endif
 
 static void speaker_apply(void)
 {
@@ -647,6 +650,14 @@ static void speaker_apply(void)
 	}
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
+#if CONFIG_BEEP && CONFIG_DMR
+	if (aux_state != SPK_AUX_OFF) {
+		// The PWM path while DMR is on air: the amplifier up, the speaker open only while it plays
+		PIN_WRITE(PIN_FM_MUTE, false);
+		PIN_WRITE(PIN_AMP_EN, true);
+		PIN_WRITE(PIN_SPK_MUTE, aux_state != SPK_AUX_OPEN);
+	} else
+#endif
 	if (fm || pcm) {
 		PIN_WRITE(PIN_FM_MUTE, fm);
 		PIN_WRITE(PIN_AMP_EN, true);
@@ -660,6 +671,19 @@ static void speaker_apply(void)
 		xSemaphoreGive(speaker_lock);
 	}
 }
+
+#if CONFIG_BEEP && CONFIG_DMR
+bool md380_speaker_aux_active(void)
+{
+	return r.tx_on && r.mode == RADIO_MODE_DMR;
+}
+
+void md380_speaker_aux(uint8_t state)
+{
+	aux_state = state;
+	speaker_apply();
+}
+#endif
 
 #ifdef MD380_I2S_PROBE
 // Bench knob (docs/testing/md380-bringup.md): edges on the I2S clock (PC10) and word select (PA15), read from the input

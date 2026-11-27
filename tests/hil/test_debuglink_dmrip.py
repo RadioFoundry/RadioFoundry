@@ -18,7 +18,7 @@ import time
 import pytest
 
 from rfoundry_hil import DebugLink, DebugLinkError, skip
-from rfoundry_debug import CHIP_REG, ST_REFUSED
+from rfoundry_debug import OP_TX_LIMIT, RADIO, ST_REFUSED
 from hil_config import rig
 
 
@@ -122,7 +122,7 @@ def test_dmrip_over_the_air(radio, pytestconfig):
         page = air.view_prefix("core", "rx_hz")
         assert int(page["rx_hz"]) == int(radio.core()["rx_hz"])
         with pytest.raises(DebugLinkError) as e:
-            air.request(CHIP_REG, struct.pack("<BBB", 0, 0, 0))
+            air.request(RADIO, bytes([OP_TX_LIMIT, 0]))   # would stop the replies: the cable only
         assert e.value.status == ST_REFUSED
         with pytest.raises(DebugLinkError) as e:
             air.chip()          # the UID gives the default key: never sent on the air

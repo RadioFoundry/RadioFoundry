@@ -176,6 +176,38 @@ void dl_text_kv_str(dl_text_t *t, const char *key, const char *value)
 	dl_text(t, "%s=%s\n", key, v);
 }
 
+const char *dl_deg(char buf[DL_DEG_LEN], int32_t e7)
+{
+	uint32_t m = e7 < 0 ? 0u - (uint32_t)e7 : (uint32_t)e7;
+	dl_fmt(buf, DL_DEG_LEN, "%s%u.%07u", e7 < 0 ? "-" : "", (unsigned)(m / 10000000u), (unsigned)(m % 10000000u));
+	return buf;
+}
+
+void dl_text_deg(dl_text_t *t, const char *key, int32_t e7)
+{
+	char d[DL_DEG_LEN];
+	dl_text(t, "%s=%s\n", key, dl_deg(d, e7));
+}
+
+void dl_json_str(dl_text_t *t, const char *s)
+{
+	char tmp[8];
+
+	dl_text(t, "\"");
+	for (; *s != '\0'; s++) {
+		unsigned char ch = (unsigned char)*s;
+		if (ch == '"' || ch == '\\') {
+			dl_text(t, "\\%c", ch);
+		} else if (ch < 0x20 || ch >= 0x7F) {
+			dl_fmt(tmp, sizeof(tmp), "\\u%04x", ch);
+			dl_text(t, "%s", tmp);
+		} else {
+			dl_text(t, "%c", ch);
+		}
+	}
+	dl_text(t, "\"");
+}
+
 size_t dl_view_page(char *text, size_t len, const char *prefix, size_t plen, uint16_t offset, uint16_t limit)
 {
 	size_t out = 0, pos = 0, at = 0;

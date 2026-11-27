@@ -13,12 +13,6 @@
 #include "board.h"
 #include "position/position.h"
 
-static void deg(dl_text_t *t, const char *key, int32_t e7)
-{
-	uint32_t m = e7 < 0 ? 0u - (uint32_t)e7 : (uint32_t)e7;
-	dl_text(t, "%s=%s%u.%07u\n", key, e7 < 0 ? "-" : "", (unsigned)(m / 10000000u), (unsigned)(m % 10000000u));
-}
-
 void debuglink_view_position(uint8_t part, dl_text_t *t)
 {
 	static const char *const srcs[] = { "none", "gps", "host", "fixed" };
@@ -28,8 +22,8 @@ void debuglink_view_position(uint8_t part, dl_text_t *t)
 	if (part == 1) {
 		// The first two keep the names they had as APRS settings
 		dl_text(t, "set.aprs_pos_src=%u\nset.aprs_dmr_gps=%u\nset.pos_ambiguity=%u\n", c.pref, c.dmr_gps, c.ambiguity);
-		deg(t, "set.pos_lat", c.fix_lat);
-		deg(t, "set.pos_lon", c.fix_lon);
+		dl_text_deg(t, "set.pos_lat", c.fix_lat);
+		dl_text_deg(t, "set.pos_lon", c.fix_lon);
 #if CONFIG_GPS
 		// The board's receiver (board_t.gps): the module heard, powered and listened to now, its counters and rate.
 		// Here, not with the pos.gps_* fix keys: with them the aprs section outgrew a reply on radios with APRS
@@ -47,8 +41,8 @@ void debuglink_view_position(uint8_t part, dl_text_t *t)
 	dl_text(t, "pos.built=1\npos.host_built=%u\npos.src=%s\n", CONFIG_POSITION_HOST, srcs[src < 4 ? src : 0]);
 	if (src != POSITION_SRC_NONE) {
 		// As a DMR report gives it: the ambiguity applied
-		deg(t, "pos.lat", f.lat);
-		deg(t, "pos.lon", f.lon);
+		dl_text_deg(t, "pos.lat", f.lat);
+		dl_text_deg(t, "pos.lon", f.lon);
 		dl_text(t, "pos.err_m=%u\npos.age_s=%u\n", (unsigned)err_m, (unsigned)((now_ms - f.ms) / 1000u));
 	}
 #if CONFIG_GPS
