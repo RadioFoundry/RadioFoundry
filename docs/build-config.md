@@ -269,3 +269,7 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    RAM), and any shared addition would then fail CI on unrelated pull requests.
    A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
    name until the set passes them (DMR not written takes all of DMR's family with it).
+
+`CONFIG_P25_ZONE_SCAN` (default: `CONFIG_P25_TRUNK` and `CONFIG_SCAN`) adds receive-only talkgroup scanning from the
+current zone on the selected P25 system. Selected-group priority is checked between calls without interrupting
+audio. It adds a RAM list of up to 80 talkgroups and a pending-grant record; no new codeplug fields are used.

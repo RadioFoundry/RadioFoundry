@@ -2221,6 +2221,92 @@ static void testAirLoss(void)
 	rig_end();
 }
 
+#if CONFIG_P25_ZONE_SCAN
+static void testZoneScan(void)
+{
+	static p25_follow_t f;
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1 } };
+	static const uint16_t groups[] = { 100, 200 };
+	static p25_follow_iden_t idens[P25_FOLLOW_IDENS];
+	idens[1] = (p25_follow_iden_t){ .base_hz = 851006250, .spacing_hz = 6250 };
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC,
+		.zone_scan = true,
+		.flags = P25_FOLLOW_NO_UNIT | P25_FOLLOW_SKIP_ENC | P25_FOLLOW_NO_REG,
+		.talk_group = 100, .ngroups = 2, .groups = groups, .ncc = 1, .cc = cc,
+		.iden_set = 2, .iden = idens, .hold_ms = 2000 };
+	uint8_t b[P25_TSBK_BYTES];
+	now_ms = 1000;
+	cc_alive = true;
+	p25_follow_begin(&f, &cfg, &fhooks, NULL, now_ms);
+	retune(&f);
+	mk_net(b, WACN, SYSID);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.view.state == P25_FOLLOW_CONTROL, "zone scan acquired control");
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 300, 123);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.view.state == P25_FOLLOW_CONTROL && !f.pending.valid, "unlisted group excluded");
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 200, 123);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.pending.valid && f.view.state == P25_FOLLOW_CONTROL, "nonpriority grant waits briefly on control");
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100B, 100, 124);
+	p25_follow_tsbk(&f, b, NAC, now_ms + 10);
+	CHECK(f.view.state == P25_FOLLOW_VOICE && f.view.tg == 100 && !f.pending.valid, "selected group wins pending grant");
+	retune(&f);
+	unit_duid(&f, P25_DUID_TDU);
+	retune(&f);
+	f.hold_tg = 0;
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 200, 123);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	run_ms(&f, P25_FOLLOW_PRIORITY_MS + 10);
+	CHECK(f.view.state == P25_FOLLOW_VOICE && f.view.tg == 200, "listed nonpriority group follows after bounded wait");
+	unsigned tuned = ntunes;
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100B, 100, 124);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	run_ms(&f, 100);
+	CHECK(f.view.tg == 200 && ntunes == tuned, "priority never interrupts an active call");
+	unit_duid(&f, P25_DUID_TDU);
+	retune(&f);
+	CHECK(f.hold_tg == 200, "nonpriority reply hold established");
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.view.tg == 100 && f.view.state == P25_FOLLOW_VOICE, "priority bypasses another group's reply hold");
+	retune(&f);
+	unit_duid(&f, P25_DUID_TDU);
+	retune(&f);
+	f.hold_tg = 0;
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 200, 123);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	mk_grant(b, P25_OP_GRP_V_GRANT, P25_SVC_PROTECTED, 0x100A, 200, 123);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(!f.pending.valid, "encryption indication cancels a pending clear grant");
+	run_ms(&f, 200);
+	CHECK(f.view.state == P25_FOLLOW_CONTROL, "encrypted pending grant not followed");
+	f.left_enc = false;
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100C, 200, 123);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.pending.valid, "new pending grant");
+	cfg.zone_scan = false;
+	cfg.ngroups = 0;
+	p25_follow_groups_changed(&f, now_ms);
+	run_ms(&f, 200);
+	CHECK(!f.pending.valid && f.view.state == P25_FOLLOW_CONTROL, "stopping scan cancels stale grant");
+	cfg.zone_scan = true;
+	cfg.ngroups = 2;
+	p25_follow_groups_changed(&f, now_ms);
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100D, 200, 123);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	run_ms(&f, 160);
+	CHECK(f.view.state == P25_FOLLOW_VOICE && f.view.tg == 200, "nonpriority call before stop");
+	cfg.zone_scan = false;
+	cfg.ngroups = 0;
+	p25_follow_groups_changed(&f, now_ms);
+	CHECK(f.view.state == P25_FOLLOW_CONTROL && f.hold_tg == 0, "stop returns to selected filter without an excluded-group hold");
+	retune(&f);
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100E, 100, 124);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.view.state == P25_FOLLOW_VOICE && f.view.tg == 100, "selected group can follow immediately after stop");
+	CHECK(f.view.reg_tx == 0 && f.view.aff_tx == 0 && f.view.req_tx == 0, "scan sent no registration, affiliation or voice request");
+}
+#endif
 static void testExplicitStatus(void)
 {
 	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1 } };
@@ -2409,6 +2495,9 @@ static void testSysidBlocked(void)
 int main(void)
 {
 	pulse_init();
+#if CONFIG_P25_ZONE_SCAN
+	testZoneScan();
+#endif
 	testExplicitStatus();
 	testLayouts();
 	testInbound();

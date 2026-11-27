@@ -4908,6 +4908,12 @@ static void scan_publish(radio_sm_t *sm)
 static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 {
 	scan_t *sc = &sm->scan;
+#if CONFIG_P25_ZONE_SCAN
+	if (sm->scan_p25) {
+		radio_p25_zone_scan_stop();
+		sm->scan_p25 = false;
+	}
+#endif
 	if (!scan_on(sc)) {
 		return;
 	}
@@ -5030,6 +5036,10 @@ static bool scan_mixed(radio_sm_t *sm, uint8_t was, scan_act_t act, bool heard, 
 static bool scan_step(radio_sm_t *sm, uint32_t now_ms)
 {
 	scan_t *sc = &sm->scan;
+#if CONFIG_P25_ZONE_SCAN
+	if (sm->scan_p25)
+		return true;	// the trunking follower alone owns the receiver while zone talkgroup scanning
+#endif
 	sm->scan_twin_fm = sm->scan_fm_heard = SCAN_NO_POS;	// a mixed frequency's check ends with its stop (scan_mixed)
 	if (sc->kind == SCAN_DUAL) {
 		if (!dual_tune(sm, (uint8_t)!sm->dual_at, now_ms)) {
@@ -5123,6 +5133,17 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 	sc->lo_hz = lo_hz;
 	sc->hi_hz = hi_hz;
 	scan_begin(sc, kind, &cfg, now_ms);
+#if CONFIG_P25_ZONE_SCAN
+	if (kind == SCAN_ZONE && sm->view.ch.kind == CODEPLUG_KIND_P25_TRUNK) {
+		sm->scan_p25 = radio_p25_zone_scan_start(&sm->zone, &sm->view.ch, sm->view.channel_number);
+		if (!sm->scan_p25)
+			scan_end(sc);
+		else
+			activity(sm, now_ms);
+		scan_publish(sm);
+		return;
+	}
+#endif
 	if (kind != SCAN_VFO) {
 		// Nothing to scan when no other channel qualifies
 		scan_t probe = *sc;
@@ -5335,6 +5356,23 @@ static bool dmr_strength_heard(const radio_sm_t *sm, int16_t rssi_dbm)
 static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
 {
 	scan_t *sc = &sm->scan;
+#if CONFIG_P25_ZONE_SCAN
+	if (sm->scan_p25) {
+		if (!radio_p25_zone_scanning()) {
+			scan_stop(sm, false, now_ms);
+			return;
+		}
+		uint8_t phase = sm->view.p25.trunk == RADIO_P25_TRUNK_VOICE ? SCAN_PH_HOLD : SCAN_PH_LISTEN;
+		if (phase == SCAN_PH_HOLD && sc->phase != phase) {
+			sc->holds++;
+			if (sm->set.scan_beep)
+				beep(sm, BEEP_SCAN_HOLD);
+		}
+		sc->phase = phase;
+		scan_publish(sm);
+		return;
+	}
+#endif
 #if CONFIG_DUAL_WATCH
 	if (sc->kind == SCAN_DUAL && board.rx2 != NULL && rx2_service(sm, now_ms)) {
 		scan_publish(sm);
@@ -5469,6 +5507,10 @@ static void scan_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms
 		}
 		break;
 	case RSCAN_NUISANCE:
+#if CONFIG_P25_ZONE_SCAN
+		if (sm->scan_p25)
+			break;	// the selected channel remains the priority; no zone-position nuisance deletion here
+#endif
 		if (scan_on(&sm->scan) && !dual_running(sm)) {	// dual watch: both channels were picked
 			bool ok = sm->scan.kind == SCAN_VFO ? scan_nuisance_hz(&sm->scan, sm->view.ch.rx_hz)
 				: scan_nuisance_pos(&sm->scan, sm->view.zone_pos);
