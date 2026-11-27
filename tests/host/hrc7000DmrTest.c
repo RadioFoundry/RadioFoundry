@@ -1075,13 +1075,6 @@ static void test_dac_gain(void)
 	CHECK(hrc7000_dac_code(0) == 0 && hrc7000_dac_code(-7) == 7 && hrc7000_dac_code(-31) == 31);
 	CHECK(hrc7000_dac_code(-40) == 31 && hrc7000_dac_code(1) == 63 && hrc7000_dac_code(16) == 48);
 	CHECK(hrc7000_dac_code(32) == 32 && hrc7000_dac_code(50) == 32);
-	CHECK(hrc7000_volume_db(8, 8, 16, 12) == 0 && hrc7000_volume_db(7, 8, 16, 12) == -3);
-	CHECK(hrc7000_volume_db(1, 8, 16, 12) == -21 && hrc7000_volume_db(0, 8, 16, 12) == HRC7000_DAC_MIN_DB);
-	CHECK(hrc7000_volume_db(12, 8, 16, 12) == 6 && hrc7000_volume_db(16, 8, 16, 12) == 12);
-	CHECK(hrc7000_volume_db(40, 8, 16, 12) == 12 && hrc7000_volume_db(1, 16, 16, 0) == HRC7000_DAC_MIN_DB);
-	for (unsigned s = 2; s <= 16; s++) {
-		CHECK(hrc7000_volume_db(s, 8, 16, 12) > hrc7000_volume_db(s - 1u, 8, 16, 12));	// every step is louder
-	}
 	setup();
 	CHECK(dev.dac_gain == 0);
 	hrc7000_set_dac_gain(&dev, hrc7000_dac_code(-9));

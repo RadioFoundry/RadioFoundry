@@ -31,7 +31,12 @@ static void af(void *c, superhet_af_t a)
 	fd6818sh_set_af(c, a == SUPERHET_AF_FM ? FD6818SH_AF_RX : a == SUPERHET_AF_DMR ? FD6818SH_AF_DMR : FD6818SH_AF_MUTE);
 }
 
-static void af_gain(void *c, uint8_t g) { fd6818sh_set_af_gain(c, g); }
+// The volume word's 16 levels at 2 dB each from the top, as they were the volume's steps (their dB not measured)
+static void af_db10(void *c, int16_t db10)
+{
+	int g = 15 + db10 / 20;
+	fd6818sh_set_af_gain(c, (uint8_t)(g < 0 ? 0 : g > 15 ? 15 : g));
+}
 
 static void tx_prepare(void *c, superhet_tone_t t, uint16_t v, uint32_t hz, uint8_t pa_gain)
 {
@@ -60,7 +65,7 @@ static void burst(void *c, uint32_t hz, bool tx) { fd6818sh_burst_tune(c, hz, tx
 static void gpio(void *c, uint8_t pin, bool high) { fd6818sh_gpio(c, pin, high); }
 
 const superhet_main_ops_t fd6818sh_superhet_main = {
-	.idle = idle, .rx = rx, .to_if = to_if, .bandwidth = bandwidth, .rx_tone = rx_tone, .af = af, .af_gain = af_gain,
+	.idle = idle, .rx = rx, .to_if = to_if, .bandwidth = bandwidth, .rx_tone = rx_tone, .af = af, .af_db10 = af_db10,
 	.tx_prepare = tx_prepare, .tx_tune = tx_tune, .tx_end = tx_end, .tail = tail, .tone = tone_start,
 	.tone_on = tone_on, .tone_key = tone_key, .dtmf = dtmf, .dmr_enter = dmr_enter, .dmr_leave = dmr_leave,
 	.dmr_tx_prepare = dmr_tx_prepare, .burst = burst, .gpio = gpio,

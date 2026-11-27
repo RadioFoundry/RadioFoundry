@@ -38,7 +38,7 @@ void db25d_main_bandwidth(radio_bw_t bw);
 void db25d_main_rx_tone(uint8_t type, uint16_t value);
 bool db25d_main_tone_heard(uint16_t r0c, uint8_t type);
 void db25d_main_af(db25d_af_t af);
-void db25d_main_af_gain(uint8_t gain);	// 0..15
+void db25d_main_af_db10(int16_t db10);	// the received level below the loudest, tenths of a dB
 // Status registers: RSSI (0x67), noise (0x65), sub-audio flags (0x0C)
 void db25d_main_status(uint16_t *r67, uint16_t *r65, uint16_t *r0c);
 bool db25d_main_is_fd6818(void);		// an FD6818 or 0x7813 main chip (the D4x and D6x batches)

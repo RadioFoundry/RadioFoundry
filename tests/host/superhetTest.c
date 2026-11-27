@@ -71,7 +71,7 @@ static void test_filled(void)
 	const superhet_main_ops_t *m[] = { &bk4819_superhet_main, &fd6818sh_superhet_main };
 	for (unsigned i = 0; i < 2; i++) {
 		CHECK(m[i]->idle && m[i]->rx && m[i]->to_if && m[i]->bandwidth && m[i]->rx_tone && m[i]->af &&
-		      m[i]->af_gain && m[i]->tx_prepare && m[i]->tx_tune && m[i]->tx_end && m[i]->tail && m[i]->tone &&
+		      m[i]->af_db10 && m[i]->tx_prepare && m[i]->tx_tune && m[i]->tx_end && m[i]->tail && m[i]->tone &&
 		      m[i]->tone_on && m[i]->tone_key && m[i]->dtmf && m[i]->dmr_enter && m[i]->dmr_leave &&
 		      m[i]->dmr_tx_prepare && m[i]->burst);
 	}
@@ -123,7 +123,7 @@ static void test_fd6818_dmr_volume(void)
 	reset();
 	fd6818sh_attach(&c, &bus, FD6818SH_MAIN);
 	superhet_main_t m = { &fd6818sh_superhet_main, &c };
-	m.ops->af_gain(m.chip, 8);
+	m.ops->af_db10(m.chip, -140);	// 14 dB down: level 8
 	m.ops->dmr_enter(m.chip, 4);
 	CHECK(regs[0x53] == 0x957D);
 	m.ops->dmr_leave(m.chip);

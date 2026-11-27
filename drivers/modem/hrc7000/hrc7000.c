@@ -75,19 +75,6 @@ uint8_t hrc7000_dac_code(int db)
 	return (uint8_t)(64 - (db > HRC7000_DAC_MAX_DB ? HRC7000_DAC_MAX_DB : db));	// 63..32 = +1..+32 dB
 }
 
-int hrc7000_volume_db(unsigned step, unsigned def_step, unsigned steps, int top_db)
-{
-	if (step == 0) {
-		return HRC7000_DAC_MIN_DB;
-	}
-	if (step > steps) {
-		step = steps;
-	}
-	int db = step <= def_step ? -3 * (int)(def_step - step)
-				  : top_db * (int)(step - def_step) / (int)(steps - def_step);	// step <= steps here
-	return db < HRC7000_DAC_MIN_DB ? HRC7000_DAC_MIN_DB : db > HRC7000_DAC_MAX_DB ? HRC7000_DAC_MAX_DB : db;
-}
-
 static void rf_control_wr(hrc7000_t *d)
 {
 	uint32_t lead = d->rf_tx_lead != 0 ? d->rf_tx_lead : HRC7000_RF_TX_LEAD_DEF;

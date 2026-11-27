@@ -22,7 +22,9 @@ typedef struct {
 	void (*bandwidth)(void *chip, bool wide);		// analog receive: 25 kHz or 12.5 kHz
 	void (*rx_tone)(void *chip, superhet_tone_t type, uint16_t value);	// Hz x 10, or the 9-bit DCS code
 	void (*af)(void *chip, superhet_af_t af);
-	void (*af_gain)(void *chip, uint8_t gain);		// 0..15
+	// The received audio level, in tenths of a dB below the chip's loudest (0 and below): the volume curve
+	// (radio_volume_db10)
+	void (*af_db10)(void *chip, int16_t db10);
 	// FM transmit: words written while still receiving (pa_gain 0..15, for chips with a PA gain), the tune into TX,
 	// the end back to receive on the TX frequency
 	void (*tx_prepare)(void *chip, superhet_tone_t type, uint16_t value, uint32_t hz, uint8_t pa_gain);

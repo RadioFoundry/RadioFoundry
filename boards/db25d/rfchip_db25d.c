@@ -241,7 +241,7 @@ bool db25d_main_tone_heard(uint16_t r0c, uint8_t type)
 }
 
 void db25d_main_af(db25d_af_t af) { sh_main.ops->af(sh_main.chip, sh_af(af)); }
-void db25d_main_af_gain(uint8_t gain) { sh_main.ops->af_gain(sh_main.chip, gain); }
+void db25d_main_af_db10(int16_t db10) { sh_main.ops->af_db10(sh_main.chip, db10); }
 
 void db25d_main_status(uint16_t *r67, uint16_t *r65, uint16_t *r0c)
 {

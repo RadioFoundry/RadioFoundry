@@ -25,7 +25,7 @@ static void af(void *c, superhet_af_t a)
 	bk4819_set_af(c, a == SUPERHET_AF_FM ? BK4819_AF_FM : a == SUPERHET_AF_DMR ? BK4819_AF_DMR : BK4819_AF_MUTE);
 }
 
-static void af_gain(void *c, uint8_t g) { bk4819_set_af_gain(c, g); }
+static void af_db10(void *c, int16_t db10) { bk4819_set_af_db10(c, db10); }
 
 // The stock deviation and sub-audio words; the PA gain register stays at the value set at start-up
 static void tx_prepare(void *c, superhet_tone_t t, uint16_t v, uint32_t hz, uint8_t pa_gain)
@@ -70,7 +70,7 @@ static void burst(void *c, uint32_t hz, bool tx) { bk4819_burst_tune(c, hz, tx ?
 static void gpio(void *c, uint8_t pin, bool high) { bk4819_gpio(c, pin, high); }
 
 const superhet_main_ops_t bk4819_superhet_main = {
-	.idle = idle, .rx = rx, .to_if = to_if, .bandwidth = bandwidth, .rx_tone = rx_tone, .af = af, .af_gain = af_gain,
+	.idle = idle, .rx = rx, .to_if = to_if, .bandwidth = bandwidth, .rx_tone = rx_tone, .af = af, .af_db10 = af_db10,
 	.tx_prepare = tx_prepare, .tx_tune = tx_tune, .tx_end = tx_end, .tail = tail, .tone = tone_start,
 	.tone_on = tone_on, .tone_key = tone_key, .dtmf = dtmf, .dmr_enter = dmr_enter, .dmr_leave = dmr_leave,
 	.dmr_tx_prepare = dmr_tx_prepare, .burst = burst, .gpio = gpio,
