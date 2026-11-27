@@ -93,6 +93,7 @@ The DM-32's programming cable is on UART0. The DB25-D never uses UART0.
 | DAC A | RX front-end tuning: the calibration value for the RX frequency, written at each receive set-up (6.4) |
 | DAC B | PA power control. Ramped over 180 steps of 4 us at the start and end of each burst |
 | DAC C | 1762 (0x06E2) at init, as on the DM-32; 1780 at each receive set-up |
+| Pad mux | GPIO for the switch and supply pins: IO_DIPLEX1 bits 9–18 (PTA23–PTA27), 23–24 (PTA30) and 27–29 (PTB2–PTB4), IO_DIPLEX2 bits 22–23 (PTC18, PTC19). These are the reset values; RadioFoundry sets them at start-up, since a loader that left a pad on its peripheral would leave the RX or TX path dead |
 | DAC init | IO_DIPLEX2 bits 27–29 cleared (all three outputs on their pins), PD_MODE_EN = 0, PD_CTRL = 0 (all channels on), every data register 0, then DAC C |
 
 To TX: RX paths off, 50 us, tune, the page's TX-on delay, PA select of the band (UHF PTA26 high and PTB3 low, VHF the
