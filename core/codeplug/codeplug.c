@@ -1386,6 +1386,9 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
 	copy_name(out->comment, &b[0x1F], CODEPLUG_APRS_COMMENT);
 	uint8_t amb = magic == APRS_MAGIC ? (uint8_t)(b[0x3D] >> 5) : (uint8_t)((b[0x3D] >> 4) & 7u);
 	out->ambiguity = amb <= 4 ? amb : 4;
+	if (!freq(&b[0x37], &out->tx_hz)) {
+		out->tx_hz = 0;
+	}
 	return true;
 }
 
@@ -1445,6 +1448,28 @@ bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid)
 	if (ok) {
 		b[0x08] = ssid;
 		ok = flash_write(addr + 0x08u, &b[0x08], 1);
+	}
+	if (ok) {
+		serial++;
+	}
+	storage_unlock();
+	return ok;
+}
+
+bool codeplug_set_aprs_freq(uint8_t n, uint32_t hz)
+{
+	uint8_t b[APRS_SIZE];
+	if (n < 1 || n > CODEPLUG_APRS_CONFIGS) {
+		return false;
+	}
+	uint32_t addr = APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE;
+	storage_lock();
+	bool ok = source == CODEPLUG_OPENFW && flash_read(addr, b, sizeof(b));
+	uint16_t magic = le16(&b[0x3E]);
+	ok = ok && b[0] != 0xFF && b[0] != 0x00 && (magic == APRS_MAGIC || magic == APRS_MAGIC - 1u);
+	if (ok) {
+		put_freq(&b[0x37], hz);
+		ok = flash_write(addr + 0x37u, &b[0x37], 4);
 	}
 	if (ok) {
 		serial++;

@@ -451,19 +451,23 @@ to APRS-IS, mute), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `
 `aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
 `aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's
 ([position.md](position.md) 5): APRS never changes them, and its save keeps them. The codeplug's APRS record 1 (EEPROM 0x1588,
-64 bytes each) gives the SSID, path, symbol, comment and ambiguity when present; its fixed position and frequency
-encodings are unknown and not used. Of these the radio takes the comment, the path and the SSID.
+64 bytes each) gives the SSID, path, symbol, comment, frequency and ambiguity when present; its fixed position
+encoding is unknown and not used. Of these the radio takes the comment, the path, the SSID and the frequency.
 
-The path and the SSID live in both places, and the one changed last wins, each on its own:
+The path, the SSID and the frequency live in both places, and the one changed last wins, each on its own:
 
 - Codeplug to radio: `aprs_cp_path` holds what was last taken from the record, bits 0-2 the path (`aprs_path_t` + 1)
   and bits 3-7 the SSID (+ 1); 0 = none yet (`settings_aprs_cp_path` / `_ssid`). When the record's path or SSID
   differs from it, it replaces `aprs_path` or `aprs_ssid` and is stored there. Checked at start-up and whenever the
   codeplug serial changes (a CPS write). A path that isn't one of the five (another callsign, a second entry without a
-  first) is left alone.
-- Radio to codeplug: a change of the path or SSID on the APRS page posts a storage job (`aprs_to_codeplug`) that
+  first) is left alone. The frequency's marker is `aprs_cp_freq`, an 8-bit hash of the frequency
+  (`settings_aprs_freq_mark`, 1-255; 0 = none yet). A frequency in the record (0x37, BCD of 10 Hz units, LE; 0 =
+  none) whose mark differs becomes the region with that frequency, else Custom with it in `aprs_freq_hz`. One outside
+  the ham bands is taken too: the APRS page then says why nothing is sent. Two frequencies with the same mark only
+  cost a CPS change to the second being missed; the radio keeps its own.
+- Radio to codeplug: a change of the path, SSID or frequency on the APRS page posts a storage job (`aprs_to_codeplug`) that
   rewrites what differs in the record (the two path entries, callsign space padded with an SSID byte; the SSID byte at
-  0x08) and sets `aprs_cp_path` to match. No record is made when there is none: the radio then keeps them in the
+  0x08; the frequency in use, a region's too, at 0x37) and sets `aprs_cp_path` and `aprs_cp_freq` to match. No record is made when there is none: the radio then keeps them in the
   settings only. A change over the debug link stays in the settings.
 
 The SSID marker uses `aprs_cp_path`'s upper bits, so a record from before it reads "none yet" and the codeplug's SSID
@@ -524,7 +528,7 @@ is still to run on the HR_C7000 boards. Per-radio levels and results are in the 
 - Default triggers: SmartBeaconing on with a 10 min interval fallback, after-PTT and boot off.
 - The LRRP request ID and token for unsolicited reports to BrandMeister; whether LRRP answers should use the APRS
   position when there is no GPS; whether Settings > Location > Send position should drive APRS.
-- The codeplug APRS record's fixed position and frequency encodings.
+- The codeplug APRS record's fixed position encoding.
 - Receive from the HR_C6000's ungated RX RAM (5.3).
 - Settings and debug link section / command numbers may need renumbering when merged with other branches.
 

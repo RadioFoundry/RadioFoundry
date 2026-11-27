@@ -120,7 +120,17 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 	// and taking it would drop our SSID from every packet. Mark it taken and keep ours; a later CPS write of another
 	// SSID is taken as usual, and 0 can still be set on the radio
 	bool keep_ssid = new_ssid && cp->ssid == 0 && settings_aprs_cp_ssid(st) == 0;
-	if (!new_path && !new_ssid) {
+	// A frequency becomes the region that has it, else Custom; one outside the ham bands is taken too, and the page
+	// says why nothing is sent
+	uint8_t mark = settings_aprs_freq_mark(cp->tx_hz);
+	bool new_freq = mark != 0 && st->aprs_cp_freq != mark;
+	uint8_t region = APRS_REGION_CUSTOM;
+	for (uint8_t r = 0; r < APRS_REGION_CUSTOM; r++) {
+		if (region_hz[r] == cp->tx_hz) {
+			region = r;
+		}
+	}
+	if (!new_path && !new_ssid && !new_freq) {
 		return;
 	}
 	settings_t *s = settings_begin();
@@ -137,8 +147,22 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 		}
 		settings_set_aprs_cp_ssid(s, (uint8_t)(cp->ssid + 1u));
 	}
+	if (new_freq) {
+		s->aprs_region = region;
+		if (region == APRS_REGION_CUSTOM) {
+			s->aprs_freq_hz = cp->tx_hz;
+		}
+		s->aprs_cp_freq = mark;
+	}
 	settings_end(aprs_s.now);
 	LOCK();
+	if (new_freq) {
+		aprs_s.cfg.region = region;
+		if (region == APRS_REGION_CUSTOM) {
+			aprs_s.cfg.freq_hz = cp->tx_hz;
+		}
+		aprs_s.block = rf_block();
+	}
 	if (new_path) {
 		aprs_s.cfg.path = path;
 	}
@@ -152,8 +176,8 @@ static void __attribute__((noinline)) take_codeplug(const settings_t *st, const 
 	UNLOCK();
 }
 
-// One write of the path and the SSID into record 1 (only what differs), taken as seen when it lands
-static bool write_codeplug(uint8_t path, uint8_t ssid)
+// One write of the path, the SSID and the frequency into record 1 (only what differs), taken as seen when it lands
+static bool write_codeplug(uint8_t path, uint8_t ssid, uint32_t hz)
 {
 	codeplug_aprs_t cp;
 	if (!codeplug_aprs(1, &cp)) {
@@ -174,9 +198,15 @@ static bool write_codeplug(uint8_t path, uint8_t ssid)
 	if (cp.ssid != ssid && !codeplug_set_aprs_ssid(1, ssid)) {
 		return false;
 	}
+	if (hz != 0 && cp.tx_hz != hz && !codeplug_set_aprs_freq(1, hz)) {
+		return false;
+	}
 	settings_t *s = settings_begin();
 	settings_set_aprs_cp_path(s, (uint8_t)(path + 1u));
 	settings_set_aprs_cp_ssid(s, (uint8_t)(ssid + 1u));
+	if (hz != 0) {
+		s->aprs_cp_freq = settings_aprs_freq_mark(hz);
+	}
 	settings_end(aprs_s.now);
 	return true;
 }
@@ -184,17 +214,18 @@ static bool write_codeplug(uint8_t path, uint8_t ssid)
 bool aprs_to_codeplug(void)
 {
 	// A change that came while the job waited or ran couldn't post a job of its own: write again until the
-	// codeplug holds the path and SSID in use (a few times at most)
+	// codeplug holds the path, SSID and frequency in use (a few times at most)
 	for (uint8_t tries = 0; tries < 3u; tries++) {
 		LOCK();
 		uint8_t path = aprs_s.cfg.path < APRS_PATH_COUNT ? aprs_s.cfg.path : APRS_PATH_WIDE1_WIDE2;
 		uint8_t ssid = aprs_s.cfg.ssid <= 15 ? aprs_s.cfg.ssid : APRS_SSID_DEFAULT;
+		uint32_t hz = aprs_cfg_freq(&aprs_s.cfg);
 		UNLOCK();
-		if (!write_codeplug(path, ssid)) {
+		if (!write_codeplug(path, ssid, hz)) {
 			return false;
 		}
 		LOCK();
-		bool same = aprs_s.cfg.path == path && aprs_s.cfg.ssid == ssid;
+		bool same = aprs_s.cfg.path == path && aprs_s.cfg.ssid == ssid && aprs_cfg_freq(&aprs_s.cfg) == hz;
 		UNLOCK();
 		if (same) {
 			return true;
