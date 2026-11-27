@@ -75,10 +75,15 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   hint row. Banners give the title and the text two lines each ("Call alert from" / "Jodi Ruiz"), and a message
   banner shows two lines of the message from the inbox.
 - Home's talk target line (DMR target or FM frequency) drops to the small font as a whole, then takes the target's
-  short form; a frequency is never shortened. Large-text Home picks the largest font each line fits in, and takes the
-  short form before it would go below the medium font. The short form of a talkgroup is its number ("TG 91 World"
-  becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234" becomes "Joe Smith"). A contact's ID alone
-  says nothing at a glance, so it is what goes. An ID without a contact is shown as the ID.
+  short form; a frequency is never shortened. An FM channel's line is its RX frequency and a repeater's offset
+  ("147.060 MHz +600k", no arrow), which drops " MHz", then the offset. While PTT is held (transmitting or refused),
+  and in the VFO, the line is the arrow and the TX frequency. A trunked P25 channel's line is the follower's state
+  ([p25-trunking.md](p25-trunking.md) 7); idle on the control channel of a system that can't transmit (listen only,
+  or blocked) it is `WORD_RX_ONLY` in the warning color, as an RX-only channel's is. Large-text Home picks the
+  largest font each line fits in, and takes the short form before it would go below the medium font. The short form
+  of a talkgroup is its number ("TG 91 World" becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234"
+  becomes "Joe Smith"). A contact's ID alone says nothing at a glance, so it is what goes. An ID without a contact is
+  shown as the ID.
 - While a VFO frequency is being typed in dual watch, its selected pane shows the digits and blanks for the remaining
   places in place of the old frequency, including on Large text Home. The other pane keeps its frequency. Back removes
   a digit; OK or # tunes the selected pane.
@@ -739,8 +744,10 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   text reads on them (at least 7.5:1 after RGB565 rounding); the red is lighter and pinker than TX's red, and there is
   no green, which would hide the RX pill. Gallery: `home_dmr*`, `home_plain`, `channels*` (section 7).
 - The VFO has a mode of its own (`dmr-voice.md` 2.1). The Mode tile (tile 4 in the VFO only) switches it FM / DMR ("VFO: DMR", no "for now": it is kept), and in a build with only one VFO kind the tile is dimmed ("VFO: one mode in this build"). On a channel tile 4 is "To VFO" (`dmr-voice.md` 2.2): it copies what is in effect on the channel to the VFO and opens it on Home ("Copied to VFO"); a channel the VFO can't hold is refused with a toast. A channel has no temporary mode change any more. In DMR the quick menu is the DMR one: Timeslot, Color and Talk to change the VFO's own settings, with no dot on Home. The talk target picker lists the VFO's current target first ("Current"); both OK and hold OK keep the target for the VFO.
-- The privacy key is typed in decimal (Anytone 0..65535). Number rows take typed digits; a value outside the range or
-  between steps is refused with the range. Only key slot 1 is reachable from the menu.
+- The privacy key types are named by key size with the key's range, "8-bit (1-255)" and "16-bit (0-65535)"; where the
+  range doesn't fit beside the row's label it drops out ("16-bit"), so the label stays whole. The key is typed in
+  decimal. Number rows take typed digits; a value outside the range or between steps is refused with the
+  range. Only key slot 1 is reachable from the menu.
 - Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.
 - A failed message isn't kept for a retry: the banner says "Not delivered: send it again".
 - Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"), sent in the language in use (2.5); free text is dimmed.

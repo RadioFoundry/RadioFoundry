@@ -54,7 +54,7 @@ typedef struct {
 	uint32_t rx_repeats;	// good frames whose parameter bits equal the call's previous good frame
 	uint32_t tx_repeats;	// encoded frames whose parameter bits equal the transmission's previous frame
 	uint32_t tx_mic_peak;	// largest mic sample (absolute) the board delivered in the latest transmission: 0 = no mic
-	// The mic gain's limiter in the latest transmission (audio/miclimit/miclimit.h): the lowest gain it used, Q8 (the
+	// The mic gain's limiter in the latest transmission (core/dsp/miclimit.h): the lowest gain it used, Q8 (the
 	// set gain when it never cut; 256 at unity, which skips it), and the largest sample the encoder got after the gain
 	uint32_t tx_mic_low_q8;
 	uint32_t tx_enc_peak;
@@ -69,6 +69,7 @@ typedef struct {
 	uint32_t tx_mic_spread_db;	// that minus the 10th percentile block's level, dB
 	uint32_t tx_mic_zc;		// the median block's zero crossings (of 160): speech 5-40, white noise about 80
 	uint32_t tx_mic_blocks;		// blocks counted
+	uint32_t tx_mic_muted;		// blocks sent as silence in the latest transmission: the mic gate was on (a beep)
 } ambe_voice_stats_t;
 
 // audio and vocoder from the board; vocoder->present() false: frames are still queued and counted, but play silence
@@ -87,8 +88,15 @@ bool ambeVoiceStreaming(void);
 // block, adds into it and returns true while it sounds (the speaker route is kept on for it). NULL = none
 typedef bool (*ambe_voice_mixer_t)(int16_t *spk);
 void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
+// While transmitting, asked before each mic block is encoded: true sends the block as silence. The speaker's sound
+// reaches the mic, so a beep the mixer plays during a transmission would go on air with the voice (issue 532); the
+// gate (radio/beep.h beep_mic_echo) covers the beep and its way back. The test signal and signaling tones go out as
+// they are. NULL = none
+typedef bool (*ambe_voice_mic_gate_t)(void);
+void ambeVoiceSetMicGate(ambe_voice_mic_gate_t gate);
+ambe_voice_mic_gate_t ambeVoiceMicGate(void);	// the gate set, for the host tests
 // Microphone gain for DMR transmissions, Q8 (256 = as the board delivers it): the samples go through a peak limiter
-// (audio/miclimit/miclimit.h) before the vocoder, so a gain that lifts a quiet mic doesn't clip a loud one. Any task;
+// (core/dsp/miclimit.h) before the vocoder, so a gain that lifts a quiet mic doesn't clip a loud one. Any task;
 // a transmission starts at the gain set then and follows a change from its next block. Set through radio_set_mic_gain
 // (radio/mic_gain.h): the Mic gain step where the board doesn't take it, plus the board's hal_radio_t.mic_pcm_db
 void ambeVoiceSetMicGainQ8(uint16_t q8);

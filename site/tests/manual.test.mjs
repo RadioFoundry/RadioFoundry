@@ -87,6 +87,19 @@ test("kit: offered at the step that needs the API the browser lacks", () => {
 	assert.equal(kit.missingApi(radios[NONE], "install", "connect", none), "serial");
 });
 
+// #1024: Firefox has Web Serial but no WebUSB. A radio on a programming cable installs, so the start page warns
+// about USB radios rather than saying the browser can't install at all
+test("kit: the start page's banner says what this browser lacks, and how much that matters", () => {
+	const firefox = { usb: false, serial: true };
+	assert.deepEqual(kit.supportNotices({ usb: true, serial: true }), []);
+	assert.deepEqual(kit.supportNotices({ usb: false, serial: false }), [["flash.support.none", "bad"]]);
+	assert.deepEqual(kit.supportNotices(firefox), [["flash.support.usb", "warn"]]);
+	assert.deepEqual(kit.supportNotices({ usb: true, serial: false }), [["flash.support.serial", "bad"]]);
+	// and in Firefox the serial radio's install runs in the browser, the USB radio's write offers the kit
+	assert.equal(kit.missingApi(radios[SERIAL], "install", "connect", firefox), null);
+	assert.equal(kit.missingApi(radios[DFU], "install", "write", firefox), "usb");
+});
+
 test("kit: file names", () => {
 	assert.equal(kit.kitBase(manifest("b1"), "b1"), "rfoundry-b1-v0.2.0");
 	assert.equal(kit.kitBase({ image: { file: "local" } }, "b2"), "rfoundry_b2");

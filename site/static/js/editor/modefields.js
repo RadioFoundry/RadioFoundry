@@ -87,3 +87,18 @@ export function specField(spec, t, holder, id) {
 		},
 	};
 }
+
+// The system's fields as typed in the form so far: the stored fields, each text field of the module replaced by what
+// read(`sys.<key>`) returns when that parses (a blank reads as the field's blank value). read gives undefined for a
+// field with no input yet, and text that doesn't parse leaves the stored value, as the form would on save.
+export function liveSystemFields(mod, fields, read, t) {
+	const live = { ...fields };
+	for (const spec of mod.fields()) {
+		if (spec.type === "bool" || spec.type === "select") continue;
+		const raw = read(`sys.${spec.key}`);
+		if (raw === undefined) continue;
+		const res = parseSpec(spec, raw, t, live);
+		if (!res.error) live[spec.key] = res.value;
+	}
+	return live;
+}

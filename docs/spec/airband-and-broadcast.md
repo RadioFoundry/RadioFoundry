@@ -58,7 +58,7 @@ channel; the channel form also grays the TX timeout, VOX and the tone burst. The
 | Transmit | refused with `TXDENY_AM` whenever `view.am`, and for any TX frequency in the air band on an AM radio (split channels, DMR channels, the VFO, the data service, the hotspot's frequencies) |
 | Squelch | in AM the board's `status()` gives `noise` on the FM noise scale (larger = weaker) from the reading that tells a carrier from an empty channel in AM, so the levels and hysteresis are the FM ones (3.3). `view.noise` holds that value in AM. Scan uses the same value |
 | Sub-audio | ignored in AM (`tone_needed()` is false, the tone counts as heard) |
-| Steps | `radio_req_vfo_step_size()` (RREQ_VFO_STEP_SIZE, stored in `settings_t.vfo_step_hz`; 0 is auto, the default: 25 kHz at width 25K or in AM, else `RADIO_VFO_STEP_HZ`, recomputed on every view change, with `view.vfo_step_auto` set; Settings › Talk › VFO step); 8333 means the exact 8.33 kHz grid (n x 25/3 kHz, `radio_am_step()` snaps and steps without drift); 25 kHz is a plain step |
+| Steps | `radio_req_vfo_step_size()` (RREQ_VFO_STEP_SIZE, stored in `settings_t.vfo_step_hz`; 0 is auto, the default: 25 kHz at width 25K or in AM, else `RADIO_VFO_STEP_HZ`, recomputed on every view change, with `view.vfo_step_auto` set; Settings › Talk › VFO step); 8333 means the exact 8.33 kHz grid (n x 25/3 kHz, `radio_am_step_833()` snaps and steps without drift; in the menu and the radio core with `CONFIG_AM_RX`); 25 kHz is a plain step |
 | Band table | the board lists the air band as an RX-only band ({108000000, 136000000, false} after the VHF TX band) |
 | Saving | the channel editor makes a copy whose RX lands in an RX-only band of the table (New from current, a typed RX) RX only, and FM in a listen band (the air band on a radio with AM receive, the broadcast receiver's range), so it saves as is; a DMR copy in a listen band is refused ("Receive only band: set FM"). In another receive-only band a DMR copy stays DMR, RX only ([ui.md](ui.md) 2.1). The codeplug stores a listen band's channel as an FM channel |
 | Mode tile | DMR is refused: "AM only in the air band" |
@@ -126,7 +126,7 @@ push-pull SCL, no clock stretching).
 |---|---|
 | When | `CONFIG_BCAST_FM`, the board has `CAP_BCAST_FM` and `board.bcast`, and the channel's or the VFO's RX frequency is in the receiver's range, whatever its stored mode (3.1). `view.bcast` says the broadcast receiver plays |
 | Tuning | the receiver is powered and tuned to the nearest point of its grid (`radio_bcast_khz`). Leaving the range powers it off. If the chip doesn't answer, `view.bcast_fault` is set and the radio stays idle |
-| Transmit | refused with `TXDENY_BCAST` whenever `view.bcast`, and for any TX frequency in the range on a radio with the receiver (split channels, DMR channels, the VFO, the hotspot's frequencies) |
+| Transmit | refused with `TXDENY_BCAST` whenever `view.bcast`, and for any TX frequency in the range on a radio with the receiver (split channels, DMR channels, the VFO, the hotspot's frequencies). While PTT is refused the station is silent, as an open squelch closes on a receive-only FM channel; it plays again on release, and Monitor keeps it playing |
 | Squelch | on the receiver's RSSI (about dBuV): noise = 97 - RSSI on the FM noise scale, so level 5 opens above 45 dBuV, 1 above 33, 9 above 57. Set from a receiver without an antenna (2026-10-22): empty frequencies read 22 to 37, stations 50 and up. The signal meter shows RSSI - 107 dBm. Only a scan uses it (to stop on stations): otherwise the state stays RX, the LED stays off (a station isn't a call), the screen shows the level and the audio plays whatever the signal (`bcast_listening()`) |
 | Sub-audio | ignored (`tone_needed()` is false) |
 | Volume | the radio's own volume where it has one (`radio_volume_soft`), mapped onto the receiver's 0-15; a fixed 12 where a knob after the amplifier sets the level |
@@ -162,7 +162,7 @@ broadcast plays, so the two never ask for the speaker at once (hal_bcast.h `audi
 
 | Switch | Default | Covers |
 |---|---|---|
-| `CONFIG_AM_RX` | on with FM; off where the receiver has no AM | `radio_am.c` in the radio core, RREQ_VFO_STEP_SIZE; needs FM |
+| `CONFIG_AM_RX` | on with FM; off where the receiver has no AM | `radio_am.c` in the radio core, the 8.33 kHz VFO step; needs FM |
 | `CONFIG_BCAST_FM` | on; off where there is no broadcast receiver | `radio_bcast.c` in the radio core, the board's tuner glue, the step setting |
 
 The board must also set the capability bits; without them the code does nothing at run time. Per-board defaults:

@@ -176,17 +176,20 @@ static void read_panel_id(void)
 	panel_id.id_read = true;
 }
 
-// ---- Backlight: TIM8 CH1 PWM on PC6 (AF3), 40 kHz, 100 steps: far above the FM transmit audio band (#330) ----
+// ---- Backlight: TIM8 CH1 PWM on PC6 (AF3), 40 kHz, 100 steps: far above the FM transmit audio band (#330). The
+// period is 1800 timer clocks, not 100: CH3 is the speaker's second output (spkaux_md380.c), whose samples need the
+// finer steps ----
 
 #define BL_STEPS	100u
+#define BL_PERIOD	1800u	// timer clocks per period: 72 MHz / 1800 = 40 kHz
 
 static void bl_init(void)
 {
 	__HAL_RCC_TIM8_CLK_ENABLE();
 	stm32_pin_af(PIN_PORT(PIN_LCD_BACKLIGHT), PIN_MASK(PIN_LCD_BACKLIGHT), GPIO_AF3_TIM8, false, GPIO_NOPULL);
 	TIM8->CR1 = 0;
-	TIM8->PSC = 18 - 1;		// APB2 timer clock 72 MHz -> 4 MHz
-	TIM8->ARR = BL_STEPS - 1;	// 40 kHz
+	TIM8->PSC = 0;			// APB2 timer clock 72 MHz
+	TIM8->ARR = BL_PERIOD - 1u;	// 40 kHz
 	TIM8->CCR1 = 0;
 	TIM8->CCMR1 = (6u << TIM_CCMR1_OC1M_Pos) | TIM_CCMR1_OC1PE;	// PWM mode 1, preload
 	TIM8->CCER = TIM_CCER_CC1E;
@@ -201,7 +204,7 @@ static void set_backlight(uint8_t percent)
 	if (!ready) {
 		return;
 	}
-	TIM8->CCR1 = percent >= BL_STEPS ? BL_STEPS : percent;
+	TIM8->CCR1 = (percent >= BL_STEPS ? BL_STEPS : percent) * (BL_PERIOD / BL_STEPS);
 }
 
 // ---- hal_display_t ----

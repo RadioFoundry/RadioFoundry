@@ -148,6 +148,15 @@
 #ifndef CONFIG_TASK_STACKS
 #define CONFIG_TASK_STACKS		CONFIG_DEBUGLINK
 #endif
+// The debug link over the air (docs/spec/debuglink.md 7): a bench diagnostic, off by default. RADIO_DETOUR, derived
+// from it, is the radio core's and the settings store's part (temporary settings a deadline reverts), which host tests
+// build on its own
+#ifndef CONFIG_DEBUGLINK_DMRIP
+#define CONFIG_DEBUGLINK_DMRIP		0
+#endif
+#ifndef CONFIG_RADIO_DETOUR
+#define CONFIG_RADIO_DETOUR		CONFIG_DEBUGLINK_DMRIP
+#endif
 #ifndef CONFIG_CPS_OPENFW
 #define CONFIG_CPS_OPENFW		CONFIG_HOSTLINK
 #endif
@@ -357,8 +366,17 @@
 #ifndef CONFIG_IMBE
 #define CONFIG_IMBE			CONFIG_P25
 #endif
+// The 2400 bit/s MBE voice codec (core/mbe/mbe2400.h), compatible with D-STAR's voice frames; MBE is on with it too
+#ifndef CONFIG_MBE2400
+#define CONFIG_MBE2400			0
+#endif
 #ifndef CONFIG_MBE
-#define CONFIG_MBE			CONFIG_IMBE
+#define CONFIG_MBE			(CONFIG_IMBE || CONFIG_MBE2400)
+#endif
+// Derived: the MBE core's per-frame options (core/mbe/mbe.h: MBE_UV_DENSITY, MBE_PHASE_REGEN) are built with a front
+// end that sets them. Another front end that sets them adds its switch here: without it the flags are not defined
+#ifndef CONFIG_MBE_OPTS
+#define CONFIG_MBE_OPTS			CONFIG_MBE2400
 #endif
 // Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
 // mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them
@@ -529,6 +547,9 @@
 #endif
 #if CONFIG_SNMP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_SNMP needs CONFIG_DMR_IP_GATEWAY"
+#endif
+#if CONFIG_DEBUGLINK_DMRIP && !(CONFIG_DEBUGLINK && CONFIG_DMR_IP_GATEWAY)
+#error "CONFIG_DEBUGLINK_DMRIP needs CONFIG_DEBUGLINK and CONFIG_DMR_IP_GATEWAY"
 #endif
 #if CONFIG_USB_SERIAL_REQUEST && !CONFIG_USB_NETWORK
 #error "CONFIG_USB_SERIAL_REQUEST needs CONFIG_USB_NETWORK"

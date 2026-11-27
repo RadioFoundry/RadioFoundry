@@ -143,7 +143,10 @@ class Request:
     .error is the BenchLineError the request ended with, if any; .first is set at the first reply that isn't a wait
     or a note (a ready, started, armed, or an error)."""
 
-    def __init__(self, where, req, on_line=None, log=None):
+    def __init__(self, where, req, on_line=None, log=None, data=None):
+        """data: bytes sent after the request line (a mode's input, such as FM's pcm: int16 LE). The board reads
+        them as its buffer empties, so they go from a thread of their own while the replies are read: a refusal
+        comes back as its error line."""
         self.req, self.on_line = req, on_line
         self.log = log or (lambda s: print(s, file=sys.stderr, flush=True))
         self.replies, self.stamps = [], []
@@ -159,6 +162,14 @@ class Request:
             raise BenchLineError(f"the bench board stopped answering {req.get('op')}: {e}", "lost")
         self.thread = threading.Thread(target=self._pump, daemon=True)
         self.thread.start()
+        if data:
+            threading.Thread(target=self._feed, args=(data,), daemon=True).start()
+
+    def _feed(self, data):
+        try:
+            self.conn.s.sendall(data)
+        except OSError:
+            pass        # the board ended the request: its reply (an error line, or done) says why
 
     def _pump(self):
         try:

@@ -374,7 +374,8 @@ Ours: the hotspot's `cw_id` op (`core/radio/radio_hotspot.c`) hands the callsign
 task, which keys it on boards whose `hal_radio_t` has `tx_tone` (`tx_tone_key` switches
 the tone without retuning): the DMR keying released, `set_mode(FM)`, a carrier on the hotspot's TX frequency, 150 ms
 lead, the Morse (`core/radio/morse.c`: PARIS timing, dot = 1200 / wpm ms, `settings_t` `cw_wpm`, default 20 wpm,
-tone `cw_tone_hz`, default 800 Hz), 150 ms tail, then `set_mode(DMR)` (the modem set up again, 8.13), the receiver
+tone `cw_tone_hz`, default 800 Hz; a radio task held up for more than a dot stretches the element it was in and the
+rest goes on at its own lengths, never rushed or skipped), 150 ms tail, then `set_mode(DMR)` (the modem set up again, 8.13), the receiver
 back on the hotspot's RX frequency and the DMR keying armed. The TX flag stays set meanwhile (`cw_busy`). Leaving
 hotspot mode or SET_FREQ cuts the ID. Boards without `tx_tone` ACK and count it (`hs.cwid_unsent`, nothing keyed).
 Debug link: `hs.cw_*` in the `dmr_ext` view section.

@@ -70,15 +70,20 @@ class Docs:
 		self.pages = self._collect()
 		self.glossary = _load_glossary()
 		self.terms = self._terms()
+		# matches wherever any term's pattern would, so text with no term skips the per-term loop
+		self.any_term = self.glossary.any_pattern([n for e in self.glossary.load()["entries"] if e.get("preview", True)
+							   for n in self.glossary.names(e)])
 
 	def _terms(self):
-		"""[(compiled pattern, entry)], longest names first so "Tier III" wins over "Tier"."""
+		"""[(compiled pattern, first word lowercased, entry)], longest names first so "Tier III" wins over "Tier".
+
+		The first word is a cheap substring test: a name can only match text that contains it in some case."""
 		out = []
 		for e in self.glossary.load()["entries"]:
 			if e.get("preview", True):
 				out += [(self.glossary.pattern(n), n, e) for n in self.glossary.names(e)]
 		out.sort(key=lambda t: -len(t[1]))
-		return out
+		return [(pat, name.split()[0].lower(), e) for pat, name, e in out]
 
 	def _collect(self):
 		pages = []
@@ -174,6 +179,9 @@ class Docs:
 				return
 			skip.update(names)
 		scope = "user" if page["section"] == "user" else None
+		# skip and scope hold for the whole page, so filter the terms once here, not per text token
+		terms = [t for t in self.terms
+			 if not skip.intersection(self.glossary.names(t[2])) and not (scope and t[2]["scope"] != scope)]
 		seen = set()
 		depth = 0
 		in_heading = False
@@ -201,14 +209,17 @@ class Docs:
 				if c.type != "text" or depth:
 					out.append(c)
 				else:
-					out += self.split_terms(c, scope, seen, skip, page)
+					out += self.split_terms(c, terms, seen, page)
 			tok.children = out
 
-	def split_terms(self, tok, scope, seen, skip, page):
-		"""The text token as text and <abbr> tokens."""
+	def split_terms(self, tok, terms, seen, page):
+		"""The text token as text and <abbr> tokens. terms is self.terms already filtered for the page."""
 		text, cands = tok.content, {}
-		for pat, name, e in self.terms:
-			if e["term"] in seen or skip.intersection(self.glossary.names(e)) or (scope and e["scope"] != scope):
+		if self.any_term is None or not self.any_term.search(text):
+			return [tok]
+		lower = text.lower()
+		for pat, word, e in terms:
+			if word not in lower or e["term"] in seen:
 				continue
 			m = pat.search(text)
 			if m and (e["term"] not in cands or (m.start(), -(m.end() - m.start())) < cands[e["term"]][:2]):

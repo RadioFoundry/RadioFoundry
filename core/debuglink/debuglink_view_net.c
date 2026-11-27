@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The net view section: the radio's own services, TCP and its services (docs/spec/tcp-services.md); "net.built=0"
-// without any of them. The net_svc section: mDNS, TFTP and the UDP zone and channel control (mdns.md, tftp.md,
-// tcp-services.md 8)
+// without any of them. The net_svc section: mDNS and TFTP (mdns.md, tftp.md), and the UDP to the radio's address no
+// service took (usb-network.md 3)
 #include "config.h"
 #include "debuglink/debuglink.h"
 #if CONFIG_NET_LOCAL
@@ -13,6 +13,9 @@
 #endif
 #if CONFIG_MDNS || CONFIG_TFTP
 #include "net/net_services.h"
+#endif
+#if CONFIG_DMR_IP_GATEWAY
+#include "dmr/ipGateway.h"
 #endif
 
 void debuglink_view_net(dl_text_t *t)
@@ -35,9 +38,23 @@ void debuglink_view_net(dl_text_t *t)
 #endif
 }
 
+#if CONFIG_DMR_IP_GATEWAY
+// Not inlined: the stats copy stays off the host task's deepest path (docs/dev/stack-check.md)
+__attribute__((noinline)) static void unreachable_line(dl_text_t *t)
+{
+	ipGatewayStats_t gs;
+
+	ipGatewayGetStats(&gs);
+	dl_text(t, "net_svc.unreachable=%u\n", (unsigned)gs.ownUnreachable);
+}
+#endif
+
 // Its own section: with the TCP services' keys the net section outgrew a reply (truncated=1 before mdns.*)
 void debuglink_view_net_svc(dl_text_t *t)
 {
+#if CONFIG_DMR_IP_GATEWAY
+	unreachable_line(t);
+#endif
 #if CONFIG_MDNS || CONFIG_TFTP
 	net_services_view(t);
 #endif

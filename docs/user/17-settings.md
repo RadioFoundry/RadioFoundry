@@ -70,7 +70,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Reply window | 0 to 30 s | The codeplug's hang time, else 10 s | How long **PTT** answers the last call ([DMR](09-dmr.md#replying)). 0 turns it off | Works |
 | TX timeout | Off, 30 s, 1, 2, 3, 5, 10 min | 3 min | Longest transmission, for channels without their own timeout in the codeplug | Works |
 | Default squelch | 0 to 9 | 5 | The FM squelch level when a channel doesn't set one | Works |
-| VFO step | Auto, 2.5, 5, 6.25, 8.33, 10, 12.5, 20, 25, 50, 100 kHz | Auto | The step of Up, Down and the knob in the VFO. Auto is 25 kHz at width 25K and in AM, else 12.5 kHz. Only on radios with a VFO | Works |
+| VFO step | Auto, 2.5, 5, 6.25, 8.33, 10, 12.5, 20, 25, 50, 100 kHz | Auto | The step of Up, Down and the knob in the VFO. Auto is 25 kHz at width 25K and in AM, else 12.5 kHz. 8.33 kHz, the air band spacing, is listed only on radios with air band receive. Only on radios with a VFO | Works |
 | FM broadcast step | 200 kHz, 100 kHz | 200 kHz | The VFO step in the broadcast band. 200 kHz lands on the odd tenths (88.1, 88.3), the stations in the Americas. You can still type any frequency. Only on radios with a broadcast receiver ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) | Works |
 | Mic gain | 0 to 10 | 5 | Microphone level, 2 dB a step. 5 is the radio's normal level. Sets DMR, and FM on the radios that set the level in their microphone path ([Radio reference](23-radios.md)). A loud voice is held back rather than distorted. A change counts from the next transmission. Shows "AGC" and can't be changed while Mic AGC is on | Works (DMR); FM not checked on air |
 | Mic AGC | On, Off | Off | Evens out your level on DMR: a quiet voice is raised and a loud one lowered, so you don't need to set Mic gain. While it's on, Mic gain stays at 5. Dimmed on radios whose voice codec can't do it | Needs an on-air check (DMR) |
@@ -88,8 +88,8 @@ If the firmware was built without privacy, the Privacy row is dimmed and OK on i
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
-| Key type | Off, Motorola, Anytone | Off | The kind of basic privacy key ([DMR](09-dmr.md#privacy)). Off removes the key | Works |
-| Key | Motorola 1 to 255, Anytone 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
+| Key type | Off, 8-bit (1-255), 16-bit (0-65535) | Off | The kind of basic privacy key ([DMR](09-dmr.md#privacy)). Off removes the key | Works |
+| Key | 8-bit 1 to 255, 16-bit 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
 
 ### Location (key 5)
 
@@ -123,7 +123,7 @@ and by APRS. None of them needs the others: a radio without APRS still reports i
 | Answer radio checks | On, Off | On | Answer radio checks from other radios ([Radio check](10-messages-and-signaling.md#radio-check)) | Works |
 | Answer call alerts | On, Off | On | Acknowledge call alerts, so the caller knows the page arrived | Works |
 | TFTP codeplug write | On, Off | On | Lets a computer write the codeplug over TFTP in USB network mode ([USB network](15-usb-network.md#programming-over-the-network)). Reading is always possible | Works |
-| Message format | Automatic, ETSI, ETSI short, Motorola (where built) | Automatic | The encoding of new DMR text messages ([Messages](10-messages-and-signaling.md#message-formats)) | Works |
+| Message format | Automatic, ETSI, ETSI short, TMS (where built) | Automatic | The encoding of new DMR text messages ([Messages](10-messages-and-signaling.md#message-formats)) | Works |
 | Accept zone shares | On, Off | On | On shows a zone or channel another radio sends you, to import or reject ([Sharing a zone](07-channels-zones-vfo.md#sharing-a-zone)). Off ignores them | Works |
 | USB network at start | On, Off | Off | The radio starts as a USB network adapter instead of a serial port ([USB network](15-usb-network.md#starting-in-network-mode)) | Works |
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](15-usb-network.md#control-station-for-dispatch-software)) | Works |
@@ -174,7 +174,7 @@ When the keys lock by themselves and what still works while they are locked ([Ke
 |---|---|---|---|---|
 | Auto lock | Off, 30 s, 1 min, 5 min | Off | Locks the keys after this time without a key press | Works |
 | PTT when locked | On, Off | On | Whether **PTT** works while the keys are locked. Off: **PTT** does nothing until you unlock | Works |
-| Knob when locked | On, Off | On | On radios whose firmware reads the volume knob only (the row is not shown on the others; see the [feature matrix](../feature-matrix.md)). Whether the volume knob works while the keys are locked. Off: turning it does nothing and shows the unlock hint, and when you unlock, the volume goes straight to where the knob is | Works |
+| Knob when locked | On, Off | On | On radios whose volume follows a knob the firmware reads only (the row is not shown on the others; see the [feature matrix](../feature-matrix.md)). Whether the volume knob works while the keys are locked. Off: turning it does nothing and shows the unlock hint, and when you unlock, the volume goes straight to where the knob is | Works |
 
 ### My radio (key 0)
 

@@ -44,4 +44,13 @@ void dl_text_deg(dl_text_t *t, const char *key, int32_t e7);
 // text stays ASCII and valid JSON (RFC 8259 8.1)
 void dl_json_str(dl_text_t *t, const char *s);
 
+// GET_VIEW's filter and page (docs/spec/debuglink.md 3.7), in place on text of whole lines: the section= line (and a
+// truncated= line), then the lines that start with prefix (plen 0: every line), less the first offset bytes of those
+// (from the first line that starts at or past it), whole lines up to limit bytes in all, and "more=<the next offset>"
+// when lines were left. A page's first line goes whole even when longer than limit, where the text has room for it
+// and more=. Returns the new length (never more than len + DL_VIEW_MORE_MAX)
+#define DL_VIEW_MORE_MAX	12u	// "more=65535\n" and a byte to spare
+#define DL_VIEW_PAGE_MIN	64u	// the smallest page GET_VIEW makes: the section= line and more= fit
+size_t dl_view_page(char *text, size_t len, const char *prefix, size_t plen, uint16_t offset, uint16_t limit);
+
 #endif

@@ -682,6 +682,53 @@ static void test_conceal(void)
 	free(r);
 }
 
+// A stream's own concealment (mbe_conceal_t) in a build without the per-frame options: the count of repeats and the
+// fade a repeat are the policy's, and no policy is MBE_REPEAT_MAX repeats at full level
+static void test_conceal_policy(void)
+{
+	static const mbe_conceal_t two = { 2, 2048 }, none = { 0, 0 };
+	rig_t *r = malloc(sizeof *r);
+	mbe_params_t p;
+	int16_t pcm[MBE_FRAME_LEN];
+	double good, d[4];
+
+	memset(&p, 0, sizeof p);
+	p.L = 14;
+	p.w0 = 1u << 27;		// a period of 32 samples: every frame holds five, and its level is the amplitudes'
+	p.flags = MBE_NO_ENHANCE;
+	for (int l = 0; l < p.L; l++) {
+		p.a[l] = 9 * 2048;
+		p.v[l] = 1;
+	}
+	core_init(r);
+	for (int i = 0; i < 6; i++)
+		CHECK(mbe_synth_conceal(&r->m.mbe, &two, &p, 0, pcm) == 0, "good frame %d counted bad", i);
+	good = rms_of(pcm, MBE_FRAME_LEN);
+	for (int i = 0; i < 4; i++) {
+		CHECK(mbe_synth_conceal(&r->m.mbe, &two, NULL, 1, pcm) == (i < 3 ? i + 1 : 3), "bad frame %d: the count", i);
+		d[i] = rms_of(pcm, MBE_FRAME_LEN);
+	}
+	// each repeat a factor of two under the one before, the frame moving from the last level to its own
+	CHECK(fabs(db(d[0], good) + 2.5) < 0.5 && fabs(db(d[1], good) + 8.5) < 0.5, "two fading repeats: %.1f and %.1f dB",
+	      db(d[0], good), db(d[1], good));
+	CHECK(d[3] < 2, "not muted after two repeats: %.1f", d[3]);
+	CHECK(mbe_synth_conceal(&r->m.mbe, &none, &p, 0, pcm) == 0, "a good frame after the mute");
+	mbe_synth_conceal(&r->m.mbe, &none, &p, 0, pcm);
+	CHECK(mbe_synth_conceal(&r->m.mbe, &none, NULL, 1, pcm) == 1, "no repeats: the count");
+	CHECK(mbe_synth_conceal(&r->m.mbe, &none, NULL, 1, pcm) == 1 && rms_of(pcm, MBE_FRAME_LEN) < 2,
+	      "no repeats: the second lost frame plays at %.1f", rms_of(pcm, MBE_FRAME_LEN));
+	// no policy: mbe_synth_frame's
+	mbe_synth_frame(&r->m.mbe, &p, 0, pcm);
+	mbe_synth_frame(&r->m.mbe, &p, 0, pcm);
+	for (int i = 0; i < MBE_REPEAT_MAX; i++) {
+		CHECK(mbe_synth_conceal(&r->m.mbe, NULL, NULL, 1, pcm) == i + 1, "no policy, bad frame %d: the count", i);
+		if (i)
+			CHECK(fabs(db(rms_of(pcm, MBE_FRAME_LEN), good)) < 0.2, "no policy, repeat %d: %.1f dB", i + 1,
+			      db(rms_of(pcm, MBE_FRAME_LEN), good));
+	}
+	free(r);
+}
+
 // a channel with errors: nothing changes while it is clean, the output is muted while the rate of corrected bits is
 // over 8.5 % and comes back when it falls, and a frame's amplitudes are held under errors
 static void test_channel_errors(void)
@@ -846,6 +893,7 @@ int main(void)
 	test_silence();
 	test_level();
 	test_conceal();
+	test_conceal_policy();
 	test_channel_errors();
 	test_extremes();
 	test_determinism();

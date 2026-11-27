@@ -5,7 +5,7 @@
 #include "dmr/ambe/ambeFec.h"
 #include "config.h"
 #include "radio/sigtone.h"
-#include "audio/miclimit/miclimit.h"
+#include "dsp/miclimit.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -60,6 +60,7 @@ static bool have_last;
 
 static ambe_voice_stats_t stats;
 static ambe_voice_mixer_t mixer;
+static ambe_voice_mic_gate_t mic_gate;
 static bool cb_mixing;
 // Simplex: nothing is decoded while a transmission runs. A platform may keep the encoder's and the decoder's state in
 // one block (hal_vocoder_t), so a decode then would cost the transmission its encoder. A call heard meanwhile plays as
@@ -517,6 +518,7 @@ static void tx_block(const int16_t *mic)
 		}
 		stats.tx_mic_peak = 0;
 		stats.tx_enc_peak = 0;
+		stats.tx_mic_muted = 0;
 		miclimit_reset(&cb_limit, LOAD(mic_gain_q8));
 		stats.tx_mic_low_q8 = cb_limit.low_q8;
 		tx_have_prev = false;
@@ -565,6 +567,18 @@ static void tx_block(const int16_t *mic)
 	}
 	uint8_t bits[VOCODER_BITS];
 	static int16_t scaled[AUDIO_BLOCK_SAMPLES];	// the audio callback only (off its stack)
+	// A beep on the speaker is in the mic's samples too: the block goes out as silence. Not a block the test signal or
+	// a signaling tone replaces (below): that one isn't the mic's, so it isn't counted either
+	bool replaced = LOAD(test_signal);
+#if CONFIG_SIG_TONES
+	replaced = replaced || tone_active || tone_mute;
+#endif
+	ambe_voice_mic_gate_t gate = LOAD(mic_gate);
+	if (!replaced && gate != NULL && gate()) {
+		memset(scaled, 0, sizeof(scaled));
+		mic = scaled;
+		stats.tx_mic_muted++;
+	}
 	if (LOAD(test_signal)) {
 		test_block(scaled);
 		mic = scaled;
@@ -725,6 +739,16 @@ bool ambeVoiceStreaming(void)
 void ambeVoiceSetMixer(ambe_voice_mixer_t m)
 {
 	STORE(mixer, m);
+}
+
+void ambeVoiceSetMicGate(ambe_voice_mic_gate_t g)
+{
+	STORE(mic_gate, g);
+}
+
+ambe_voice_mic_gate_t ambeVoiceMicGate(void)
+{
+	return LOAD(mic_gate);
 }
 
 #if CONFIG_SIG_TONES

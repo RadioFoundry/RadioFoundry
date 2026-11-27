@@ -4,6 +4,8 @@
 #ifndef DB25D_H
 #define DB25D_H
 
+#include "radio/sql_rssi.h"
+
 #include <stdint.h>
 #include <stdbool.h>
 #include "board.h"
@@ -80,6 +82,9 @@ bool db25d_cal_tx_plan(uint32_t hz, bool high, uint8_t drive_pct, db25d_tx_plan_
 uint16_t db25d_apc_level(uint16_t target, uint16_t step);
 // Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
 uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
+// The open threshold in dBm at the main chip for levels 1..9, as radio_sql_rssi_levels takes them. False without a page
+// or with entries that aren't thresholds
+bool db25d_cal_squelch_open_dbm(uint32_t hz, bool fd6818, int16_t open_dbm[RADIO_SQUELCH_MAX]);
 
 // --- DMR burst timing (hardware-db25d.md 4.5; the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
 // The PA's point (pa_us, the key-up rule's) comes after the TX on sequence: the main chip's tune and the LO off end
@@ -139,7 +144,7 @@ uint8_t db25d_mic_lines(uint16_t *a9_changes, uint16_t *c11_changes);
 void db25d_mic_lines_reset(void);
 uint32_t db25d_input_ptt_ignored(void);	// key scans with PTA9 low that the shared-line gate took for serial data
 bool db25d_radio_transmitting(void);	// the radio is keyed (the shared PTT line's gate)
-bool db25d_input_mic_armed(void);	// PTC11 has read high since power-on: a mic is in the front jack (3.3)
+uint8_t db25d_input_ptt_armed(void);	// bit 0: PTA9, bit 1: PTC11 has idled high since power-on, so a low on it is a press (3.3)
 // The hand mic's key held now (its key number, 0xFF for none; mic_db25d.c)
 uint8_t db25d_mic_key(void);
 // The hand mic's frames as the host UART receives them (miccap_db25d.c, CONFIG_DIAG builds)
