@@ -9,7 +9,7 @@ codec is a front end on the core: its quantizer, dequantizer, tables and frame f
 | Front end | Files | Switch | Spec |
 |---|---|---|---|
 | Full rate, 88 bits a frame (TIA-102.BABA) | `imbe_*.c`, `imbe.h` | `CONFIG_IMBE`, with `CONFIG_P25` | [p25.md](p25.md) 5 |
-| 2400 bit/s, 49 bits in a 72-bit frame | `mbe2400*.c`, `mbe2400.h` | `CONFIG_MBE2400` | [mbe-2400.md](mbe-2400.md) |
+| 2400 bit/s, 48 bits in a 72-bit frame | `mbe2400*.c`, `mbe2400.h` | `CONFIG_MBE2400` | [mbe-2400.md](mbe-2400.md) |
 
 `CONFIG_MBE` builds the core, on with either front end ([build-config.md](../build-config.md)). No heap, no
 float, no libm. The memory a call needs is placed by the caller; the scratch can be shared with other code.

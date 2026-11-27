@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// 2400 bit/s MBE front end (docs/spec/mbe-2400.md): 49 parameter bits a frame in a 72-bit frame with FEC (3600 x
+// 2400 bit/s MBE front end (docs/spec/mbe-2400.md): 48 parameter bits a frame in a 72-bit frame with FEC (3600 x
 // 2400 bit/s), compatible with D-STAR's voice frames. The quantizer, the dequantizer and the frame's bit map and FEC;
 // the MBE core (mbe.h, mbe_est.h) does the analysis, the synthesis and the concealment.
 #ifndef MBE2400_H
