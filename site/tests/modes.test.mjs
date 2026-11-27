@@ -14,7 +14,7 @@ import { decode, encode, empty, newChannel, newContact, remove, validate, number
 import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey, countSecrets, withoutSecrets } from "../static/js/codeplug/channelmodes.js";
 import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../static/js/codeplug/modes.js";
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
-import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
+import { decodeConv, encodeConv, decodeUnit, decodeTsys, encodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
 import { t3System, OPTS as T3_OPTS } from "../static/js/codeplug/mode_t3.js";
 import { aesSystem, randomAesKey } from "../static/js/codeplug/mode_aes.js";
 
@@ -826,4 +826,14 @@ test("liveSystemFields: the identity as typed over the stored fields", () => {
 	assert.equal(live({ "sys.wacn": "" }).wacn, null, "a cleared field reads as blank");
 	assert.equal(p25System.noTx(live({ "sys.sysid": "00a", "sys.wacn": "" })), true);
 	assert.equal(p25System.noTx(live({ "sys.wacn": "" })), false);
+});
+
+// The old system byte survives a save, but is no longer a second roaming control.
+test("P25 roaming uses shared radio settings; the legacy threshold round-trips", () => {
+	assert.ok(!p25System.fields().some((f) => f.key === "roamDbm"));
+	const raw = new Uint8Array(10);
+	raw[9] = 0x9C;
+	const f = decodeTsys(raw);
+	assert.equal(f.roamDbm, -100);
+	assert.equal(encodeTsys(f, raw)[9], raw[9]);
 });

@@ -10,6 +10,7 @@
 #include "p25/p25_codeplug.h"
 #include "codeplug/codeplug_modes.h"
 #include "radio/radio_bands.h"
+#include "radio/radio.h"
 #if CONFIG_IMBE
 #include "p25/p25Voice.h"
 #endif
@@ -24,20 +25,31 @@ typedef struct {
 	p25_follow_cfg_t cfg;
 	p25_follow_cc_t cc[P25_CP_CTL_MAX];
 	p25_follow_iden_t iden[P25_FOLLOW_IDENS];
+	// Keep words before the byte state so padding does not exhaust the lent vocoder memory.
+	uint32_t hz, id, burst_hz;
 	// The last retune the follower asked (its tune hook, from either task): want moves past done until the radio
 	// task has carried it out
 	volatile uint8_t want, done;
 	uint8_t what;
-	uint32_t hz, id;
 	bool owed;			// the receiver is on the new frequency, the follower not told yet
 	volatile uint8_t in_prov, in_radio;	// which task is inside the follower
 	// The inbound burst the follower asked last (its send hook, from either task), as want / done above
 	volatile uint8_t burst_want, burst_done;
-	uint32_t burst_hz;
 	uint8_t burst[P25_TSBK_BYTES];
 	// PTT and the end of our transmission, for the follower at the radio task's next turn inside it
 	bool ptt, talk_end;
 	uint8_t ptt_seq, ptt_done;
+#if CONFIG_P25_ROAM
+	roam_t roam;
+	bool roam_enabled;
+	uint8_t roam_cmd;
+	bool roam_command_pending;
+	int8_t roam_threshold;
+	uint8_t roam_hyst;
+	int16_t signal_dbm;
+	uint32_t signal_ms;
+	bool signal_pending;
+#endif
 	bool nogo_kept;			// this system's control channels are in nogo_hz
 } p25_trunk_t;
 _Static_assert(P25_CP_IDEN_MAX == P25_FOLLOW_IDENS, "one identifier plan size");
@@ -370,6 +382,11 @@ static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, bool
 		c->flags |= P25_FOLLOW_TX;
 	if (l->sys.options & P25_TSYS_NO_REG)
 		c->flags |= P25_FOLLOW_NO_REG;
+#if CONFIG_P25_ROAM
+	roam_cfg_t rc = { .rssi_dbm = ROAM_RSSI_DEFAULT, .hyst_db = ROAM_HYST_DEFAULT, .quality = true };
+	roam_init(&t->roam, &rc);
+	c->roam = &t->roam;
+#endif
 	c->ncc = l->ctl_count;
 	for (uint8_t i = 0; i < l->ctl_count; i++)
 		t->cc[i] = (p25_follow_cc_t){ .hz = l->ctl[i].rx_hz, .tx_hz = l->ctl[i].tx_hz, .chan = l->ctl[i].chan,
@@ -414,6 +431,10 @@ static void trunk_service(p25_mem_t *m)
 
 		c.rx_tgid = t->what == P25_FOLLOW_TUNE_GROUP || t->what == P25_FOLLOW_TUNE_TALK ? (uint16_t)t->id : 0u;
 		t->done = want;
+#if CONFIG_P25_ROAM
+		// The last status sample belongs to the frequency we are leaving.
+		t->signal_pending = false;
+#endif
 		// A frequency the radio can't receive stays untuned: the follower hears nothing there and moves on
 		if (hz != 0 && board_in_band(hz, false) && !radio_listen_band(hz)) {
 			board.radio->rx(hz, RADIO_BW_12K5, &no_tone);
@@ -439,6 +460,23 @@ static void trunk_service(p25_mem_t *m)
 		t->ptt_done = t->ptt_seq;
 		p25_follow_ptt(&t->f, t->ptt, now);
 	}
+#if CONFIG_P25_ROAM
+	t->cfg.roam_enabled = t->roam_enabled;
+	if (t->roam_command_pending) {
+		t->roam_command_pending = false;
+		p25_follow_roam_cancel(&t->f, now);
+		if (t->roam_cmd == RROAM_NOW) roam_trigger(&t->roam, ROAM_WHY_MANUAL);
+		else if (t->roam_cmd != RADIO_P25_ROAM_CANCEL)
+			roam_lock(&t->roam, t->roam_cmd == RROAM_LOCK ||
+				(t->roam_cmd == RROAM_LOCK_TOGGLE && t->roam.state != ROAM_LOCKED), now);
+	}
+	roam_cfg_t rc = { .rssi_dbm = t->roam_threshold, .hyst_db = t->roam_hyst, .quality = true };
+	roam_set_cfg(&t->roam, &rc);
+	if (t->roam_enabled && t->signal_pending) {
+		t->signal_pending = false;
+		p25_follow_signal(&t->f, t->signal_dbm, t->signal_ms);
+	}
+#endif
 	p25_follow_tick(&t->f, now);
 	leave(&t->in_radio);
 	// The copy other tasks read (radio_p25_trunk_view); the provider's task may be writing the follower's view, which
@@ -451,6 +489,33 @@ static void trunk_service(p25_mem_t *m)
 	if (tview.v.reg == P25_REG_BLOCKED && !t->nogo_kept)
 		nogo_keep(t);
 }
+
+#if CONFIG_P25_ROAM
+const roam_t *radio_p25_roaming(void)
+{
+	return mem != NULL && trunk ? &mem->trunk.roam : NULL;
+}
+
+void radio_p25_roam_command(uint8_t cmd)
+{
+	if (mem != NULL && trunk) {
+		mem->trunk.roam_cmd = cmd;
+		mem->trunk.roam_command_pending = true;
+	}
+}
+
+void radio_p25_signal(int16_t rssi_dbm, bool enabled, int8_t threshold, uint8_t hyst)
+{
+	if (mem != NULL && trunk) {
+		mem->trunk.roam_enabled = enabled;
+		mem->trunk.roam_threshold = threshold;
+		mem->trunk.roam_hyst = hyst;
+		mem->trunk.signal_dbm = rssi_dbm;
+		mem->trunk.signal_ms = hal_millis();
+		mem->trunk.signal_pending = true;
+	}
+}
+#endif
 
 void radio_p25_trunk_view(radio_p25_trunk_view_t *out)
 {

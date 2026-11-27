@@ -22,7 +22,7 @@ State:
 | Inbound requests and their answers (2.1) | yes | yes | the three requests decoded off air by `p25tool.py`; the bench's answers taken |
 | Registration, affiliation, voice request, transmit on the grant, return (5) | yes | yes (`radioCoreTestP25T`, a fake site) | `test_p25_trunk_tx` |
 | Bench control channel and inbound decode (`tools/bench/p25tool.py`, 8) | yes | `p25tool.py selftest` | yes |
-| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, roaming by signal level, TDMA (Phase 2) voice channels, other multi-block message bodies | no | | |
+| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, TDMA (Phase 2) voice channels, other multi-block message bodies | no | | |
 
 The radio runs are against a control channel `p25tool.py` writes from the same descriptions as the firmware, so they
 check the radio's timing, retunes and transmissions, not the layouts. Explicit network/RFSS status acquisition has
@@ -274,7 +274,7 @@ caller refused, and waits on a busy inbound channel.
 | `fallback_ms` | none yet: 0, never (the fallback channel is read, not used) |
 | `groups[]`, `voice_lost_ms`, `call_max_ms`, `P25_FOLLOW_NO_UNIT` | none yet |
 
-Not used: `sys.roam_dbm`.
+`sys.roam_dbm`: negative values enable receive-only quality and signal site surveys with `CONFIG_P25_ROAM`; 0 disables both triggers.
 
 ## 7. The radio core
 
@@ -316,7 +316,7 @@ conventional RX-only channel does; a blocked system never reads "Registering". W
 PTT on a blocked system says "RX-only system: no TX". The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
-Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.
+Not used yet: the fallback channel and an RX group list (`groups`).
 
 Memory: the transmit side adds 120 bytes to the follower (lent with it) and 28 bytes to the radio task's copy of the
 view, plus the radio core's request state (`p25_trunk_t`: the burst in hand, 12 bytes, and a few flags).
@@ -382,3 +382,39 @@ of a live control channel settles them.
 | The system service broadcast's layout | view only |
 | The four flag bits ahead of the system ID in RFSS and adjacent site status | kept as sent, not used |
 | The multi-block packet header: format in octet 0, SAP in octet 1, MFID in octet 2, blocks to follow in octet 6, opcode in octet 7 | recognized and counted; one-block explicit network/RFSS bodies also validated and decoded |
+
+### Receive-only quality and signal roaming
+
+`CONFIG_P25_ROAM` uses `core/radio/roam.c`, the same selection engine as
+[DMR roaming](dmr-roaming.md). The radio's zone roaming flag enables it; the
+shared RSSI threshold and hysteresis apply. The old system byte 9 is preserved
+in the codeplug but does not control roaming. Transmit-enabled systems are excluded.
+P25 callers force passive operation: no wake probes or beacon scheduling.
+
+The follower supplies programmed and learned control channels, identity-qualified
+decoding and the RSSI already read by the radio task. It performs the retunes the
+shared engine requests. The active list holds up to 16 distinct frequencies,
+including the current site, learned adjacent channels first, then programmed
+alternatives. Acquisition still retains up to 32 programmed channels when roaming
+is compiled in, and 16 without it.
+
+The shared engine owns the five-second weak trigger, 30-second dwell, retry
+back-off and search sequence. Each candidate gets the shared 400 ms settle and
+1.5-second listening period. A search returns to the original site if none improves
+reception. It never starts during a voice call. A single receiver can miss grants
+while visiting other sites.
+
+P25 contributes a 0..100 decoder-quality score: the lower of valid-block percentage
+and coverage of five 200 ms intervals, requiring at least eight valid blocks in a
+one-second sample. Recovered invalid CRCs do not count as good blocks. This is a
+control-channel reliability measure, not RF bit error rate.
+
+The shared engine's optional quality input treats scores below 90 as weak. A
+candidate needs at least 80, plus either a ten-point quality improvement with RSSI
+no more than 10 dB below threshold, or comparable quality and an RSSI improvement
+meeting the shared hysteresis. Quality differences over five points rank first;
+otherwise stronger RSSI wins. An incomplete measurement cannot win. DMR callers
+leave quality mode off and keep their existing RSSI/beacon behavior.
+
+Live two-site behavior and degraded-simulcast performance still require hardware
+validation. Host and build results for this revision are recorded with its review.

@@ -77,7 +77,7 @@ typedef struct {
 	uint16_t cc_nac;	// P25_NAC_ANY: any
 	uint8_t options;
 	uint8_t hold_s;		// 0 = no hold
-	int8_t roam_dbm;	// 0 = the radio's
+	int8_t roam_dbm;	// legacy byte, preserved; roaming uses the radio's zone/settings
 } p25_tsys_t;
 void p25_tsys_decode(const uint8_t *b, int len, p25_tsys_t *out);
 void p25_tsys_encode(const p25_tsys_t *s, uint8_t out[P25_CP_TSYS_LEN]);
@@ -112,7 +112,11 @@ void p25_iden_encode(const p25_iden_t *i, uint8_t out[P25_CP_IDEN_LEN]);
 
 // What following a system needs: the system, its sites' control channels in hunt order, the plan; the channel's
 // talk group, whether it follows every group, the fallback
+#if CONFIG_P25_ROAM
+#define P25_CP_CTL_MAX		32u
+#else
 #define P25_CP_CTL_MAX		16u
+#endif
 #define P25_CP_IDEN_MAX		16u
 typedef struct {
 	p25_tsys_t sys;

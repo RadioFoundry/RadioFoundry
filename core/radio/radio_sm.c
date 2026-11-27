@@ -5499,6 +5499,7 @@ static bool roam_zone_flag(const radio_sm_t *sm, uint16_t zi)
 
 static void roam_cfg_of(const radio_settings_t *s, roam_cfg_t *c)
 {
+	c->quality = false;
 	c->rssi_dbm = s->roam_rssi_dbm;
 	c->hyst_db = s->roam_hyst_db;
 	c->probe = s->roam_probe;
@@ -5531,6 +5532,10 @@ static bool roam_repeater(const channel_t *ch)
 static void roam_publish(radio_sm_t *sm, uint32_t now_ms)
 {
 	const roam_t *r = &sm->roam;
+#if CONFIG_P25_ROAM
+	const roam_t *p25r = radio_p25_roaming();
+	if (p25r != NULL) r = p25r;
+#endif
 	radio_roam_view_t *v = &sm->view.roam;
 	bool on = r->state != ROAM_OFF;
 	int16_t avg = on ? roam_signal(r, now_ms) : 0;
@@ -5584,6 +5589,10 @@ static void roam_publish(radio_sm_t *sm, uint32_t now_ms)
 	v->triggers = r->triggers;
 	for (uint8_t i = 0; i < RADIO_ROAM_SITES; i++) {
 		v->site_number[i] = i < sites ? r->site[i].number : 0;
+#if CONFIG_P25_ROAM
+		// P25 entries are control-channel indices, not codeplug channel numbers.
+		if (p25r != NULL) v->site_number[i] = 0;
+#endif
 		v->site_rssi[i] = i < sites ? r->site[i].rssi_dbm : 0;
 	}
 }
@@ -5767,6 +5776,12 @@ static bool roam_probe(radio_sm_t *sm)
 // End a search now and go back to where it started (the user did something)
 static void roam_cancel(radio_sm_t *sm, uint32_t now_ms)
 {
+#if CONFIG_P25_ROAM
+	if (radio_p25_roaming() != NULL) {
+		radio_p25_roam_command(RADIO_P25_ROAM_CANCEL);
+		return;
+	}
+#endif
 	if (!roam_searching(&sm->roam)) {
 		return;
 	}
@@ -5785,6 +5800,13 @@ static void roam_cancel(radio_sm_t *sm, uint32_t now_ms)
 // Every poll (DMR builds, not in hotspot mode): the site list, the measurement, the search
 static void roam_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
 {
+#if CONFIG_P25_ROAM
+	if (radio_p25_roaming() != NULL) {
+		sm->view.roam.blocked = sm->view.p25.trunk == RADIO_P25_TRUNK_VOICE ? RROAM_BLOCK_CALL : RROAM_BLOCK_NONE;
+		roam_publish(sm, now_ms);
+		return;
+	}
+#endif
 	roam_t *r = &sm->roam;
 	if (sm->view.state != RS_IDLE || sm->view.dmr.state != RDMR_IDLE) {
 		sm->roam_quiet_ms = now_ms;
@@ -5855,6 +5877,12 @@ static void roam_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 
 static void roam_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 {
+#if CONFIG_P25_ROAM
+	if (radio_p25_roaming() != NULL && cmd >= RROAM_NOW) {
+		radio_p25_roam_command(cmd);
+		return;
+	}
+#endif
 	roam_t *r = &sm->roam;
 	switch (cmd) {
 	case RROAM_ZONE_OFF:
@@ -8192,8 +8220,10 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	settings_t *st = &st_copy;
 	roam_cancel(sm, now_ms);	// back to the site the search started from first
 	settings_read(st);
-#if CONFIG_DMR_ROAMING
+#if CONFIG_DMR_ROAMING || CONFIG_P25_ROAM
 	memcpy(sm->roam_zones, st->roam_zones, sizeof(sm->roam_zones));
+#endif
+#if CONFIG_DMR_ROAMING
 	sm->roam_dirty = true;
 #endif
 	sm->reload_pending = false;
@@ -8549,6 +8579,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.volume_step = RADIO_VOLUME_DEFAULT;
 	sm->base_squelch = RADIO_SQUELCH_DEFAULT;
 	sm->view.squelch = RADIO_SQUELCH_DEFAULT;
+#if CONFIG_DMR_ROAMING || CONFIG_P25_ROAM
+	memcpy(sm->roam_zones, st.roam_zones, sizeof(sm->roam_zones));
+#endif
 	settings_to_radio(&st, &sm->set);	// as saved (docs/spec/settings-store.md 3)
 #if CONFIG_DMR
 	sm->dmr_killed = (st.t3_kill & SETTINGS_T3_KILLED) != 0;	// a kill holds in a build without trunking too
@@ -8561,7 +8594,6 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	roam_cfg_t rc;
 	roam_cfg_of(&sm->set, &rc);
 	roam_init(&sm->roam, &rc);
-	memcpy(sm->roam_zones, st.roam_zones, sizeof(sm->roam_zones));
 	sm->roam_dirty = true;
 #endif
 	sm->view.tot_s = sm->set.tot_s;
@@ -9969,6 +10001,12 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	sm->view.rssi_dbm = rssi_held(sm, st.rssi_dbm);
+#if CONFIG_P25_ROAM
+	uint16_t zi = sm->view.zone_index;
+	bool roam_on = !sm->view.vfo && sm->have_channels && zi < SETTINGS_ROAM_ZONE_BYTES * 8u &&
+		(sm->roam_zones[zi / 8u] & (1u << (zi % 8u))) != 0;
+	radio_p25_signal(sm->view.rssi_dbm, roam_on, sm->set.roam_rssi_dbm, sm->set.roam_hyst_db);
+#endif
 	sm->view.noise = st.noise;
 #if CONFIG_DMR
 	// The modem may not report a level per burst: then the call's level is the held one while a call is heard. A

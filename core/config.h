@@ -360,6 +360,9 @@
 #ifndef CONFIG_P25_TRUNK
 #define CONFIG_P25_TRUNK		0
 #endif
+#ifndef CONFIG_P25_ROAM
+#define CONFIG_P25_ROAM CONFIG_P25_TRUNK
+#endif
 #ifndef CONFIG_AIR_RAW
 #define CONFIG_AIR_RAW			0
 #endif
@@ -577,6 +580,12 @@
 #endif
 #if CONFIG_P25_TRUNK && !CONFIG_P25
 #error "CONFIG_P25_TRUNK needs CONFIG_P25"
+#endif
+#if CONFIG_P25_ROAM && !CONFIG_P25_TRUNK
+#error "CONFIG_P25_ROAM needs CONFIG_P25_TRUNK"
+#endif
+#if CONFIG_P25_ROAM && !CONFIG_DMR_ROAMING
+#error "CONFIG_P25_ROAM needs CONFIG_DMR_ROAMING"
 #endif
 #if CONFIG_NXDN && !CONFIG_DMR
 #error "CONFIG_NXDN needs CONFIG_DMR (its voice is the DMR vocoder's)"

@@ -181,7 +181,6 @@ export const p25System = {
 		{ key: "skipEnc", label: "editor.p25.skip_enc", type: "bool", section: "calls", help: "editor.p25.skip_enc_help" },
 		{ key: "holdS", label: "editor.p25.hold", type: "int", min: 0, max: 255, section: "calls", help: "editor.p25.hold_help" },
 		{ key: "planOnly", label: "editor.p25.plan_only", type: "bool", section: "roaming", help: "editor.p25.plan_only_help" },
-		{ key: "roamDbm", label: "editor.p25.roam_dbm", type: "int", min: -128, max: 127, section: "roaming", help: "editor.p25.roam_dbm_help" },
 	],
 	classes: [
 		{

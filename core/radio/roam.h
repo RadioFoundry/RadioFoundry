@@ -71,6 +71,7 @@ typedef struct {
 	uint16_t beacon_s;	// the repeaters' beacon interval, 0 = none (ROAM_BEACON_MIN_S .. ROAM_BEACON_MAX_S)
 	uint8_t beacon_len_s;	// their beacon duration (1 .. ROAM_BEACON_LEN_MAX)
 	uint8_t survey;		// roam_survey_t
+	bool quality;		// caller supplies decode quality; passive continuous control, no beacons
 } roam_cfg_t;
 
 typedef struct {
@@ -81,6 +82,7 @@ typedef struct {
 	uint32_t heard_ms;	// when its outbound was last heard with our color code, 0 = never
 	uint32_t surv_ms;	// when the survey last measured it (heard, or missed twice), 0 = never
 	uint32_t phase_ms;	// the start of its last beacon seen, 0 = unknown
+	uint8_t quality;		// 0..100, 255 unknown; only used with cfg.quality
 	uint8_t miss;		// survey visits in a live window that did not hear it, in a row
 } roam_site_t;
 
@@ -155,10 +157,14 @@ void roam_set_cfg(roam_t *r, const roam_cfg_t *cfg);
 // two sites or not on one, else watching. A lock, the average and the survey data survive when the list names the
 // same channels as before
 void roam_set_sites(roam_t *r, const roam_site_t *sites, uint8_t count, int cur, int home, uint32_t now_ms);
+// No beacon/survey history to retain: same current-site average and lock semantics, without the history copy.
+void roam_set_sites_fresh(roam_t *r, const roam_site_t *sites, uint8_t count, int cur, int home, uint32_t now_ms);
 
 // Every poll: heard = the tuned site's outbound is heard with our color code now, rssi_dbm the receiver's reading,
 // busy = a call or data is heard on it (traffic, not a beacon)
 void roam_sample(roam_t *r, uint32_t now_ms, bool heard, int16_t rssi_dbm, bool busy);
+// Quality of the tuned site, before roam_sample: 0..100; 255 means no complete sample.
+void roam_quality(roam_t *r, uint8_t quality);
 // Latch a trigger (ROAM_WHY_TX_FAIL, ROAM_WHY_MANUAL; the others come from the samples and the timers). MANUAL
 // clears a lock. False when roaming is off
 bool roam_trigger(roam_t *r, uint8_t why);

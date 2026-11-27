@@ -379,6 +379,13 @@ static void test_trunk_load(void)
 	put(CODEPLUG_KEY_SYSTEM + 2, hd, sizeof hd, blk, 0);
 	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.sys.wacn == 0 && cfg.sys.cc_nac == P25_NAC_ANY && !cfg.listen_only);
 	CHECK(cfg.unit_id == 1234567);
+	// More than the previous 16-channel ceiling: retain all 22 candidates and site groups.
+	for (uint8_t n = 0; n < 19; n++)
+		put_ctl((uint8_t)(30 + n), (uint8_t)(n % 6), 453000000u + n * 25000u);
+	const uint8_t expected = P25_CP_CTL_MAX < 22 ? P25_CP_CTL_MAX : 22;
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.ctl_count == expected);
+	CHECK(cfg.ctl[expected - 1].rx_hz == 453000000u + (expected - 4u) * 25000u &&
+	      cfg.ctl_site[expected - 1] == (expected - 4u) % 6u);
 	// No system: no set-up
 	CHECK(codeplug_kv_remove(CODEPLUG_KEY_SYSTEM + 2));
 	CHECK(!p25_trunk_load(21, &c, &cfg));

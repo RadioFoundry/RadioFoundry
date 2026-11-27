@@ -467,3 +467,20 @@ Either way you can type any frequency, 90.2 for example. In the air band **Auto*
 
 Channels outside the radio's bands don't transmit ("Outside ..."). Receive-only channels show "RX only" as the talk
 target.
+
+### Receive-only P25 site search
+
+A P25 system can hold multiple sites and up to 32 control-channel candidates.
+Receive-only site roaming uses the zone's roaming flag and the radio's shared
+roaming threshold and hysteresis. The system editor no longer has a separate
+**Change site below** setting. Old codeplugs retain that value for compatibility,
+but the radio does not use it.
+
+The radio searches when reception remains weak or decoding stays poor. It compares
+up to 16 distinct control-channel frequencies, including learned neighboring sites,
+and returns to the current site when none improves reception. It never starts a
+search during a voice call or sends a registration, affiliation or wake probe for
+roaming. Turn roaming off for the zone to disable these searches.
+
+A single receiver can miss new calls while checking other sites. Hardware testing
+is still needed to confirm this revision's behavior on multi-site systems.

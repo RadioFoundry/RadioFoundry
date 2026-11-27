@@ -2221,6 +2221,142 @@ static void testAirLoss(void)
 	rig_end();
 }
 
+#if CONFIG_P25_ROAM
+// Feed real CRC failures, valid blocks and elapsed gaps at the public follower
+// boundary. No test writes a quality score into the implementation's state.
+static void roam_feed(p25_follow_t *f, int16_t dbm, unsigned bad_every, uint32_t ms)
+{
+	uint8_t b[P25_TSBK_BYTES];
+	uint32_t start = now_ms;
+	unsigned sample = 0;
+	mk_net(b, WACN, SYSID);
+	while ((uint32_t)(now_ms - start) < ms && !f->tuning) {
+		now_ms += 50;
+		if (bad_every && ++sample % bad_every == 0)
+			cc_unit_bad(f);
+		else
+			p25_follow_tsbk(f, b, NAC, now_ms);
+		if (dbm)
+			p25_follow_signal(f, dbm, now_ms);
+		p25_follow_tick(f, now_ms);
+	}
+}
+
+static void roam_begin(p25_follow_t *f, p25_follow_cfg_t *cfg)
+{
+	uint8_t b[P25_TSBK_BYTES];
+	now_ms = 0; ntunes = nsends = 0;
+	roam_cfg_t rc = { .rssi_dbm = -100, .hyst_db = 6, .quality = true };
+	roam_init(cfg->roam, &rc);
+	p25_follow_begin(f, cfg, &fhooks, NULL, now_ms);
+	retune(f);
+	mk_net(b, WACN, SYSID);
+	p25_follow_tsbk(f, b, NAC, now_ms);
+}
+
+static void testRoam(void)
+{
+	p25_follow_t f;
+	roam_t r;
+	// Synthetic fixture frequencies; no live deployment identifiers.
+	p25_follow_cc_t cc[] = {{ .hz = 430000000 }, { .hz = 431000000 }, { .hz = 432000000 }};
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC,
+		.ncc = 3, .cc = cc, .roam = &r, .roam_enabled = true };
+	uint8_t b[P25_TSBK_BYTES];
+	mk_net(b, WACN, SYSID);
+
+	for (unsigned scenario = 0; scenario < 3; scenario++) {
+		roam_begin(&f, &cfg);
+		// Strong corrupt control must also trigger; a strong signal alone is
+		// insufficient. A weak clean control remains an RSSI trigger.
+		roam_feed(&f, scenario == 1 ? -60 : -110, scenario == 1 ? 2 : 0, 35000);
+		CHECK(f.roaming && f.view.cc == 1, "quality or RSSI starts a bounded survey (%u)", scenario);
+		CHECK(now_ms >= 30000, "initial cooldown respected");
+		retune(&f);
+		roam_feed(&f, scenario == 0 ? -60 : scenario == 1 ? -105 : -95,
+			  scenario == 0 ? 2 : 0, 2000);
+		CHECK(f.roaming && f.view.cc == 2, "first candidate never ends the survey");
+		retune(&f);
+		roam_feed(&f, scenario == 1 ? -65 : -85, scenario == 1 ? 5 : 0, 2000);
+		unsigned expected = scenario == 1 ? 1 : 2;
+		CHECK(!f.roaming && f.view.cc == expected && f.tuning,
+		      "cleaner weaker beats corrupt stronger; RSSI breaks clean ties (%u)", scenario);
+		retune(&f);p25_follow_tsbk(&f, b, NAC, now_ms);
+		CHECK(f.view.state == P25_FOLLOW_CONTROL && f.good == expected, "winner reacquired");
+		roam_feed(&f, -130, 0, 4000);
+		CHECK(!f.roaming, "cooldown prevents ping pong");
+		CHECK(f.view.reg_tx == 0 && f.view.aff_tx == 0 && f.view.req_tx == 0 && nsends == 0,
+		      "quality survey never registers, affiliates or transmits");
+	}
+
+	// Healthy control is not disrupted for an unnecessary strongest-site scan.
+	roam_begin(&f, &cfg);roam_feed(&f, -80, 0, 35000);
+	CHECK(!f.roaming && f.quality == 100, "good signal and continuous valid control stay");
+	roam_feed(&f, -120, 0, 2000);
+	CHECK(!f.roaming, "brief weakness stays");
+	roam_feed(&f, -80, 0, 500);roam_feed(&f, -120, 0, 7000);
+	CHECK(f.roaming, "sustained weakness restarts after recovery");
+	retune(&f);roam_feed(&f, 0, 0, 2000);
+	CHECK(f.roaming && r.best == 0, "missing fresh RSSI rejects even clean candidate");
+	retune(&f);
+	// Many valid blocks concentrated in one short burst are not a healthy
+	// one-second channel. The remaining 800 ms have no successful decode.
+	for (unsigned n = 0; n < 12; n++) p25_follow_tsbk(&f, b, NAC, now_ms + n);
+	now_ms += 2000;p25_follow_signal(&f, -60, now_ms);p25_follow_tick(&f, now_ms);
+	CHECK(!f.roaming && f.view.cc == 0, "sparse bursts cannot win on perfect CRC alone");
+	retune(&f);p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.view.state == P25_FOLLOW_CONTROL, "no improvement reacquires origin without RSSI gate");
+
+	// A silent later candidate ends under the shared per-site timeout.
+	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);
+	retune(&f);roam_feed(&f, -85, 0, 2000);
+	CHECK(f.roaming && f.view.cc == 2, "first clean improvement remembered");
+	retune(&f);now_ms += 2000;p25_follow_tick(&f, now_ms);
+	CHECK(!f.roaming && f.view.cc == 1, "silent candidate returns to measured winner");
+
+	// Bad-CRC recovery can permit synchronization but must not count as a
+	// successfully decoded sample when ranking a site.
+	cfg.flags = P25_FOLLOW_BAD_CRC;
+	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);
+	retune(&f);roam_feed(&f, -60, 1, 2000);
+	CHECK(f.roaming && r.best == 0 && f.view.crc_taken > 0,
+	      "repeated invalid CRCs never qualify as clean reception");
+
+	// Poor decoding with high RSSI, no valid traffic, TX-capable systems,
+	// disabled roaming, and voice ownership all exercise distinct gates.
+	cfg.flags = 0;roam_begin(&f, &cfg);roam_feed(&f, -60, 0, 30000);
+	now_ms += P25_FOLLOW_CC_LOST_MS;
+	p25_follow_signal(&f, -60, now_ms);p25_follow_tick(&f, now_ms);
+	CHECK(f.view.state == P25_FOLLOW_HUNT, "control loss keeps the normal acquisition path");
+	cfg.flags = P25_FOLLOW_TX;roam_begin(&f, &cfg);roam_feed(&f, -130, 2, 35000);
+	CHECK(!f.roaming, "transmit-enabled systems excluded");
+	cfg.flags = 0;cfg.roam_enabled = false;roam_begin(&f, &cfg);roam_feed(&f, -130, 2, 35000);
+	CHECK(!f.roaming, "zone roaming off disables quality and RSSI roaming");
+	cfg.roam_enabled = true;roam_begin(&f, &cfg);f.view.state = P25_FOLLOW_VOICE;p25_follow_retuned(&f, now_ms);f.t_good = f.t_call = 30000;
+	p25_follow_signal(&f, -130, 30000);p25_follow_tick(&f, 30000);
+	CHECK(!f.roaming && f.view.state == P25_FOLLOW_VOICE, "active voice is never interrupted to survey");
+
+	// Turning the zone off during a visit returns to its origin.
+	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);retune(&f);
+	cfg.roam_enabled = false;p25_follow_tick(&f, now_ms + 25);
+	CHECK(!f.roaming && f.view.cc == 0 && f.tuning, "zone off aborts to the origin");
+	cfg.roam_enabled = true;
+
+	// A foreign NAC cannot advance the follower independently of the shared engine.
+	roam_begin(&f, &cfg);roam_feed(&f, -110, 0, 35000);retune(&f);
+	p25_follow_tsbk(&f, b, NAC ^ 1, now_ms + 50);
+	CHECK(f.roaming && f.view.cc == 1 && !f.tuning, "foreign NAC does not desynchronize site selection");
+	now_ms += 2000;p25_follow_tick(&f, now_ms);
+	CHECK(f.roaming && f.view.cc == 2 && f.tuning, "shared timeout advances a foreign candidate");
+
+	roam_cfg_t passive = { .rssi_dbm = -100, .hyst_db = 6, .quality = true,
+		.probe = ROAM_PROBE_WAKE, .beacon_s = 60, .check_s = 30, .survey = ROAM_SURVEY_SYNC };
+	roam_set_cfg(&r, &passive);
+	CHECK(r.cfg.probe == ROAM_PROBE_PASSIVE && r.cfg.beacon_s == 0 && r.cfg.check_s == 0 &&
+	      r.cfg.survey == ROAM_SURVEY_OFF, "continuous quality callers cannot enable wake or beacon behavior");
+
+}
+#endif
 static void testExplicitStatus(void)
 {
 	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1 } };
@@ -2409,6 +2545,9 @@ static void testSysidBlocked(void)
 int main(void)
 {
 	pulse_init();
+#if CONFIG_P25_ROAM
+	testRoam();
+#endif
 	testExplicitStatus();
 	testLayouts();
 	testInbound();

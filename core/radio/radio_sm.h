@@ -581,9 +581,11 @@ typedef struct {
 	uint8_t t3_send_burst[1 + T3_UDT_BLOCKS_MAX][T3_CSBK_BYTES];
 	uint32_t t3_now;		// the clock at the last t3_tick (for the data service's start, which has none)
 #endif
+#if CONFIG_DMR_ROAMING || CONFIG_P25_ROAM
+	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// shared per-zone enable flags
+#endif
 #if CONFIG_DMR_ROAMING
 	roam_t roam;
-	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// the roaming zones (settings_t.roam_zones)
 	bool roam_dirty;		// the site list needs building again
 	uint16_t roam_zone;		// zone and channel the site list was built for
 	uint16_t roam_channel;

@@ -1904,7 +1904,7 @@
  "editor.p25.hold": "呼叫后保持（秒）",
  "editor.p25.hold_help": "呼叫结束后电台在话音信道上停留等待回复的时间。0：立即回到控制信道。",
  "editor.p25.roam_dbm": "低于此值切换站点（dBm）",
- "editor.p25.roam_dbm_help": "保存以备后用：电台尚不会按信号强度切换站点。0：使用电台自身的设置。",
+ "editor.p25.roam_dbm_help": "使用支持质量评估的仅接收漫游固件时：信号弱或控制信道解码质量差持续 3 秒后开始搜索。优先选择解码质量更好的站点；质量接近时比较信号强度。0 表示禁用这两种触发条件。",
  "editor.p25.site_no": "站点",
  "editor.p25.rfss": "RFSS",
  "editor.p25.site": "站点 ID",

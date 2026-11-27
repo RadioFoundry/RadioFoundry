@@ -105,6 +105,15 @@ typedef struct {
 	uint32_t retunes, untuned, skips, bursts, burst_refused;	// radio_p25_stats_t's trunk_*
 	p25_follow_view_t v;
 } radio_p25_trunk_view_t;
+#if CONFIG_P25_ROAM
+#include "radio/roam.h"
+// Radio-task-only access: the shared UI reads the engine; commands are applied under the follower lock.
+const roam_t *radio_p25_roaming(void);
+#define RADIO_P25_ROAM_CANCEL 255u
+void radio_p25_roam_command(uint8_t cmd);
+// Radio task: reuse its status sample before polling, without another bus read.
+void radio_p25_signal(int16_t rssi_dbm, bool enabled, int8_t threshold, uint8_t hyst);
+#endif
 void radio_p25_trunk_view(radio_p25_trunk_view_t *out);
 
 // Transmitting on a trunked channel (radio task; docs/spec/p25-trunking.md 7). The follower's transmit side is on

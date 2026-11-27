@@ -5,7 +5,7 @@
 #include "radio/roam.h"
 #include "config.h"
 
-#if CONFIG_DMR_ROAMING
+#if CONFIG_DMR_ROAMING || CONFIG_P25_ROAM
 
 static bool since(uint32_t now, uint32_t t, uint32_t ms)
 {
@@ -125,6 +125,11 @@ void roam_init(roam_t *r, const roam_cfg_t *cfg)
 {
 	memset(r, 0, sizeof(*r));
 	r->cfg = *cfg;
+	if (r->cfg.quality) {
+		r->cfg.probe = ROAM_PROBE_PASSIVE;
+		r->cfg.beacon_s = r->cfg.check_s = 0;
+		r->cfg.survey = ROAM_SURVEY_OFF;
+	}
 	r->retry_ms = ROAM_RETRY_MS;
 }
 
@@ -133,6 +138,11 @@ void roam_set_cfg(roam_t *r, const roam_cfg_t *cfg)
 	bool schedule = cfg->beacon_s != r->cfg.beacon_s || cfg->beacon_len_s != r->cfg.beacon_len_s ||
 			cfg->survey != r->cfg.survey;
 	r->cfg = *cfg;
+	if (r->cfg.quality) {
+		r->cfg.probe = ROAM_PROBE_PASSIVE;
+		r->cfg.beacon_s = r->cfg.check_s = 0;
+		r->cfg.survey = ROAM_SURVEY_OFF;
+	}
 	if (schedule) {
 		r->win_conf = 0;	// a new interval or mode: learn the schedule again
 		r->win_alt = 0;
@@ -157,6 +167,40 @@ static void avg_seed(roam_t *r, int16_t dbm, uint32_t now_ms)
 	r->avg_ms = now_ms;
 	r->weak_since = 0;
 	r->weak_samples = 0;
+}
+
+// Finish a list change after the caller has chosen which history to retain.
+static void set_sites_finish(roam_t *r, uint8_t count, int cur, int home, uint32_t now_ms,
+			     bool same, bool locked, uint16_t home_number)
+{
+	r->count = count;
+	r->todo = r->heard = 0;
+	r->confirm = 0;
+	r->force = false;
+	if (cur < 0 || cur >= count || count < 2) {
+		r->state = ROAM_OFF;
+		r->pending = ROAM_WHY_NONE;
+		r->cur = r->home = 0;
+		return;
+	}
+	r->cur = (uint8_t)cur;
+	r->home = (uint8_t)(home >= 0 && home < count ? home : cur);
+	if (same && home < 0) {
+		for (uint8_t i = 0; i < count; i++) {
+			if (r->site[i].number == home_number) {
+				r->home = i;	// a rebuild keeps home where it was
+			}
+		}
+	}
+	r->state = locked ? ROAM_LOCKED : ROAM_WATCH;
+	edge_reset(r, r->cur, now_ms, ROAM_SURVEY_SETTLE_MS);
+	if (!same) {
+		avg_seed(r, 0, now_ms);
+		r->arrived_ms = r->check_ms = r->learn_ms = now_ms;
+		r->pending = ROAM_WHY_NONE;
+		r->retry_until = 0;
+		r->retry_ms = ROAM_RETRY_MS;
+	}
 }
 
 void roam_set_sites(roam_t *r, const roam_site_t *sites, uint8_t count, int cur, int home, uint32_t now_ms)
@@ -192,34 +236,22 @@ void roam_set_sites(roam_t *r, const roam_site_t *sites, uint8_t count, int cur,
 		r->win_conf = 0;	// other repeaters: another network, another schedule
 		r->win_alt = 0;
 	}
-	r->count = count;
-	r->todo = r->heard = 0;
-	r->confirm = 0;
-	r->force = false;
-	if (cur < 0 || cur >= count || count < 2) {
-		r->state = ROAM_OFF;
-		r->pending = ROAM_WHY_NONE;
-		r->cur = r->home = 0;
-		return;
-	}
-	r->cur = (uint8_t)cur;
-	r->home = (uint8_t)(home >= 0 && home < count ? home : cur);
-	if (same && home < 0) {
-		for (uint8_t i = 0; i < count; i++) {
-			if (r->site[i].number == home_number) {
-				r->home = i;	// a rebuild keeps home where it was
-			}
-		}
-	}
-	r->state = locked ? ROAM_LOCKED : ROAM_WATCH;
-	edge_reset(r, r->cur, now_ms, ROAM_SURVEY_SETTLE_MS);
-	if (!same) {
-		avg_seed(r, 0, now_ms);
-		r->arrived_ms = r->check_ms = r->learn_ms = now_ms;
-		r->pending = ROAM_WHY_NONE;
-		r->retry_until = 0;
-		r->retry_ms = ROAM_RETRY_MS;
-	}
+	set_sites_finish(r, count, cur, home, now_ms, same, locked, home_number);
+}
+
+// Continuous-control callers have no beacon history to carry across a list rebuild.
+// Avoid a second full site array on their caller's stack.
+void roam_set_sites_fresh(roam_t *r, const roam_site_t *sites, uint8_t count, int cur, int home, uint32_t now_ms)
+{
+	if (count > ROAM_SITES_MAX) count = ROAM_SITES_MAX;
+	bool same = cur >= 0 && cur < count && r->state != ROAM_OFF && r->cur < r->count &&
+		r->site[r->cur].number == sites[cur].number;
+	bool locked = same && r->state == ROAM_LOCKED;
+	uint16_t home_number = r->home < r->count ? r->site[r->home].number : 0;
+	memmove(r->site, sites, count * sizeof(sites[0]));
+	r->win_conf = 0;
+	r->win_alt = 0;
+	set_sites_finish(r, count, cur, home, now_ms, same, locked, home_number);
 }
 
 int16_t roam_signal(const roam_t *r, uint32_t now_ms)
@@ -353,6 +385,13 @@ static void weak_check(roam_t *r, uint32_t now_ms)
 	}
 }
 
+void roam_quality(roam_t *r, uint8_t quality)
+{
+	uint8_t i = roam_searching(r) ? r->visit : r->cur;
+	if (i < r->count)
+		r->site[i].quality = quality;
+}
+
 void roam_sample(roam_t *r, uint32_t now_ms, bool heard, int16_t rssi_dbm, bool busy)
 {
 	if (r->state == ROAM_OFF) {
@@ -377,7 +416,9 @@ void roam_sample(roam_t *r, uint32_t now_ms, bool heard, int16_t rssi_dbm, bool 
 		if (!since(now_ms, r->tuned_ms, ROAM_SETTLE_MS)) {
 			return;	// the last site's outbound may still count as heard
 		}
-		if (r->best == 0 || rssi_dbm > r->best) {
+		if ((!r->cfg.quality || r->site[r->visit].quality >= 80) &&
+		    (!r->cfg.quality || r->site[r->visit].quality <= 100) &&
+		    (r->best == 0 || rssi_dbm > r->best)) {
 			r->best = rssi_dbm;
 		}
 		r->site[r->visit].heard_ms = now_ms;
@@ -402,7 +443,7 @@ void roam_sample(roam_t *r, uint32_t now_ms, bool heard, int16_t rssi_dbm, bool 
 	roam_site_t *s = &r->site[r->cur];
 	s->heard_ms = now_ms;
 	s->rssi_dbm = (int16_t)(r->avg_x16 / 16);
-	if (s->rssi_dbm < r->cfg.rssi_dbm) {
+	if (s->rssi_dbm < r->cfg.rssi_dbm || (r->cfg.quality && s->quality < 90)) {
 		if (r->weak_since == 0) {
 			r->weak_since = now_ms != 0 ? now_ms : 1;
 			r->weak_samples = 0;
@@ -473,6 +514,7 @@ static bool next_visit(roam_t *r, uint32_t now_ms)
 			r->visit = i;
 			r->tuned_ms = now_ms;
 			r->best = 0;
+			r->site[i].quality = 255;
 			r->probed = r->probe_sent = false;
 			r->vreadings = 0;
 			r->vsum = 0;
@@ -497,6 +539,21 @@ static uint8_t choose(const roam_t *r, int16_t origin_avg)
 		o = r->site[r->cur].rssi_dbm;
 	} else if (origin_avg != 0 && r->why != ROAM_WHY_TX_FAIL) {
 		o = origin_avg;
+	}
+	if (r->cfg.quality) {
+		int best = -1;
+		unsigned oq = r->site[r->cur].quality;
+		if (oq > 100) oq = 100;
+		for (uint8_t i = 0; i < r->count; i++) {
+			int dbm = r->site[i].rssi_dbm;
+			unsigned q = r->site[i].quality;
+			bool cleaner = q <= 100 && q >= 80 && q >= oq + 10 && dbm >= t - 10;
+			bool stronger = q <= 100 && q >= 80 && q + 5 >= oq && dbm >= t && dbm >= o + h;
+			if (i == r->cur || !heard_now(r, i) || (!cleaner && !stronger)) continue;
+			if (best < 0 || q > (unsigned)r->site[best].quality + 5 ||
+			    (q + 5 >= r->site[best].quality && dbm > r->site[best].rssi_dbm)) best = i;
+		}
+		return best < 0 ? r->cur : (uint8_t)best;
 	}
 	int best = -1;
 	for (uint8_t i = 0; i < r->count; i++) {
