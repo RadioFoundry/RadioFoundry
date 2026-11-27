@@ -569,19 +569,22 @@ codeplugPower%Test: codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/code
 	$(CC) $(CFLAGS) $(FLASH_HAL) -DPOWER_COUNT=$* -o $@ codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
 
 # The calibration curve every board's reader shares
-TESTS   += calCurveTest
+TESTS   += calCurveTest sqlRssiTest
 
 calCurveTest: calCurveTest.c $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ calCurveTest.c
+sqlRssiTest: sqlRssiTest.c $(CORE)/radio/sql_rssi.c $(CORE)/radio/sql_rssi.h $(CORE)/radio/radio_sm.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/hal -o $@ sqlRssiTest.c $(CORE)/radio/sql_rssi.c
 
 run: run-flash
-run-flash: codeplugTest codeplugNoCompactTest calCurveTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
+run-flash: codeplugTest codeplugNoCompactTest calCurveTest sqlRssiTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
 	./codeplugPower2Test
 	./codeplugPower3Test
 	./codeplugPower9Test
 	./codeplugTest
 	./codeplugNoCompactTest
 	./calCurveTest
+	./sqlRssiTest
 .PHONY: run-flash
 
 # The AT1846S driver: frequency word, register cache and write sequences, on a fake bus
@@ -1212,7 +1215,7 @@ run-f4stub: f4stubTest f4stubSim
 # column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the Baofeng factory calibration decoder
 # (modem-hrc7000.md)
 HRC7    := $(ROOT)/drivers/modem/hrc7000
-TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest db25dSqlTest hrc7000DmrTest baofengCalTest chswitchTest
+TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest plugPttTest hrc7000DmrTest baofengCalTest chswitchTest
 
 fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818_setup_b.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(RFBUS) $(ROOT)/drivers/rf/fd6818/fd6818_setup_b.c $(SUBAUDIO)
@@ -1232,8 +1235,6 @@ chswitchTest: chswitchTest.c $(ROOT)/drivers/input/chswitch/chswitch.c $(ROOT)/d
 
 sharedPttTest: sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c $(ROOT)/drivers/input/sharedptt/shared_ptt.h $(ROOT)/drivers/input/plugptt/plug_ptt.c
 	$(CC) $(CFLAGS) -Wshadow -o $@ sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c $(ROOT)/drivers/input/plugptt/plug_ptt.c
-db25dSqlTest: db25dSqlTest.c $(ROOT)/boards/db25d/squelch_db25d.c $(ROOT)/boards/db25d/squelch_db25d.h
-	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/boards/db25d -I$(ROOT)/hal -o $@ db25dSqlTest.c $(ROOT)/boards/db25d/squelch_db25d.c
 plugPttTest: plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c $(ROOT)/drivers/input/plugptt/plug_ptt.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c
 keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROOT)/drivers/input/keymatrix/keymatrix.h
@@ -1283,7 +1284,7 @@ baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROO
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-drivers
-run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest chswitchTest plugPttTest db25dSqlTest hrc7000DmrTest hrc7000AirTest baofengCalTest rda5807mTest \
+run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest chswitchTest plugPttTest hrc7000DmrTest hrc7000AirTest baofengCalTest rda5807mTest \
              lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
@@ -1297,7 +1298,6 @@ run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPtt
 	./sharedPttTest
 	./chswitchTest
 	./plugPttTest
-	./db25dSqlTest
 	./hrc7000DmrTest
 	./hrc7000AirTest
 	./baofengCalTest

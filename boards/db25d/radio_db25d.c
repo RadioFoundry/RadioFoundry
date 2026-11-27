@@ -26,6 +26,7 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "rfchip_db25d.h"
+#include "rf/fd6818/fd6818.h"
 #include "rf/bk4819/bk4819.h"
 #include "modem/hrc7000/hrc7000.h"
 
@@ -676,20 +677,28 @@ static bool tx_tone_key(bool down)
 	return true;
 }
 
-// The squelch's reading (squelch_db25d.h): the signal strength against the calibration page's thresholds, and on an
-// FD6818 its noise and glitch limits too. Without usable thresholds, the chip's noise reading as before
+// The squelch's reading (radio/sql_rssi.h): the signal strength against the calibration page's thresholds, and on an
+// FD6818 its noise and glitch limits too. Without usable thresholds, the chip's noise reading as before. The thresholds
+// change only with the frequency: read from the page once per tune
+static uint32_t sql_hz;
+static bool sql_known, sql_ok;
+static int16_t sql_open[RADIO_SQUELCH_MAX];
+
 static uint8_t sql_noise(int16_t rssi_dbm)
 {
-	uint8_t raw = (uint8_t)(last_noise_raw & 0x7Fu);
 	bool fd = db25d_main_is_fd6818();
-	int16_t open_dbm[DB25D_SQL_LEVELS];
-	if (!db25d_cal_squelch_open_dbm(rx_hz, fd, open_dbm)) {
-		return raw;
+	if (!sql_known || sql_hz != rx_hz) {
+		sql_hz = rx_hz;
+		sql_known = true;
+		sql_ok = db25d_cal_squelch_open_dbm(rx_hz, fd, sql_open);
 	}
-	uint8_t n = db25d_sql_noise(open_dbm, rssi_dbm);
-	if (fd && n < DB25D_SQL_OPEN_L1 &&
-	    !db25d_sql_fd6818_carrier(raw, db25d_main_glitch(), rssi_dbm, rx_bw == RADIO_BW_25K)) {
-		n = DB25D_SQL_OPEN_L1;	// no carrier by the chip's own limits: closed at every level, not a fast close
+	if (!sql_ok) {
+		return (uint8_t)(last_noise_raw & 0x7Fu);
+	}
+	uint8_t n = radio_sql_rssi_noise(sql_open, rssi_dbm);
+	if (fd && n < RADIO_SQL_NO_CARRIER &&
+	    !fd6818_sql_carrier(last_noise_raw, db25d_main_glitch(), rssi_dbm, rx_bw == RADIO_BW_25K)) {
+		n = RADIO_SQL_NO_CARRIER;	// over every level's close line, level 1's too
 	}
 	return n;
 }

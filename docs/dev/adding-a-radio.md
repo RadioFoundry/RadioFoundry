@@ -135,7 +135,7 @@ one without a label.
    (`drivers/input/sharedptt`, [gotchas.md](../spec/gotchas.md) 16.2) before anything transmits. Then run
    `tests/hil/test_ptt_host_traffic.py`: host polling must make no PTT press.
    If PTT comes through a mic jack or the cable, power on with the jack empty, then with a mic in, then with the
-   cable in, and watch the raw pins. Count each line only once it has idled high (`drivers/input/plugptt`,
+   cable in, and watch the raw pins. Count each line only once the line has idled high (`drivers/input/plugptt`,
    [gotchas.md](../spec/gotchas.md) 16.3).
 4. Flash, settings and calibration reads. Check the foreign-region guard on a radio that still runs the vendor firmware
    ([settings-store.md](../spec/settings-store.md) 5).
