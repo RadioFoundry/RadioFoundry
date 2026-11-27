@@ -99,6 +99,7 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   before the badge gives way; where even the small font would not fit beside it, a hand-drawn padlock (7x8, 9x12 or
   12x16, by the font) stands in and the chips line names the scheme. A clear channel, or an AES channel with no key bound (it won't transmit), shows
   neither.
+  On an AES channel the top bar's mode word says DMR, as with basic privacy: the badge names the encryption.
 - NXDN Home shows an ENC marker with the caller and destination when a scrambled call plays. It shows "Encrypted: not played" when
   the radio receives an encrypted call and holds its audio.
 

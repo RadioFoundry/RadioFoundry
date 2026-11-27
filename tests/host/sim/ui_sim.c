@@ -3020,6 +3020,14 @@ static bool check(const char *kv, char *err, size_t len)
 			}
 		}
 	}
+	else if (strcmp(key, "word") == 0) {	// a drawn text is the value, whole (the top bar's mode word)
+		snprintf(got, sizeof got, "not a whole text");
+		for (int i = 0; i < live_n; i++)
+			if (strcmp(live[i].s, want) == 0) {
+				snprintf(got, sizeof got, "%s", want);
+				break;
+			}
+	}
 	else if (strcmp(key, "markafter") == 0 || strcmp(key, "nomarkafter") == 0) {
 		// A mark drawn (not a text) within a character cell right of the text that contains the value (an icon
 		// beside a word), or none

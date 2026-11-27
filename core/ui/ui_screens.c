@@ -299,9 +299,12 @@ static uint8_t rssi_bars(int16_t dbm)
 }
 
 // The mode word: AM where an FM channel or the VFO is received in AM (the air band); a channel of another kind
-// (docs/spec/channel-modes.md) its kind's short name
+// (docs/spec/channel-modes.md) its kind's short name. A DMR channel with AES-256 says DMR, as one with basic privacy
+// does: the badge on the channel's line names the encryption. A build without AES parks it under its short name
 static const char *mode_word(const radio_view_t *v)
 {
+	if (v->ch.kind == CODEPLUG_KIND_DMR_AES && codeplug_kind_built(v->ch.kind))
+		return ui_mode_name(RADIO_MODE_DMR);
 	if (v->ch.kind != CODEPLUG_KIND_NONE) {
 		return codeplug_kind_name(v->ch.kind);
 	}

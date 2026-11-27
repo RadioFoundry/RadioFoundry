@@ -921,6 +921,9 @@ static const flow_t flows[] = {
 	{ "S padlock: an AES channel with its key", "aeschan", "", "padlock=1 screen=home", 0, false },
 	{ "S padlock: an AES channel without a key", "aeschan0", "", "padlock=0", 0, false },
 	{ "S encryption type: AES256", "aeschan", "", "shows=AES256 encbadge=1", 0, false },
+	// The top bar says DMR on an AES channel, as with basic privacy: the badge names the encryption
+	{ "S top bar: an AES channel says DMR", "aeschan", "", "word=DMR", 0, false },
+	{ "S top bar: an AES channel without a key says DMR", "aeschan0", "", "word=DMR", 0, false },
 #endif
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY
 	// Basic privacy on (the Quick tile, the 1-255 key 123)
