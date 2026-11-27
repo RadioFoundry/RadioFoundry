@@ -9519,6 +9519,16 @@ uint8_t radio_volume_percent(uint8_t step)
 	return (uint8_t)((step * 100u + RADIO_VOLUME_MAX / 2u) / RADIO_VOLUME_MAX);
 }
 
+int16_t radio_volume_db10(uint8_t step)
+{
+	return (int16_t)(-RADIO_VOLUME_STEP_DB10 * (int)(RADIO_VOLUME_MAX - (step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step)));
+}
+
+int16_t radio_volume_curve_db10(uint8_t percent)
+{
+	return radio_volume_db10(radio_volume_step_of(percent));
+}
+
 // The stored byte: 0 = the default; bit 7 set = step + 1 on this scale; 1..11 = a step 0..10 stored by the first
 // version, scaled to this range (docs/spec/settings-store.md 3)
 uint8_t radio_volume_step(uint8_t stored)

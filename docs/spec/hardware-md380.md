@@ -850,8 +850,8 @@ and the knob acts after it), so the debug link's volume operation (RADIO op 30) 
 PA0 reads the wiper of the potentiometer that sets the level. Measured with a microphone at the speaker, a 1 kHz beep
 changes by about 0.79 of the wiper's dB (the reading over the top reading): about -17.5 dB at a quarter turn, -12.5 dB at
 mid-rotation and -3.5 dB at three quarters. The board gives that curve as `hal_radio_t.volume_db10` (from the two lines
-of `volume()`), and beeps stop getting louder above 44 % of the knob (`radio-features.md` 4): a beep at the top plays
-within about 1 dB of one at mid-rotation.
+of `volume()`), and beeps stop getting louder above 50 % of the knob (`radio-features.md` 4): a beep at the top plays
+as loud as one at mid-rotation.
 
 ### 6.2 I2S PCM
 

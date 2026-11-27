@@ -797,6 +797,14 @@ bool radio_volume_soft(void);
 // Whether the MCU can set the speaker level at all (the board has the hook): knob radios accept an override
 bool radio_volume_settable(void);
 uint8_t radio_volume_percent(uint8_t step);
+// The speaker volume curve every radio whose MCU sets the level follows on each audio path (radio-features.md 4.2):
+// RADIO_VOLUME_STEP_DB10 a step, in tenths of a dB from the top step (0 there, -300 at step 1). A board turns the dB
+// into its own gain registers and trims each path once, so FM and the PCM path (DMR, NXDN, P25, beeps) stay level at
+// every step. Step 0 (mute) gives the step below 1
+#define RADIO_VOLUME_STEP_DB10	20
+int16_t radio_volume_db10(uint8_t step);
+// The same from a volume percent, in hal_radio_t.volume_db10's form: a board on the curve sets the hook to this
+int16_t radio_volume_curve_db10(uint8_t percent);
 // A level in percent (the knob) as a step: 0 only at 0 %, at least 1 above it, 100 % and over the top step. Inline:
 // the UI uses it without the radio core
 static inline uint8_t radio_volume_step_of(uint8_t percent)
@@ -815,7 +823,7 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
 // The volume step above which beeps stop getting louder on a radio whose volume scales the PCM path (volume_pcm with
 // hal_radio_t.volume_db10): higher steps make the voice louder, not the beeps. The speaker's volume itself never
 // changes for a beep
-#define RADIO_BEEP_VOLUME_STEP	7
+#define RADIO_BEEP_VOLUME_STEP	8
 // A beep's level on such a radio: level softened by the gain the volume gives over the cap step's (db10_now - db10_cap,
 // in tenths of a dB), so the beep sounds as loud as at the cap step. At or below the cap: level. At least 1 while level
 // isn't 0

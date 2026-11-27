@@ -2670,6 +2670,12 @@ static void set_beep_80(radio_settings_t *s) { s->beep_level = 80; }
 // path (volume_pcm), and radios without the hook (an analog knob) keep beep_level as it is
 static void test_beep_follows_volume(void)
 {
+	// The volume curve: 2 dB a step, 0 at the top; from a percent as the boards get it
+	CHECK(radio_volume_db10(RADIO_VOLUME_MAX) == 0 && radio_volume_db10(1) == -300 && radio_volume_db10(0) == -320);
+	CHECK(radio_volume_db10(200) == 0 && radio_volume_db10(RADIO_VOLUME_DEFAULT) == -160);
+	for (uint8_t step = 0; step <= RADIO_VOLUME_MAX; step++) {
+		CHECK(radio_volume_curve_db10(radio_volume_percent(step)) == radio_volume_db10(step));
+	}
 	CHECK(radio_beep_level(50, -1) == 50 && radio_beep_level(50, 100) == 50 && radio_beep_level(50, 50) == 50);
 	CHECK(radio_beep_level(50, 25) == 25 && radio_beep_level(50, 0) == 0 && radio_beep_level(0, 80) == 0);
 
@@ -2792,7 +2798,7 @@ static void test_beep_volume_cap(void)
 	start();
 	req(RREQ_ZONE_POS, 6);
 	settings(set_beep_80);
-	CHECK(radio_volume_percent(RADIO_BEEP_VOLUME_STEP) == 44);
+	CHECK(radio_volume_percent(RADIO_BEEP_VOLUME_STEP) == 50);
 	int during, after;
 	// Steps 1 to the cap: beep_level 80 as it is, the volume left alone
 	for (uint8_t step = 1; step <= RADIO_BEEP_VOLUME_STEP; step++) {
@@ -2813,8 +2819,8 @@ static void test_beep_volume_cap(void)
 		CHECK(during == v && after == v);
 		CHECK(pk > lv * 160 * 9 / 10 && pk <= lv * 160 + 20);
 	}
-	// The top step against the cap step: 26.9 dB, level 80 -> 4
-	CHECK(beep_level_expected(80, 100) == 4);
+	// The top step against the cap step: 23.8 dB, level 80 -> 5
+	CHECK(beep_level_expected(80, 100) == 5);
 	// Volume 0 stays 0: no beep, nothing sent
 	req(RREQ_VOLUME, 0);
 	run(100);
