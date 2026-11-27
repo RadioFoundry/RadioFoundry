@@ -21,7 +21,8 @@ typedef struct {
 	char name[CODEPLUG_NAME_LEN + 1];
 } row_t;
 
-static row_t rows[SCAN_LIST_MAX];
+static row_t rows[SCAN_LIST_SLOTS];
+static zone_t z;				// one buffer for every callback that reads a zone or a list: the UI task runs them one at a time
 static uint8_t nrows;
 static uint32_t seen_gen = 0xFFFFFFFFu;
 static char focus_name[CODEPLUG_NAME_LEN + 1];	// the list to focus once its write has landed ("" = none)
@@ -35,20 +36,19 @@ static uint16_t pick_zone;			// the zone the channel picker lists
 // The stored lists, read again whenever the area changed (ui_svc_scanlist_generation)
 static void refresh(void)
 {
-	static scan_list_t l;
 	uint32_t g = ui_svc_scanlist_generation();
 	if (g == seen_gen)
 		return;
 	seen_gen = g;
 	nrows = 0;
 	uint16_t slots = ui_svc_scanlist_slots();
-	for (uint16_t s = 0; s < slots && nrows < SCAN_LIST_MAX; s++) {
-		if (!ui_svc_scanlist_get(s, &l))
+	for (uint16_t s = 0; s < slots && nrows < SCAN_LIST_SLOTS; s++) {
+		if (!ui_svc_scanlist_get(s, &z))
 			continue;
 		row_t *r = &rows[nrows++];
 		r->slot = (uint8_t)s;
-		r->count = l.count;
-		str_copy(r->name, sizeof r->name, l.name);
+		r->count = (uint8_t)z.count;
+		str_copy(r->name, sizeof r->name, z.name);
 	}
 	if (focus_name[0] && ui_frame()->scr == SCR_SLISTS) {
 		for (uint8_t i = 0; i < nrows; i++)
@@ -333,13 +333,11 @@ static int in_list(uint16_t num)
 
 static uint16_t pick_raw_count(void)
 {
-	static zone_t z;
 	return (uint16_t)(1u + (codeplug_zone(pick_zone, &z) ? z.count : 0u));
 }
 
 static bool pick_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
-	static zone_t z;
 	static channel_t ch;
 	sbuf_t b;
 	sb_init(&b, buf, len);
@@ -363,7 +361,6 @@ static void pick_enter(void)
 
 static void pick_item(uint16_t i, ui_item_t *it)
 {
-	static zone_t z;
 	uint16_t raw = ui_filter_raw(i);
 	sbuf_t b;
 	if (!pick_raw_label(raw, it->label, sizeof it->label))
@@ -382,7 +379,6 @@ static void pick_item(uint16_t i, ui_item_t *it)
 
 static void pick_select(uint16_t i, bool hold)
 {
-	static zone_t z;
 	(void)hold;
 	uint16_t raw = ui_filter_raw(i);
 	if (raw == 0) {
@@ -425,7 +421,6 @@ static uint16_t zone_count(void) { return codeplug_zone_count(); }
 
 static void zone_item(uint16_t i, ui_item_t *it)
 {
-	static zone_t z;
 	if (!codeplug_zone(i, &z))
 		return;
 	str_copy(it->label, sizeof it->label, z.name);

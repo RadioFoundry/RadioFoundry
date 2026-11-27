@@ -4623,6 +4623,12 @@ static bool scan_usable(uint16_t pos, void *ctx)
 	       scan_listens(&ch, sm->zone.channels[pos]);
 }
 
+#if CONFIG_SCAN_LIST || CONFIG_DUAL_WATCH
+// One zone buffer for the stops a scan reads (a list's, dual watch's second receiver): only the radio task uses it, and
+// no use holds it across a call that reads another zone
+static zone_t scan_zone;
+#endif
+
 #if CONFIG_SCAN_LIST
 // A scan list's stops (SCAN_LIST): the list's channels, each tuned in the zone that holds it. Not tied to a zone, so the
 // view follows the stop's zone as dual watch's does. The list's own skip flags don't exist: a channel put in a list is
@@ -4634,8 +4640,7 @@ static bool scan_usable(uint16_t pos, void *ctx)
 _Static_assert(CODEPLUG_ZONES_MAX < 0x1FF && CODEPLUG_ZONE_MAX <= 0x7F, "a stop is zone and position in 16 bits");
 _Static_assert(SCAN_LIST_MAX <= CODEPLUG_ZONE_MAX, "list_ref holds a list");
 
-static zone_t list_buf;		// only the radio task uses these
-static scan_list_t list_cur;
+static scan_list_t list_cur;		// only the radio task uses it
 
 static bool list_usable(uint16_t pos, void *ctx)
 {
@@ -4649,10 +4654,10 @@ static bool list_go(radio_sm_t *sm, uint16_t zi, uint16_t pos, uint32_t now_ms)
 	const zone_t *z = &sm->zone;
 	channel_t ch;
 	if (!sm->have_channels || zi != sm->view.zone_index) {
-		if (!read_zone(zi, &list_buf)) {
+		if (!read_zone(zi, &scan_zone)) {
 			return false;
 		}
-		z = &list_buf;
+		z = &scan_zone;
 	}
 	if (pos >= z->count || !channel_read(z->channels[pos], &ch)) {
 		return false;
@@ -4682,10 +4687,10 @@ static uint8_t list_resolve(radio_sm_t *sm, const scan_list_t *l)
 		}
 		const zone_t *z = &sm->zone;
 		if (i != 0 || !sm->have_channels) {
-			if (!read_zone(zi, &list_buf)) {
+			if (!read_zone(zi, &scan_zone)) {
 				continue;
 			}
-			z = &list_buf;
+			z = &scan_zone;
 		}
 		for (uint8_t k = 0; k < l->count; k++) {
 			if (sm->list_ref[k] != LIST_NONE) {
@@ -4848,7 +4853,6 @@ static bool dual_tune(radio_sm_t *sm, uint8_t i, uint32_t now_ms)
 // Channel i's settings for the second receiver. False: it can't be read now
 static bool rx2_settings(radio_sm_t *sm, uint8_t i, rx2_tune_t *t)
 {
-	static zone_t buf;		// only the radio task uses it
 	const radio_dual_ref_t *r = &sm->dual[i];
 	channel_t ch;
 	memset(t, 0, sizeof(*t));
@@ -4857,7 +4861,7 @@ static bool rx2_settings(radio_sm_t *sm, uint8_t i, rx2_tune_t *t)
 			return false;
 		}
 		ch = r->pos == sm->vfo_idx ? sm->vfo_ch : sm->vfo_other.ch;
-	} else if (dual_read(sm, r, &buf, &ch) == NULL) {
+	} else if (dual_read(sm, r, &scan_zone, &ch) == NULL) {
 		return false;
 	}
 	if (air_mode(ch.mode)) {
