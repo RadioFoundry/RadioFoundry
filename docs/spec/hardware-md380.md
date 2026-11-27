@@ -240,9 +240,9 @@ DMR set-up (`hrc5000_set_mode_dmr`) writes 0x06 before the reset-release block (
 it runs once per mode change; per-burst switching (`hrc5000_dmr_path`) touches only the
 RF side:
 
-- TX: 0x0D = 0x8C, 0x0E = 0x44, mic gain, 0x37 = 0xC2, 0x25 = 0x0E, 0x26 = 0xFE (RX IF and audio off), 0x45 / 0x46 =
+- TX: 0x0D = 0x8C, 0x0E = 0x44, mic gain, 0x37 = 0x93, 0x25 = 0x0E, 0x26 = 0xFE (RX IF and audio off), 0x45 / 0x46 =
   the calibrated DMR modulation pair, 0x35 = 0x1E, 0x3F = 0x04.
-- RX: 0x0E = 0x44, mic gain, 0x37 = 0xC2, 0x25 = 0x0E, 0x26 = 0xFD.
+- RX: 0x0E = 0x44, mic gain, 0x37 = 0x93, 0x25 = 0x0E, 0x26 = 0xFD.
 
 VHF radios swap I and Q with 0x01 = 0xF0 after the init. The manual gives 0x01 as the TX and RX IQ/QI bits; which value
 the receiver needs is still to be confirmed on a VHF radio (unverified).
@@ -513,7 +513,7 @@ pull request. Each test started from a power-on, and register reads confirmed th
 **The fix (our test, on air 2026-10-19; not authoritative).** The speaker amplifier is fed from the codec's LINEOUT
 (pin 10, 0x0E bit 3), not HPOUT. The tests above never had 0x0D bit 4 (Switch2) and 0x0E bit 3 (LineOutEn) set together
 while a call played. `hrc5000_speaker_voice()` now writes, when a DMR PCM stream opens the route: 0x0D = 0x9C, 0x0E = 0x4C
-(HPMute stays set, HPoutEn stays off, Mic1En on) and 0x37 = 0xC2, with 0x36 = 0x00 already written; it writes 0x0D = 0x8C and
+(HPMute stays set, HPoutEn stays off, Mic1En on) and 0x37 (0xC2 then, 0x93 now: 6.1), with 0x36 = 0x00 already written; it writes 0x0D = 0x8C and
 0x0E = 0x44 back when the route closes, which should also end the buzz after a call. `-DHRC5000_SPK_VOICE=0` leaves it out.
 On an MD-380 (UHF, D002.032 codec) against an AT-D878UV on a 70 cm test frequency, TS1, with the build at 17d89001 plus the codec
 move: received speech plays clear from the speaker and transmit is clear (one 10 s call: 498 frames, 10 bit errors, 3
@@ -799,9 +799,9 @@ synthesizer unpowered, PS floating) and 0 with SAVE high (powered, not yet progr
 The USB programming cable plugs into the accessory jack, and the speaker is off while it is in. Nothing can be heard
 during a debug link session: unplug to listen, and read values from Diagnostics on the radio meanwhile.
 
-FM receive audio and DMR voice both reach the amplifier through the HR_C5000 in RadioFoundry's model: FM through its
-feed-through (0x36) behind FM_MUTE (PE13), DMR through its codec DAC; SPK_C (PB8) mutes the speaker, AFCO (PB9) turns
-the amplifier on (the routing (unverified)). Measured on RadioFoundry with a pin scan (the 16 levels of FM_MUTE, FM_SW, SPK_C and AFCO,
+FM receive audio reaches the amplifier from the GT3136 behind FM_MUTE (PE13), on an analog path: the HR_C5000's DAC
+gain (0x37) doesn't change the FM level (measured). DMR voice comes from the HR_C5000's codec DAC. SPK_C (PB8) mutes
+the speaker, AFCO (PB9) turns the amplifier on. Measured on RadioFoundry with a pin scan (the 16 levels of FM_MUTE, FM_SW, SPK_C and AFCO,
 monitor held on an FM channel): noise only with FM_MUTE high, FM_SW high, SPK_C low and AFCO high. With those levels
 a received FM call plays clearly. The GT3136's discriminator audio also reaches the MCU on PC3, which
 RadioFoundry doesn't use.
@@ -815,18 +815,43 @@ BEEP (PC8, TIM8 CH3) instead: the board's second speaker output (`spkaux_md380.c
 runs at 40 kHz, the backlight's period on the same timer (1800 timer clocks; the backlight's CH1 keeps its 100
 steps), and plays the 8 kHz speaker PCM interpolated over five periods. AFCO (PB9) brings the amplifier up 60 ms before
 SPK_C (PB8) opens; SPK_C mutes 60 ms before AFCO drops. A 60 ms lead keeps the amplifier's turn-on step out of the
-tone (20 ms gave a 2-4.5 dB overshoot). With the mic gate, the permit leaves no tone in the decoded audio. Full-scale PCM is twice the PWM half swing: the default beep
-level plays at half swing, about as loud at the speaker as decoded voice at the same knob position, with harmonics
-40 dB down. Above about 70 % of the swing the harmonics rise to 30 dB down.
+tone (20 ms gave a 2-4.5 dB overshoot). With the mic gate, the permit leaves no tone in the decoded audio.
+
+At twice the PWM half swing for full-scale PCM, the default beep level played at half swing, about as loud at the
+speaker as decoded voice with the DAC gain at 0xC2, with harmonics 40 dB down (above about 70 % of the swing they
+rose to 30 dB down). With the DAC gain at 0x93 (below), decoded voice and the codec's beeps play about 7.6 dB lower,
+so the PWM path is scaled down by as much (`GAIN_Q7`). That level is derived from the DAC steps, not measured.
+
+The DAC gain (0x37) sets the level ahead of the knob: 0x80, 0x40 for a positive step, and the step in bits 4-0. A
+step of 0 (0x80, 0xC0) mutes the output. Measured with a microphone at the speaker, a 1 kHz beep and decoded DMR voice:
+
+| 0x37 | Result |
+|---|---|
+| 0xC2 | The codec output clips ahead of the knob above about -15 dBFS of PCM, at any knob position: voice peaks lose about 3 dB |
+| 0x9C | Voice peaks intact at full volume; about 3.5 dB quieter than 0xC2. Decoded voice about 3.5 dB louder than FM receive below full volume |
+| 0x93 | Decoded voice within 0.5 dB of narrow FM and 1 dB of wide FM receive (the same recorded voice; FM peaks at 2.5 kHz deviation narrow, 5 kHz wide), at 3/4 and at full volume; no clipping at full volume |
+| 0x8E | A -6 dBFS tone plays clean at half volume; at full volume the speaker amplifier clips it above about -15 dBFS |
+| 0x84 | A -6 dBFS tone plays clean at full volume; voice about 14 dB quieter than at 0x9C |
+
+The driver writes 0x93, so decoded DMR voice plays as loud as FM receive. Below full volume a step is about 0.46 dB
+between 0x8A and 0x9C. At full volume the speaker amplifier compresses voice peaks, so the same steps measure smaller
+there (0x9C to 0x8A: 6.4 dB at full volume, 8.3 dB at 3/4).
 
 The volume knob sets the level in the analog path; the MCU only sees its position on PA0. `hal_power_t.volume()` reports
 that position for the volume bar (`radio-features.md` 4.2), on a scale from raw 2 through 327 at mid-rotation (50 %) to
-1970 (100 %) (measured: units top out between about 1970 and 2019). No mute zone is applied: with the knob against the
-bottom stop a very faint audio is still heard (tested). It answers -1 until the ADC readings settle, and holds the last
+1970 (100 %) (measured: units top out between about 1970 and 2019). With the knob against the bottom stop the speaker
+still plays a very faint audio, so the bottom 8 counts (raw 10 and below, back above 15) read 0 and the amplifier then
+stays off for every sound (`md380_speaker_knob_mute`). It answers -1 until the ADC readings settle, and holds the last
 position while the battery line reads off (10.1). The board has no `CAP_VOLUME_POT`, and there is no
 `hal_radio_t.volume`: the MCU has no way to set the speaker level (the HR_C5000's feed-through gain isn't used for it,
 and the knob acts after it), so the debug link's volume operation (RADIO op 30) answers "unavailable"
 (`radio-features.md` 4.2).
+
+PA0 reads the wiper of the potentiometer that sets the level. Measured with a microphone at the speaker, a 1 kHz beep
+changes by about 0.79 of the wiper's dB (the reading over the top reading): about -17.5 dB at a quarter turn, -12.5 dB at
+mid-rotation and -3.5 dB at three quarters. The board gives that curve as `hal_radio_t.volume_db10` (from the two lines
+of `volume()`), and beeps stop getting louder above 44 % of the knob (`radio-features.md` 4): a beep at the top plays
+within about 1 dB of one at mid-rotation.
 
 ### 6.2 I2S PCM
 

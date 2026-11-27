@@ -502,6 +502,10 @@ static const flow_t flows[] = {
 	{ "11 dual watch: changes kept over hops", "quick 7 ctx 3 5 ok quick 2 back", "tune:b tune:a", "pos=3 temporary=1", 0,
 	  false },
 	{ "11 dual watch: talk target for the selected", "quick 7 tune:b", "tt", "dual=1 screen=picker", 1, false },
+	// #1116: Up / Down set to Talk target (Settings > Keys) step the selected channel's talk target in dual watch too,
+	// not the channel, as on the single Home
+	{ "11 dual watch: Up/Down on talk target", "ok 7 8 down down ok ok long:back quick 7", "up",
+	  "dual=1 sel=A pos=3 talk=91 toast=Talking_to", 1, false },
 	// #1013: the receiver hops to A's channel between the UI's passes, just before a digit: the digit still goes to
 	// B's VFO entry, not to Find
 	{ "11 dual watch: a digit just after a hop to the channel", "quick 7 ctx 1 vfokey tune:b", "hop:a 1",
@@ -655,12 +659,14 @@ static const flow_t flows[] = {
 	// like any other: a DMR channel there stays DMR, RX only. With AM it is a listen band: AM, never DMR
 	{ "E a DMR channel's RX in a receive-only band: DMR, RX only, saved", "ok 5 ok down down down",
 	  "ok 1 2 1 5 0 0 ok long:ok", "shows=121.500 hides=FM toast=Saved_channel_3 writes=1", 9, true },
+#if CONFIG_AM_RX
 	{ "E on a radio with AM: a DMR channel's air band RX makes it AM", "am ok 5 ok down down down", "ok 1 2 1 5 0 0 ok",
 	  "shows=121.500 shows=AM hides=Color_code", 8, false },
 	{ "E on a radio with AM: an air band RX makes the Mode AM", "am ok 5 up up ok down down down", "ok 1 2 1 5 0 0 ok",
 	  "shows=121.500 shows=AM hides=FM", 8, false },
 	{ "E on a radio with AM: OK on the Mode row keeps it AM", "am ok 5 up up ok down down down ok 1 2 1 5 0 0 ok up",
 	  "ok", "toast=Air_band:_receive_only shows=AM hides=FM hides=Color_code hides=RX_CTCSS", 1, false },
+#endif
 	{ "E RX refuses a digit no band starts with", "ok 5 up up ok down down down", "ok 2", "toast=Bands:", 2, false },
 	{ "E RX needs the MHz digits", "ok 5 up up ok down down down", "ok 1 4 ok", "toast=Type_at_least screen=channel",
 	  4, false },
@@ -908,6 +914,10 @@ static const flow_t flows[] = {
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
 	{ "S vibrate on a message", "", "msg:9991234,Hi", "vibes=1 vibe=0", 0, false },
 	{ "S vibrate on a call alert", "", "alert:91", "vibes=1 vibe=1", 0, false },
+	// A call alert rings (ui_beep_t 4), with no setting of its own: Message tone off doesn't silence it
+	{ "S call alert tone", "", "alert:91", "beeps=1 beep=4", 0, false },
+	{ "S call alert tone, message tone off", "ok 7 1 down down down down down down down down down down ok long:back",
+	  "alert:91", "set4=0 beep=4", 0, false },
 	{ "S vibrate on a private call", "", "privcall:91", "vibes=1 vibe=1", 0, false },
 	{ "S vibrate on an emergency", "", "emergency:91", "vibes=1 vibe=2", 0, false },
 	{ "S vibrate off", "ok 7 1 down down down down down down down down down down down ok long:back", "msg:9991234,Hi", "vibes=0 beep=2", 0,
@@ -940,6 +950,11 @@ static const flow_t flows[] = {
 	{ "S VFO step: auto, wide", "vfokey", "up", "freq=146545000", 1, false },
 	{ "S VFO step: auto, narrow", "vfokey quick 8 back", "up", "freq=146532500", 1, false },
 	{ "S VFO step: 2.5 kHz", "ok 7 3 down down down ok long:back vfokey", "up", "freq=146522500", 1, false },
+#if CONFIG_AM_RX
+	{ "S VFO step: the fourth after Auto", "ok 7 3 down down down ok ok ok", "ok", "shows=8.33_kHz", 1, false },
+#else
+	{ "S VFO step: the fourth after Auto", "ok 7 3 down down down ok ok ok", "ok", "shows=10_kHz", 1, false },
+#endif
 	// Page titles are in Title Case; the row that opens the page keeps its sentence case (ui.md 1)
 	{ "S a group's title in Title Case", "", "ok 7 3", "screen=group shows=Talk_&_Listen hides=Talk_&_listen", 3, false },
 	{ "S the group's row as it was", "", "ok 7", "screen=settings shows=Talk_&_listen", 2, false },
@@ -1044,8 +1059,21 @@ static const flow_t flows[] = {
 	{ "A beacons on", "", "ok 6 8 2", "aprs_auto=1 toast=Beacons_on", 4, false },
 	{ "A beacons off again", "ok 6 8 2", "2", "aprs_auto=0 toast=Beacons_off", 1, false },
 	{ "A next region", "", "ok 6 8 3", "aprs_region=1", 4, false },
-	{ "A regions skip an unset custom", "ok 6 8 3 3 3 3 3", "3", "aprs_region=0", 1, false },
-	{ "A regions with a custom frequency", "aprs:custom ok 6 8 3 3 3 3 3", "3", "aprs_region=6", 1, false },
+	// Custom: the step after the last region opens a frequency entry on the row; the region stays until OK
+	{ "A custom opens a frequency entry", "ok 6 8 3 3 3 3 3", "3", "aprs_region=5 hides=China shows=OK_set", 1, false },
+	{ "A custom frequency typed", "ok 6 8 3 3 3 3 3 3", "1 4 5 5 7 ok",
+	  "aprs_region=6 aprs_freq=145570000 shows=145.570", 6, false },
+	{ "A custom entry takes back a digit", "ok 6 8 3 3 3 3 3 3", "1 4 5 5 8 back 7 ok", "aprs_freq=145570000", 8, false },
+	{ "A custom entry needs the MHz digits", "ok 6 8 3 3 3 3 3 3", "1 4 ok", "aprs_region=5 toast=Type_at_least", 3, false },
+	{ "A custom entry, nothing typed, none set", "ok 6 8 3 3 3 3 3 3", "ok", "aprs_region=0", 1, false },
+	{ "A custom entry, nothing typed, keeps the set one", "aprs:custom ok 6 8 3 3 3 3 3 3", "ok",
+	  "aprs_region=6 aprs_freq=144930000", 1, false },
+	{ "A custom entry: Back leaves it", "ok 6 8 3 3 3 3 3 3", "1 back back", "aprs_region=5 screen=aprs", 3, false },
+	{ "A custom entry: Down leaves it", "ok 6 8 3 3 3 3 3 3", "1 4 down", "aprs_region=5 screen=aprs", 3, false },
+	{ "A custom entry shows its hint", "ok 6 8 3 3 3 3 3", "3", "shows=OK_set", 1, false },
+	{ "A custom entry keeps its digits over quick settings", "ok 6 8 3 3 3 3 3 3 1 4", "quick back 5 5 7 ok",
+	  "aprs_region=6 aprs_freq=145570000", 6, false },
+	{ "A custom: the next step wraps", "aprs:custom ok 6 8 3 3 3 3 3 3 ok", "3", "aprs_region=0", 1, false },
 	{ "A power as the channel", "ok 6 8", "down down down", "shows=As_channel aprs_power=0", 3, false },
 	{ "A power of its own", "", "ok 6 8 4", "aprs_power=1", 4, false },
 	{ "A path shows the default", "ok 6 8", "down down down down", "shows=WIDE1-1,WIDE2-1 aprs_path=2", 4, false },

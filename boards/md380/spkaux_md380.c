@@ -14,9 +14,10 @@
 
 #define RING		6u	// blocks (120 ms, 5 usable): the lead's 3 and a block either way for the stream's jitter
 #define UP		5u	// PWM periods per 8 kHz sample (40 kHz)
-// PCM full scale = twice the PWM half swing: the default beep level (50, a peak of 8000) at half swing, the level
-// measured loudest before the amplifier's distortion rises (hardware-md380.md 6.1)
-#define GAIN		2
+// PCM full scale = GAIN_Q7 / 128 of the PWM half swing. 256 (twice the half swing) put the default beep level (50, a peak of 8000) at half
+// swing, as loud as decoded voice with the codec's DAC gain at 0xC2 (hardware-md380.md 6.1). The DAC gain is now 0x93,
+// about 7.6 dB lower (3.5 dB to 0x9C, then 9 steps of 0.46 dB), so the PWM path drops as much: 256 * 0.417 = 107
+#define GAIN_Q7		107
 #define IRQ_PRIORITY	14u	// below the RF and audio interrupts: a late period only repeats a sample
 
 static int16_t ring[RING][AUDIO_BLOCK_SAMPLES] RFOUNDRY_CPU_RAM_NOINIT;	// CPU only: no DMA reads it
@@ -48,7 +49,7 @@ void TIM8_UP_TIM13_IRQHandler(void)
 			}
 		}
 	}
-	int32_t out = half + v * half * GAIN / 32768;
+	int32_t out = half + (v * GAIN_Q7 / 128) * half / 32768;
 	TIM8->CCR3 = (uint32_t)(out < 0 ? 0 : out > 2 * half ? 2 * half : out);
 }
 

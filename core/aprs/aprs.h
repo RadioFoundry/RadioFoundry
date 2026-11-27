@@ -239,8 +239,8 @@ bool aprs_host_enabled(void);
 // answer "nothing there", so a caller needs no switch of its own ---
 #if CONFIG_APRS_AFSK
 const char *aprs_path_text(uint8_t path);
-// A storage job (it writes flash; not the radio or UI task): our path and SSID into the codeplug's APRS record 1, so
-// the CPS reads what the radio uses. False when there is no such record or the write failed
+// A storage job (it writes flash; not the radio or UI task): our path, SSID and frequency into the codeplug's APRS
+// record 1, so the CPS reads what the radio uses. False when there is no such record or the write failed
 bool aprs_to_codeplug(void);
 // The level an RF transmission keys at: APRS's own setting (aprs_cfg_t.power: n = the board's level n - 1, capped at
 // its highest) or, with none (0), the radio's current level

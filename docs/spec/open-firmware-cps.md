@@ -533,7 +533,7 @@ but a 64th would overlap the channel bank 0 bitmap at 0x3780. Use 63.
 | 0x1D | 1 | Symbol table |
 | 0x1E | 1 | Symbol index |
 | 0x1F | 24 | Comment (qdmr uses 23 characters) |
-| 0x37 | 4 | TX frequency (unaligned, LE) |
+| 0x37 | 4 | APRS frequency: BCD of 10 Hz units, as for channels (unaligned, LE); 0 = none ([aprs.md](aprs.md) 11) |
 | 0x3B | 2 | Reserved |
 | 0x3D | 1 | Flags: bit 0 300 baud (else 1200); bit 1 use the fixed position; bit 2 transmit QSY info; bit 3 beacon silently; bits 5-7 position ambiguity |
 | 0x3E | 2 | Magic / version, LE: 0x4153 now. 0x4152 was the older layout, whose ambiguity field sat one bit lower; RadioFoundry accepts both and reads the ambiguity field at the matching position |

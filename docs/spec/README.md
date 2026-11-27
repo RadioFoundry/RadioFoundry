@@ -83,6 +83,8 @@ DMR voice needs each radio's own codec; the process is in [docs/dev](../dev/code
 
 | Spec | Covers |
 |---|---|
+| [mbe.md](mbe.md) | The MBE voice core: synthesis, analysis and concealment shared by the codecs written here |
+| [mbe-2400.md](mbe-2400.md) | The 2400 bit/s MBE codec: quantizer, dequantizer and the 72-bit frame with FEC |
 | [codec-placement.md](codec-placement.md) | Where RadioFoundry places the codec on each SoC family, descriptors, slots, codec maps |
 | `codec-<id>.md` | One radio's codec: the stock files accepted, their format, the code and table windows, entry points |
 

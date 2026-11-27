@@ -81,7 +81,7 @@ static const pa_keyup_cfg_t keyup_cfg[2] = {
 #define FD_REG_CSS_B		0x2Fu
 // Set-up B on this board, on top of the shared tables: 0x7D (b12:8 receive digital gain 9, the low byte the analog
 // mic step; the step set-up A's 0xE35E uses), FD6818 GPIO 5 as function 1 (0x33 b9 and b1 clear, 0x34 b7:4), and
-// 0x28 b8 set while the squelch is open
+// 0x28 b8 set while the FM audio is wanted (rx_gate)
 #define FD_REG_7D		0x7Du
 #define FD_7D_B			0xE92Cu
 #define FD_REG_GPIO_DIR		0x33u
@@ -127,6 +127,7 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 static uint8_t amp_users;	// AMP_* bits (the debug link's board.amp_users)
 
 static void speaker_source(void);
+static void rx_gate(void);
 static void ring_play(void);
 static void amp(uint8_t who, bool on);
 static void tx_tone_side(bool on);
@@ -470,6 +471,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 	rx_tone = tone != NULL ? *tone : (subtone_t){ TONE_NONE, 0 };
 	have_rx = true;
 	transmitting = false;
+	rx_gate();
 	speaker_source();
 	return true;
 }
@@ -546,6 +548,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	fd6818_set_freq(&fd, synth_hz(mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz));
 	hrc_dac_b_power(true);
 	transmitting = true;
+	rx_gate();	// closed before the FD6818 switches to TX
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for each burst's sequence. Between bursts the radio
 		// receives: the FD6818 in RX and the LNA on until the RF task switches to the first burst (burst_on). In TX
@@ -732,8 +735,9 @@ static void speaker_source(void)
 // APRS listens (hrc_afsk.c): the FD6818's audio stays on the HR_C7000's input, which also plays it to the speaker
 static void aprs_listen_route(bool on)
 {
-	uint32_t s = hrc_irq_save();	// dm32_speaker_pcm runs speaker_source from the audio task
 	aprs_listen = on;
+	rx_gate();	// before the source switch, as in audio()
+	uint32_t s = hrc_irq_save();	// dm32_speaker_pcm runs speaker_source from the audio task
 	if (rx_audio) {
 		amp(AMP_RADIO, false);	// the source changes under an open squelch: no click
 	}
@@ -758,14 +762,23 @@ uint8_t dm32_amp_users(void)
 	return amp_users;
 }
 
+// Set-up B's 0x28 receive gate: open while the squelch is open or APRS listens. The APRS demodulator needs the FM
+// audio with the squelch closed too, and with Mute APRS audio on the core holds audio() off on the APRS frequency
+// (radio_sm.c, aprs_mute_hz). Closed in transmit. Worked out from the state at each change, and again after every FM
+// tune: the first FM tune after DMR finds the DMR table's closed word (the FM table doesn't write 0x28), and the tune
+// after a transmission finds the gate closed
+static void rx_gate(void)
+{
+	if (rf_b && mode == RADIO_MODE_FM) {
+		bool open = !transmitting && (rx_audio || aprs_listen);
+		fd6818_write(&fd, FD_REG_RX_GATE, open ? FD_RX_GATE_OPEN : FD_RX_GATE_CLOSED);
+	}
+}
+
 static void audio(bool on)
 {
 	rx_audio = on;
-	// Closed during a transmission too: a speaker closed while transmitting would leave 0x28 open through the receive
-	// that follows, until the squelch opens and closes again
-	if (rf_b && mode == RADIO_MODE_FM && (!on || !transmitting)) {
-		fd6818_write(&fd, FD_REG_RX_GATE, on ? FD_RX_GATE_OPEN : FD_RX_GATE_CLOSED);
-	}
+	rx_gate();
 	if (!on) {
 		amp(AMP_RADIO, false);	// before the source switch, so the switch doesn't click
 	}

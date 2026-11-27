@@ -148,10 +148,16 @@ nxdnEngineTest: nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn
 	$(CC) $(CFLAGS) -DCONFIG_NXDN_SCRAMBLER=1 -I$(ROOT)/hal -Wshadow -o $@ nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC) -lm
 
 # The MBE synthesis core and the full-rate voice decoder on it (core/mbe), against golden vectors
-MBE     := $(wildcard $(CORE)/mbe/*.c)
+MBE2400 := $(wildcard $(CORE)/mbe/mbe2400*.c)
+MBE     := $(filter-out $(MBE2400),$(wildcard $(CORE)/mbe/*.c))
 TESTS   += mbeTest
 mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ mbeTest.c $(MBE) -lm
+
+# The 2400 bit/s front end (core/mbe/mbe2400*): its frame, FEC and quantizer, and the test voice set through it
+TESTS   += mbe2400Test
+mbe2400Test: mbe2400Test.c $(MBE) $(MBE2400) $(FEC) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -DCONFIG_MBE2400=1 -o $@ mbe2400Test.c $(MBE) $(MBE2400) $(FEC) -lm
 
 # The full-rate voice encoder (core/mbe): the quantizer against the dequantizer
 TESTS   += imbeEncTest
@@ -264,6 +270,7 @@ run: $(TESTS)
 	./fxpTest
 	./mbeTest | tail -1
 	./imbeEncTest | tail -1
+	./mbe2400Test | tail -1
 	for v in $(VOICE_SETS); do ./imbeVoiceGen --check $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe || exit 1; done
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
@@ -338,6 +345,13 @@ TESTS   += radioCoreTestNoVfoDmr
 radioCoreTestNoVfoDmr: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                        $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -DCONFIG_VFO_DMR=0 -o $@ $(RCORE) -lm
+
+# The same with air band receive off (CONFIG_AM_RX=0)
+TESTS   += radioCoreTestNoAm
+radioCoreTestNoAm: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                   $(CORE)/ui/ui_svc.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_SATELLITE_TLE=1 -DCONFIG_AM_RX=0 -o $@ $(RCORE) -lm
 
 # The same with P25 conventional (CONFIG_P25) and the air interface bench (CONFIG_AIR_RAW): a fake board.air whose far
 # end is a second P25 engine, and a vocoder that lends its memory as the HR_C7000 platform's does
@@ -509,11 +523,12 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestNoAm radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest volumePotTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
+	./radioCoreTestNoAm
 	./radioCoreTestP25
 	./radioCoreTestNxdn
 	./radioCoreTestP25Nxdn
@@ -569,19 +584,22 @@ codeplugPower%Test: codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/code
 	$(CC) $(CFLAGS) $(FLASH_HAL) -DPOWER_COUNT=$* -o $@ codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
 
 # The calibration curve every board's reader shares
-TESTS   += calCurveTest
+TESTS   += calCurveTest sqlRssiTest
 
 calCurveTest: calCurveTest.c $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ calCurveTest.c
+sqlRssiTest: sqlRssiTest.c $(CORE)/radio/sql_rssi.c $(CORE)/radio/sql_rssi.h $(CORE)/radio/radio_sm.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/hal -o $@ sqlRssiTest.c $(CORE)/radio/sql_rssi.c
 
 run: run-flash
-run-flash: codeplugTest codeplugNoCompactTest calCurveTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
+run-flash: codeplugTest codeplugNoCompactTest calCurveTest sqlRssiTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
 	./codeplugPower2Test
 	./codeplugPower3Test
 	./codeplugPower9Test
 	./codeplugTest
 	./codeplugNoCompactTest
 	./calCurveTest
+	./sqlRssiTest
 .PHONY: run-flash
 
 # The AT1846S driver: frequency word, register cache and write sequences, on a fake bus
@@ -745,10 +763,12 @@ uiFlowTest: uiFlowTest.c $(UIDEPS)
 # The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
 # without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests
 # (CONFIG_BACKLIGHT_TEST=y, off in uiFlowTest): their screen, and the Advanced rows below it one further down; and
-# without privacy (CONFIG_DMR_PRIVACY=n): Settings > Privacy dimmed.
+# without privacy (CONFIG_DMR_PRIVACY=n): Settings > Privacy dimmed; and without air band receive
+# (CONFIG_AM_RX=n): no 8.33 kHz VFO step.
 # uiFlowTest has P25 and NXDN (CONFIG_P25, CONFIG_NXDN) and this one not: their home screen flows run in the first
 uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -DCONFIG_DMR_PRIVACY=0 -o $@ \
+	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -DCONFIG_DMR_PRIVACY=0 \
+		-DCONFIG_AM_RX=0 -o $@ \
 		uiFlowTest.c $(UIAPP) -lz
 
 uiFlowTestSatellite: uiFlowTest.c $(UIDEPS)
@@ -1230,8 +1250,8 @@ st7789Test: st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c $(ROOT)/drivers
 chswitchTest: chswitchTest.c $(ROOT)/drivers/input/chswitch/chswitch.c $(ROOT)/drivers/input/chswitch/chswitch.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ chswitchTest.c $(ROOT)/drivers/input/chswitch/chswitch.c
 
-sharedPttTest: sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c $(ROOT)/drivers/input/sharedptt/shared_ptt.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c
+sharedPttTest: sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c $(ROOT)/drivers/input/sharedptt/shared_ptt.h $(ROOT)/drivers/input/plugptt/plug_ptt.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ sharedPttTest.c $(ROOT)/drivers/input/sharedptt/shared_ptt.c $(ROOT)/drivers/input/plugptt/plug_ptt.c
 plugPttTest: plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c $(ROOT)/drivers/input/plugptt/plug_ptt.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ plugPttTest.c $(ROOT)/drivers/input/plugptt/plug_ptt.c
 keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROOT)/drivers/input/keymatrix/keymatrix.h
@@ -1883,7 +1903,7 @@ run-httpassets: httpAssetsTest httpAssetsTestPlain
 # defaults it (Ubuntu's GCC: the CI runners), and its printf wrappers rely on always_inline, which CFLAGS'
 # -D__attribute__(x)= removes, so they fail to compile: these are the only tests built optimized, hence no fortify
 FXPOPT  := -O1 -U_FORTIFY_SOURCE
-TESTS   += fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
+TESTS   += fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest mbeExactOptsTest mbeExactOptsSplitTest
 fxpHalvesTest: fxpHalvesTest.c $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow $(FXPOPT) -o $@ fxpHalvesTest.c
 
@@ -1896,12 +1916,22 @@ mbeExactTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.
 mbeExactSplitTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -DFXP_SPLIT16 -o $@ mbeExactTest.c $(MBE) -lm
 
+# The same with the MBE core's per-frame options built in (CONFIG_MBE_OPTS, on with the 2400 bit/s front end): the
+# full-rate CRCs must not move, and the 2400 bit/s codec's own hold with either kind of product
+mbeExactOptsTest: mbeExactTest.c $(MBE) $(MBE2400) $(FEC) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -DCONFIG_MBE2400=1 -o $@ mbeExactTest.c $(MBE) $(MBE2400) $(FEC) -lm
+
+mbeExactOptsSplitTest: mbeExactTest.c $(MBE) $(MBE2400) $(FEC) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -DCONFIG_MBE2400=1 -DFXP_SPLIT16 -o $@ mbeExactTest.c $(MBE) $(MBE2400) $(FEC) -lm
+
 run: run-mbe-halves
-run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
+run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest mbeExactOptsTest mbeExactOptsSplitTest
 	./fxpHalvesTest | tail -1
 	./fxpHalvesSplitTest | tail -1
 	./mbeExactTest | tail -1
 	./mbeExactSplitTest | tail -1
+	./mbeExactOptsTest | tail -1
+	./mbeExactOptsSplitTest | tail -1
 .PHONY: run-mbe-halves
 
 # Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and a run-boards:: rule

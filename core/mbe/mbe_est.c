@@ -316,18 +316,27 @@ static int32_t band_threshold(uint32_t c1, int k, int K, int was)
 	return th;
 }
 
-void mbe_est_params(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per, int K)
+// bands: per harmonics each, or (per 0) wb wide (a phase step, as w0)
+void mbe_est_bands(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per, uint32_t wb,
+		   int K)
 {
 	uint32_t c1 = p->w0 >> 7;
 	int16_t du[MBE_MAXL];			// each harmonic's unvoiced level less its voiced one
 	uint16_t voiced = 0;
 	int L = p->L, l = 1;
-	int32_t ex = (int32_t)e->exp * 2048;
+	int32_t ex = (int32_t)e->exp * 2048, uvd = 0;
 
+#if CONFIG_MBE_OPTS
+	// a density is the band level over the harmonic spacing, against the reference's (the synthesis puts it back)
+	if (p->flags & MBE_UV_DENSITY)
+		uvd = (32 * 2048 - mbe_log2_q11(p->w0)) >> 1;
+#endif
 	for (int k = 0; k < K; k++) {
-		int last = k == K - 1 ? L : (k + 1) * per, v;
+		int last = k == K - 1 ? L : per ? (k + 1) * per : (int)(((uint32_t)(k + 1) * wb - 1) / p->w0), v;
 		uint32_t se = 0, sr = 0;
 
+		if (last > L)
+			last = L;
 		for (int i = l; i <= last; i++) {
 			harm_t h;
 			int32_t lge, av, au;
@@ -342,7 +351,7 @@ void mbe_est_params(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, 
 			}
 			lge = mbe_log2_q11(h.E);
 			av = ((lge - (mbe_log2_q11(h.ww) - 15 * 2048)) >> 1) + C_VOICED - ex;
-			au = (lge >> 1) + C_UNVOICED - ex;
+			au = (lge >> 1) + C_UNVOICED - ex + uvd;
 			p->a[i - 1] = (int16_t)fxp_clamp(av, -32767, 32767);
 			du[i - 1] = (int16_t)fxp_clamp(au - av, -32767, 32767);
 		}
@@ -358,8 +367,66 @@ void mbe_est_params(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, 
 			if (!v && p->a[i - 1] != MBE_A_SILENT)
 				p->a[i - 1] = (int16_t)fxp_clamp(p->a[i - 1] + du[i - 1], -32767, 32767);
 		}
-		l = last + 1;
+		if (last >= l)
+			l = last + 1;
 	}
 	s->vprev = voiced;
 	s->period4 = e->period4;
+}
+
+// --- the pitch code ---
+
+#define CODE_SEARCH	3	// codes tried to each side of the one nearest the time-domain estimate
+#define CODE_STAY	150	// mismatch (Q15) a code must gain for each step away from that estimate: at long periods the
+				// spectrum hardly tells neighbors apart and the time-domain estimate is the better one
+#define PERIODIC_MIN	(-2700)	// log2 Q11 (0.4): a normalized autocorrelation under this is no pitch ...
+#define PERIODIC_START	(-1300)	// ... and (0.64) under this none begins: after a frame with no voiced band, noise and
+				// hum now and then reach the lower mark, and a voiced band there is a buzz in a pause.
+				// Speech is above it from its first frame (99.6 % of voiced frames on the test talkers)
+#define OCTAVE_GAIN	500	// mismatch (Q15) half the period may be worse by and still win
+
+// The code nearest a period or the neighbor of it the spectrum fits best, and that code's mismatch
+static int near_code(const int32_t *buf, const mbe_grid_t *g, int period4, int *code)
+{
+	int c = g->code(period4), best = 0x7FFFFFFF, mis_at = 32768;
+
+	*code = (int)fxp_clamp(c, 0, g->n - 1);
+	for (int t = c - CODE_SEARCH; t <= c + CODE_SEARCH; t++) {
+		int mis, cost;
+
+		if (t < 0 || t >= g->n)
+			continue;
+		mis = mbe_est_mismatch(buf, g->w0(t));
+		cost = mis + CODE_STAY * (t > c ? t - c : c - t);
+		if (cost < best) {
+			best = cost;
+			mis_at = mis;
+			*code = t;
+		}
+	}
+	return mis_at;
+}
+
+int mbe_est_pitch(const mbe_est_state_t *s, const int32_t *buf, mbe_est_t *e, const mbe_grid_t *g)
+{
+	int code, mis;
+
+	if (!e->period4 || e->periodic < (s->vprev ? PERIODIC_MIN : PERIODIC_START)) {
+		e->period4 = 0;
+		return -1;
+	}
+	mis = near_code(buf, g, e->period4, &code);
+	// half the period, when the spectrum fits it as well. The time-domain search works on whole samples at 4 kHz,
+	// where a short period that falls between two of them scores under its double, which falls on one. In the
+	// spectrum the two differ plainly: at the right pitch a harmonic sits in every band, at half the period only when
+	// the voice really is that high (else every second harmonic is left unexplained)
+	if (e->period4 >= 2 * g->min_period4) {
+		int c2, mis2 = near_code(buf, g, e->period4 >> 1, &c2);
+
+		if (mis2 <= mis + OCTAVE_GAIN) {
+			code = c2;
+			e->period4 >>= 1;
+		}
+	}
+	return code;
 }
