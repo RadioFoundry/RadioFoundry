@@ -184,9 +184,10 @@ void codeplug_tag_apply(uint16_t number, channel_t *ch)
 	ch->system = t.system;
 #if CONFIG_DMR_AES
 	if (t.kind == CODEPLUG_KIND_DMR_AES) {
-		uint8_t block[CODEPLUG_TAG_HEAD_MAX + 2];
-		ch->aes_ref = codeplug_tag_params(number, ch, block, 2) >= 2 && block[0] == 0x25 ?
-			      (uint16_t)(1u + block[1]) : 0;
+		uint8_t block[CODEPLUG_TAG_HEAD_MAX + 3];
+		int n = codeplug_tag_params(number, ch, block, 3);
+		ch->aes_ref = n >= 2 && block[0] == 0x25 ? (uint16_t)(1u + block[1]) : 0;
+		ch->aes_opts = n >= 3 ? block[2] : 0;	// a block written before the options byte: all off
 	}
 #endif
 	ch->rx_only = (t.flags & CODEPLUG_TAG_TX) == 0;
@@ -219,7 +220,7 @@ bool codeplug_tag_after_write(uint16_t number, const channel_t *ch, uint8_t acti
 #if CONFIG_DMR_AES
 	if (ch->kind == CODEPLUG_KIND_DMR_AES && ch->aes_ref >= 1 && ch->aes_ref <= 256) {
 		codeplug_tag_t aes = { .kind = ch->kind, .system = ch->system, .flags = ch->rx_only ? 0 : CODEPLUG_TAG_TX };
-		uint8_t params[] = { 0x25, (uint8_t)(ch->aes_ref - 1) };
+		uint8_t params[] = { 0x25, (uint8_t)(ch->aes_ref - 1), ch->aes_opts };
 		if (action == CODEPLUG_TAG_W_FOLLOW)
 			return rewrite_checked(number, t->check, ch->name, &aes, params, sizeof params);
 		return codeplug_tag_write(number, ch->name, &aes, params, sizeof params);

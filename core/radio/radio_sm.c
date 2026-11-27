@@ -3356,7 +3356,7 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	dmrPrivacyDataConfig(&data_key, &c.privacy);
 #endif
 #if CONFIG_DMR_AES
-	radio_aes_data_config(ch, &c.privacy);	// an AES channel: its rule, not the basic privacy key's
+	radio_aes_data_config(ch, sm->view.dmr.hear_all, &c.privacy);	// an AES channel: its rule, not the basic key's
 #endif
 	uint8_t packet = deny != TXDENY_NONE ? deny :
 		c.privacy.mode == DMR_DATA_PRIVACY_BLOCK ? TXDENY_DATA_ENCRYPTED : TXDENY_NONE;

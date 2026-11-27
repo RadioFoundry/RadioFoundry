@@ -2877,6 +2877,83 @@ static void test_crypt_hook(void)
 	run_ms(500);
 }
 
+#if CONFIG_DMR_AES
+// Encrypted only (listen.encrypted_only, #1159): a call in the clear is ignored as one of another color code is (not
+// played, not shown, no activity, not busy), an encrypted one plays; turned off (digital monitor), the clear call plays
+static void test_encrypted_only(void)
+{
+	dmr_call_config_t c = base_cfg();
+	static const uint8_t info[10] = { 0x25, 0x10, 0x05, 0xCD, 0x65, 0x54, 0xE0, 0x00, 0x00, 0x01 };
+	static const uint8_t gps[9] = { 0x08, 0x00, 0x03, 0x80, 0x00, 0x00, 0x40, 0x00, 0x00 };
+	uint8_t clear[9], enc[9];
+	unsigned frame = 1;
+	dmr_call_stats_t st;
+	uint32_t ms;
+
+	c.crypt = crypt_hook;
+	c.listen.encrypted_only = true;
+	c.access = DMR_ACCESS_POLITE_CC;
+	c.access_wait_ms = 2000;
+	setup(&c);
+	mk_lc(clear, 0, TG_TALK, 9997030);
+	mk_lc(enc, 0, TG_TALK, 9997030);
+	enc[2] = DMR_SVC_PRIVACY;
+
+	// Clear, with a GPS Info LC in its superframe: nothing of it reaches the sink or the view
+	rx_call(clear, 1, true, 0, 1, false, &frame);
+	rx_voice(0, 1, 0, DMR_SYNC_MS, &frame, gps, false);
+	run_ms(60);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE && V()->state == DMR_CALL_STATE_IDLE);
+	CHECK(sink_log.begins == 0 && sink_log.frames == 0 && !V()->caller.gps_valid);
+	CHECK(!dmr_call_last_activity(&ms) && dmr_call_channel_clear(now));
+	// PTT goes as over another color code's call (polite to our color code)
+	dmr_call_ptt(true);
+	run_ms(100);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_begins == 1);
+	dmr_call_ptt(false);
+	run_ms(1500);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_clear_ignored == 1 && st.rx_calls_played == 0);
+
+	// The same call goes on, a new over by late entry: counted once each, never played
+	setup(&c);
+	rx_call(clear, 1, false, 0, 3, true, &frame);
+	run_ms(500);
+	rx_call(clear, 1, true, 0, 1, true, &frame);
+	run_ms(500);
+	dmr_call_get_stats(&st);
+	CHECK(st.rx_clear_ignored == 2 && sink_log.frames == 0 && V()->last_heard.src == 0);
+
+	// Encrypted, with its PI header and key: played through the hook
+	crypt_n = 0;
+	rx_call(enc, 1, true, 0, 0, false, &frame);
+	rx_pi_header_burst(info, 1, true);
+	run_ms(60);
+	rx_call(enc, 1, false, 0, 1, true, &frame);
+	CHECK(crypt_n == 6 && sink_log.frames == 18 && V()->last_heard.encrypted);
+
+	// Digital monitor clears the switch (the radio core does): the clear call being heard plays at once
+	setup(&c);
+	rx_call(clear, 1, true, 0, 1, false, &frame);
+	CHECK(sink_log.begins == 0);
+	c.listen.encrypted_only = false;
+	c.listen.hear_all = c.listen.any_cc = c.listen.both_ts = true;
+	dmr_call_configure(&c);
+	dmr_call_poll(now);
+	CHECK(V()->phase == DMR_CALL_PHASE_RX_VOICE && sink_log.begins == 1);
+	rx_call(clear, 1, false, 0, 1, true, &frame);
+	CHECK(sink_log.frames == 18);
+
+	// Switch off: a clear call plays as before
+	c = base_cfg();
+	c.crypt = crypt_hook;
+	setup(&c);
+	rx_call(clear, 1, true, 0, 1, true, &frame);
+	dmr_call_get_stats(&st);
+	CHECK(sink_log.frames == 18 && st.rx_clear_ignored == 0);
+}
+#endif
+
 // An encrypted over: voice LC headers with FID 0x10 and the privacy option, our PI header with the new MI, then every
 // voice burst through the hook with its superframe
 static void test_crypt_tx(void)
@@ -3751,6 +3828,9 @@ int main(void)
 	test_alias_formats();
 	test_pi_header_and_emergency();
 	test_crypt_hook();
+#if CONFIG_DMR_AES
+	test_encrypted_only();
+#endif
 	test_crypt_tx();
 	test_private_calls();
 	test_basic_privacy();

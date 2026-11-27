@@ -2677,9 +2677,9 @@ static bool serviceCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *dat
 static void testPrivacy(void)
 {
 	static const uint16_t key = 0x2503;
-	static const dmrDataPrivacy_t clear = { DMR_DATA_PRIVACY_CLEAR, 0, NULL, NULL };
-	const dmrDataPrivacy_t encrypt = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, serviceCrypt, &key };
-	const dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL };
+	static const dmrDataPrivacy_t clear = { DMR_DATA_PRIVACY_CLEAR, 0, NULL, NULL, false };
+	const dmrDataPrivacy_t encrypt = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, serviceCrypt, &key, false };
+	const dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL, false };
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	int count, heard;
 
@@ -2754,6 +2754,29 @@ static void testPrivacy(void)
 	rxBursts(bursts, count);
 	CHECK(packetsHeard == heard);
 	CHECK(stats.rxPrivacyDropped == dropped + 1);
+
+#if CONFIG_DMR_AES
+	// Encrypted only (#1159): a clear text to us is dropped as if not heard. With the switch off (digital monitor)
+	// the same text is taken
+	dmrDataPrivacy_t encOnly = block;
+	encOnly.rxClearDrop = true;
+	reset();
+	ch.privacy = encOnly;
+	runMainTask(100);
+	heard = packetsHeard;
+	dropped = stats.rxClearDropped;
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_B, "in the clear", 3, true, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(count > 0);
+	rxBursts(bursts, count);
+	runMainTask(500);
+	CHECK((packetsHeard == heard) && (stats.rxClearDropped == dropped + 1));
+	ch.privacy = block;
+	runMainTask(100);
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_B, "in the clear", 4, true, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+	rxBursts(bursts, count);
+	runMainTask(500);
+	CHECK((packetsHeard == heard + 1) && (stats.rxClearDropped == dropped + 1));
+#endif
 
 	ch.privacy = clear;
 	reset();

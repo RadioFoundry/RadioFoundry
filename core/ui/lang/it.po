@@ -2278,6 +2278,11 @@ msgid "AES key"
 msgstr "Chiave AES"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_ENCRYPTED_ONLY"
+msgid "Encrypted only"
+msgstr "Solo cifrato"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
 msgid "Color code"
 msgstr "Color code"

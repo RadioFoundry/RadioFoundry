@@ -1245,9 +1245,9 @@ static bool testCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, 
 static void testPrivacy(void)
 {
 	static const uint16_t key = 0x2503, otherKey = 0x1F00;
-	dmrDataPrivacy_t on = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &key };
-	dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL };
-	dmrDataPrivacy_t other = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &otherKey };
+	dmrDataPrivacy_t on = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &key, false };
+	dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL, false };
+	dmrDataPrivacy_t other = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &otherKey, false };
 	dmrBurst_t b[DMR_DATA_MAX_BURSTS], plain[DMR_DATA_MAX_BURSTS];
 	uint8_t pdu[40], want[12];
 

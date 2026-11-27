@@ -306,6 +306,15 @@ to the radio. Both radios must have the same key bytes and ID. The system and ch
 
 On the handset, open the DMR channel editor and press **OK** on **AES key** to cycle through the provisioned
 system number/key ID pairs. **None** removes channel AES. Save the channel to keep the choice across restarts.
+
+**Encrypted only** (below **AES key** once a key is chosen, and a box on the channel in the Codeplug Editor; off by
+default) makes the channel ignore everything sent in the clear, as if it were on another color code:
+
+- A clear call is not played and not shown, not even as "not played". A scan doesn't stay on it.
+- Clear text messages, positions and other data on the channel are dropped.
+- Radio check, call alert and emergency alarms still work: they carry only radio IDs.
+- [Digital monitor](#digital-monitor) still plays everything, clear calls included, while it is on.
+- Encrypted calls the radio has no key for still show as "Encrypted: not played".
 A protected channel without its key refuses PTT ("AES key or TX disabled"). Text messages and packet data aren't
 sent on these channels yet ("Encrypted channels can't send text"), and your GPS position is not sent on them. Radio
 check, call alert and emergency alarms work as on any DMR channel. The editor's image export omits key bytes by
@@ -322,7 +331,7 @@ What AES does not do:
 
 - The radio IDs, the talkgroup and the talker alias stay readable to anyone listening.
 - A recorded over can be played back on air later, and nothing tells the listener it is a replay.
-- A clear call on an AES channel is still played.
+- A clear call on an AES channel is still played, unless the channel is set to **Encrypted only**.
 - Anyone with the radio and a USB cable can read the keys from its codeplug. If a radio is lost, give everyone new
   keys.
 - Change the key after a factory reset. The radio repairs its saved encryption position after a settings restore

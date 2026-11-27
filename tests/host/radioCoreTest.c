@@ -3543,6 +3543,35 @@ static void test_dmr_voice_features(void)
 	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
 	reload_channel();
 	CHECK(d->privacy);
+	// Encrypted only (#1159), the block's options byte: a clear call on the talk target is ignored as one of another
+	// color code is (Home stays idle, counted for the debug link); digital monitor plays it; switched off, it plays
+	uint8_t enc_tag[] = { CODEPLUG_KIND_DMR_AES, 2, (uint8_t)check, (uint8_t)(check >> 8), CODEPLUG_TAG_TX, 0x25, 0,
+			      CODEPLUG_AES_ENC_ONLY };
+	dmr_call_stats_t eo0, eo;
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, enc_tag, sizeof enc_tag);
+	reload_channel();
+	CHECK(sm.view.ch.aes_opts == CODEPLUG_AES_ENC_ONLY);
+	dmr_call_get_stats(&eo0);
+	hear_call(true, 201, 9991234, 2, 1, false);
+	dmr_call_get_stats(&eo);
+	CHECK(sm.view.state == RS_IDLE && d->state == RDMR_IDLE && !hw.led[LED_GREEN]);
+	CHECK(eo.rx_clear_ignored == eo0.rx_clear_ignored + 1 && eo.rx_calls_played == eo0.rx_calls_played);
+	run(500);
+	req(RREQ_MONITOR, 1);
+	req(RREQ_MONITOR, 0);
+	CHECK(d->hear_all_latch);
+	hear_call(true, 201, 9991234, 2, 1, false);
+	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX);
+	run(500);
+	req(RREQ_MONITOR, 1);
+	req(RREQ_MONITOR, 0);
+	CHECK(!d->hear_all_latch);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	reload_channel();
+	CHECK(sm.view.ch.aes_opts == 0);
+	hear_call(true, 201, 9991234, 2, 1, false);
+	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX);
+	run(500);
 	// With the settings in RAM only, the MI reservation is never saved: PTT waits for it, nothing goes out clear
 	run(SETTINGS_SAVE_DELAY_MS + 100);
 	first = sim.air_count;

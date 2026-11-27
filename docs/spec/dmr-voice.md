@@ -24,8 +24,10 @@ PTT always uses.
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
 | Our own ID as source | not while we transmit or for `DMR_CALL_OWN_ECHO_MS` (700 ms) after our call ended or was cut short (the repeater's echo of it); later it is judged as any other call, so a parrot's playback of our call plays (#294). A terminator from our ID ends only the call with its LC, never another station's |
 | Encrypted | with the applicable privacy key; AES requires the opening PI header and a matching key (section 5) |
+| In the clear on an encrypted-only channel | only with digital monitor on (5.2); otherwise ignored, not shown as busy |
 
-A call that doesn't pass is shown as busy ("not played") while it lasts, and counts for polite channel access.
+A call that doesn't pass is shown as busy ("not played") while it lasts, and counts for polite channel access. A call in
+the clear on an encrypted-only channel is the exception: it is ignored as one of another color code (5.2).
 
 A voice LC header or terminator whose RS(12,9) check fails is not taken. With the channel's Accept invalid CRC
 (`dmr_listen_filter_t.accept_bad_crc`, [open-firmware-cps.md](open-firmware-cps.md) 7.3.3) it is taken when the same
@@ -321,6 +323,28 @@ repeat keystream under the same key. Change the key in those cases or if unsure 
 
 The HR_C6000 reports the EMB PI bit unreliably for voice, so its driver clears it (`modem-hrc6000.md`); on that modem
 privacy is recognized from the service options and PI headers only.
+
+### 5.2 Encrypted only
+
+An AES channel can be set encrypted only (the options byte of its parameter block, [channel-modes.md](channel-modes.md)
+4; the channel editor's Encrypted only row). The radio core sets `dmr_listen_filter_t.encrypted_only` on such a channel
+unless digital monitor is on (`radio_aes_configure`). A call whose voice LC lacks the privacy service option is then
+ignored as a call on another color code is:
+
+| | Ignored call in the clear |
+|---|---|
+| Voice | never played |
+| View | phase and state idle: no call screen, no "not played" line, no last heard, no reply window. Its talker alias and GPS Info are not taken |
+| Activity | its bursts don't count (`dmr_call_last_activity`, `dmr_call_channel_clear`): a scan moves on, machine traffic and DMO timing don't wait for it |
+| Polite access | not busy for polite to our color code; polite to all still waits for any carrier |
+| Counter | `rx_clear_ignored`, once per call (`call.rx_clear_ignored` on the debug link, [debuglink.md](debuglink.md) view 3) |
+
+Turning digital monitor on during such a call plays it at once, as for any call heard as not ours (section 1).
+Packet data in the clear is dropped on the same channel ([dmr-data.md](dmr-data.md) 13.3). Signaling (call alert,
+radio check, emergency alarm CSBKs) is not affected: it carries only IDs, which encrypted calls send in the clear too.
+
+Encrypted calls the radio can't decrypt (another algorithm or key ID, a missed PI header) are unchanged: shown as
+"Encrypted: not played" and never played.
 
 ## 6. Encoding the microphone
 
