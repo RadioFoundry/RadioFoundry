@@ -5,7 +5,7 @@
 
 The plan for the first time D-STAR runs on a radio: what to set up, the order of the tests, what each settles, and
 what to write down. Everything below is written and host tested ([dstar-modem.md](../spec/dstar-modem.md),
-[dstar-codec.md](../spec/dstar-codec.md), [dstar-codeplug.md](../spec/dstar-codeplug.md)); nothing of it has been on
+[mbe-2400.md](../spec/mbe-2400.md), [dstar-codeplug.md](../spec/dstar-codeplug.md)); nothing of it has been on
 air. The open questions this session settles are listed in [dstar-modem.md](../spec/dstar-modem.md) 1.4 and in
 [hardware-dm32.md](../spec/hardware-dm32.md) 9.3, "Unverified on the radio"; each step names the ones it answers.
 
@@ -52,7 +52,7 @@ tools/dstar_bench.py watch --seconds 300          # a line per over heard; log i
 | 2a | 3 s overs, no message, a metre away into its own rubber duck (strong) | A line per over: MY/suffix, UR CQCQCQ, RPT1/RPT2 as it sends them (DIRECT or blank), `polarity` +1 or -1, frames about 150, bad 0. The caller on the screen while it talks, the voice on the speaker |
 | 2b | The same with its TX message set | The message on the call screen and in the line (`msg`), from the second superframe on |
 | 2c | A 10 s over, the watch started 3 s into it (or the radio switched to the channel mid-over) | Late entry: the header rebuilt from the slow data (`(late entry)`), voice from the second resync on |
-| 2d | Weaker: further away, or the dummy load and attenuation | Note where `bad` starts to climb and where the voice breaks up. A break should sound like a short hiss fading out, not a buzz and a click (the codec's concealment, dstar-codec.md 1); note `rx_concealed` against `rx_played` |
+| 2d | Weaker: further away, or the dummy load and attenuation | Note where `bad` starts to climb and where the voice breaks up. A break should sound like a short hiss fading out, not a buzz and a click (the codec's concealment, mbe-2400.md 3.5); note `rx_concealed` against `rx_played` |
 | 2e | `pytest tests/hil/test_dstar.py --dstar-call <ITS CALL>` | Passes: a header from the air (CRC good), 100+ frames, few bad |
 
 | Result | Means, and what to do |
@@ -123,7 +123,7 @@ Then with the IC-9700 on the frequency (its DV mode, simplex):
 | 4e | The IC-9700 sends to us | As step 2: a second radio's view of our receiver |
 
 Rate the voice each way 1-5 and note what is wrong (level, pitch, breaks). Voice is the codec's: its known limits are in
-dstar-codec.md.
+mbe-2400.md.
 
 ## 5. The echo reflector, through a hotspot or a repeater
 

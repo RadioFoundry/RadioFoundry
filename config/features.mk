@@ -260,10 +260,10 @@ CONFIG_BCAST_FM ?= y
 # receive past the band table: a range in board.bands (rx_ext_count) that receives only while Settings > Advanced says
 # so, off by default, never transmit (docs/spec/radio-features.md). Off where the chip documents give no range
 CONFIG_RX_EXT ?= y
-# D-STAR DV (core/dstar, core/radio/radio_dstar.c, docs/spec/dstar-modem.md): the GMSK modem, the DV framing, the
-# software voice codec and the radio core's D-STAR channels on a board's flat FM audio taps. Off by default: a board
-# whose glue runs it turns it on in its config.mk where it fits (one board so far, without the IP gateway; feature
-# matrix). Needs FM
+# D-STAR DV (core/dstar, core/radio/radio_dstar.c, docs/spec/dstar-modem.md): the GMSK modem, the DV framing and the
+# radio core's D-STAR channels on a board's flat FM audio taps; its voice is the 2400 bit/s MBE codec (MBE2400, which
+# it turns on). Off by default: a board whose glue runs it turns it on in its config.mk where it fits (one board so
+# far, without the IP gateway; feature matrix). Needs FM and MBE2400
 CONFIG_DSTAR ?= n
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
@@ -332,8 +332,8 @@ CONFIG_P25 ?= $(CONFIG_DMR)
 CONFIG_NXDN ?= $(CONFIG_DMR)
 CONFIG_NXDN_SCRAMBLER ?= $(CONFIG_NXDN)
 # The 2400 bit/s MBE voice codec (core/mbe/mbe2400*, docs/spec/mbe-2400.md), compatible with D-STAR's voice frames:
-# the encoder, the decoder and the frame's FEC on the MBE core. No mode uses the codec yet; the first one turns this on
-CONFIG_MBE2400 ?= n
+# the encoder, the decoder and the frame's FEC on the MBE core. On with D-STAR, its voice
+CONFIG_MBE2400 ?= $(CONFIG_DSTAR)
 # Derived, never set by hand (a command line or a board's config.mk that sets one stops the build): AIR the air
 # interface, on with any air-framed mode (P25, NXDN); IMBE the full-rate voice decoder, with P25; MBE the MBE core,
 # with IMBE or MBE2400
@@ -422,6 +422,9 @@ endif
 ifneq ($(call feature_on,DSTAR),)
   ifeq ($(call feature_on,FM),)
     $(error CONFIG_DSTAR=y needs CONFIG_FM=y)
+  endif
+  ifeq ($(call feature_on,MBE2400),)
+    $(error CONFIG_DSTAR=y needs CONFIG_MBE2400=y)
   endif
 endif
 ifneq ($(call feature_on,HOTSPOT_SPLIT),)

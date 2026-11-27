@@ -13,8 +13,9 @@
 #include "settings/settings.h"
 #include "codeplug/codeplug_modes.h"
 #include "dstar/dstar_engine.h"
-#include "dstar/dstar_codec.h"
 #include "dstar/dstar_codeplug.h"
+#include "dsp/miclimit.h"
+#include "radio/mic_gain.h"
 
 #if (RADIO_DSTAR_VOICE_Q & (RADIO_DSTAR_VOICE_Q - 1u)) != 0 || RADIO_DSTAR_VOICE_Q > 128u
 #error "RADIO_DSTAR_VOICE_Q must be a power of two up to 128"
@@ -34,7 +35,10 @@ static const hal_audio_tap_t *tap;
 static radio_dstar_area_t *area;
 static dstar_engine_t *eng;
 static dstar_path_t path;
-static dstar_codec_t *codec;		// area->codec while the vocoder lends the working memory; NULL: no voice
+// The voice codec (radio_dstar_voice_mem_t) while the vocoder lends its RAM; NULL: no voice. dec and enc point into it
+static radio_dstar_voice_mem_t *vmem;
+static mbe2400_mem_t dec;
+static mbe2400_enc_mem_t enc;
 static bool running, streaming, rx_on;
 static radio_dstar_view_t view;
 static char view_msg_tx[RADIO_DSTAR_MSG];	// our slow data message, as on air
@@ -72,6 +76,11 @@ static uint32_t tx_drain_ms;		// when the radio task first saw the release, 0 = 
 // The audio callback's own state
 static uint8_t cb_rx_seq;
 static bool cb_playing, cb_primed, cb_speaker, cb_mixing, cb_tx;
+// Which direction the voice memory's shared part (the prediction, the synthesis) was started for. A transmission in
+// the middle of a received over leaves the decoder's state gone: the rest of that over plays as silence, not as
+// frames decoded from the encoder's prediction
+static enum { CB_VOICE_NONE, CB_VOICE_ENC, CB_VOICE_DEC } cb_voice;
+static miclimit_t cb_limit;		// the mic gain's limiter, for the over being sent
 
 // The bench's test signal (radio_dstar_test): set by another task between transmissions
 static uint8_t test_kind;
@@ -309,20 +318,23 @@ static bool engine_rx(void)
 
 // --- the codec's RAM and the audio stream ---
 
-// The codec's state is in the mode area beside the engine; its working memory is the DMR vocoder's state block, lent
-// while DMR voice is off (the radio core stops DMR before it tunes a D-STAR channel). The vocoder rebuilds its own
-// state at its next call, so leaving gives nothing back: the codec only lets go of the block
+// The codec's memory is the DMR vocoder's state block, lent while DMR voice is off (the radio core stops DMR before it
+// tunes a D-STAR channel). The vocoder rebuilds its own state at its next call, so leaving gives nothing back: the
+// codec only lets go of the block
 static void codec_take(void)
 {
-	codec = NULL;
+	vmem = NULL;
 	view.voice_off = RDSTAR_VOICE_NO_RAM;
 	const hal_vocoder_t *v = board.vocoder;
-	if (area != NULL && v != NULL && v->lend != NULL) {
+	if (v != NULL && v->lend != NULL) {
 		size_t n = 0;
 		void *p = v->lend(&n);
-		if (p != NULL && n >= sizeof(dstar_codec_scratch_t)) {
-			codec = &area->codec;
-			dstar_codec_bind(codec, p);
+		if (p != NULL && n >= sizeof(radio_dstar_voice_mem_t) && ((uintptr_t)p & 7u) == 0) {
+			radio_dstar_voice_mem_t *m = p;
+			dec = (mbe2400_mem_t){ &m->q, &m->p, { &m->ms, &m->prev, &m->cur, m->buf } };
+			enc = (mbe2400_enc_mem_t){ &m->q, &m->est, &m->p, m->buf };
+			cb_voice = CB_VOICE_NONE;
+			vmem = m;
 			view.voice_off = RDSTAR_VOICE_OK;
 		}
 	}
@@ -330,10 +342,7 @@ static void codec_take(void)
 
 static void codec_give_back(void)
 {
-	if (codec != NULL) {
-		dstar_codec_bind(codec, NULL);
-	}
-	codec = NULL;
+	vmem = NULL;
 }
 
 static void speaker(bool on)
@@ -353,21 +362,34 @@ static void tx_block(const int16_t *mic)
 		cb_tx = false;
 		return;
 	}
+	uint16_t gain = radio_mic_pcm_q8();
 	if (!cb_tx) {
 		cb_tx = true;
-		if (codec != NULL) {
-			dstar_codec_start(codec, true);	// a fresh encoder: the first frame of the over
+		if (vmem != NULL) {
+			mbe2400_enc_init(&enc);	// a fresh encoder: the first frame of the over
+			cb_voice = CB_VOICE_ENC;
 		}
+		miclimit_reset(&cb_limit, gain);
 		stats.tx_peak = 0;
 	}
+	// The radio's mic gain with its limiter, as DMR's and P25's encoders get it (mic_gain.h): the board's own PCM
+	// trim and the Mic gain setting
+	int16_t scaled[AUDIO_BLOCK_SAMPLES];
+	if (gain != MICLIMIT_UNITY) {
+		miclimit_block(&cb_limit, gain, mic, scaled, AUDIO_BLOCK_SAMPLES);
+	} else {
+		memcpy(scaled, mic, sizeof scaled);
+	}
 	for (unsigned i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-		uint32_t a = (uint32_t)(mic[i] < 0 ? -mic[i] : mic[i]);
+		uint32_t a = (uint32_t)(scaled[i] < 0 ? -scaled[i] : scaled[i]);
 		if (a > stats.tx_peak) {
 			stats.tx_peak = a;
 		}
 	}
 	uint8_t frame[DSTAR_VOICE_BYTES];
-	if (codec == NULL || !dstar_codec_encode(codec, mic, frame)) {
+	if (vmem != NULL && cb_voice == CB_VOICE_ENC) {
+		mbe2400_enc_frame(&enc, scaled, frame);
+	} else {
 		memcpy(frame, dstar_voice_silence, DSTAR_VOICE_BYTES);
 	}
 	stats.tx_frames++;
@@ -388,8 +410,9 @@ static void rx_block(int16_t *spk)
 		cb_rx_seq = seq;		// a new over: the decoder starts afresh, playback waits for the prime
 		cb_playing = true;
 		cb_primed = false;
-		if (codec != NULL && !cb_tx) {
-			dstar_codec_start(codec, false);
+		if (vmem != NULL && !cb_tx) {
+			mbe2400_dec_init(&dec);
+			cb_voice = CB_VOICE_DEC;
 		}
 	}
 	uint8_t t = rx_tail, n = (uint8_t)(LOAD(rx_head) - t);
@@ -412,21 +435,23 @@ static void rx_block(int16_t *spk)
 		}
 		stats.rx_underruns++;
 		stats.rx_concealed++;
-		if (codec != NULL) {
-			dstar_codec_lost(codec, spk);
+		if (vmem != NULL && cb_voice == CB_VOICE_DEC) {
+			(void)mbe2400_dec_frame(&dec, NULL, NULL, spk);	// the core's concealment: a fading repeat, then silence
 		} else {
 			memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
 		}
 		return;
 	}
 	const uint8_t *f = rxq[t & QMASK];
-	if (codec != NULL && dstar_codec_decode(codec, f, spk)) {
-		uint8_t e = dstar_codec_errors(codec);
-		if (e >= DSTAR_CODEC_FAILED) {
+	if (vmem != NULL && cb_voice == CB_VOICE_DEC) {
+		// Hard decisions, the core's bad-frame rule (MBE2400_ERRS_BAD) and its concealment; a frame of the silence
+		// kind (pitch code 126, 127: the tone frames) plays as silence (mbe-2400.md 2.4, 3.5)
+		uint8_t e = 0;
+		if (mbe2400_dec_frame(&dec, f, &e, spk) > 0) {
 			stats.rx_bad++;
 			stats.rx_concealed++;
 		} else {
-			stats.rx_bit_errors += e;
+			stats.rx_bit_errors += (uint32_t)(MBE2400_ERRS_C0(e) + MBE2400_ERRS_C1(e));
 			stats.rx_played++;
 		}
 	} else {

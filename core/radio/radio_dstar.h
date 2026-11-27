@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // D-STAR DV in the radio core (CONFIG_DSTAR; docs/spec/dstar-modem.md 5, docs/spec/dstar-codeplug.md): a channel of the
 // D-STAR kind is received and sent through the board's flat FM paths (hal_audio_tap.h) by the engine of core/dstar, with
-// the software voice codec (dstar_codec.h) in the board's audio stream. The radio core (radio_sm.c) tunes the channel
+// the 2400 bit/s MBE codec (core/mbe/mbe2400.h, docs/spec/mbe-2400.md) in the board's audio stream. The radio core (radio_sm.c) tunes the channel
 // as FM and hands over to this module for the squelch, the speaker and the transmission's content; it keeps PTT, the
 // time-out and the keying.
 //
@@ -24,7 +24,8 @@
 #include "hal_audio.h"
 #if CONFIG_DSTAR
 #include "dstar/dstar_engine.h"
-#include "dstar/dstar_codec.h"
+#include "mbe/mbe2400.h"
+#include "mbe/mbe_est.h"
 #endif
 
 #define RADIO_DSTAR_CALL	8u	// a callsign field as on air
@@ -103,12 +104,13 @@ typedef struct {
 typedef struct {
 	uint32_t rx_frames;	// voice frames the deframer handed in
 	uint32_t rx_played;	// decoded and played
-	uint32_t rx_concealed;	// blocks played as the codec's concealment (repeat, comfort noise or mute) of a bad or
+	uint32_t rx_concealed;	// blocks played as the codec's concealment (a fading repeat, then silence) of a bad or
 				// missing frame
 	uint32_t rx_underruns;	// blocks with nothing queued while playing
 	uint32_t rx_overflows;	// frames dropped, the queue full
-	uint32_t rx_bad;	// frames the codec concealed by its bad-frame rule (C0 failed, or doubtful after a loss)
-	uint32_t rx_bit_errors;	// bits the codec's FEC corrected
+	uint32_t rx_bad;	// frames the codec concealed by its bad-frame rule (MBE2400_ERRS_BAD: the first word failed,
+				// or it needed three corrections and the second failed)
+	uint32_t rx_bit_errors;	// bits the codec's FEC corrected in the frames it played (a failed second word counts 4)
 	uint32_t rx_samples;	// samples fed to the demodulator
 	uint32_t rx_overs;	// transmissions heard (a header or a confirmed late entry)
 	uint32_t tx_overs;
@@ -135,13 +137,23 @@ typedef enum {
 } radio_dstar_test_t;
 
 #if CONFIG_DSTAR
-// What D-STAR keeps in the radio core's mode area while it runs (radio_mode_ram.h): its engine, and its software
-// codec's state from frame to frame. The codec's working memory (dstar_codec_scratch_t, 5.3 KB) is the DMR vocoder's,
-// lent while DMR voice is off (hal_vocoder_t.lend): the whole codec (8.4 KB) no longer fits that 7 KB loan
+// What D-STAR keeps in the radio core's mode area while it runs (radio_mode_ram.h): its engine
 typedef struct {
 	dstar_engine_t eng;
-	dstar_codec_t codec;
 } radio_dstar_area_t;
+
+// The voice codec's memory, all of it in the DMR vocoder's state RAM, lent while DMR voice is off
+// (hal_vocoder_t.lend; 7 KB on the HR_C7000), as P25's voice is (p25Voice.h). D-STAR is half duplex, so the encoder
+// and the decoder share the prediction state and the scratch; only the estimator's history is the encoder's own.
+// Which of the two the shared part holds is the audio callback's to know (radio_dstar.c)
+typedef struct {
+	mbe2400_state_t q;		// the prediction: the encoder's copy of the receiver's, or the decoder's own
+	mbe_est_state_t est;		// the encoder's analysis history
+	mbe_params_t p;			// scratch
+	mbe_state_t ms;			// the synthesis, kept
+	mbe_frame_t prev, cur;		// the last synthesized frame (kept), the current one (scratch)
+	int32_t buf[MBE_BUF_WORDS];	// scratch
+} radio_dstar_voice_mem_t;
 
 // Once, at start-up: the board's PCM audio (the stream the codec runs in; may be wrapped by the caller)
 void radio_dstar_init(const hal_audio_t *audio);

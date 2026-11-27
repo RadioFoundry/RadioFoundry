@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Host tests for D-STAR in the radio core (core/radio/radio_dstar.c, docs/spec/dstar-modem.md 5) with the real engine,
- * framing, codeplug codec and software voice codec, on a fake board: its flat transmit path is an interrupt the test
+ * framing, codeplug codec and the 2400 bit/s MBE codec (core/mbe), on a fake board: its flat transmit path is an interrupt the test
  * calls every 32 ms for 256 samples, as the HR_C7000's TX RAM asks for halves, and what it collects is what the flat
  * receive path hands back. The audio stream is a 20 ms block callback the test calls, with a voiced test signal as
  * the microphone. So an over goes out the way the radio sends one and comes back the way it receives one:
@@ -11,6 +11,7 @@
  *     caller shown, the message shown and the voice played at a level near the microphone's
  *   - UR's choices: a reflector command for one over, the caller's callsign for now, BACK on Home's clear
  *   - no codec RAM from the vocoder: the over still goes out (the silence frame) and the header still comes back
+ *   - the radio's mic gain through the core's limiter before the encoder
  *   - the bench's settings over the board's calibration: the deviation scale and an inverted transmit path (the
  *     receiver finds the polarity), and PTT refused without a scale or a callsign
  *   - the bench's test signals: a tone at the 1 kHz deviation scale
@@ -30,7 +31,7 @@
 #include "codeplug/codeplug_tag.h"
 #include "codeplug/codeplug_records.h"
 #include "dstar/dstar_codeplug.h"
-#include "dstar/dstar_codec.h"
+#include "dsp/miclimit.h"
 #include "debuglink/dl_frame.h"
 #include "storage/storage.h"
 
@@ -84,8 +85,8 @@ static const hal_audio_tap_t tap = {
 	.fm_rx_flat_start = rx_start, .fm_rx_flat_read = rx_read, .fm_rx_flat_stop = rx_stop, .flat_cal = flat_cal,
 };
 
-// The vocoder's state RAM, lent (or not), the size the HR_C7000's vocoder lends (HAL_VOCODER_LEND_BYTES): the codec's
-// working memory fits it, its state doesn't. The lend has no give-back: the vocoder rebuilds its state at its next call
+// The vocoder's state RAM, lent (or not), the size the HR_C7000's vocoder lends (HAL_VOCODER_LEND_BYTES): the whole
+// codec (radio_dstar_voice_mem_t) fits it. The lend has no give-back: the vocoder rebuilds its state at its next call
 static uint64_t voc_ram[0x1C00 / 8];
 static bool lend_ok = true;
 static unsigned lends;
@@ -116,6 +117,9 @@ static settings_t st;
 settings_t *settings_begin(void) { return &st; }
 void settings_end(uint32_t now_ms) { (void)now_ms; }
 bool beep_mix(int16_t *spk) { (void)spk; return false; }
+// The mic gain on the PCM (radio/mic_gain.c): unity unless a test sets it
+static uint16_t mic_q8 = 256;
+uint16_t radio_mic_pcm_q8(void) { return mic_q8; }
 static char radio_name[CODEPLUG_NAME_LEN + 1] = "Q1RAD";
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { strcpy(out, radio_name); }
 
@@ -531,6 +535,42 @@ static void test_no_codec_ram(void)
 	radio_dstar_stop();
 }
 
+// The radio's mic gain (radio_mic_pcm_q8: the board's PCM trim and the Mic gain step) reaches the encoder through the
+// core's limiter, as DMR's and P25's encoders get it: +6 dB doubles the microphone's peak and plays back about 6 dB
+// louder, and +24 dB stops at the limiter's ceiling instead of clipping
+static void test_mic_gain(void)
+{
+	double level[2];
+	uint32_t peak[2];
+	for (int k = 0; k < 2; k++) {
+		reset();
+		mic_q8 = k ? 512u : 256u;
+		channel_t ch = dstar_channel();
+		CHECK(radio_dstar_start(5, &ch, now_ms));
+		over(1500);
+		radio_dstar_stats_t sx;
+		radio_dstar_stats(&sx);
+		peak[k] = sx.tx_peak;
+		hear();
+		level[k] = 10.0 * log10(spk_energy / (spk_blocks * (double)AUDIO_BLOCK_SAMPLES) + 1.0);
+		radio_dstar_stop();
+	}
+	printf("# mic gain +6 dB: peak %u -> %u, played %+.1f dB\n", (unsigned)peak[0], (unsigned)peak[1],
+	       level[1] - level[0]);
+	CHECK(peak[1] >= peak[0] * 19u / 10u && peak[1] <= peak[0] * 21u / 10u);
+	CHECK(level[1] - level[0] > 4.5 && level[1] - level[0] < 7.5);
+	reset();
+	mic_q8 = 4057u;
+	channel_t ch = dstar_channel();
+	CHECK(radio_dstar_start(5, &ch, now_ms));
+	over(1500);
+	radio_dstar_stats_t sx;
+	radio_dstar_stats(&sx);
+	CHECK(sx.tx_peak <= MICLIMIT_CEILING && sx.tx_peak > MICLIMIT_CEILING * 9u / 10u);
+	radio_dstar_stop();
+	mic_q8 = 256u;
+}
+
 static void test_calibration(void)
 {
 	reset();
@@ -749,6 +789,7 @@ int main(void)
 	test_whole_over();
 	test_ur_choices();
 	test_no_codec_ram();
+	test_mic_gain();
 	test_calibration();
 	test_tone();
 	test_tone_cal_mid_over();
