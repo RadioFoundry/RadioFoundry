@@ -240,6 +240,9 @@ void ui_diag_draw(void);
 bool ui_diag_key(const input_event_t *ev);
 void ui_home_draw(void);
 bool ui_home_key(const input_event_t *ev);
+#if CONFIG_DMR
+bool ui_talk_step(int dir);	// Up / Down set to Talk target: the next talk target (false: nothing to step through)
+#endif
 void ui_quick_draw(void);
 bool ui_quick_key(const input_event_t *ev);
 void ui_quick_enter(void);

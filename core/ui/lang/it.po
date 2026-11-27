@@ -908,6 +908,16 @@ msgid "  Sent "
 msgstr "  Inviato "
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_TYPING"
+msgid "0-9 type  OK set  Back"
+msgstr "0-9 digita  OK imposta  Indietro"
+
+#: core/ui/ui_aprs.c
+msgctxt "HINT_0_9_PICK_BACK"
+msgid "0-9 pick  Back"
+msgstr "0-9 scegli  Indietro"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_ROW_SEND_NOW"
 msgid "Send position now"
 msgstr "Invia posizione ora"
@@ -1006,11 +1016,6 @@ msgstr "Beacon off"
 msgctxt "APRS_WHY_CANT_RECEIVE"
 msgid "This radio can't receive APRS"
 msgstr "Questa radio non riceve APRS"
-
-#: core/ui/ui_aprs.c
-msgctxt "HINT_0_9_PICK_BACK"
-msgid "0-9 pick  Back"
-msgstr "0-9 scegli  Indietro"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_TITLE_HEARD"
@@ -4778,11 +4783,6 @@ msgid "Finding system"
 msgstr "Ricerca sistema"
 
 #: core/ui/ui_screens.c
-msgctxt "HOME_STATE_P25T_BLOCKED"
-msgid "Blocked system"
-msgstr "Sistema bloccato"
-
-#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "Attendere"
@@ -4974,8 +4974,8 @@ msgstr "Canale voce inutilizzabile"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
-msgid "Blocked system: no TX"
-msgstr "Sistema bloccato: no TX"
+msgid "RX-only system: no TX"
+msgstr "Sistema solo RX: no TX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"

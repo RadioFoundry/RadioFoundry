@@ -910,6 +910,16 @@ msgid "  Sent "
 msgstr "  已发 "
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_HINT_TYPING"
+msgid "0-9 type  OK set  Back"
+msgstr "0-9 输入  OK 设定  返回"
+
+#: core/ui/ui_aprs.c
+msgctxt "HINT_0_9_PICK_BACK"
+msgid "0-9 pick  Back"
+msgstr "0-9 选  返回"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_ROW_SEND_NOW"
 msgid "Send position now"
 msgstr "立即发送位置"
@@ -1008,11 +1018,6 @@ msgstr "信标关"
 msgctxt "APRS_WHY_CANT_RECEIVE"
 msgid "This radio can't receive APRS"
 msgstr "本机无法接收 APRS"
-
-#: core/ui/ui_aprs.c
-msgctxt "HINT_0_9_PICK_BACK"
-msgid "0-9 pick  Back"
-msgstr "0-9 选  返回"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_TITLE_HEARD"
@@ -4780,11 +4785,6 @@ msgid "Finding system"
 msgstr "搜索中"
 
 #: core/ui/ui_screens.c
-msgctxt "HOME_STATE_P25T_BLOCKED"
-msgid "Blocked system"
-msgstr "系统已禁用"
-
-#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "请等待"
@@ -4976,8 +4976,8 @@ msgstr "话音信道不可用"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
-msgid "Blocked system: no TX"
-msgstr "系统已禁用：禁止发射"
+msgid "RX-only system: no TX"
+msgstr "仅接收系统：禁止发射"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"

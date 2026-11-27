@@ -2,9 +2,11 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Helpers for the hardware-in-the-loop tests: the radio over its USB debug link (Radio), and the SDR bench with its
 bench board (SdrBench). See README.md."""
+import array
 import collections
 import contextlib
 import json
+import math
 import os
 import re
 import shlex
@@ -128,10 +130,26 @@ def tx_freqs(link, where):
         afsk = int(a.get("aprs.freq_hz") or 0) / 1e6 if a.get("aprs.block") == "ok" else 0     # else no AFSK goes out
         out += [afsk] if afsk else []
     if via != "rf":
-        core = link.view(["core"])
+        core = _core_for_guard(link)
         if where == "channel" or core.get("mode") == "dmr":   # positions over DMR go on the DMR channel
             out.append(int(core.get("tx_hz") or 0) / 1e6)
     return out
+
+
+# Over the air each read is a data burst each way (seconds): the guard reuses a core view read this recently, so a
+# test can read the TX frequency before it starts a timed recording and the run's check costs nothing. A RADIO or
+# DETOUR request may move the radio, so each one drops the reading (_guarded_request)
+AIR_CORE_FRESH_S = 10.0
+
+
+def _core_for_guard(link):
+    if not getattr(link, "air", False):
+        return link.view(["core"])
+    at, core = getattr(link, "_guard_core", (None, None))
+    if at is None or time.monotonic() - at > AIR_CORE_FRESH_S:
+        core = link.view(["core"])
+        link._guard_core = (time.monotonic(), core)
+    return core
 
 
 _request = DebugLink.request
@@ -159,10 +177,64 @@ def _guarded_request(self, cmd, payload=b"", *args, **kwargs):
                 if not hil_config.tx_allowed(None, mhz):
                     raise RuntimeError(f"TX refused: this request keys on {mhz:.5f} MHz, not one of the rig's "
                                        f"transmit frequencies (tx_mhz)")
+    if cmd in (RADIO, DETOUR):
+        self.__dict__.pop("_guard_core", None)      # checked above; the radio may be elsewhere after this
     return _request(self, cmd, payload, *args, **kwargs)
 
 
 DebugLink.request = _guarded_request
+
+
+
+# ── detour plans: many steps for three round trips ────────────────────────────
+# A test that keys and plays sounds over the air (the debug link over DMR IP, debuglink.md 7.4) can't afford a round
+# trip per step: each is a data burst each way on the channel. A plan records the steps as one DETOUR RUN, which the
+# radio runs on its own clock: the guard's read of the TX frequency, the run and one DETOUR STATUS once the plan's time
+# is up. The plan's marks give each step's time from the run's reply, for a recording made around it.
+
+class DetourPlan:
+    """Steps for one detour: any DebugLink call that makes RADIO or PTT requests (beep, ptt, setting, ...) is recorded
+    as an item; wait(ms) adds a pause; mark(name) notes the time (s) the next step starts"""
+
+    def __init__(self):
+        from rfoundry_debug import ItemRecorder
+        self._rec = ItemRecorder()
+        self.ms = 0
+        self.marks = {}
+
+    def wait(self, ms):
+        self._rec.items.append((0, int(ms)))
+        self.ms += int(ms)
+
+    def mark(self, name):
+        self.marks[name] = self.ms / 1000
+
+    @property
+    def items(self):
+        return self._rec.items
+
+    def __getattr__(self, name):
+        return getattr(self._rec, name)
+
+
+def run_detour(link, plan, slack_s=5.0, on_start=None):
+    """Runs plan as one detour and waits it out without asking the radio while it runs (over the air the radio can't
+    answer while keyed). on_start(t0) is called with the monotonic time the run's reply came back, which the plan's
+    marks count from (the radio starts the items as it sends the reply, so they run a little before t0). Returns
+    (t0, the detour's status once idle)"""
+    from rfoundry_debug import detour_status_until
+    seconds = math.ceil(plan.ms / 1000 + slack_s)
+    link.detour_run(seconds, plan.items)
+    t0 = time.monotonic()
+    if on_start is not None:
+        on_start(t0)
+    time.sleep(plan.ms / 1000)
+    end = t0 + seconds + 10
+    st = detour_status_until(link, end)
+    while st["phase"] != "idle" and time.monotonic() < end:
+        time.sleep(0.5)
+        st = detour_status_until(link, end)
+    return t0, st
 
 
 # ── skips ───────────────────────────────────────────────────────────────────
@@ -434,6 +506,12 @@ class Radio:
         what the radio sends by itself (data replies, registration, beacons, roaming probes) can't go out either. The
         firmware sets it before it answers. False: firmware without the limit (no txlim in the core view)."""
         import hil_config
+        if self._txlim is None and getattr(self.link, "air", False):
+            # Over the air (debuglink.md 7.3) the radio takes reads and detours only: the limit can't be set, so the
+            # request check (layer 1) guards each detour's keying alone, and every write a test makes is refused
+            print("rfoundry-hil: debug link over the air: the test TX limit can't be set; only the request check "
+                  "guards TX")
+            self._txlim = False
         if self._txlim is None:
             self._txlim = "txlim" in self.view(["core"])
             if not self._txlim:
@@ -906,7 +984,7 @@ class _LineTx:
     """A bench board's tx or rx op (bench_line Request) as one of SdrBench's background jobs: .started once the board
     keyed (its "started" line) or started receiving (its rx header), .records an rx op's records, .done the done record ({"mode", "freq", "on_air_s", "cut", "dev_hz", "peak_hz", ...}) once it's over."""
 
-    def __init__(self, line, where, req):
+    def __init__(self, line, where, req, data=None):
         self.started = threading.Event()
         self.over = threading.Event()      # the done record came (the stream may stay open after it)
         self.done = None
@@ -914,7 +992,7 @@ class _LineTx:
         self.records = []
         self.pcm = {}               # an rx op's audio streams: name -> int16 LE bytes
         self.req_op = f"{req.get('op')} {req.get('mode', '')}".strip()                  # an rx op's records ({"block": ...})
-        self.req = line.Request(where, req, self._on)
+        self.req = line.Request(where, req, self._on, data=data)
 
     def _on(self, d, data):
         # A tx op's header comes before it waits for the modem: only its "started" line says it keyed. An rx op's
@@ -1308,11 +1386,12 @@ class SdrBench:
         return p
 
     # ── a bench board's transmitter (the line protocol's tx op, the gateway's bench-api.md 14.6) ──
-    def tx_start(self, mode, freq, program, max_s=10.0, **fields):
+    def tx_start(self, mode, freq, program, max_s=10.0, audio=None, **fields):
         """The TX board's signal mode (fm, am: its info's signal_modes) on freq (MHz), started in the background:
         program is a list of segments ({"kind": "tone", "hz": 1000, "s": 2}, "fsk", "dtmf", "sweep", "noise",
         "silence"), fields the mode's others (FM: ctcss, dcs, dev_hz, sub_dev_hz, lead_s, tail_s, repeat; AM: depth
-        ...; None left out). Returns once the board keyed: a _LineTx whose wait() gives the board's done record. Needs
+        ...; None left out). audio (FM): (rate, int16 samples) sent as the input, played where the program has a
+        {"kind": "pcm"} segment, or as the whole program when program is None. Returns once the board keyed: a _LineTx whose wait() gives the board's done record. Needs
         the lease (tests mark it bench_service and rf). A board without the mode skips."""
         name = mode.upper()
         if not self.allow_rf:
@@ -1326,15 +1405,21 @@ class SdrBench:
         self._api_reach(freq)
         self._api_claim(freq)
         req = {"op": "tx", "mode": mode, "freq": freq, "session": self._api_session, "max_s": max_s,
-               "program": program, "wait_max": self.wait_max,
-               "label": self.label or mode}
+               "wait_max": self.wait_max, "label": self.label or mode}
+        if program is not None:
+            req["program"] = program
+        data = None
+        if audio is not None:
+            rate, samples = audio
+            data = bytes(samples) if isinstance(samples, (bytes, bytearray)) else array.array("h", samples).tobytes()
+            req["pcm"] = {"rate": int(rate), "samples": len(data) // 2}
         if self.api_level is not None:
             req["power"] = self.api_level
         if mode == "fsk4":
             # A bench board can lose about the first 30 ms of a keying: lead with carrier so no symbols go there
             fields.setdefault("lead_s", 0.04)
         req.update({k: v for k, v in fields.items() if v is not None})
-        t = _LineTx(L, L.address(self.api), req)
+        t = _LineTx(L, L.address(self.api), req, data)
         self.bg.append(t)
         end = time.monotonic() + self.wait_max + 30      # it may queue behind another session's job
         while not t.started.wait(0.2) and not t.req.done.is_set() and time.monotonic() < end:
@@ -1349,9 +1434,9 @@ class SdrBench:
             raise RuntimeError(f"the bench board never keyed {name} on {freq} MHz: {t.req.replies[-3:]}")
         return t
 
-    def fm_tx_start(self, freq, program, max_s=10.0, **fields):
-        """tx_start of FM"""
-        return self.tx_start("fm", freq, program, max_s, **fields)
+    def fm_tx_start(self, freq, program, max_s=10.0, audio=None, **fields):
+        """tx_start of FM; audio (rate, int16 samples) as tx_start's"""
+        return self.tx_start("fm", freq, program, max_s, audio=audio, **fields)
 
     def fm_transmit(self, freq, program, max_s=10.0, **fields):
         """fm_tx_start, then its done record once the last sample went out"""

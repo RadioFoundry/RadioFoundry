@@ -185,9 +185,10 @@ which gives receive audio on the speaker path (measured).
     slot after ours.
 - **FM key-up** (not per burst): RX path off; FD6818 0x3F = 0000, 0x59 = 0028, 0x70 = 0000, 0x58 = 0000, 0x24 = 0000;
   TX path on; the sub-audio set-up; register 0x40 (6.4); the TX frequency and state writes of step 3 above; then the
-  40-step ramp, without the waits. FM key-down isn't traced. None of these writes depends on the band. RadioFoundry doesn't
-  write the five words before the TX path, and FM transmit works without them on UHF. Earlier
-  versions of this page gave the DMR per-burst order as the radio's general "Enter TX / Leave TX"; RadioFoundry's FM `tx()`
+  40-step ramp, without the waits. FM key-down isn't traced. None of these writes depends on the band. RadioFoundry
+  writes 0x24 = 0000 (the FD6818 driver's FM TX preparation; the next switch to RX writes the receive value back)
+  but not the other four, and FM transmit works without them on UHF. When a transmission ends, the driver sets
+  0x50 = BB18 (TX audio muted); the next key-up writes 3B18 again. Earlier versions of this page gave the DMR per-burst order as the radio's general "Enter TX / Leave TX"; RadioFoundry's FM `tx()`
   still follows that order with 1 ms waits, and FM transmit works with it.
 - RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external
   LNA gain). On this radio that formula reads high, by an amount that changes with frequency, so RadioFoundry adds a correction

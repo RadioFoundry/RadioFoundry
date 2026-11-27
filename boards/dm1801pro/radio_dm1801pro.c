@@ -36,8 +36,6 @@
 #define RF_BIT_SCALE_US		1u		// 1 us per half clock, still slower than the radio (5.1)
 #define PA_RAMP_STEPS		40u		// 5.4
 #define PA_RAMP_STEP_US		50u
-#define FD_REG_TX_AUX		0x50u		// 3B18 after the TX state, before the TX path comes on (5.4)
-#define FD_REG40_BASE		0x3480u		// FM transmit: 0x40 = this + the calibration byte (5.2, 6.4)
 // DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt. The RF leaves receive 0.6 ms
 // ahead of the lead point, not earlier: an earlier switch cut off the tail of the inbound burst before ours (a clipped
 // SFR header lost the next superframe; at 2.0 ms the frame before ours still carried most of the voice bit errors).
@@ -230,7 +228,7 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	at(hrc_rfburst_switch_at_us(RF_TX_LEAD, RF_SWITCH_LEAD_US));
 	rx_path(rx_hz, false);
 	fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
-	fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
+	fd6818_tx_audio(&fd, true);	// after the TX state, before the TX path comes on (5.4)
 	tx_path(tx_hz, true);
 	// The key-up's points in time order. The TX path is on from the switch, so the PA's own point only sets the
 	// step's drive when there is no boost
@@ -473,7 +471,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		fd6818_fm_tx_prepare(&fd);
 		// The radio's FM key-up writes 0x40 from the band's three calibration bytes; the next rx() puts the power-on
 		// word back (fd6818_set_freq)
-		fd6818_write(&fd, FD6818_REG_BAND_B, (uint16_t)(FD_REG40_BASE + bf_cal_tx_byte(hz, BF_ROW_REG40)));
+		fd6818_fm_tx_cal(&fd, bf_cal_tx_byte(hz, BF_ROW_REG40));
 		tx_hz = hz;
 		tx_wide = bw == RADIO_BW_25K;
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
@@ -484,7 +482,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		hrc_pin_write(PIN_MIC_PATH, dm1801pro_audio_route(false).mic_path);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		fd6818_set_state(&fd, FD6818_STATE_TX);
-		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
+		fd6818_tx_audio(&fd, true);
 		hal_delay_ms(1);
 		tx_path(hz, true);
 		pa_ramp(tx_drive, true);
@@ -514,6 +512,7 @@ static void tx_end(bool keep)
 	}
 	DAC_DATA_B = 0;
 	hal_delay_ms(1);
+	fd6818_tx_audio(&fd, false);
 	if (have_rx) {
 		hrc_pin_write(PIN_TX_VHF, false);
 		hrc_pin_write(PIN_TX_UHF, false);

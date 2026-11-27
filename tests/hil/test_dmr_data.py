@@ -32,6 +32,7 @@ from hil_config import rig
 
 BENCH_SRC = 9990301
 CSBK_CALL_ALERT, CSBK_CALL_ALERT_ACK, CSBK_RADIO_CHECK = 0x1F, 0x20, 0x24
+BEEP_CALL_ALERT = 15      # core/radio/beep.h
 FID_MOTOROLA = 0x10
 DT_CSBK, DT_DATA_HEADER = 3, 6
 
@@ -264,11 +265,16 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
-    """A call alert CSBK to our ID: the user is alerted (event call_alert from the bench) and, with the ack setting
-    on, a call alert ack (opcode 0x20, octets 4-6 the caller, 7-9 us) goes back."""
+    """A call alert CSBK to our ID: the user is alerted (event call_alert from the bench, and the call alert tone,
+    counted by beep.played) and, with the ack setting on, a call alert ack (opcode 0x20, octets 4-6 the caller, 7-9
+    us) goes back."""
     freq, cc, own, feats = _setup(radio, pytestconfig)
     _need(feats, "DMR_SIGNALING")
     radio.link.data_settings(0, radio_check_reply=False, call_alert_ack=True)
+    f = radio.view(["features"])
+    # Tone volume 0 mutes every tone, and so does a volume of 0 on a radio whose beeps follow the volume
+    tone = f.get("beep.built") == "1" and f.get("set.beep_level", "0") != "0" and f.get("volume.sent") != "0"
+    played = int(f.get("beep.played", 0))
     before = radio.data_view()
     with sdr_bench.lease():
         heard = sdr_bench.csbk(freq, cc, own, opcode=CSBK_CALL_ALERT, fid=0, src=BENCH_SRC, listen_after=3)
@@ -278,6 +284,10 @@ def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
     print("radio deltas:", d)
     assert d["data.call_alerts_received"] == 1, d
     assert after["data.event"] in ("call_alert",) and after["data.event_id"] == BENCH_SRC, after
+    if tone:
+        assert int(radio.view(["features"])["beep.played"]) - played >= 1, "no call alert tone"
+        last = radio.view(["audio"]).get("beep.last")
+        assert last == str(BEEP_CALL_ALERT), f"the last beep was {last}, not the call alert"
     need_radio_tx(radio)
     assert d["data.csbk_answers_sent"] == 1 and d["data.tx_ok"] >= 1, d
     _soft(any(a == BENCH_SRC and b == own for _o3, a, b in _heard_csbks(heard, CSBK_CALL_ALERT_ACK)),

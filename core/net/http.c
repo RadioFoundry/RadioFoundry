@@ -14,6 +14,7 @@
 #include "board.h"
 #include "hal_time.h"
 #include "radio/radio.h"
+#include "codeplug/codeplug.h"
 #include "ui/gfx.h"
 #include "debuglink/dl_fmt.h"
 #if CONFIG_DEBUGLINK
@@ -115,26 +116,6 @@ static void put32le(uint8_t *p, uint32_t v)
 
 // ---- JSON ----
 
-static void json_str(dl_text_t *t, const char *s)
-{
-	char tmp[8];
-
-	dl_text(t, "\"");
-	for (; *s != '\0'; s++) {
-		unsigned char ch = (unsigned char)*s;
-
-		if ((ch == '"') || (ch == '\\')) {
-			dl_text(t, "\\%c", ch);
-		} else if (ch < 0x20) {
-			dl_fmt(tmp, sizeof(tmp), "\\u%04x", ch);
-			dl_text(t, "%s", tmp);
-		} else {
-			dl_text(t, "%c", ch);
-		}
-	}
-	dl_text(t, "\"");
-}
-
 static const char *bool_s(bool b)
 {
 	return b ? "true" : "false";
@@ -147,14 +128,17 @@ void http_status_json(dl_text_t *t)
 	const channel_t *ch = &v->ch;
 	const char *pw = board_power_name(v->power, v->ch.tx_hz);
 	dl_text(t, "{\"radio\":");
-	json_str(t, board.name);
-	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"zone\":%u,\"channel_number\":%u,"
-		"\"channel\":", RFOUNDRY_GIT, (unsigned)(hal_millis() / 1000u), (v->state < 4) ? states[v->state] : "?",
-		bool_s(v->vfo), v->zone_index, v->channel_number);
-	json_str(t, ch->name);
+	dl_json_str(t, board.name);
+	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"codeplug\":%u,\"zone\":%u,"
+		"\"pos\":%u,\"zone_name\":", RFOUNDRY_GIT, (unsigned)(hal_millis() / 1000u),
+		(v->state < 4) ? states[v->state] : "?", bool_s(v->vfo), (unsigned)codeplug_serial(), v->zone_index,
+		v->zone_pos);
+	dl_json_str(t, v->zone_name);
+	dl_text(t, ",\"channel_number\":%u,\"channel\":", v->channel_number);
+	dl_json_str(t, ch->name);
 	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\",\"bw\":\"%s\",\"power\":", (unsigned)ch->rx_hz,
 		(unsigned)ch->tx_hz, (ch->mode == RADIO_MODE_DMR) ? "dmr" : "fm", (ch->bw == RADIO_BW_25K) ? "25" : "12.5");
-	json_str(t, pw);
+	dl_json_str(t, pw);
 	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u", v->rssi_dbm, v->squelch);
 	if (board_has_battery()) {	// a radio without a battery leaves both fields out
 		dl_text(t, ",\"battery_pct\":%u,\"battery_mv\":%u", v->battery_pct, v->battery_mv);
@@ -254,12 +238,12 @@ static bool view_json(dl_text_t *t, const char *query)
 			memcpy(val, eq + 1, vn);
 			val[vn] = '\0';
 			dl_text(t, "%s", first ? "" : ",");
-			json_str(t, key);
+			dl_json_str(t, key);
 			dl_text(t, ":");
 			if (is_number(val, vn)) {
 				dl_text(t, "%s", val);
 			} else {
-				json_str(t, val);
+				dl_json_str(t, val);
 			}
 			first = false;
 		}
