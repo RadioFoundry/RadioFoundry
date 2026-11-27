@@ -119,6 +119,7 @@ typedef struct {
 	// Here, in the byte before auto_lock_s that was padding: the radio with the least RAM has none to spare in its
 	// maximal build
 	bool label_first;	// Home's talk line: the talkgroup's name before its number (Settings > Display, a side key)
+	bool no_chnum;		// Home leaves out the channel number before the name (Settings > Display > Channel number)
 	uint16_t auto_lock_s;	// lock the keys after this long without a key press, 0 = never (Settings > Keys)
 	bool alias_show;	// show received talker aliases (Settings > Talk & listen)
 	bool ptt_locked;	// PTT works while the keys are locked (Settings > Privacy)

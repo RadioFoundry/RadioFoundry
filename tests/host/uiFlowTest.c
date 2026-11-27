@@ -470,6 +470,15 @@ static const flow_t flows[] = {
 	{ "S language not in this build: dimmed", "", "ok 7 2 up ok down ok",
 	  "set78=0 toast=Not_in_this_build screen=language", 7, false },
 #endif
+	// Settings > Display > Channel number (the row above Language): Home shows the channel's number before its name
+	// unless it is off; the dual watch panes follow it
+	{ "S channel number on Home by default", "", "", "screen=home drawn=3 shows=COUNTY_DMR", 0, false },
+	{ "S channel number off: Home shows the name alone", "", "ok 7 2 up up ok long:back",
+	  "screen=home undrawn=3 shows=COUNTY_DMR", 7, false },
+	{ "S channel number off: dual watch panes too", "ok 7 2 up up ok long:back quick 7 ctx 3 5 ok", "",
+	  "dual=1 undrawn=3 undrawn=5", 0, false },
+	{ "S channel number on again", "ok 7 2 up up ok long:back", "ok 7 2 up up ok long:back",
+	  "screen=home drawn=3", 7, false },
 	{ "S FM broadcast step on a radio with the receiver", "bcast", "ok 7 3 down down down down", "shows=FM_broadcast_step",
 	  7, false },
 	{ "11 dual watch talk back on", "", "ok 7 3 down down down down down down down down down ok", "shows=Dual_watch_talk_back", 13,

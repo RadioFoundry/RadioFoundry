@@ -70,6 +70,7 @@
 //   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
 //                          text contains it / none does; markafter=<text> / nomarkafter=<text>: a mark is drawn just right of it / none is;
 //                          centered=<text>: a text that contains it is centered on the screen, to a character cell
+//                          drawn=<text> / undrawn=<text>: a drawn text is exactly it / none is (a short number)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2790,6 +2791,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_THEME, 0);
 	ui_svc_setting_set(UI_SET_ACCENT, 0);
 	ui_svc_setting_set(UI_SET_STRIP, 1);
+	ui_svc_setting_set(UI_SET_CHANNEL_NUMBER, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
 	ui_svc_setting_set(UI_SET_MSG_FORMAT, 255);
@@ -3055,6 +3057,12 @@ static bool check(const char *kv, char *err, size_t len)
 			}
 			snprintf(got, sizeof got, "%d px off center", off);
 		}
+	}
+	else if (strcmp(key, "drawn") == 0 || strcmp(key, "undrawn") == 0) {	// a text is exactly the value, or none is
+		bool found = false;
+		for (int i = 0; i < live_n; i++)
+			found |= strcmp(live[i].s, want) == 0;
+		snprintf(got, sizeof got, "%s", found == (key[0] == 'd') ? want : found ? "drawn" : "not drawn");
 	}
 	else if (strcmp(key, "hides") == 0) {	// no text on the screen contains the value
 		snprintf(got, sizeof got, "%s", want);

@@ -50,6 +50,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_large_text", "ok 7 2 down down down down down ok long:back" },
 	{ "home_monitor", "down mondown" },
 	{ "home_plain", "strip:off" },	// Settings > Display > Filled status bar off
+	{ "home_no_channel_number", "ok 7 2 up up ok long:back" },	// Settings > Display > Channel number off
 	{ "home_locked", "long:quick 5" },
 	{ "home_usb_ip", "usbnet:on" },
 	{ "home_usb_ip_up", "usbnet:up" },

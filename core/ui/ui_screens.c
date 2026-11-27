@@ -1088,12 +1088,16 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 
-	// Channel number (medium, dim) and name, baselines aligned. The name uses the largest font it fits in; only a name
-	// too long even for the small font is shortened from the middle
-	sb_init(&b, buf, sizeof buf);
-	sb_u32(&b, v->channel_number, 1);
-	int x = gfx_text(L->medium, 0, base - L->medium->ascent, buf, gfx_bpp() == 1 ? ui_col.dim : ui_col.chnum) +
-		L->medium->w / 2;
+	// Channel number (medium, dim) and name, baselines aligned; Settings > Display > Channel number off leaves the
+	// number out and gives its room to the name. The name uses the largest font it fits in; only a name too long even
+	// for the small font is shortened from the middle
+	int x = 0;
+	if (!s->no_chnum) {
+		sb_init(&b, buf, sizeof buf);
+		sb_u32(&b, v->channel_number, 1);
+		x = gfx_text(L->medium, 0, base - L->medium->ascent, buf, gfx_bpp() == 1 ? ui_col.dim : ui_col.chnum) +
+		    L->medium->w / 2;
+	}
 	int avail = w - x;
 	if (v->temporary)
 		avail -= L->medium->w;
@@ -2588,7 +2592,7 @@ static const font_t *dual_name_font(const ui_state_t *s, int i, const font_t *nf
 		if (f->h > nf->h)
 			continue;
 		const font_t *mf = dual_num_font(f);
-		int need = gfx_text_width(f, buf) + (p->vfo ? 0 : gfx_text_width(mf, num) + mf->w / 2);
+		int need = gfx_text_width(f, buf) + (p->vfo || s->no_chnum ? 0 : gfx_text_width(mf, num) + mf->w / 2);
 		if (need <= room || f == L->small)
 			return f;
 	}
@@ -2697,7 +2701,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	if ((tx || sel) && ft->detail != NULL) {
 		dual_name(s, i, buf, sizeof buf);
 		int need = gfx_text_width(f, buf);
-		if (!p->vfo) {
+		if (!p->vfo && !s->no_chnum) {
 			sb_init(&b, fit, sizeof fit);
 			sb_u32(&b, p->number, 1);
 			need += gfx_text_width(dual_num_font(f), fit) + dual_num_font(f)->w / 2;
@@ -2714,11 +2718,11 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 		rx_end -= sm->w / 2 + 1;
 	}
 
-	// Row 1, left: the channel number (medium, the channel number's color) and name in the names' font; the VFO: its
-	// frequency
+	// Row 1, left: the channel number (medium, the channel number's color; not with Channel number off) and name in
+	// the names' font; the VFO: its frequency
 	int base = y1 + nf->ascent;
 	int x = x0;
-	if (!p->vfo) {
+	if (!p->vfo && !s->no_chnum) {
 		char num[8];
 		sbuf_t nb;
 		sb_init(&nb, num, sizeof num);

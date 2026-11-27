@@ -1985,7 +1985,7 @@ void ui_app_init(void)
 		ui_svc_apply(id, ui_svc_setting_get(id));
 	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
-					  UI_SET_UPDOWN_HOME, UI_SET_LABEL_FIRST, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
+					  UI_SET_UPDOWN_HOME, UI_SET_LABEL_FIRST, UI_SET_CHANNEL_NUMBER, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
 					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME, UI_SET_LANGUAGE,
 					  UI_SET_KNOB_WHEN_LOCKED,
 #if CONFIG_DUAL_WATCH
@@ -2073,6 +2073,7 @@ void ui_apply_setting(uint8_t id, int32_t v)
 		break;
 	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
 	case UI_SET_LABEL_FIRST: ui_st.label_first = v != 0; break;
+	case UI_SET_CHANNEL_NUMBER: ui_st.no_chnum = v == 0; break;
 	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
 	case UI_SET_AUTO_OFF_MIN: ui_st.auto_off_min = clamp_u16(v); off_warned = false; break;
 	case UI_SET_PTT_LOCKED:

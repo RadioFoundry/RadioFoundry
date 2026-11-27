@@ -256,7 +256,8 @@ typedef struct {
 	// copy 60 bytes
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
-	uint8_t reserved11[2];		// 0
+	uint8_t ui_flags2;		// SETTINGS_UI2_* bits (was reserved11[0]: 0 in an older record, as before)
+	uint8_t reserved11;		// 0
 	// DMR AES: the end of the MI positions reserved for our overs (dmrAesSeq_t, dmr-voice.md 5.1; appended: an older
 	// record reads 0, no position yet). A restart starts here, past every position sent
 	uint32_t aes_mi_res;
@@ -423,6 +424,8 @@ static inline void settings_set_tones_off(settings_t *s, uint8_t off)
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
 #define SETTINGS_UI_NO_VIBRATE		0x40u	// vibrate for alerts off (0 = on: older records keep it on)
 #define SETTINGS_UI_DUAL_TALK_BACK	0x80u	// dual watch: after a call on the other channel, PTT talks there a while
+// settings_t.ui_flags2 (0, the default and an older record: every bit off)
+#define SETTINGS_UI2_NO_CHANNEL_NUMBER	0x01u	// Home leaves out the channel number before the name
 
 // The vocoder's mic options in settings_t.accent bits 6-7: no byte was left for them, and a record from before reads
 // as 0, noise reduction on and AGC off

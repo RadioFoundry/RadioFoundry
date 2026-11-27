@@ -323,6 +323,8 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 		return settings_updown_home_of(SETTINGS_FIELD(updown_home));
 	case UI_SET_LABEL_FIRST:
 		return (SETTINGS_FIELD(updown_home) & SETTINGS_HOME_LABEL_FIRST) != 0;
+	case UI_SET_CHANNEL_NUMBER:
+		return (SETTINGS_FIELD(ui_flags2) & SETTINGS_UI2_NO_CHANNEL_NUMBER) == 0;
 	case UI_SET_LOW_BATTERY:
 		return SETTINGS_FIELD(low_batt_pct);
 	case UI_SET_AUTO_OFF_MIN:
@@ -479,6 +481,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		st = settings_begin();
 		st->updown_home = (uint8_t)(value != 0 ? st->updown_home | SETTINGS_HOME_LABEL_FIRST :
 					    st->updown_home & ~SETTINGS_HOME_LABEL_FIRST);
+		settings_end(hal_millis());
+		return true;
+	case UI_SET_CHANNEL_NUMBER:
+		st = settings_begin();
+		st->ui_flags2 = (uint8_t)(value != 0 ? st->ui_flags2 & ~SETTINGS_UI2_NO_CHANNEL_NUMBER :
+					  st->ui_flags2 | SETTINGS_UI2_NO_CHANNEL_NUMBER);
 		settings_end(hal_millis());
 		return true;
 	case UI_SET_VIBRATE:

@@ -6863,6 +6863,8 @@ static const set_item_t s_display[] = {
 	TOGGLE(TRN(SET_LABEL_TG_NAME_FIRST, "Talkgroup name first"), "talk line label TG number Home",
 		UI_SET_LABEL_FIRST),
 #endif
+	TOGGLE(TRN(SET_LABEL_CHANNEL_NUMBER, "Channel number"), "Home show hide channel number name",
+		UI_SET_CHANNEL_NUMBER),
 	// Last, so the rows above keep their places; its search words are "language" in other languages, for a user who
 	// can't read the English
 	ACTION(TRN(SET_LABEL_LANGUAGE, "Language"), "idioma langue sprache lingua taal jezyk", SA_LANGUAGE),

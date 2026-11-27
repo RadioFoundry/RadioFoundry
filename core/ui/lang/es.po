@@ -3973,6 +3973,11 @@ msgid "Hint row"
 msgstr "Ayuda de comandos"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_CHANNEL_NUMBER"
+msgid "Channel number"
+msgstr "Número de canal"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_LANGUAGE"
 msgid "Language"
 msgstr "Idioma/Language"

@@ -959,7 +959,8 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, aprs_cp_freq), 399 },
 		{ offsetof(settings_t, sig_dmr), 400 },
 		{ offsetof(settings_t, sig_fm), 403 },
-		{ offsetof(settings_t, reserved11), 406 },
+		{ offsetof(settings_t, ui_flags2), 406 },
+		{ offsetof(settings_t, reserved11), 407 },
 		{ offsetof(settings_t, aes_mi_res), 408 },
 	};
 	CHECK(sizeof(settings_t) == 412);
