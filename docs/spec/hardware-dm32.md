@@ -1173,7 +1173,7 @@ and 0x0C read back by hand, and air band AM.
 | 0x24 (tone decoder input selects) | 0 on FM transmit, the value before it back at the next switch to RX | same |
 | 0x7D | 0xE35E (receive digital gain b12:8 = 3; the low byte the analog mic step) | 0xE92C (receive digital gain 9; the same mic step, from a 1F 22 26 29 2C table where set-up A's is 16 18 1A 1C 1E) |
 | FD6818 GPIO 5 | not set | function 1: 0x33 b9 and b1 clear, 0x34 b7:4 = 1 |
-| 0x28 | not written | 0x0A40, 0x0B40 while the FM squelch is open (b8 is documented read-only) |
+| 0x28 | not written | 0x0A40; in FM receive 0x0B40 while the squelch is open or APRS listens (the demodulator needs the audio with the squelch closed), 0x0A40 in transmit (b8 is documented read-only) |
 | 0x2E / 0x2F at each receive tune | not written | 0x9608 / 0x9890 with DCS, 0x8608 / 0x1890 with CTCSS or none |
 | HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable). Clear: DMR decodes (user, 2) |
 | Receiver sleep (8.8) | 0x37 = 0x1D11 / 0x1D00, wake 0x1F1F, 0x1F0F | 0x37 = 0x9D17 (FM) / 0x9D00 (DMR), wake 0x9D1F (user: idle only) |

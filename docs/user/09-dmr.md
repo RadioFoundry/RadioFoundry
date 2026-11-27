@@ -332,7 +332,8 @@ What AES does not do:
 
 To set a basic privacy key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 
-1. On **Key type**, press **OK** until the screen shows **8-bit (1-255)** or **16-bit (0-65535)**.
+1. On **Key type**, press **OK** until the screen shows **8-bit (1-255)** or **16-bit (0-65535)** (just **8-bit** or
+   **16-bit** where the range doesn't fit beside the name).
 2. On **Key**, press **OK**. Type the key in decimal with the number keys (8-bit 1 to 255, 16-bit 0 to 65535).
    Press **OK** again.
 

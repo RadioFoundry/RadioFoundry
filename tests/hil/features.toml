@@ -105,6 +105,11 @@ source = ["core/ysf", "core/air", "core/fec", "core/radio/radio_ysf.c", "core/ra
           "core/radio/radio_air.h", "core/radio/radio_air_mem.c", "core/radio/radio_air_voice.c",
           "core/debuglink/debuglink_view_ysf.c"]
 
+[feature.mbe2400]
+switch = "MBE2400"
+spec = "docs/spec/mbe-2400.md"
+source = ["core/mbe", "core/fec/golay.c", "core/fec/golay.h"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"

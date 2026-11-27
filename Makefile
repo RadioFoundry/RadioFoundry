@@ -160,6 +160,13 @@ endif
 ifeq ($(CONFIG_DMR)$(CONFIG_AIR),yn)
 APP_SRC += core/fec/rx_seen.c
 endif
+# The 2400 bit/s MBE codec (core/mbe is globbed with the MBE core) only with its own switch; its frame's Golay code
+# from core/fec, which is globbed with the air interface only
+ifneq ($(CONFIG_MBE2400),y)
+APP_SRC := $(filter-out core/mbe/mbe2400%.c,$(APP_SRC))
+else ifneq ($(CONFIG_AIR),y)
+APP_SRC += core/fec/golay.c
+endif
 # The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
 ifneq ($(CONFIG_CPS_FAST),y)
 APP_SRC := $(filter-out core/cps/cps_fast.c core/cps/cps_lz4.c,$(APP_SRC))
@@ -393,7 +400,7 @@ $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
 # A feature built from third-party code adds its own list
 ABOUT_MORE :=
-ifeq ($(CONFIG_IMBE),y)
+ifeq ($(CONFIG_MBE),y)
 ABOUT_MORE += core/mbe/THIRD_PARTY
 endif
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h $(ABOUT_MORE) | grep -q changed \

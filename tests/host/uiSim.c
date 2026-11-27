@@ -236,6 +236,7 @@ static const struct { const char *name, *script; } audit_extra[] = {
 	{ "settings_display", "ok 7 2" DOWN12 },
 	{ "settings_talk", "ok 7 3" DOWN12 },
 	{ "settings_privacy", "ok 7 4" DOWN12 },
+	{ "settings_privacy_16", "ok 7 4 ok ok" },	// the 16-bit key type: its long name beside the row's label
 	{ "settings_location", "ok 7 5" DOWN12 },
 	{ "settings_connections", "ok 7 6" DOWN12 },
 	{ "settings_power", "ok 7 7" DOWN12 },
