@@ -54,6 +54,7 @@ typedef struct
 	uint32_t talkGroup;						// the channel's talkgroup (group data to it is ours); 0: none
 	bool     rmo;							// through a repeater
 	bool     canTransmit;					// a DMR channel we may send on now: not RX only, in band, no hotspot
+	bool     trunked;						// default SMS uses the trunked short data service
 	uint32_t channelKey;					// changes with the frequency, slot or color code (ARS registers again)
 	dmrDataPrivacy_t privacy;				// the channel's data privacy (dmrData.h): data encrypted or held back
 } dmrDataChannel_t;
@@ -99,6 +100,7 @@ typedef enum
 	DMR_DATA_EV_ZONE_SENT,					// id: the destination; our zone went out whole
 	DMR_DATA_EV_ZONE_FAILED,				// id: the destination; it couldn't be sent
 	DMR_DATA_EV_ZONE_REFUSED,				// id: the directory service; it answered our request with a refusal
+	DMR_DATA_EV_SMS_BLOCKED,				// id: the destination; not sent: the channel's privacy has no data form
 } dmrDataEventKind_t;
 
 typedef struct
@@ -118,6 +120,8 @@ typedef struct
 	// done its listen before talk. An accepted start may call dmrDataServiceTxDone synchronously; a start that
 	// returns false must not call it (the service would count the list twice).
 	bool (*txStart)(const dmrBurst_t *bursts, int count, void *ctx);
+	// Start a Tier III short-data SMS. An accepted start completes via dmrDataServiceTxDone.
+	bool (*txSmsUdt)(uint32_t dst, bool group, const char *text, uint32_t nowMs, void *ctx);
 	// Listen before talk for machine traffic (gotcha 3.6; dmr_call_channel_clear in the firmware)
 	bool (*channelClear)(uint32_t nowMs, void *ctx);
 	// Group calls of the channel's listen list count as ours (may be NULL)
@@ -270,10 +274,12 @@ int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const ui
 // individual destination), else unconfirmed; rate 1/2, 2 preamble CSBKs. l4 is not copied: it must stay unchanged
 // until dmrDataServiceIpBusy() is false. False when one is still going or it can't be sent now.
 // The IPv4 addresses (host byte order, dmrData.h): srcIp DMR_DATA_IP_OURS is ours, the CAI address of the channel's
-// own ID; dstIp DMR_DATA_IP_OURS is the destination ID's (dmrDataIdAddress). Another dstIp (an off-net host behind the
+// own ID, DMR_DATA_IP_OUR_PERIPHERAL its peripheral network address (13.<the ID>, the host behind the radio), both
+// resolved when the packet goes; dstIp DMR_DATA_IP_OURS is the destination ID's (dmrDataIdAddress). Another dstIp (an off-net host behind the
 // radio dst) or srcIp goes in the full header (SAP 4) whatever the compression setting. ttl: the IPv4 TTL,
 // DMR_IP_TTL_DEFAULT for the radio's own (64); a talkgroup always gets 1
 #define DMR_DATA_IP_OURS			0u
+#define DMR_DATA_IP_OUR_PERIPHERAL	1u
 bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
 							const uint8_t *l4, int length);
 // The same from us, with the IDs' own addresses and our TTL (DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT), and the delivery

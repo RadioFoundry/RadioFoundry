@@ -32,8 +32,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 #include "hrc7000.h"
 #include "hal_dmr_modem.h"
+#include "dmr/fec/dmrSoftComb.h"
 
 // --- Pure helpers ---
 
@@ -83,7 +85,7 @@ typedef struct {
 	uint32_t ticks;		// timeslot interrupts that ticked the engine
 	uint32_t ts_tx_ints, ts_rx_ints, sys_ints, rftx_ints;
 	uint32_t rx_voice, rx_lc_header, rx_terminator, rx_csbk, rx_data, rx_idle;
-	uint32_t rx_crc_err;	// delivered with a bad flag (voice, blocks) or dropped (headers, CSBK)
+	uint32_t rx_crc_err;	// delivered with a bad flag: the receivers check what they take
 	uint32_t rx_unusable;	// RC or no type: dropped
 	uint32_t late_entry;	// system interrupt bit 2
 	uint32_t slot_abnormal;	// bits 5, 6, 16
@@ -125,6 +127,7 @@ typedef struct {
 typedef struct {
 	dmr_event_t ev;
 	dmr_burst_t burst;
+	uint8_t soft_tag;	// the burst's soft values staged in soft (dmrSoftCombStage), 0 none
 } hrc7000_dmr_evslot_t;
 
 typedef struct {
@@ -150,10 +153,13 @@ typedef struct {
 	uint32_t rx_tick;	// tick of the last burst taken
 	uint32_t t_rx;		// wall time of the last burst taken (polite access and receive recovery)
 	bool rx_any;
+	bool rx_call_end;	// the last burst taken was a call's terminator: polite access sees a free channel
 	uint32_t t_resync;	// wall time of the last receiver restart or post-TX hold
 	bool resync_pending;	// modem activity or a post-TX hold needs quiet-time recovery
 	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
 	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
+	int8_t rx_ts;		// its TS as an aligned start counts it: the slot number given, or for a BS burst with no
+				// CACH (none given) the one MS sync would get
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
 	uint32_t voice_tick;
 	// Each chip slot with a voice call on it (bit n: chip slot n), and its last voice burst or header: each gets the
@@ -161,9 +167,10 @@ typedef struct {
 	uint8_t voice_slots;
 	uint32_t voice_slot_tick[2];
 	int8_t tc_slot[2];	// TS (1/2) of each chip slot, learned from BS-sync bursts (TC), 0 unknown
-	bool rx_bs;		// the last burst taken was BS-sourced (a repeater)
+	bool rx_bs;		// the last burst taken was BS-sourced (a repeater, or a direct mode sender with BS sync)
 	uint8_t tc_agree;	// BS bursts in a row, one per slot, with TC alternating (the lock: TC_LOCK)
 	uint8_t tc_prev;	// TC of the last BS burst, and its tick
+	bool cach_seen;		// a TC lock since the receiver last synced: a CACH is on air (cach_on_air)
 	uint32_t tc_tick;
 	uint8_t tc_est;		// TC estimate of the slot now starting (toggled every tick)
 	// Per TC: the tick the last CACH AT bit naming it was read at and DMR_TICK_AT_* (0 none since the restart)
@@ -199,6 +206,8 @@ typedef struct {
 	uint8_t next_voice;
 	uint8_t emb_lc[9];
 	bool emb_set;
+	uint8_t burst_f[4];	// burst F's embedded field when burst_f_set, else the chip's RC encoder fills it
+	bool burst_f_set;
 	uint8_t call_lc[9];	// LC of the last voice header sent (embedded LC when none was set)
 	// RF / PA
 	bool rf_tx;
@@ -208,6 +217,11 @@ typedef struct {
 	struct hrc7000_bs *bs;	// split duplex BS outbound in charge of the chip (hrc7000_bs.c), NULL otherwise
 #endif
 
+#if CONFIG_DMR
+	// Soft combining of control bursts whose CRC failed (dmr-modem.md 2.2.1): the glue's task sets it while DMR runs,
+	// NULL otherwise. The receive interrupt stages, hrc7000_dmr_pop combines
+	dmrSoftComb_t *volatile soft;
+#endif
 	hrc7000_dmr_evslot_t evq[HRC7000_DMR_EVQ_DEPTH];
 	volatile uint8_t evq_head, evq_tail;
 
@@ -248,6 +262,8 @@ int8_t hrc7000_dmr_tx_fill(hrc7000_dmr_t *e, const dmr_tx_burst_t *b);
 void hrc7000_dmr_tx_end(hrc7000_dmr_t *e);
 void hrc7000_dmr_tx_abort(hrc7000_dmr_t *e);
 void hrc7000_dmr_set_embedded_lc(hrc7000_dmr_t *e, const uint8_t lc[9]);
+// Burst F's 32-bit embedded field (TX RAM 0x29-0x2C, VOICE_EMB_CTRL b1 off) from the next tx_begin; NULL: the chip's RC filler again
+void hrc7000_dmr_set_burst_f(hrc7000_dmr_t *e, const uint8_t field[4]);
 void hrc7000_dmr_set_cc_filter(hrc7000_dmr_t *e, int8_t cc);
 bool hrc7000_dmr_is_transmitting(const hrc7000_dmr_t *e);
 // The latest slot boundary (hal_dmr_modem_t.slot_clock): its tick and time; ts the outbound slot that started there

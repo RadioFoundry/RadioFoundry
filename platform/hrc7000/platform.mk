@@ -19,6 +19,9 @@ STACK_OVERHEAD := 68
 # every function passed to hrc_irq_register must fit it with the margin (crash-log.md: the interrupt stack's canary
 # catches what slips past)
 STACK_IRQ := --irq-stack-symbols __irq_stack_bottom,__irq_stack_top --irq-register hrc_irq_register
+# main() runs on the top of the RTOS heap until the scheduler starts (common.ld): checked against that size too, since
+# below it lie the first tasks' stacks rather than free RAM
+STACK_IRQ += --startup-stack-symbols __startup_stack_bottom,__stack_top
 
 RTOS := third_party/FreeRTOS-Kernel
 
@@ -27,6 +30,9 @@ $(if $(APP_BASE),,$(error boards/$(BOARD)/board.mk: APP_BASE, the image address,
 # board whose linker script has no such section sets CPU_RAM_SECTION empty
 CPU_RAM_SECTION ?= .ram_lo
 MCU_DEFS += $(if $(CPU_RAM_SECTION),-DRFOUNDRY_CPU_RAM_SECTION='"$(CPU_RAM_SECTION)"')
+# The cold state the core marks RFOUNDRY_COLD_RAM (common.ld .modem_bss, zeroed by crt0): in the board's part of the
+# modem SRAM when its memory.ld gives one, else in RAM after bss
+MCU_DEFS += -DRFOUNDRY_COLD_RAM_SECTION='".modem_bss"'
 LDSCRIPT ?= boards/$(BOARD)/memory.ld
 # The DMR vocoder lends its one codec state block (vocoder.c) to P25 voice while no DMR voice runs (hal_vocoder.h lend)
 MCU_DEFS += $(if $(filter y,$(CONFIG_DMR)),-DHAL_VOCODER_LEND_BYTES=0x1C00)

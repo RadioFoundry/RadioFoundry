@@ -438,7 +438,8 @@ static void test_sms_in(uint8_t block_type, const char *text)
 	dmrDataRxReset();
 }
 
-// Our radio check: the request goes out (Motorola FID, octet 3 0x80), the answer heard comes back as RADIO_CHECK_OK
+// Our radio check: the request goes out in the FID 0x10 form (octet 3 0x00, us in octets 4-6, the checked radio in
+// 7-9), the answer heard (octet 3 0x80, same IDs) comes back as RADIO_CHECK_OK
 static void test_radio_check_out(void)
 {
 	setup();
@@ -448,12 +449,12 @@ static void test_radio_check_out(void)
 	if (ntx >= 1) {
 		CHECK(txl[0].kind == DMR_BURST_CSBK && txl[0].mcu_crc && dmrDataCheckCRC16(txl[0].payload, 0xA5));
 		CHECK((txl[0].payload[0] & 0x3F) == DMR_CSBKO_RADIO_CHECK && txl[0].payload[1] == DMR_FID_MOTOROLA &&
-		      txl[0].payload[3] == 0x80 && id24(&txl[0].payload[4]) == OTHER_ID &&
-		      id24(&txl[0].payload[7]) == OUR_ID);
+		      txl[0].payload[3] == 0x00 && id24(&txl[0].payload[4]) == OUR_ID &&
+		      id24(&txl[0].payload[7]) == OTHER_ID);
 	}
 	int sent = ntx;
 	dmrBurst_t b;
-	csbk_burst(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0, OTHER_ID, OUR_ID, &b);
+	csbk_burst(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x80, OUR_ID, OTHER_ID, &b);
 	queue_rx(&b, 1);
 	run(600);
 	uint8_t kind = 0;

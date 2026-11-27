@@ -255,7 +255,7 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 	uint8_t *syms = malloc(GEN_MAX_SYMS);
 	size_t n = 0;
 	long frames_left, frames_total, nflip = 0;
-	FILE *e = fopen(exp_path, "w");
+	FILE *e = fopen(exp_path, "w"), *vf = NULL;
 	// Voice frames go in ahead of their LDU's head (the transmit path asks for them early): they wait here and go
 	// in the expect file with the LDU that carries them, P25_VOICE_FRAMES each
 	static uint8_t vq[4 * P25_VOICE_FRAMES][P25_IMBE_BYTES];
@@ -292,6 +292,12 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 		parse_hex(opt(o, "--voice"), fixed, sizeof fixed, "--voice");
 	if (seed_voice >= 0)
 		rng_seed((uint64_t)seed_voice);
+	// --voice-file: full-rate frames, 11 bytes each, in order (tests/data/voice); the last one repeats
+	if (opt(o, "--voice-file")) {
+		vf = fopen(opt(o, "--voice-file"), "rb");
+		if (!vf)
+			die("can't read", opt(o, "--voice-file"));
+	}
 
 	fprintf(e, "{\"format\":\"p25-expect/1\",\"nac\":%u,\"ss\":%u,\"lc\":", nac, ss);
 	lc_json(e, &lc);
@@ -348,6 +354,8 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 			if (seed_voice >= 0)
 				for (int i = 0; i < P25_IMBE_BYTES; i++)
 					frame[i] = (uint8_t)rng();
+			else if (vf && fread(frame, 1, sizeof frame, vf) == sizeof frame)
+				memcpy(fixed, frame, sizeof fixed);
 			else
 				memcpy(frame, fixed, sizeof frame);
 			if (vq_n == sizeof vq / sizeof vq[0])
@@ -377,6 +385,8 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 	fprintf(e, "],\"frames\":%ld,\"total_syms\":%zu,\"ber\":%g,\"bit_errors_applied\":%ld}\n", frames_total, n, ber,
 		nflip);
 	fclose(e);
+	if (vf)
+		fclose(vf);
 	write_syms(out_path, syms, n, flag(o, "--unpacked"), idle);
 	printf("{\"ev\":\"gen\",\"syms\":%zu,\"frames\":%ld,\"bit_errors_applied\":%ld}\n", n, frames_total, nflip);
 	free(syms);
@@ -421,7 +431,7 @@ static int cmd_cc(const char *out_path, const char *exp_path, const opts_t *o)
 {
 	static uint8_t unit[P25_UNIT_BYTES_MAX];
 	uint16_t nac = (uint16_t)opt_long(o, "--nac", P25_NAC_DEFAULT, 16);
-	uint32_t wacn = (uint32_t)opt_long(o, "--wacn", 0xBEE00, 16);
+	uint32_t wacn = (uint32_t)opt_long(o, "--wacn", 0xA4C21, 16);
 	uint16_t sysid = (uint16_t)opt_long(o, "--sysid", 0x2F3, 16);
 	uint8_t rfss = (uint8_t)opt_long(o, "--rfss", 1, 10), site = (uint8_t)opt_long(o, "--site", 1, 10);
 	long units = opt_long(o, "--units", 40, 10), grant_at = 10;
@@ -590,7 +600,7 @@ static int cmd_inbound(const char *out_path, const char *exp_path, const opts_t 
 	m[1].opcode = P25_ISP_GRP_AFF_REQ;
 	m[2].opcode = P25_ISP_GRP_V_REQ;
 	for (int i = 0; i < 3; i++) {
-		m[i].wacn = (uint32_t)opt_long(o, "--wacn", 0xBEE00, 16);
+		m[i].wacn = (uint32_t)opt_long(o, "--wacn", 0xA4C21, 16);
 		m[i].sysid = (uint16_t)opt_long(o, "--sysid", 0x2F3, 16);
 		m[i].tg = (uint16_t)opt_long(o, "--tg", 1, 10);
 		m[i].src = (uint32_t)opt_long(o, "--src", 1, 10);
@@ -723,8 +733,7 @@ static void isp_json(FILE *f, const uint8_t blk[P25_TSBK_BYTES])
 		fprintf(f, ",\"kind\":\"grp_v_req\",\"svc\":%u,\"tg\":%u,\"src\":%u", m.svc, m.tg, m.src);
 		break;
 	case P25_ISP_GRP_AFF_REQ:
-		fprintf(f, ",\"kind\":\"grp_aff_req\",\"emergency\":%s,\"sysid\":%u,\"tg\":%u,\"src\":%u",
-			m.emergency ? "true" : "false", m.sysid, m.tg, m.src);
+		fprintf(f, ",\"kind\":\"grp_aff_req\",\"sysid\":%u,\"tg\":%u,\"src\":%u", m.sysid, m.tg, m.src);
 		break;
 	default:
 		fprintf(f, ",\"kind\":\"u_reg_req\",\"wacn\":%u,\"sysid\":%u,\"src\":%u", m.wacn, m.sysid, m.src);

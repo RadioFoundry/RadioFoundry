@@ -12,8 +12,8 @@
 #   tools/ci.sh --platform stm32f4   every board on that platform (or a comma separated list); with --toolchain,
 #                               the boards both select
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
-#   tools/ci.sh --steps host,python   only these steps (registry, host, python, firmware, licenses, similarity;
-#                                     default all)
+#   tools/ci.sh --steps host,python   only these steps (registry, host, bench, python, firmware, licenses,
+#                                     similarity; default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
 #   RFOUNDRY_CI_SANITIZE=1 tools/ci.sh   the host step also runs the host tests under ASan and UBSan (make SANITIZE=1)
 #   RFOUNDRY_CI_PRUNE=0 tools/ci.sh  keep every build tree (about 65 MB per configuration). By default each tree is
@@ -21,15 +21,17 @@
 #                               a configuration that failed keeps its tree to debug)
 #
 # The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
-# `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
+# `--steps bench`, `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
 #
-# Every step but host needs a Python 3.11 or later (tools/rfoundry_python.sh): the board registry is TOML. Steps, each
+# Every step but host and bench needs a Python 3.11 or later (tools/rfoundry_python.sh): the board registry is TOML. Steps, each
 # reported as ok / FAIL / skip:
 #   0. registry: boards/*/board.toml and platform/*/platform.toml (tools/boards.py) are well formed and agree
 #      with board.mk, the linker scripts and board_t; tools/rfoundry/rfoundry/registry.json is current; the loader's
 #      self-test
 #   1. host tests (make -C tests/host, with each board's boards/<b>/tests/host.mk), and with RFOUNDRY_CI_SANITIZE=1 again
 #      under ASan and UBSan
+#   1b. bench: each bench tool under tools/bench/*/ (its Makefile builds it from core/ sources, e.g. the P25 and NXDN
+#      tools), with zero warnings, so a core change that breaks a bench tool fails here and not on the bench
 #   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); rfoundry's tests
 #      (tools/rfoundry/tests) and every tool's --self-test (the tools under tools/ and stub/ that have one); the stack
 #      check's self-test
@@ -48,7 +50,7 @@
 #        fm-minimal         FM only: no DMR, USB, VFO, diagnostics, sub-audio tones
 #        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED: the
 #                           hardware can't), not written yet (BOARD_NOT_WRITTEN) or not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
-#                           and the bench diagnostics (MAXIMAL_SKIP here: AUDIO_PROBE), with the board's MAXIMAL_VARS
+#                           and the bench diagnostics (MAXIMAL_SKIP here: AUDIO_PROBE, AIR_RAW, DEBUGLINK_DMRIP), with the board's MAXIMAL_VARS
 #                           (the DM-1701: LTO=1). A switch that needs one of those is off too (config/features.mk's
 #                           checks: all of DMR's family where DMR isn't written)
 #        <value>            each build option value but the first (board.toml [[build_options]], e.g. a band),
@@ -67,7 +69,7 @@
 # Build trees: build/ci/<board>-<config>/ (logs next to them). The exit status is 0 only when nothing failed.
 set -u
 # Switches the maximal configuration leaves off on every board: bench diagnostics, never in a release
-MAXIMAL_SKIP="AUDIO_PROBE AIR_RAW"
+MAXIMAL_SKIP="AUDIO_PROBE AIR_RAW DEBUGLINK_DMRIP"
 cd "$(dirname "$0")/.." || exit 2
 
 QUICK=0
@@ -75,7 +77,7 @@ MATRIX=0
 ONLY=""
 PLATFORMS=""
 TOOLCHAINS=""
-STEPS="registry,host,python,firmware,licenses,similarity"
+STEPS="registry,host,bench,python,firmware,licenses,similarity"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
@@ -84,13 +86,13 @@ while [ $# -gt 0 ]; do
 	--platform) PLATFORMS="$2"; shift ;;
 	--toolchain) TOOLCHAINS="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,62p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,69p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
 done
 for s in $(echo "$STEPS" | tr ',' ' '); do
-	case "$s" in registry|host|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
+	case "$s" in registry|host|bench|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
 done
 [ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick and --matrix exclude each other" >&2; exit 2; }
 [ -n "$ONLY" ] && [ -n "$PLATFORMS$TOOLCHAINS" ] && { echo "ci: --board excludes --platform and --toolchain" >&2; exit 2; }
@@ -188,6 +190,32 @@ fi
 
 fi
 
+# ── 1b. bench tools ──────────────────────────────────────────────────────────
+# Found by their Makefiles, so a new bench tool needs no change here. Each is built from scratch into build/ci/bench:
+# the warning check reads the compiler's output
+if step bench; then
+echo "== bench tools"
+for mk in tools/bench/*/Makefile; do
+	[ -f "$mk" ] || continue
+	d=$(dirname "$mk")
+	name=$(basename "$d")
+	log="$OUT/bench-$name.log"
+	rm -rf "$OUT/bench-$name"
+	if make -C "$d" OUT="$PWD/$OUT/bench-$name" > "$log" 2>&1; then
+		if grep -qi 'warning:' "$log"; then
+			grep -i 'warning:' "$log" | sort -u | head -10
+			bad "bench tool $name: warnings (see $log)"
+		else
+			ok "bench tool $name"
+		fi
+	else
+		grep -iE 'error|warning:' "$log" | sort -u | head -20
+		bad "bench tool $name (see $log)"
+	fi
+	rm -rf "$OUT/bench-$name"
+done
+fi
+
 # ── 2. Python ────────────────────────────────────────────────────────────────
 if step python; then
 echo "== python"
@@ -236,9 +264,9 @@ for f in sys.argv[1:]:
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
 			tests/hil/test_bench_envelope.py tests/hil/test_pa_cal.py tests/hil/test_pa_shape.py \
-			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py tests/hil/test_dmr_packets.py \
+			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py tests/hil/test_dmr_packets.py tests/hil/test_gps_nmea.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
-			ok "HIL skip, reconnect, TX guard, rig state, bench line and DMR packet helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+			ok "HIL skip, reconnect, TX guard, rig state, bench line, DMR packet and GPS NMEA helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
 		else
 			tail -20 "$OUT/hil-skip-test.log"
 			bad "HIL skip, reconnect, TX guard, rig state and bench line helper tests (see $OUT/hil-skip-test.log)"
@@ -542,7 +570,8 @@ for bm in boards/*/board.mk boards/*/; do
 	while err=$(make -s BOARD="$b" $all_on $maximal_vars print-config 2>&1 >/dev/null); [ -n "$err" ]; do
 		f=$(printf '%s\n' "$err" | sed -n 's/.*CONFIG_\([A-Z0-9_]*\)=y needs .*/\1/p' | head -1)
 		case "$all_on " in *" CONFIG_$f=y "*) ;; *) break ;; esac	# not a dependency: the build reports it
-		all_on=$(printf '%s ' $all_on | sed "s/CONFIG_$f=y //")
+		# the leading space stays, or the first switch could never match the test above once one was dropped
+		all_on=" $(printf '%s ' $all_on | sed "s/ CONFIG_$f=y / /;s/^CONFIG_$f=y //")"
 		dropped="$dropped $f"
 	done
 	[ -n "$dropped" ] && echo "ci: $b maximal: off, their parent left out:$dropped"
@@ -573,6 +602,43 @@ for p in $(for x in ${SELECTED_PLATFORMS:-}; do echo "$x"; done | sort -u); do
 		fi
 	done
 done
+# A worktree that reads third_party/ from another checkout (platform/third_party.mk, tools/worktree.sh): a scratch
+# worktree of HEAD without submodules of its own must parse a build against this tree's copies, stop without them and
+# on a moved pin, answer the query targets, and stay clean through a checkout with submodule.recurse. make -n is
+# enough: the checks run while make reads the Makefile
+tp_dir=$PWD/third_party
+[ -n "$(ls -A "$tp_dir/FreeRTOS-Kernel" 2>/dev/null)" ] || tp_dir=${RFOUNDRY_THIRD_PARTY:-}
+tb=$(for x in ${SELECTED_PLATFORMS:-}; do reg list --platform "$x" | head -1; done | head -1)
+if [ -z "$tb" ] || [ -z "$tp_dir" ]; then
+	skip "shared third_party: no board built, or no checked-out third_party/ to share"
+else
+	tp_wt=$PWD/$OUT/tp-worktree
+	tp_log=$PWD/$OUT/tp-worktree.log
+	tp_fail=
+	# tpm DIR: make -n in the scratch worktree with RFOUNDRY_THIRD_PARTY=DIR (empty: unset)
+	tpm() { (cd "$tp_wt" && RFOUNDRY_THIRD_PARTY=$1 make -n BOARD="$tb" BUILD="$tp_wt/build") >> "$tp_log" 2>&1; }
+	git worktree remove --force "$tp_wt" 2> /dev/null || true
+	if ! tools/worktree.sh add "$tp_wt" --detach HEAD > "$tp_log" 2>&1; then tp_fail="tools/worktree.sh add failed"
+	elif ! tpm "$tp_dir"; then tp_fail="a build with RFOUNDRY_THIRD_PARTY stopped"
+	elif tpm ""; then tp_fail="a build without third_party/ went on"
+	elif ! (cd "$tp_wt" && RFOUNDRY_THIRD_PARTY="" make -s BOARD="$tb" print-vars VARS=TARGET) >> "$tp_log" 2>&1; then
+		tp_fail="print-vars needs third_party/"
+	elif ! git -C "$tp_wt" -c submodule.recurse=true checkout -q --detach HEAD >> "$tp_log" 2>&1 ||
+		[ -n "$(git -C "$tp_wt" status --porcelain 2>> "$tp_log")" ]; then
+		tp_fail="git status not clean after a checkout with submodule.recurse"
+	else
+		# a commit that moves the first submodule: the pin check must stop the build
+		m=$(git -C "$tp_wt" ls-tree HEAD third_party/ | awk 'NR == 1 { print $4 }')
+		git -C "$tp_wt" update-index --cacheinfo "160000,0000000000000000000000000000000000000001,$m" &&
+			git -C "$tp_wt" -c user.name=ci -c user.email=ci@localhost commit -q --no-verify -m "pin test" >> "$tp_log" 2>&1
+		if tpm "$tp_dir"; then tp_fail="a build went on with $m at another commit"
+		elif ! grep -q "\*\*\* .*${m#third_party/}" "$tp_log"; then tp_fail="the pin check did not name ${m#third_party/}"
+		fi
+	fi
+	git worktree remove --force "$tp_wt" 2>> "$tp_log" || true
+	if [ -z "$tp_fail" ]; then ok "shared third_party: a worktree without submodules builds $tb from $tp_dir"
+	else bad "shared third_party: $tp_fail (see $tp_log)"; fi
+fi
 echo
 cat "$REPORT"
 echo

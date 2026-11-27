@@ -120,7 +120,7 @@ static bool dmr_enter(hrc_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain)
 	ok &= hrc_write(dev, 4, 0xE0, 0xC9);		// codec under MCU control, mic on
 	ok &= hrc_set_mic_gain(dev, mic_gain);
 	ok &= hrc_write(dev, 4, 0x26, 0xFD);
-	ok &= hrc_write(dev, 4, 0x81, 0x19);		// system interrupt mask: post access, received data, PHY
+	ok &= hrc_write(dev, 4, 0x81, HRC_INT_MASK_DMR);
 	ok &= hrc_write(dev, 4, 0x83, 0xFF);		// clear interrupts
 	return ok;
 }
@@ -149,6 +149,7 @@ static const hrc_chip_t chip = {
 	.slc_rx_addr = 0x2B,	// RX RAM 0x2B-0x2F (hrc6000-registers.md 2.2)
 	.tap_addr = { 0x30, 0x60 },	// RX RAM 264bit_info_0 / _1, 288 bits each, the CACH first (hrc6000-registers.md 2.2)
 	.tap_field = 3,
+	.soft_tap = 0xA8,	// modem-hrc6000.md 5.8
 };
 
 void hrc6000_attach(hrc_t *dev, const hrc_bus_t *bus)

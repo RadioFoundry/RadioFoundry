@@ -6,16 +6,16 @@
 
 import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
-import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
+import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, CABLES, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
-import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
+import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers, followListen } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
-import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
+import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges, idDbEnd } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
 import { areaForWrite, KEYS, RECORD_KEYS, SIG_HZ_MAX, SIG_HZ_UNIT, SIG_MS_MAX, SIG_STEPS } from "../codeplug/kv.js";
 import { toSerial, CLICK_WAIT_MS } from "../flasher/netmode.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
-import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
+import { convertIddb, fitIddb, eraseIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
@@ -29,7 +29,6 @@ import * as diag from "../diag.js";
 import { initReporting, reportedLine } from "../report.js";
 import { updateFor } from "../flasher/version.js";
 
-const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "systems", "iddb", "problems"];
 const TABLE_MAX = { channels: LIMITS.channels, zones: LIMITS.zones, contacts: LIMITS.contacts, rxLists: LIMITS.rxLists, dtmfContacts: LIMITS.dtmfContacts, aprs: LIMITS.aprs };
 
@@ -43,6 +42,7 @@ const S = {
 	radios: [],
 	conn: null,		// {transport, radio, image: the radio's bytes as last read or written, cable}
 	lastRadioImage: null,	// the last connection's image, for a bug report after it closed
+	areaSource: null,	// only a read/write on this connection establishes a settings merge baseline
 	iddbChanged: false,
 	sim: location.hash.startsWith("#sim"),		// #sim-foreign: a radio still holding stock data in its settings area
 	filter: {},
@@ -59,6 +59,7 @@ const messages = h("div", { class: "ed-messages", "aria-live": "polite" });
 
 function load(model, name, { fromRadio = false } = {}) {
 	S.model = model;
+	S.areaSource = fromRadio ? S.conn : null;
 	S.fileName = name;
 	S.history.reset();
 	S.dirty = false;
@@ -69,7 +70,8 @@ function load(model, name, { fromRadio = false } = {}) {
 	draftSoon();
 }
 
-// Run fn as one undoable change
+// Run fn as one undoable change. A channel it left in a listen band (an import, a pasted RX) gets TX on RX in the same
+// step, as decode gives a loaded one
 function change(label, fn) {
 	S.history.record(S.model, label);
 	const r = fn();
@@ -77,6 +79,7 @@ function change(label, fn) {
 		S.history.cancel();
 		return false;
 	}
+	for (const c of S.model.channels) followListen(c);
 	S.dirty = true;
 	refresh();
 	draftSoon();
@@ -789,6 +792,7 @@ async function onLine(c) {
 		diag.note("radio changed: read before write", { was: c.uid, now: uid });
 		c.image = null;
 		c.dbKnown = false;
+		S.areaSource = null;
 	}
 	c.uid = uid;
 }
@@ -999,11 +1003,16 @@ async function planWrite() {
 		// a compact database to a radio that reads only format N goes as format N (iddb-compact.md 6)
 		let older = null;
 		if (iddb && dbHeader(file.bytes)?.format === "C" && !c.transport.compact) older = convertDb(file, "N", { end: c.transport.end });
+		// a database past this radio's room (a file or draft made for a bigger radio, or built with no radio chosen) is
+		// never sent: it is offered cut to fit, or removed
+		if (iddb && !older && idDbEnd(file.bytes) > c.transport.end) return offerFit(c);
 		stage = "plan write";
 		// the same codeplug with this radio's own name, ID and boot text kept, and what each would send
 		// (compared byte for byte: two plans can send the same number of bytes. The second is planned only when there
 		// is something to keep: each plan is a pass over every block's CRC)
-		areaForWrite(file.bytes, c.image.bytes, S.model.base?.bytes);
+		// An opened file (including a restored draft) is a replacement, not an edit of this radio's keys.
+		// Using its bytes as a merge baseline silently drops unchanged channel tags and trunking systems.
+		areaForWrite(file.bytes, c.image.bytes, S.areaSource === c ? S.model.base?.bytes : null);
 		const kept = keepIdentity(file, c.image);
 		const differs = IDENTITY.some(([a, b]) => kept.bytes.subarray(a, b).some((x, i) => x !== file.bytes[a + i]));
 		const plans = { file: await c.transport.plan(file, c.image, { iddb }) };
@@ -1019,7 +1028,8 @@ async function planWrite() {
 		const summarize = () => {
 			const { bytes } = choice();
 			const text = [t("editor.write_summary", { radio: c.radio.name, bytes: fmtNum(bytes), seconds: estimate(bytes, c.cable, choice().blocks) })];
-			if (iddb) text.push(t(c.transport.fast ? "editor.write_iddb_fast" : "editor.write_iddb", { n: dbHeader(file.bytes)?.count ?? 0 }));
+			// no database in the file: its header goes erased, and the radio's database with it
+			if (iddb) text.push(dbHeader(file.bytes) ? t(c.transport.fast ? "editor.write_iddb_fast" : "editor.write_iddb", { n: dbHeader(file.bytes).count }) : t("editor.write_iddb_erase"));
 			if (older) text.push(t("editor.write_iddb_older"));
 			if (older?.dropped) text.push(t("editor.write_iddb_cut", { dropped: fmtNum(older.dropped) }));
 			summary.textContent = text.join(" ");
@@ -1058,6 +1068,24 @@ function upgradeIddb() {
 	say(t("editor.iddb.converted", { n: r.count }), "ok");
 }
 
+// The ID database cut to the names this radio has room for, or removed when the editor can't read its records, as
+// one undoable change; then the write starts again
+function offerFit(c) {
+	const db = S.model.iddb;
+	const cut = db?.format === "N" || db?.format === "C";
+	const label = t(cut ? "editor.iddb.fit" : "editor.rid.remove_db");
+	confirmDialog(t("editor.iddb.too_big", { n: fmtNum(db?.count ?? 0), radio: c.radio.name }), label, () => {
+		let r = null;
+		change(label, () => {
+			if (cut) r = fitIddb(S.model, c.transport.end);
+			else eraseIddb(S.model);
+		});
+		S.iddbChanged = true;
+		if (r) say(t("editor.iddb.fitted", { n: fmtNum(r.count), dropped: fmtNum(r.dropped) }), "warn");
+		writeRadio();
+	});
+}
+
 // Whether the last write kept the radio's own identity: remembered in this browser for the next radio
 function keepPref(v) {
 	const k = "rfoundry-editor-keep-identity";
@@ -1088,6 +1116,7 @@ function writeChosen(c, { want }, iddb, prepared) {
 			if (iddb) c.dbKnown = true;
 			S.iddbChanged = false;
 			S.model.base = want;
+			S.areaSource = c;
 			S.model.iddb = dbHeader(want.bytes);	// format N when it went to a radio that reads only that
 			S.dirty = false;
 			refresh();
@@ -1202,11 +1231,17 @@ function reportContext() {
 }
 
 // What the user may add to a report: the codeplug being edited and the one last read from the radio
+function reportCodeplug(image) {
+	const copy = image.clone();
+	withoutSecrets(copy.bytes);
+	return saveBytes(copy);
+}
+
 function reportFiles() {
 	const out = [];
-	if (S.model) out.push({ name: "codeplug-edited.bin", label: t("report.attach_codeplug"), data: () => saveBytes(encode(S.model)) });
+	if (S.model) out.push({ name: "codeplug-edited.bin", label: t("report.attach_codeplug"), data: () => reportCodeplug(encode(S.model)) });
 	const radio = S.conn?.image || S.lastRadioImage;
-	if (radio) out.push({ name: "codeplug-radio.bin", label: t("report.attach_radio"), data: () => saveBytes(radio) });
+	if (radio) out.push({ name: "codeplug-radio.bin", label: t("report.attach_radio"), data: () => reportCodeplug(radio) });
 	return out;
 }
 

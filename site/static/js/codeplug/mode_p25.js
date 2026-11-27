@@ -11,6 +11,20 @@ export const UNIT_MAX = 0xFFFFFE;
 // Above this the editor warns: unit IDs this long are unusual (the standard's range is not checked here)
 export const UNIT_WARN = 9999999;
 export const WACN_ANY = 0xFFFFFF, SYSID_ANY = 0xFFFF, P25_UNKNOWN = 0xFF;
+// Network IDs the radio never transmits on: WACN BEE00..BEEFF, system ID 00A. The firmware enforces it and these
+// copies only let the editor show it; core/p25/p25.h (P25_WACN_NO_TX, P25_WACN_NO_TX_MASK, P25_SYSID_NO_TX) is the
+// source, and a test compares the two.
+export const WACN_NO_TX = 0xBEE00, WACN_NO_TX_MASK = 0xFFF00, SYSID_NO_TX = 0x00A;
+
+const hex = (v, digits) => v.toString(16).toUpperCase().padStart(digits, "0");
+
+// The editor's notice for a system the radio never transmits on, { key, params }, or null when it may: it names the ID
+// that matched as it is in the fields, the WACN when that is in the blocked range, else the system ID
+function noTxNote(f) {
+	if (f.wacn != null && (f.wacn & WACN_NO_TX_MASK) === WACN_NO_TX) return { key: "editor.p25.no_tx_wacn", params: { id: hex(f.wacn, 5) } };
+	if (f.sysid === SYSID_NO_TX) return { key: "editor.p25.no_tx_sysid", params: { id: hex(f.sysid, 3) } };
+	return null;
+}
 
 // A NAC field: its value when set, else dflt; a value the field can't hold reads as dflt too
 const nacField = (f, dflt) => ((f & NAC_SET) && !(f & 0x7000) ? f & 0x0FFF : dflt);
@@ -121,14 +135,25 @@ export function encodeTsys(s, prev = null) {
 	return v;
 }
 
-const optHex = (key, label, max, digits) => ({ key, label, type: "hex", min: 0, max, digits, any: true, format: (v) => v.toString(16).toUpperCase().padStart(digits, "0") });
+const optHex = (key, label, max, digits) => ({ key, label, type: "hex", min: 0, max, digits, any: true, format: (v) => hex(v, digits) });
 const byteOrUnknown = (key, label) => ({ key, label, type: "int", min: 0, max: 254, any: true });
+
+// The recommended ham system (docs/spec/ham-trunking.md 3): WACN 0x32350 (HAM in the Radix-50 code, shifted as WACN
+// names are), any system ID, control channel NAC 0x293, encrypted calls skipped
+export const HAM_P25 = { wacn: 0x32350, ccNac: 0x293 };
 
 export const p25System = {
 	id: 3,
 	feature: "P25_TRUNK",
 	idLen: 5,
 	defaultTx: false,	// a new system is listen only until the user turns transmit on
+	ham: {
+		name: "Ham P25",
+		tx: true,
+		fields: () => ({ wacn: HAM_P25.wacn, sysid: null, ccNac: HAM_P25.ccNac, skipEnc: true, planOnly: false, noReg: false, holdS: 0, roamDbm: 0 }),
+		asks: [],
+		entries: (a) => [{ cls: 0, group: 0, flags: 0, control: true, iden: 0, chanNo: 0, rxHz: a.rxHz, txHz: a.txHz, raw: null }],
+	},
 	newFields: () => ({ wacn: null, sysid: null, ccNac: null, skipEnc: false, planOnly: false, noReg: false, holdS: 0, roamDbm: 0 }),
 	decode: decodeTsys,
 	encode: encodeTsys,
@@ -143,6 +168,10 @@ export const p25System = {
 	],
 	// the fallback channel is stored, not used yet (p25-trunking.md)
 	fallbackHelp: "editor.p25.fallback_help",
+	// whether the radio refuses to transmit on a system with these fields, whatever its transmit setting says
+	noTx: (f) => noTxNote(f) != null,
+	// the notice the system form shows for such a system: { key, params }, or null
+	noTxNote,
 	// a third transmit choice in the system form: transmit without registering (the field set while the radio transmits)
 	noRegField: "noReg",
 	fields: () => [
@@ -178,7 +207,7 @@ export const p25System = {
 			},
 			fields: [
 				{ key: "rxHz", label: "editor.col.rx", type: "freq" },
-				{ key: "txHz", label: "editor.col.tx", type: "freq", zero: true },
+				{ key: "txHz", label: "editor.col.tx", type: "freq", zero: true, txOnly: true },
 				{ key: "iden", label: "editor.p25.iden", type: "int", min: 0, max: 15 },
 				{ key: "chanNo", label: "editor.p25.chan_no", type: "int", min: 0, max: 4095 },
 			],
@@ -203,7 +232,7 @@ export const p25System = {
 			fields: [
 				{ key: "baseHz", label: "editor.p25.base", type: "freq" },
 				{ key: "spacingHz", label: "editor.p25.spacing", type: "int", min: 1, max: 1000000 },
-				{ key: "txOffsetHz", label: "editor.p25.tx_offset", type: "int", min: -2147483648, max: 2147483647 },
+				{ key: "txOffsetHz", label: "editor.p25.tx_offset", type: "int", min: -2147483648, max: 2147483647, txOnly: true },
 				{ key: "bwHz", label: "editor.p25.bw", type: "int", min: 0, max: 1000000 },
 				{ key: "tdma", label: "editor.p25.tdma", type: "bool" },
 				{ key: "slots", label: "editor.p25.slots", type: "int", min: 1, max: 8 },
@@ -232,7 +261,7 @@ export const p25TrunkKind = {
 	ownFreqs: false,
 	defaultTx: false,
 	fallback: true,
-	recordFields: ["contact", "rxList"],
+	recordFields: ["contact", "rxList", "acceptBadCrc"],
 	flags: { noFallback: 0x10 },
 	newParams: () => ({ followAll: false }),
 	decode: (b) => ({ followAll: (u8(b, 0) & 1) !== 0 }),

@@ -87,7 +87,8 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "healt
 
 ## 4. Data flash and calibration
 
-`diag`: `flash C84018 cal factory` (or `852018` on Puya-flash radios), `txc` not 128, `pa` values not 1408.
+`diag`: `flash C84018 cal factory` (or `852018` on Puya-flash radios, `EF4018` on Winbond-flash radios, `684018` on
+Boya-flash radios), `txc` not 128, `pa` values not 1408.
 
 | If | Then |
 |---|---|
@@ -191,7 +192,12 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 | The debug link's `aprs` view on 144.390 | `aprs.rx_listening=1`, `rx_bits` rising by about 1200 a second on noise, `rx_peak` above 0 | `rx_listening=0`: the receive setting (`rfoundry_debug.py aprs set rx 1`) or the frequency. Bits not rising: SYS_INTERP_MASK bit 14 (0x1100039C) clear, or GPIO 0x2F high |
 | A packet on the air | `rx_hdlc_frames` and `stations` go up | `rx_fcs_errors` rising with packets present: the half read (FM_ADDR_SW), the level (noise reaches full scale), audio under the tones (below) |
 | An FM signal on 144.390 with the squelch open | heard on the speaker, through the C7000's FM playback | AUDIO_CONTROL bit 6, the codec line out |
-| A packet sent at level 50, recorded by the SDR bench (`aprs.md` 13) | decodes with a valid FCS, about 3 kHz peak deviation, twist within 2 dB | no tones: AUDIO_CONTROL bit 7 during the transmission, Timer 4 (vector 36) not firing. Deviation: `amp_per_level` in `radio_dm32.c` |
+| A packet sent at level 50, recorded by the SDR bench (`aprs.md` 13) | decodes with a valid FCS, about 3 kHz peak deviation, mark about 4 dB under space (`hardware-dm32.md` 9.1) | no tones: AUDIO_CONTROL bit 7 during the transmission, Timer 4 (vector 36) not firing. Voice on the tones or the deviation far off: GPIO 0x2E not 0 while the tones play. Deviation: `amp_per_level` in `radio_dm32.c` |
+
+## NXDN Scrambler interoperability
+
+Manual on-air testing with build `21bf5df8` (firmware source matching `c11d6e83`) confirmed scrambled NXDN voice
+between Baofeng DM-32UV radios and between a DM-32UV and Kenwood 5000-series radios. See [NXDN Scrambler](../spec/nxdn.md).
 
 ## Open items to settle on the bench
 

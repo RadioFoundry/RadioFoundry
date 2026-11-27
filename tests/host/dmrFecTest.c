@@ -191,6 +191,23 @@ static void testBptc(void)
 		}
 	}
 	CHECK(bad == 0, "BPTC: %d error patterns not corrected", bad);
+
+	// The reserved bits R(3)-R(0) round trip, R(2)-R(0) corrected like any data bit
+	for (uint8_t r = 0; r < 16; r++)
+	{
+		uint8_t payload[12], burst[33] = { 0 }, back[12], got = 0xFF;
+
+		for (int k = 0; k < 12; k++)
+		{
+			payload[k] = (uint8_t)(r * 17 + k * 29);
+		}
+		dmrFecBptcEncodeR(payload, r, burst);
+		CHECK(dmrFecBptcDecodeR(burst, back, &got) == 0 && got == r && memcmp(back, payload, 12) == 0,
+		      "R bits %u: got %u", r, got);
+		burst[0] ^= 0x40;	// burst bit 1: a data or R bit of the matrix
+		CHECK(dmrFecBptcDecodeR(burst, back, &got) == 1 && got == r && memcmp(back, payload, 12) == 0,
+		      "R bits %u with one error: got %u", r, got);
+	}
 }
 
 // QR(16,7,6), ETSI TS 102 361-1 B.3.2. The code is checked against an independent construction: the 15 bit words
@@ -367,6 +384,8 @@ static void testReverseChannel(void)
 	// A BS's cease as sent on air, CC 2
 	static const uint8_t onAir[6] = { 0x28, 0x70, 0xD0, 0x4F, 0x1F, 0x7E };
 	CHECK(memcmp(field, onAir, 6) == 0, "RC field: as on air");
+	// Burst F of an AES-256 call, key ID 1, measured on air
+	CHECK(dmrFecPrivacyField(0x25, 1) == 0x44428881u, "privacy burst F field: as on air");
 	CHECK(dmrFecRcFromField(field, 2, &got) == 0 && got == DMR_RC_CEASE, "RC field: decode");
 	field[2] ^= 0x41;	// two RC bit errors and one EMB bit error
 	field[0] ^= 0x02;

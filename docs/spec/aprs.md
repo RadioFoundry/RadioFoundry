@@ -211,6 +211,22 @@ at full deviation pushed the AT1846S noise reading over the line for a poll or t
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.
 
+The radio core stops the path when it tunes away from the APRS frequency or out of FM, before the board changes mode
+(`radio_sm.c` `tune`, `aprs_rx_release()`): on the HR_C7000 a P25, NXDN or YSF engine can't start while the path
+holds the FM receive copy interrupt (`dmr_glue.c` `air_take`).
+
+The **mute** setting (`aprs_cfg_t.mute`, the APRS page's "Mute APRS audio", `CONFIG_APRS_RX`) keeps the speaker
+silent on the APRS frequency in FM while the squelch is open, unless Monitor holds it open (`radio_sm.c` `outputs`,
+`aprs_mute_hz()`). The receive path must keep its audio, so it depends on where the board's decoder reads it:
+
+| Board | How the core mutes |
+|---|---|
+| `hal_radio_t.speaker_mute` set | `speaker_mute(true)`: the speaker silent, `audio()` left on. For a decoder whose FM audio passes the path `audio()` gates (an I2S tap behind the FM feed-through) |
+| no `speaker_mute` | `audio(false)`: for a decoder that takes the FM audio before the speaker path (the board's own AFSK input) |
+
+The green LED and Stations heard are unaffected, and a second receiver's speaker isn't held off by a muted carrier.
+Off by default.
+
 The receive setting and messaging default to on when the radio can receive (`aprs_can_receive()`: the build has
 `CONFIG_APRS_RX` and one of the two paths exists).
 
@@ -404,6 +420,21 @@ additional comment text is retained. Detail rows scroll with Up / Down and do no
 is evicted, the screen says "No longer in list" and Message still addresses the saved callsign. This detail code
 and the saved callsign are guarded by `CONFIG_APRS_RX`; the engine storage is unchanged.
 
+**Inbound message notification (`CONFIG_APRS_RX`).** When `ui_svc_aprs_msg_poll` (called every UI pass from
+`ui_svc_poll`) sees `aprs_view_t.msg_serial` advance, it fires `UI_EV_APRS_MESSAGE` with the sender's callsign and
+message text. `handle_event` in `ui_app.c` raises a `UI_BANNER_APRS_MESSAGE` banner (8 s, `BANNER_MS`) that shows
+"APRS message from <callsign>" in the title and the message text in the body, wakes the backlight, and plays a
+message tone and vibration alert if those are on. `msg_serial` is an integer that wraps; `ui_svc_aprs_msg_poll` saves
+the last-seen serial in a static variable and fires only when it changes, so duplicates and retries produce no
+additional events. The engine sets `msg_serial`, `last_msg_ms` and `last_msg_from` in `message_in` when a non-duplicate
+message addressed to us is accepted (`CONFIG_APRS_RX`, guarded).
+
+**Home screen last-activity (`CONFIG_APRS_RX`).** `draw_activity` reads `aprs_view_t.last_msg_ms` via
+`ui_svc_aprs_view`. When `last_msg_ms` is non-zero and either `radio_view_t.last_rx_ms` is zero or
+`last_msg_ms + 2000 >= last_rx_ms` (the APRS reception caused the squelch to close, within the squelch tail), the
+activity line reads "APRS: <callsign> <age>" instead of the generic "Last activity Xm ago". The 2 s threshold
+accounts for the FM squelch tail between packet decode and squelch close.
+
 The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
 debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native codeplug.
 
@@ -411,7 +442,7 @@ debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native c
 
 `settings_t` (`core/settings/settings.h`), taken only when `aprs_stored` is 1, else the defaults: `aprs_flags`
 (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX), `aprs_flags2` (iGate, iGate TX, messaging, UDT,
-to APRS-IS), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
+to APRS-IS, mute), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
 `aprs_symbol`, `aprs_path`, `aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1),
 `aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
 `aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's

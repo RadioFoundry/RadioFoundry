@@ -970,6 +970,13 @@ static void test_beep_module(void)
 		CHECK(beep_mix(blk));
 	}
 	CHECK(!beep_mix(blk));
+	// The mic hears it: from the block after the first until BEEP_ECHO_BLOCKS after the last (the eighth was the first
+	// of them)
+	for (int i = 1; i < BEEP_ECHO_BLOCKS; i++) {
+		CHECK(beep_mic_echo());
+		CHECK(!beep_mix(blk));
+	}
+	CHECK(!beep_mic_echo());
 	// Saturation
 	beep_play(BEEP_ERROR, 100, true);
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
@@ -2705,9 +2712,182 @@ static void test_beep_follows_volume(void)
 	run(100);
 	int pcm = beep_peak();
 	CHECK(pcm > 11500 && pcm <= 12900);
+	req(RREQ_VOLUME, RADIO_VOLUME_MAX);
+	run(100);
+	pcm = beep_peak();
+	CHECK(pcm > 11500 && pcm <= 12900);	// no volume_db10: the beep follows the volume to the top
 
 	board.radio = &fake_radio;
 	board.power = &fake_power;
+}
+
+// A beep's peak, with the level the board's volume had while it played (vol_during, -1 if it changed meanwhile) and
+// once it is over (vol_after)
+static int beep_peak_vol(int *vol_during, int *vol_after)
+{
+	req(RREQ_BEEP, BEEP_ERROR);
+	*vol_during = soft_vol;		// before the beep's first block
+	int peak = 0;
+	for (int i = 0; i < 12 && aud.cb != NULL; i++) {
+		aud.cb(mic, spk, NULL);
+		for (int k = 0; k < AUDIO_BLOCK_SAMPLES; k++) {
+			int v = spk[k] < 0 ? -spk[k] : spk[k];
+			peak = v > peak ? v : peak;
+		}
+		run(20);
+		if (soft_vol != *vol_during) {
+			*vol_during = -1;
+		}
+	}
+	run(500);	// the own stream stops
+	*vol_after = soft_vol;
+	return peak;
+}
+
+// The HR_C6000 boards' curve (radio_uvf.c): 0..100 % over gain steps -31..+31, the speaker level of each step measured
+static const int16_t t_gain_db10[63] = {
+	-243, -235, -227, -219, -211, -203, -195, -188, -180,
+	-172, -164, -156, -148, -141, -133, -125, -117, -109,
+	-101, -93, -86, -78, -70, -62, -54, -47, -39,
+	-31, -23, -16, -8, 0, 9, 16, 24, 32,
+	40, 48, 55, 62, 70, 78, 86, 93, 101,
+	108, 116, 123, 131, 139, 146, 154, 162, 169,
+	179, 186, 193, 201, 208, 216, 223, 231, 238,
+};
+static int16_t r_volume_db10(uint8_t percent) { return t_gain_db10[(int)percent * 62 / 100]; }
+
+// The level a beep at level should have at percent: softer by the table's gain over the cap step's, at least 1
+static int beep_level_expected(int level, uint8_t percent)
+{
+	int d = r_volume_db10(percent) - r_volume_db10(radio_volume_percent(RADIO_BEEP_VOLUME_STEP));
+	if (d <= 0) {
+		return level;
+	}
+	int v = (int)lround(level * pow(10.0, -d / 200.0));
+	return v < 1 ? 1 : v;
+}
+
+// On a radio whose volume scales the PCM path, beeps stop getting louder above RADIO_BEEP_VOLUME_STEP: each beep's
+// samples are softer by the gain the board's curve (volume_db10) adds over that step's. The board's volume never
+// changes for a beep, so voice never dips, and steps up to the cap play beep_level as before
+static void test_beep_volume_cap(void)
+{
+	CHECK(radio_beep_pcm_level(60, -40, -40) == 60 && radio_beep_pcm_level(60, -100, -40) == 60);
+	CHECK(radio_beep_pcm_level(60, 0, -40) == 38);		// 4 dB down
+	CHECK(radio_beep_pcm_level(100, 160, -40) == 10);	// 20 dB down
+	CHECK(radio_beep_pcm_level(100, -35, -40) == 94);	// 0.5 dB down
+	CHECK(radio_beep_pcm_level(60, 310, -40) == 1);		// 35 dB
+	CHECK(radio_beep_pcm_level(0, 310, -40) == 0);
+	CHECK(radio_beep_pcm_level(255, 0, -40) == 161);	// the top of uint8_t: no overflow on the way
+
+	hal_radio_t pcm_radio = fake_radio;
+	hal_power_t soft_power = fake_power;
+	pcm_radio.volume = r_volume;
+	pcm_radio.volume_pcm = true;
+	pcm_radio.volume_db10 = r_volume_db10;
+	soft_power.volume = p_no_knob;
+	board.radio = &pcm_radio;
+	board.power = &soft_power;
+	audio_mux_reset();
+	start();
+	req(RREQ_ZONE_POS, 6);
+	settings(set_beep_80);
+	CHECK(radio_volume_percent(RADIO_BEEP_VOLUME_STEP) == 44);
+	int during, after;
+	// Steps 1 to the cap: beep_level 80 as it is, the volume left alone
+	for (uint8_t step = 1; step <= RADIO_BEEP_VOLUME_STEP; step++) {
+		req(RREQ_VOLUME, step);
+		run(100);
+		int v = radio_volume_percent(step);
+		int pk = beep_peak_vol(&during, &after);
+		CHECK(during == v && after == v && pk > 11500 && pk <= 12900);
+	}
+	// Above it, every step: the volume still left alone, the beep's peak the table's level (AMP_PER_LEVEL 160)
+	for (uint8_t step = RADIO_BEEP_VOLUME_STEP + 1; step <= RADIO_VOLUME_MAX; step++) {
+		req(RREQ_VOLUME, step);
+		run(100);
+		int v = radio_volume_percent(step);
+		int lv = beep_level_expected(80, (uint8_t)v);
+		CHECK(lv < 80);
+		int pk = beep_peak_vol(&during, &after);
+		CHECK(during == v && after == v);
+		CHECK(pk > lv * 160 * 9 / 10 && pk <= lv * 160 + 20);
+	}
+	// The top step against the cap step: 26.9 dB, level 80 -> 4
+	CHECK(beep_level_expected(80, 100) == 4);
+	// Volume 0 stays 0: no beep, nothing sent
+	req(RREQ_VOLUME, 0);
+	run(100);
+	beep_peak_vol(&during, &after);
+	CHECK(during == 0 && after == 0);
+
+	board.radio = &fake_radio;
+	board.power = &fake_power;
+}
+
+// rx_open (hal_radio_t): receive audio from a signal, which a board's backlight follows (#544). A beep alone, with no
+// carrier, never sets it; an open FM squelch and a DMR call do, and it clears when they end
+static int rx_open_calls;
+static bool rx_open_on;
+static bool rx_open_audio_at;	// the FM speaker path when rx_open last changed: closed at both edges
+static void r_rx_open(bool on) { rx_open_on = on; rx_open_audio_at = hw.audio; rx_open_calls++; }
+
+static void test_rx_open(void)
+{
+	hal_radio_t open_radio = fake_radio;
+	open_radio.rx_open = r_rx_open;
+	board.radio = &open_radio;
+	rx_open_calls = 0;
+	rx_open_on = true;
+	start();
+	CHECK(rx_open_calls == 1 && !rx_open_on);	// the first state goes to the board
+	// FM, squelch closed: a key beep plays PCM without opening receive audio
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	req(RREQ_BEEP, BEEP_KEY);
+	bool during = rx_open_on;
+	run(500);
+	beep_get_stats(&b1);
+	CHECK(b1.played > b0.played && !during && !rx_open_on && rx_open_calls == 1);
+	// FM squelch opens: on, a beep over the open audio changes nothing, and it closes with the squelch
+	signal_on(0, 146520000, 30, no_tone);
+	run(100);
+	CHECK(sm.view.state == RS_RX && hw.audio && rx_open_on && rx_open_calls == 2);
+	CHECK(!rx_open_audio_at);	// on before the speaker opens
+	req(RREQ_BEEP, BEEP_KEY);
+	run(500);
+	CHECK(rx_open_on && rx_open_calls == 2);
+	hw.sig[0].hz = 0;
+	run(1000);
+	CHECK(sm.view.state != RS_RX && !hw.audio && !rx_open_on && rx_open_calls == 3);
+	CHECK(!rx_open_audio_at);	// off after the speaker closes
+	// The monitor: on, then off
+	req(RREQ_MONITOR, 1);
+	run(100);
+	CHECK(rx_open_on);
+	req(RREQ_MONITOR, 0);
+	run(100);
+	CHECK(!rx_open_on);
+	// Transmitting is the board's own (tx()), not receive audio
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX && !rx_open_on);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(!rx_open_on);
+	// DMR: a call plays, then ends
+	signal_on(0, 438500000, 30, no_tone);
+	req(RREQ_ZONE_POS, 5);
+	run(100);
+	CHECK(!rx_open_on);
+	hear_call(9, 1, 1, false);
+	CHECK(sm.view.dmr.state == RDMR_RX && rx_open_on);
+	hear_call(9, 1, 0, true);
+	run(1000);
+	CHECK(sm.view.dmr.state == RDMR_IDLE && !rx_open_on);
+	hw.sig[0].hz = 0;
+
+	board.radio = &fake_radio;
 }
 
 static void set_bcl_carrier(radio_settings_t *s) { s->bcl = RADIO_BCL_CARRIER; }
@@ -3554,13 +3734,37 @@ static void test_dmr_beeps(void)
 	beep_get_stats(&b0);
 	CHECK(b0.played >= 1);
 	int starts = aud.starts;
-	// PTT: talk permit once on air
+	// PTT: talk permit once on air. The mic hears the speaker (issue 532): the blocks the permit plays in and its
+	// echo after it go to the encoder as silence, the voice around them as it is
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		mic[i] = (int16_t)(i & 1 ? 1000 : -1000);
+	}
+	v_enc_blocks = v_enc_tone = v_enc_first = v_enc_last = 0;
 	req(RREQ_PTT, 1);
 	run(600);
 	beep_get_stats(&b1);
 	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played + 1 && aud.starts == starts);
+	ambe_voice_stats_t vs;
+	ambeVoiceGetStats(&vs);
+	// The permit is 7 blocks (BEEP_TX_PERMIT, 140 ms): muted from the block after the first to BEEP_ECHO_BLOCKS
+	// after the last
+	CHECK(vs.tx_mic_muted == 6 + BEEP_ECHO_BLOCKS);
+	CHECK(v_enc_blocks - v_enc_tone == vs.tx_mic_muted && v_enc_blocks > vs.tx_mic_muted + 10);
+	CHECK(v_enc_first == 1 && v_enc_last == v_enc_blocks);
 	req(RREQ_PTT, 0);
 	run(1000);
+	// A host audio session's samples in place of the mic never hear the speaker: nothing is muted
+	audio_mux_host_tx(true, true);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(600);
+	beep_get_stats(&b1);
+	ambeVoiceGetStats(&vs);
+	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played + 1 && vs.tx_mic_muted == 0);
+	req(RREQ_PTT, 0);
+	run(1000);
+	audio_mux_host_tx(false, false);
+	memset(mic, 0, sizeof mic);
 	// No-beep channel
 	chans[6].no_beep = true;
 	req(RREQ_ZONE_POS, 0);
@@ -4122,6 +4326,36 @@ static void test_sig_dmr_end_gate(void)
 	board.audio = saved;
 }
 
+// The DMR mic gate holds a beep's echo off the air unless the board's audio path drops the speaker audio while DMR is
+// on air (speaker_blocked). CAP_BEEP_NOT_ON_AIR alone doesn't lift it: that board's speaker may only be quiet in TX
+static void test_dmr_mic_gate_board(void)
+{
+	static const hal_audio_t gated = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm, .speaker_blocked = a_blocked };
+	const hal_audio_t *saved = board.audio;
+	uint32_t caps = board.caps;
+	start();
+	ambe_voice_mic_gate_t gate = ambeVoiceMicGate();
+	CHECK(gate != NULL);
+	if (gate == NULL) {
+		return;
+	}
+	int16_t blk[AUDIO_BLOCK_SAMPLES] = { 0 };
+	beep_play(BEEP_KEY, 50, true);
+	CHECK(beep_mix(blk));
+	CHECK(beep_mix(blk));
+	CHECK(beep_mic_echo());		// the beep's echo: muted
+	CHECK(gate());
+	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	CHECK(gate());			// a speaker only quiet in DMR TX: still muted
+	board.audio = &gated;
+	CHECK(!gate());			// the speaker audio is dropped on air: nothing to hear
+	board.audio = saved;
+	board.caps = caps;
+	for (int i = 0; i < 50 && (beep_mix(blk) || beep_mic_echo()); i++) {
+	}
+	CHECK(!beep_mic_echo());
+}
+
 // Signaling tones on air in DMR: the start tone is the first voice of the transmission, the end tone goes after the last
 // and holds the over open until the call stack has it all (the mic in this test is silent: a block that isn't is a tone)
 static void set_sig_dmr_begin_air_blip(radio_settings_t *s)
@@ -4623,8 +4857,10 @@ int main(void)
 #endif
 	test_tot_and_beeps();
 	test_beep_follows_volume();
+	test_beep_volume_cap();
 	test_bcl_inhibit();
 	test_dmr_busy_quiet();
+	test_rx_open();
 	test_tx_limit();
 	test_roger_burst();
 	test_burst_key();
@@ -4649,6 +4885,7 @@ int main(void)
 	test_sig_fm();
 	test_sig_dmr();
 	test_sig_dmr_end_gate();
+	test_dmr_mic_gate_board();
 	test_sig_dmr_air();
 	test_tone_keys();
 	test_dmr_short_press_wake();

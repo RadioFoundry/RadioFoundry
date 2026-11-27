@@ -28,19 +28,20 @@ tools/rfoundry_debug.py radio usb network
 
 | 谁 | 地址 |
 |---|---|
-| 你的电脑 | 12.x.y.z，由你的 DMR ID 得出（例如 ID 3101234 为 12.47.82.50） |
-| 电台 | 你电脑地址翻转最低位（12.47.82.51） |
+| 电台 | 12.x.y.z，由你的 DMR ID 得出（例如 ID 3101234 为 12.47.82.50） |
+| 你的电脑 | 13.x.y.z，由同一 DMR ID 得出（13.47.82.50） |
 | 另一台电台 | 由其 DMR ID 得出的 12.x.y.z |
+| 另一台电台上的电脑 | 由该电台的 DMR ID 得出的 13.x.y.z |
 | 一个通话组 | 由通话组编号得出的 225.x.y.z |
 
-发往另一台电台或通话组地址的分组会在当前 DMR 信道上经空中发出。来自其他电台的分组到达网卡。DMR 分组数据远慢于任何有线网络。2 秒内无法发出的分组会被丢弃。[控制站模式](#control-station-for-dispatch-software)的固定地址会替换前两行。
+发往另一台电台或通话组地址的分组会在当前 DMR 信道上经空中发出。来自其他电台的分组到达网卡。DMR 分组数据远慢于任何有线网络。2 秒内无法发出的分组会被丢弃。12.x.y.z 中除你电台自己的地址以外的每个地址都是另一台电台，因此发往 12.47.82.51 的分组会经空中发出。[控制站模式](#control-station-for-dispatch-software)的固定地址会替换前两行。
 
 ## 网络模式下的串口工具
 
 调试链路、MMDVM 热点协议和 CPS 协议仍可通过电台地址的 UDP 端口 3334 访问：
 
 ```
-tools/rfoundry_debug.py --port udp:12.47.82.51 version
+tools/rfoundry_debug.py --port udp:12.47.82.50 version
 ```
 
 MMDVMHost 以同样方式连接（`Protocol=udp`、`ModemAddress=<电台地址>`、`ModemPort=3334`）。qdmr 只按串口 USB ID 查找电台，因此请在串口模式下为电台编程。
@@ -73,8 +74,8 @@ tools/rfoundry_debug.py --port udp:rfoundry-3101234.local version
 
 | 端口 | 服务 |
 |---|---|
-| 80 | 电台前面板。在浏览器中打开 `http://<电台地址>/`。它显示电台及其实时屏幕和 LED，以及信道、频率、信号和电池。移动台上还会画出其手咪。点击按键或使用键盘。侧键和顶键在电台边缘外也有带标签的按钮，信道旋钮上方的箭头每次点击转一格（按住持续转动）。键盘按键：数字、`*` 和 `#`；方向键；Enter 选择（绿色键或 MENU）；Esc 或 Backspace 返回（红色键或 BACK）；`[` 和 `]`（或 Page Up/Page Down）转动信道旋钮；按住 Space 通话。页面在图片旁列出你的电台具有的键盘按键。**收听**播放电台接收到的内容（在有网络音频的电台，[音频互联](#linking-audio-allstarlink-and-dvswitch)）；经编程线（PPP，见下文）时页面没有“收听”，因为线缆对音频来说太慢。按键只能从插入电台的那台电脑操作；同一时间只有一个页面控制电台，其他页面只显示状态。程序可读取 `/status`（JSON）以及调试链路的各段 `/api/view?section=core` |
-| 8001 | 供 APRS 程序（APRSdroid、Xastir、YAAC）使用的 KISS over TCP。把程序的 TNC 设为“KISS over TCP”、电台地址、端口 8001。先在工具 > APRS 中开启 **USB 上的 KISS**。电台只发送来自你自己呼号的分组。在无法接收 APRS 的电台上（[电台参考](23-radios.md)），程序只能看到自己发送的内容 |
+| 80 | 电台前面板。在浏览器中打开 `http://<电台地址>/`。它显示电台及其实时屏幕和 LED，以及信道、频率、信号和电池。移动台上还会画出其手咪。点击按键或使用键盘。侧键和顶键在电台边缘外也有带标签的按钮，信道旋钮上方的箭头每次点击转一格（按住持续转动）。键盘按键：数字、`*` 和 `#`；方向键；Enter 选择（绿色键或 MENU）；Esc 或 Backspace 返回（红色键或 BACK）；`[` 和 `]`（或 Page Up/Page Down）转动信道旋钮；按住 Space 通话。页面在图片旁列出你的电台具有的键盘按键。**收听**播放电台接收到的内容（在有网络音频的电台，[音频互联](#linking-audio-allstarlink-and-dvswitch)）；经编程线（PPP，见下文）时页面没有“收听”，因为线缆对音频来说太慢。按键只能从插入电台的那台电脑操作；同一时间只有一个页面控制电台，其他页面只显示状态。程序可读取 `/status`（JSON）以及调试链路的各段 `/api/view?section=core`。请用电台地址或其 `.local` 名称打开页面：用你自己设的名称（hosts 文件条目）时，页面能打开但取不到数据。除电台自身的页面外，只有 radiofoundry.org 上的页面和你自己电脑上提供的页面（`localhost`）能在浏览器中使用电台 |
+| 8001 | 供 APRS 程序（APRSdroid、Xastir、YAAC）使用的 KISS over TCP。把程序的 TNC 设为“KISS over TCP”、电台地址、端口 8001。先在工具 > APRS 中开启 **USB 上的 KISS**。电台只发送来自你自己呼号的分组，且只接受来自你电脑的连接。在无法接收 APRS 的电台上（[电台参考](23-radios.md)），程序只能看到自己发送的内容 |
 | 4532 | 供日志、SDR 和卫星程序使用的 Hamlib rig 控制。选择“Hamlib NET rigctl”，地址为电台地址、端口 4532，或运行 `rigctl -m 2 -r <电台地址>:4532 f`。程序可读取和设置频率、读取模式和 S 表，以及按下发射。设置信道频率会切换到 VFO。发射只能从你的电脑进行，每次按键最多 3 分钟 |
 
 ### 电台自身连接 APRS-IS
@@ -84,20 +85,20 @@ tools/rfoundry_debug.py --port udp:rfoundry-3101234.local version
 ```
 # macOS（en0：你的互联网连接）
 sudo sysctl -w net.inet.ip.forwarding=1
-echo "nat on en0 from 12.47.82.51 to any -> (en0)" | sudo pfctl -ef -
+echo "nat on en0 from 12.47.82.50 to any -> (en0)" | sudo pfctl -ef -
 # Linux（eth0：你的互联网连接，usb0：电台）
 sudo sysctl -w net.ipv4.ip_forward=1
-sudo iptables -t nat -A POSTROUTING -s 12.47.82.51/32 -o eth0 -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -s 12.47.82.50/32 -o eth0 -j MASQUERADE
 sudo iptables -A FORWARD -i usb0 -o eth0 -j ACCEPT
 sudo iptables -A FORWARD -i eth0 -o usb0 -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
 
-请用你电台的地址代替 12.47.82.51。然后给电台一个服务器的 IP 地址。电台无法解析名称。`dig +short rotate.aprs2.net` 可给出一些地址。你还可以给出它接收的消息和分组的范围（公里）：
+请用你电台的地址代替 12.47.82.50。然后给电台一个服务器的 IP 地址。电台无法解析名称。`dig +short rotate.aprs2.net` 可给出一些地址。你还可以给出它接收的消息和分组的范围（公里）：
 
 ```
-curl "http://12.47.82.51/api/aprsis?server=44.31.12.34:14580&range=50"
-curl "http://12.47.82.51/api/aprsis"              # 状态
-curl "http://12.47.82.51/api/aprsis?server=off"   # 停止
+curl "http://12.47.82.50/api/aprsis?server=44.31.12.34:14580&range=50"
+curl "http://12.47.82.50/api/aprsis"              # 状态
+curl "http://12.47.82.50/api/aprsis?server=off"   # 停止
 ```
 
 电台用其 APRS 呼号和由呼号计算出的通行码登录。当 **USB 上的 KISS** 和“发送到 APRS-IS”开启时（`tools/rfoundry_debug.py aprs set to_is 1`），你的信标会发往 APRS-IS。
@@ -143,8 +144,8 @@ curl -T iddb.bin tftp://rfoundry-3101234.local/iddb.bin              # 写入它
 电台在其地址的端口 161 上应答 SNMP 2c 版请求（为 flash 空间省去 SNMP 的构建除外）。任何 SNMP 管理器都可用。仓库中有一个小的：
 
 ```
-tools/rfoundry_snmp.py walk 12.47.82.51                 # 电台报告的所有内容
-tools/rfoundry_snmp.py get 12.47.82.51 rfoundryBatteryVoltage.0 rfoundryChannelName.0
+tools/rfoundry_snmp.py walk 12.47.82.50                 # 电台报告的所有内容
+tools/rfoundry_snmp.py get 12.47.82.50 rfoundryBatteryVoltage.0 rfoundryChannelName.0
 tools/rfoundry_snmp.py traps                            # 事件实时到达（需要端口 162：Linux 上为 root）
 ```
 
@@ -156,7 +157,7 @@ USB 作为网卡时，电台还会向你的电脑发送事件（端口 162）：
 
 ```
 tools/rfoundry_debug.py snmp write MySecret             # 经串口，在切换到网络模式之前
-tools/rfoundry_snmp.py -c MySecret set 12.47.82.51 sysName.0 s:N0CALL
+tools/rfoundry_snmp.py -c MySecret set 12.47.82.50 sysName.0 s:N0CALL
 tools/rfoundry_debug.py snmp status                     # 代理的设置与计数器
 ```
 
@@ -185,8 +186,9 @@ pppd 启动时电台会自行切换到 PPP。它给电脑的地址与 USB 网络
 
 | 项目 | 值 |
 |---|---|
-| 控制站地址 | 电台的地址：192.168.10.1，或由你的 DMR ID 翻转最低位得出的 12.x.y.z |
+| 控制站地址 | 电台的地址：192.168.10.1，或由你的 DMR ID 得出的 12.x.y.z |
 | 电台网络 | 12.0.0.0/8 |
+| 外设网络（其他电台上的电脑） | 13.0.0.0/8 |
 | 通话组网络 | 225.0.0.0/8 |
 | DMR ID | 你电台的 DMR ID |
 
@@ -231,7 +233,7 @@ tools/rfoundry_debug.py data ip-settings auto rules gateway=0      # 再次关�
 然后在电脑上为该网络添加一条经电台地址的路由。例如，在 Linux 上以 `usb0` 为电台：
 
 ```
-sudo ip route add 10.20.0.0/16 via 12.0.39.20 dev usb0     # 电台地址（见上文“地址”）
+sudo ip route add 10.20.0.0/16 via 12.47.82.50 dev usb0     # 电台地址（见上文“地址”）
 ```
 
 发往该网络的分组会经空中送到网关电台，分组中带有真正的目的地址。它们始终使用完整头，绝不使用压缩头。每个分组的生存时间（TTL）减一，TTL 为零的分组会被丢弃。电台把它收到的 TTL 传给电脑，因此困在两台网关电台之间循环的分组会耗尽。应答以发送者的真实地址回到你电台的 DMR ID，电台再把它们交给电脑。

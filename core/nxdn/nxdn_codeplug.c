@@ -4,6 +4,8 @@
 #include <string.h>
 #include "config.h"
 #include "nxdn/nxdn_codeplug.h"
+#include "nxdn/nxdn.h"
+#include "codeplug/codeplug_kv.h"
 #include "codeplug/codeplug_tag.h"
 #include "codeplug/codeplug_records.h"
 
@@ -100,10 +102,40 @@ bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
 	if (len < 0)
 		return false;
 	nxdn_conv_decode(b, len < cap ? len : cap, &out->conv);
+	out->tx_cipher = len >= 4 ? b[3] : NXDN_CIPHER_NONE;
+	out->tx_key_id = len >= 5 ? b[4] : NXDN_KEY_IDS;
 	out->unit_id = unit_id(ch);
 	talk_target(ch, &out->target, &out->target_unit);
 	return true;
 }
+
+bool nxdn_system_load(uint8_t system, uint16_t *own_id)
+{
+	codeplug_system_t s;
+	uint8_t header[CODEPLUG_SYS_HDR];
+
+	*own_id = 0;
+	if (codeplug_system(system, &s, header, 0) < 0 || s.type != CODEPLUG_SYSTYPE_NXDN)
+		return false;
+	if (unit_ok(s.own_id))
+		*own_id = (uint16_t)s.own_id;
+	return (s.flags & CODEPLUG_SYS_TX) != 0;
+}
+
+#if CONFIG_NXDN_SCRAMBLER
+uint16_t nxdn_system_key(uint8_t system, uint8_t cipher, uint8_t id)
+{
+	codeplug_system_t s;
+	uint8_t header[CODEPLUG_SYS_HDR], key[2];
+
+	if (cipher != NXDN_CIPHER_SCRAMBLE || id >= NXDN_KEY_IDS ||
+	    codeplug_system(system, &s, header, 0) < 0 || s.type != CODEPLUG_SYSTYPE_NXDN ||
+	    codeplug_traffic_key(system, cipher, id, key, sizeof key) != sizeof key)
+		return 0;
+	uint16_t seed = (uint16_t)(key[0] | (key[1] << 8));
+	return seed <= NXDN_SCRAMBLE_KEY_MAX ? seed : 0;
+}
+#endif
 
 bool nxdn_conv_save(uint16_t number, const channel_t *ch, const nxdn_conv_t *conv)
 {

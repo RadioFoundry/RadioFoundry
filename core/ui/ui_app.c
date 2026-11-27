@@ -51,6 +51,9 @@ ui_state_t ui_st;
 ui_target_t ui_target;
 static const radio_view_t *view;
 static const radio_view_t view_none;	// until the first tick (const: flash, not RAM)
+#if CONFIG_DUAL_WATCH
+static const radio_view_t *radio_view;	// the radio's view as the last tick had it (the UI task refreshes it in place)
+#endif
 static ui_frame_t stack[UI_STACK_MAX];
 static uint8_t sp;			// stack[sp] is on screen; stack[0] is Home
 static uint32_t toast_until, entry_last, last_refresh, now;
@@ -147,7 +150,7 @@ static void update_focus_target(void)
 		ui_svc_focus_target(0, false);
 }
 
-#if CONFIG_BACKLIGHT_TEST
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
 // Screens from the top down to stack level `from` leave the stack: each runs its leave hook (the backlight tests give
 // the light back)
 static void left(uint8_t from)
@@ -157,9 +160,12 @@ static void left(uint8_t from)
 			ui_scr[stack[i].scr]->leave();
 	}
 }
-#define ON_BL_TEST()	(stack[sp].scr == SCR_BL_TEST)
 #else
 #define left(from)	((void)0)
+#endif
+#if CONFIG_BACKLIGHT_TEST
+#define ON_BL_TEST()	(stack[sp].scr == SCR_BL_TEST)
+#else
 #define ON_BL_TEST()	false
 #endif
 
@@ -650,6 +656,12 @@ static void handle_event(const ui_event_t *ev)
 				TR(MSG_BANNER_DELIVERED_TO, "Delivered to "));
 			station(&b, ev);
 			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
+		} else if (ev->index == 2) {
+			char why[UI_BANNER_TEXT];
+			sb_str(&b, TR(SHARE_BANNER_NOT_SENT_TO, "Not sent to "));
+			station(&b, ev);
+			banner(UI_BANNER_RESULT, true, ev->id, title,
+				ui_deny_text(view, TXDENY_DATA_ENCRYPTED, why, sizeof why));
 		} else {
 			sb_str(&b, TR(BANNER_NO_ANSWER_FROM, "No answer from "));
 			station(&b, ev);
@@ -701,6 +713,16 @@ static void handle_event(const ui_event_t *ev)
 		banner(UI_BANNER_INFO, false, 0, TR(HOTSPOT_BANNER_STARTED_BY_HOST, "Hotspot started by host"),
 			TR(HOTSPOT_BANNER_OK_STOPS, "OK stops it"));
 		break;
+#if CONFIG_APRS_RX
+	case UI_EV_APRS_MESSAGE:
+		sb_str(&b, TR(APRS_BANNER_MSG_FROM, "APRS message from "));
+		sb_str(&b, ev->name);
+		banner(UI_BANNER_APRS_MESSAGE, false, 0, title, ev->text);
+		if (ui_st.message_tone)
+			ui_svc_beep(UI_BEEP_MESSAGE);
+		vibrate(UI_VIBE_MESSAGE);
+		break;
+#endif
 	case UI_EV_SAVE_FAILED: {
 		ui_toast(ev->why != TR_NONE ? tr(ev->why) : TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
 		ui_menus_save_failed();
@@ -795,6 +817,10 @@ static void banner_open(void)
 #if CONFIG_ZONE_SHARE
 	else if (kind == UI_BANNER_ZONE_OFFER)
 		ui_push(SCR_OFFER, 0);
+#endif
+#if CONFIG_APRS_RX
+	else if (kind == UI_BANNER_APRS_MESSAGE)
+		ui_push(SCR_MESSAGES, 0);
 #endif
 	else
 		ui_open_actions(&t);
@@ -1060,6 +1086,18 @@ void ui_scan_toggle(void)
 	ui_st.scanning = on;
 	ui_toast(!on ? TR(SCAN_TOAST_STOPPED, "Scan stopped") : view->vfo ?
 		TR(SCAN_TOAST_SCANNING_BAND, "Scanning the band") : TR(SCAN_TOAST_SCANNING_ZONE, "Scanning this zone"));
+}
+
+// A side key set to Scan skip: what the scan action's "Skip channel for now" does, without the menu. Nothing happens
+// (a toast says so) when no scan is running, so the key can't skip a channel of a radio that isn't scanning
+void ui_scan_skip(void)
+{
+	if (!ui_st.scanning) {
+		ui_toast(TR(SCAN_TOAST_NOT_SCANNING, "Not scanning"));
+		return;
+	}
+	ui_toast(ui_svc_scan_skip() ? TR(SCAN_TOAST_SKIPPED_UNTIL_STOP, "Skipped until the scan stops") :
+		TR(SCAN_TOAST_NOTHING_TO_SKIP, "Nothing to skip yet"));
 }
 
 #if CONFIG_DMR
@@ -1385,6 +1423,32 @@ static void quick_unavailable(uint8_t kind)
 	}
 }
 
+// Quick tile 5's action, on its own so a side key set to Monitor toggle runs the very same code: FM latches the
+// squelch open (or closes it again), DMR turns digital monitor on or off. kind is QT_MONITOR or QT_HEAR_ALL
+static void quick_monitor(uint8_t kind)
+{
+#if CONFIG_DMR
+	if (kind == QT_HEAR_ALL) {
+		if (ui_svc_hear_all(!ui_st.hear_all)) {
+			ui_st.hear_all = !ui_st.hear_all;
+			ui_toast(dmon_text(ui_st.hear_all));
+		} else {
+			quick_unavailable(kind);
+		}
+		return;
+	}
+#endif
+	if (!ui_svc_monitor(!view->monitor))
+		quick_unavailable(kind);
+}
+
+// A side key set to Monitor toggle: tile 5 of the quick settings, kept to the channel's mode (also in the VFO, where
+// the tile is TX freq and the monitor stays on its key)
+void ui_monitor_toggle(void)
+{
+	quick_monitor(view->ch.mode == RADIO_MODE_DMR ? QT_HEAR_ALL : QT_MONITOR);
+}
+
 static void quick_activate(int tile)
 {
 	char label[20], value[12];
@@ -1445,8 +1509,7 @@ static void quick_activate(int tile)
 		break;
 	}
 	case QT_MONITOR:
-		if (!ui_svc_monitor(!view->monitor))
-			quick_unavailable(kind);
+		quick_monitor(kind);
 		break;
 	case QT_VOX:
 		if (ui_svc_vox(!view->vox_on))
@@ -1479,12 +1542,7 @@ static void quick_activate(int tile)
 		ui_st.quick_edit = true;
 		break;
 	case QT_HEAR_ALL:
-		if (ui_svc_hear_all(!ui_st.hear_all)) {
-			ui_st.hear_all = !ui_st.hear_all;
-			ui_toast(dmon_text(ui_st.hear_all));
-		} else {
-			quick_unavailable(kind);
-		}
+		quick_monitor(kind);
 		break;
 	case QT_PRIVACY:
 		if (ui_svc_privacy(!ui_st.privacy)) {
@@ -1678,6 +1736,22 @@ bool ui_volume_key(const input_event_t *ev)
 	}
 	return false;
 }
+
+#if CONFIG_DMR_TRUNK
+void ui_incoming_call_draw(void)
+{
+	static char name[CODEPLUG_NAME_LEN + 1];
+	(void)ui_contact_name(view->t3.ring_src, false, name);
+	ui_draw_incoming_call(view, &ui_st, name);
+}
+
+bool ui_incoming_call_key(const input_event_t *ev)
+{
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS)
+		ui_svc_t3_reject();
+	return true;
+}
+#endif
 
 void ui_emergency_draw(void)
 {
@@ -1885,6 +1959,9 @@ void ui_app_init(void)
 	roams_known = false;
 #endif
 	view = &view_none;
+#if CONFIG_DUAL_WATCH
+	radio_view = NULL;
+#endif
 	memset(&ui_st, 0, sizeof ui_st);
 	ui_st.volbar = -1;
 #if CONFIG_VOLUME_BAR
@@ -2022,6 +2099,12 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	dirty = true;
 }
 
+bool ui_app_key_while_dark(const input_event_t *ev)
+{
+	// PTT and Monitor are live keys; Emergency sends only its long press, so a dark screen must not eat it
+	return ev->action == ACT_PTT || ev->action == ACT_MONITOR || ev->action == ACT_EMERGENCY;
+}
+
 static bool emergency_key(const input_event_t *ev)
 {
 	if (ev->action != ACT_EMERGENCY || ev->gesture != GESTURE_LONG)
@@ -2065,6 +2148,13 @@ static void call_back_key(void)
 
 void ui_app_key(const input_event_t *ev)
 {
+#if CONFIG_DUAL_WATCH
+	// The UI task refreshes the radio's view before a key, in place: where the last tick left the view on it (the
+	// receiver was on the selected channel), the receiver may be on the other one now. The selected channel's
+	// settings again, so VFO digits typed on B don't open Find while the receiver is on A's channel (#1013)
+	if (radio_view != NULL)
+		view = ui_dual_view(radio_view);
+#endif
 	// A programmed home key (P1, P2: board.home_keys): its function on Home, its arrow everywhere else. Home is the
 	// bottom of the stack, not while a frequency is typed there
 	input_event_t home_ev;
@@ -2143,6 +2233,12 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 #endif
+#if CONFIG_DMR_TRUNK
+	if (stack[sp].scr == SCR_INCOMING_CALL) {
+		(void)ui_scr[SCR_INCOMING_CALL]->key(ev);
+		return;
+	}
+#endif
 	// Long BACK = Home from anywhere; long CONTEXT = the talk target picker (P3; as the keycap and the AnyTone radios)
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_LONG) {
 		ui_go_home();
@@ -2174,6 +2270,12 @@ void ui_app_key(const input_event_t *ev)
 			return;
 		case ACT_SCAN:
 			ui_scan_toggle();
+			return;
+		case ACT_SCAN_SKIP:
+			ui_scan_skip();
+			return;
+		case ACT_MONITOR_TOGGLE:
+			ui_monitor_toggle();
 			return;
 #if CONFIG_DUAL_WATCH
 		case ACT_DUAL_WATCH:
@@ -2246,6 +2348,12 @@ void ui_app_key(const input_event_t *ev)
 		banner_open();
 		return;
 	}
+#if CONFIG_DMR_TRUNK
+	if (!typing && view->t3.alerting && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		ui_svc_t3_cancel();
+		return;
+	}
+#endif
 	// A banner that waits for the user is over every screen, not just Home: BACK hides it first, wherever it is
 	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ui_st.banner.hold && ev->action == ACT_BACK &&
 			ev->gesture == GESTURE_PRESS) {
@@ -2365,19 +2473,21 @@ static void knob_moved(const radio_view_t *v)
 	}
 	bool first = knob_last < 0;
 	knob_last = k;
-	if (!first && ui_st.locked && ui_st.knob_lock) {
+	// Turning the knob while locked shows how to unlock, because the radio is ignoring the knob. A radio that can only
+	// watch its knob can't ignore it (the volume still changes), so it shows nothing
+	if (!first && ui_st.locked && ui_st.knob_lock && (ui_svc_features() & UI_FEAT_VOLUME_KNOB)) {
 		ui_toast(locked_text(has_quick_key));
 	}
 }
 
-// The knob turned (#354): the level the radio core passed on changed, from the knob both times. Read from the radio's
-// own view, not dual watch's per-side one. The first level (power-up) and a change of source (the debug link taking
-// over or giving back) set the reference without a bar. The bar wakes the backlight: turning the knob is using the
-// radio
+// Shows the volume bar after the knob is turned (#354). The level is the one the radio core applied from the knob; on a
+// radio that can't set the level (RVOL_NONE) it is the knob's position, or -1 if the knob isn't read. The level is taken
+// from the radio's own view, not dual watch's per-side one. No bar for the first level after power-up, or when the debug
+// link takes over the volume or gives it back. The bar also turns the backlight on, since the user is using the radio
 #if CONFIG_VOLUME_BAR
 __attribute__((noinline)) static void knob_tick(const radio_view_t *v)
 {
-	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : -1;
+	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : v->volume_src == RVOL_NONE ? v->volume_knob : -1;
 	if (lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) {
 		ui_st.volbar = (int8_t)radio_volume_step_of((uint8_t)lvl);
 		volbar_until = now + VOLUME_MS;
@@ -2397,6 +2507,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	static uint32_t serial_seen;
 	static uint8_t battery_seen;
 #if CONFIG_DUAL_WATCH
+	radio_view = v;
 	view = ui_dual_view(v);	// in dual watch, the selected channel's settings wherever the receiver is
 #else
 	view = v;
@@ -2411,10 +2522,21 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #if CONFIG_ZONE_EDIT
 	ui_svc_zone_poll();
 #endif
+#if CONFIG_SATELLITE_TLE
+	ui_svc_satellite_poll();
+	ui_satellite_passes_tick();
+#endif
 #if CONFIG_CRASH_SCREEN
 	ui_crash_tick(now_ms);
 #endif
 #if CONFIG_DMR_TRUNK
+	if (stack[sp].scr == SCR_INCOMING_CALL) {
+		if (v->t3.ring_src == 0)
+			ui_pop();
+	} else if (v->t3.ring_src != 0 && stack[sp].scr != SCR_EMERGENCY) {
+		ui_push(SCR_INCOMING_CALL, 0);
+		wake_req = true;
+	}
 	// Back on the trunked system from its fallback channel (dmr-trunking.md 12.5): the radio beeped, the toast names it
 	static uint32_t backs_seen;
 	if (v->t3.backs != backs_seen) {
@@ -2547,6 +2669,22 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.unread = unread;
 		dirty = true;
 	}
+#if CONFIG_GPS
+	// The GPS icon, once a second: fitted (a module is detected after start-up), off or on as the position service
+	// was last told (the menu, the debug link), then a fix or not (a fix counts for a minute: position.md)
+	static uint32_t gps_checked;
+	if (now - gps_checked >= 1000u) {
+		gps_checked = now;
+		ui_position_t p;
+		uint8_t pw = ui_svc_gps_power();
+		uint8_t gps = pw == UI_GPS_POWER_NONE ? UI_GPS_NONE : pw == UI_GPS_POWER_OFF ? UI_GPS_OFF :
+			      ui_svc_position(&p) && p.fix ? UI_GPS_FIX : UI_GPS_SEARCH;
+		if (gps != ui_st.gps) {
+			ui_st.gps = gps;
+			dirty = true;
+		}
+	}
+#endif
 	bool scanning = v->scan != 0 && v->scan != 3;	// 3: dual watch, which Home shows on its own (ui_dual.c)
 #if CONFIG_DUAL_WATCH
 	if (ui_dual_tick(v, now_ms))
@@ -2629,6 +2767,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	battery_tick(v);
 	// A banner's countdown ticks; one that waits for the user has none
 	bool fast = v->state == RS_TX || stack[sp].scr == SCR_DIAG || (ui_st.banner.kind != UI_BANNER_NONE && !ui_st.banner.hold);
+#if CONFIG_SUPPORT_INFO
+	fast = fast || (stack[sp].scr == SCR_ABOUT && ui_about_busy());	// each redraw hashes a step of the image
+#endif
 #if CONFIG_HOTSPOT
 	fast = fast || in_hotspot();
 	if (!in_hotspot())
@@ -2710,6 +2851,7 @@ void ui_app_status(ui_app_status_t *s)
 	s->focus = stack[sp].scr == SCR_QUICK ? ui_st.quick_focus : stack[sp].focus;
 	s->count = (d->flags & SF_LIST) && d->count != NULL ? d->count() : 0;
 	s->locked = ui_st.locked;
+	s->gps = ui_st.gps;
 	s->unlock_key = has_quick_key ? "quick" : has_unlock_key ? "back" : "none";
 	s->field_use = (d->flags & SF_FIELD) != 0;
 	s->banner = ui_st.banner.kind != UI_BANNER_NONE ? ui_st.banner.title : "";

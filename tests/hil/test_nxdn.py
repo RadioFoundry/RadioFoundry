@@ -40,11 +40,22 @@ TEST_GROUP, RX_VOICE_FRAMES voice frames). On the radio: one reception more (nxd
 group (nxdn.src, nxdn.dst) with that RAN. Skipped where the radio's air interface can't receive the rate (the fit
 without RX: a provider whose receiver needs a 24-symbol sync has none for NXDN's 10-symbol FSW).
 
-test_nxdn_rx_speech[9600|4800] (the same opt-ins and --ambe FILE, a speech recording as 9-byte frames; the bench
-transmits, the radio only receives): the same call with the recording's first SPEECH_FRAMES frames as its voice
-frames, which the bench tool carries without looking inside. On the radio: one reception more; at least all but
-SPEECH_LATE of the frames into the voice path (voice.rx_in), none counted silent, bad, lost or overflowed, and the
-decoded PCM peaking at PEAK_MIN or more (voice.rx_peak): the radio's vocoder decoded speech, not noise. What the
+test_nxdn_rx_after_lost_copy (the same opt-ins; the bench transmits, the radio only receives): a provider that takes
+the receive copy by interrupt (`airp.halves`) must recover when no half comes (modem-hrc7000.md 3.3). With NXDN at
+4800 bit/s on the VFO, the copy's interrupt is turned off through CHIP_REG (debuglink.md 3.24: the interrupt
+controller's mask, or the modem chip's own enable) and left off, so no half reaches the provider and nothing in the
+test turns it on again. Within RECOVER_S the provider must have set the copy up again (`airp.copy_restarts` one more
+or more), turned the interrupt on itself, kept the first loss's words (`airp.copy_lost_regs`), and the halves must
+come again; then the bench's call must be received as in test_nxdn_rx_from_bench. A firmware without the recovery
+stays deaf until the session closes. Skipped on a chip family without a known register (LOST_COPY), on a provider
+without the copy, and when the register is not the copy's on this board (the bit not set while the copy runs, or
+halves still coming with the bit turned off); the interrupt is turned on at the end whatever happened.
+
+test_nxdn_rx_speech[9600|4800] (the same opt-ins; the bench transmits, the radio only receives): the same call with
+speech as its voice frames, at most the first SPEECH_FRAMES frames of tests/data/voice/test_transmission.ambe (104
+frames: 64 of them at 9600 bit/s, all at 4800) or of the --ambe FILE given (9-byte frames), which the bench tool carries without looking inside. On the radio:
+one reception more; at least all but SPEECH_LATE of the frames into the voice path (voice.rx_in), none counted silent,
+bad, lost or overflowed, and the decoded PCM peaking at PEAK_MIN or more (voice.rx_peak): the radio's vocoder decoded speech, not noise. What the
 speaker plays is not measured. Skipped without a vocoder in the firmware (dmr.codec=0).
 
 test_nxdn_scan_from_bench[zone|dual] (opt-in: --allow-rf --allow-service-stop --allow-codeplug-write --nxdn-mhz MHz;
@@ -61,7 +72,8 @@ import time
 
 import pytest
 
-from rfoundry_hil import as_int, counter_deltas, skip
+from rfoundry_hil import DebugLinkError, as_int, counter_deltas, skip, speech_file
+from rfoundry_debug import CHIP_HRC7000, CHIP_STM32F4
 from hil_config import rig
 
 AIR_FIT_RX, AIR_FIT_TX = 0x1, 0x2
@@ -80,6 +92,15 @@ TEST_GROUP = 77
 NXDN_SYNC = "CDF59"     # the FSW, ten symbols (TS 1-A 4.3)
 SYNC_LEN = 10
 RATES = {"9600": (4800, 2400), "4800": (2400, 1050)}    # bit/s -> (symbols/s, outer deviation Hz, TS 1-A table 3.3-1)
+# What stops the receive copy's interrupt, by chip family: (CHIP_REG chip and page, None for an SoC register; the
+# register; its bit; True when setting the bit stops it). The provider's watchdog must undo it
+LOST_COPY = {
+    CHIP_HRC7000: (None, 0x17000008, 1 << 29, True),    # PIC_MASK: the modem's system interrupt masked
+    CHIP_STM32F4: ((1, 4), 0x81, 0x02, False),          # the HR_C6000 as CHIP_REG chip 1, page 4 0x81 bit 1 (the FM
+                                                        # receive RAM's interrupt); a board numbering its chips
+                                                        # otherwise skips by the checks before and after the write
+}
+RECOVER_S = 1.5         # the provider's 200 ms without a half, with room for the debug link's polls
 
 
 def nxdn_view(radio):
@@ -99,6 +120,14 @@ def settings_of(v):
             "rx_gid": int(v["nxdn.rx_gid"]), "unit_call": v.get("nxdn.unit_call") == "1",
             "tx_dst": int(v["nxdn.tx_dst"]), "unit_id": int(v["nxdn.unit_id"]),
             "emergency": v.get("nxdn.tx_emergency") == "1"}
+
+
+@pytest.mark.feature("nxdn_scrambler")
+def test_nxdn_scrambler_built(radio):
+    """The advertised feature is present alongside the NXDN engine; no key or radio state is changed."""
+    if "NXDN_SCRAMBLER" not in radio.features():
+        skip("not_built", "built without CONFIG_NXDN_SCRAMBLER")
+    assert radio.view(["nxdn"]).get("nxdn.built") == "1"
 
 
 @pytest.mark.feature("nxdn")
@@ -431,14 +460,135 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.needs_switch("VFO")
+def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
+    family = radio.link.chip()["family"]
+    if family not in LOST_COPY:
+        skip("no_hw", f"no known receive copy interrupt source on chip family {family}")
+    chip, reg_addr, bit, set_stops = LOST_COPY[family]
+    got = {}
+
+    def lose_request():
+        L = radio.link
+        a0 = radio.view(["air"])
+        if a0.get("airp.open") != "1" or a0.get("airp.copy_restarts") is None:
+            skip("not_built", "the air provider reports no receive copy watchdog (airp.copy_restarts)")
+        time.sleep(0.3)
+        if (as_int(radio.view(["air"]).get("airp.halves")) or 0) <= (as_int(a0.get("airp.halves")) or 0):
+            skip("no_hw", "the air provider takes no receive copy halves")
+        def reg(value=None):
+            if chip is None:
+                return L.soc_reg(reg_addr, value)
+            return L.chip_reg(chip[0], reg_addr, value, page=chip[1])
+
+        def stopped():
+            return bool(reg() & bit) == set_stops
+
+        def set_off(on):
+            # A read-modify-write racing the firmware's own masking (its lock saves and puts back these bits): check
+            # the bit held a moment later and write again if not, so the source is never left masked
+            for _ in range(5):
+                v = reg()
+                reg(v | bit if on == set_stops else v & ~bit)
+                time.sleep(0.05)
+                if stopped() == on:
+                    return
+            pytest.fail(f"the interrupt bit 0x{bit:08X} would not {'stop' if on else 'start'} the copy")
+
+        def put_back():
+            # The bit on again whatever else failed: a link error on one try isn't the last word
+            for i in range(3):
+                try:
+                    if stopped():
+                        set_off(False)
+                    return
+                except DebugLinkError:
+                    if i == 2:
+                        raise
+                    time.sleep(0.2)
+
+        def stays_off():
+            # The firmware's own lock sets some of these bits for a moment (set_off's comment): off on every one of
+            # a few reads, not one
+            for _ in range(5):
+                if not stopped():
+                    return False
+                time.sleep(0.02)
+            return True
+
+        # Just before the write: a restart before it is not the provider's answer to it (after it would race the
+        # 200 ms watchdog). Outside the try below: a view that fails is a failure, not a missing CHIP_REG
+        r0 = as_int(radio.view(["air"]).get("airp.copy_restarts")) or 0
+        try:
+            if stays_off():
+                skip("no_hw", f"register 0x{reg_addr:X} bit 0x{bit:X} reads off while the copy runs: not the copy's "
+                     "interrupt on this board")
+            set_off(True)
+        except DebugLinkError as e:
+            try:  # a write that went through before the error: never leave the copy off
+                put_back()
+            except DebugLinkError:
+                pass
+            skip("not_built", f"CHIP_REG can't reach the copy's interrupt bit (status {e.status})")
+        recovered = False
+        try:
+            # Halves come every 32 ms: more than 2 in 100 ms with the bit off, and no watchdog restart in between
+            # (one 200 ms after the last half brings them back), means the bit isn't what stops them
+            v = radio.view(["air"])
+            h0 = as_int(v.get("airp.halves")) or 0
+            time.sleep(0.1)
+            v = radio.view(["air"])
+            if (as_int(v.get("airp.halves")) or 0) > h0 + 2 and (as_int(v.get("airp.copy_restarts")) or 0) == r0:
+                skip("no_hw", f"halves still came with register 0x{reg_addr:X} bit 0x{bit:X} off ({h0}->"
+                     f"{v.get('airp.halves')}): not the copy's interrupt on this board")
+            end = time.monotonic() + RECOVER_S
+            while True:
+                a1 = radio.view(["air"])
+                on_again = not stopped()
+                if (as_int(a1.get("airp.copy_restarts")) or 0) > r0 and on_again:
+                    break
+                assert time.monotonic() < end, \
+                    (f"copy interrupt left off, no half for {RECOVER_S} s: copy_restarts {r0}->"
+                     f"{a1.get('airp.copy_restarts')}, turned on again by the provider: {on_again}")
+                time.sleep(0.1)
+            recovered = True
+        finally:
+            try:
+                put_back()
+            except Exception as e:
+                if recovered:
+                    raise
+                # The assertion above is the real failure: a clean-up error must not replace it
+                print(f"\ncould not put the copy's interrupt bit back: {e!r}")
+        time.sleep(0.5)
+        a2 = radio.view(["air"])
+        # From the later view: the count rises in the provider's poll, the record a moment after it. The record is
+        # the first since start-up or a stats reset: new from this restart when the session began without one
+        assert a2.get("airp.copy_lost_regs"), "the first loss's words are missing (airp.copy_lost_regs)"
+        if not as_int(a0.get("airp.copy_lost_ms")):
+            assert as_int(a2.get("airp.copy_lost_ms")), "this restart was not recorded (airp.copy_lost_ms 0)"
+        got.update(restarts=(r0, as_int(a2.get("airp.copy_restarts"))), regs=a2.get("airp.copy_lost_regs"),
+                   halves=(as_int(a1.get("airp.halves")), as_int(a2.get("airp.halves"))))
+        # 500 ms holds about 15 halves (one every 32 ms)
+        assert got["halves"][1] >= got["halves"][0] + 10, f"the halves did not come again: {got['halves']}"
+
+    v0, v1 = rx_call(radio, sdr_bench, pytestconfig, "4800", RX_VOICE_FRAMES, before=lose_request)
+    print(f"\ncopy interrupt left off: copy_restarts {got['restarts'][0]}->{got['restarts'][1]}, first loss's words "
+          f"{got['regs']}, halves {got['halves'][0]}->{got['halves'][1]} in 500 ms; nxdn rx_calls "
+          f"{v0.get('nxdn.rx_calls')}->{v1.get('nxdn.rx_calls')}")
+    assert (as_int(v1.get("nxdn.rx_calls")) or 0) == (as_int(v0.get("nxdn.rx_calls")) or 0) + 1, \
+        "no call received after the copy was set up again"
+    assert v1.get("nxdn.src") == str(TEST_UNIT) and v1.get("nxdn.dst") == str(TEST_GROUP)
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
 @pytest.mark.parametrize("rate", list(RATES))
 @pytest.mark.needs_switch("VFO")
 def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
-    ambe = pytestconfig.getoption("--ambe")
-    if not ambe:
-        skip("opt_in", "give --ambe FILE (or $RFOUNDRY_HIL_AMBE): a 9-byte-frame .ambe speech recording")
-    if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
-        pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
+    ambe = speech_file(pytestconfig, "--ambe", 9)
     if radio.view(["dmr"]).get("dmr.codec") != "1":
         skip("not_built", "no vocoder merged in this firmware (dmr.codec=0): voice can't play")
     frames = min(SPEECH_FRAMES[rate], os.path.getsize(ambe) // 9)
@@ -449,6 +599,7 @@ def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
     def before():
         radio.reset_counters()
         got["before"] = radio.counters()[1]
+        got["audio"] = radio.view(["audio"])
 
     v0, v1 = rx_call(radio, sdr_bench, pytestconfig, rate, frames, ["--voice-file", ambe], before)
     time.sleep(1.5)                     # playback drains
@@ -466,8 +617,18 @@ def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
     peak = stats.get("voice.rx_peak")
     assert peak is not None and int(peak) >= PEAK_MIN, \
         f"decoded speech peaks at {peak} (silent output: wrong bits into the decoder?): {d}"
+    # A board whose chip keeps I2S off the speaker in the FM copy plays through its prompt FIFO (gotchas.md 1.14): every
+    # block of the call goes there, with no gaps after the first block and none refused
+    a0, a1 = got["audio"], radio.view(["audio"])
+    fifo = {k: (as_int(a1.get(f"audio.fifo_{k}")) or 0) - (as_int(a0.get(f"audio.fifo_{k}")) or 0)
+            for k in ("chunks", "gaps", "full")}
+    print(f"speaker FIFO: {fifo}" if fifo["chunks"] else "speaker FIFO: not used on this radio")
+    if fifo["chunks"]:
+        assert fifo["chunks"] >= d["voice.rx_frames"] * 5 * 9 // 10, f"FIFO chunks for {d['voice.rx_frames']} frames: {fifo}"
+        assert fifo["gaps"] <= FIFO_GAPS_MAX and fifo["full"] == 0, f"speaker FIFO: {fifo}"
 
 
+FIFO_GAPS_MAX = 2      # silent chunks (4 ms each) the speaker FIFO may get in a call: none expected once primed
 SCAN_CALLS = 4          # calls the bench sends while the scan comes round to the NXDN channel
 SCAN_VOICE_FRAMES = 120 # 2.4 s a call: longer than a scan's round of a short zone
 

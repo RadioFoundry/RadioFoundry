@@ -26,13 +26,16 @@ Reset_Handler:
 	lrw	r3, __data_end
 	bsr	copy_words
 
-	/* .bss and the low-RAM zero section */
+	/* .bss, the low-RAM zero section and the cold state (in the modem SRAM on a board that has a part of it) */
 	movi	r0, 0
 	lrw	r2, __bss_start
 	lrw	r3, __bss_end
 	bsr	zero_words
 	lrw	r2, __ram_lo_bss_start
 	lrw	r3, __ram_lo_bss_end
+	bsr	zero_words
+	lrw	r2, __modem_bss_start
+	lrw	r3, __modem_bss_end
 	bsr	zero_words
 
 	jbsr	main

@@ -20,8 +20,9 @@ State:
 | Scan (6.4) | written, host tested; not checked on a radio |
 | Dual watch | written, host tested: a stored NXDN channel on either side, the receiver alternating onto it ([radio-features.md](radio-features.md) 2.1); not checked on a radio |
 | Channel editor on the radio | written, host tested: RAN, rate, group, unit ID ([ui.md](ui.md) 2.1) |
-| On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive checked at both rates with a bench transmitter, speech frames through the vocoder included (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`); the sound at the speaker is not checked (8) |
-| 9600 bit/s full-rate voice (EFR), data, trunking, encryption | not written (10). Encrypted calls are recognized and not played |
+| On air | transmit checked off air on a radio at both rates (`test_nxdn_tx_off_air`); receive checked at both rates with a bench transmitter, speech frames through the vocoder included (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`); the sound at the speaker checked by ear on the HR_C6000 radios, where it goes through the prompt FIFO ([gotchas.md](gotchas.md) 1.14) |
+| NXDN Scrambler, 4800 and 9600 EHR | implemented and host tested; [checked on air](../feature-matrix.md) against another radio running RadioFoundry and a commercial portable |
+| 9600 bit/s full-rate voice (EFR), data, trunking, DES and AES | not written (10). Unsupported encrypted calls are recognized and not played |
 
 ## 1. On air
 
@@ -130,8 +131,9 @@ Receive:
 | Header VCALL with other fields during a call | the old call ended unseen: a new one starts |
 | TX_REL, or the signal lost | the call ends |
 
-Voice is handed on only once the VCALL is in, the cipher is none, no VCALL_IV was seen and the voice option is half
-rate (4800 or 9600 EHR). Everything else is counted (`voice_held`), not played.
+Voice is handed on only once the VCALL is in, no VCALL_IV was seen, the voice option is half rate (4800 or 9600 EHR),
+and the cipher is clear or scramble with a configured key. Everything else is counted (`voice_held`), not played.
+Scrambled voice requires a valid SACCH to identify its superframe position; frames without it are held.
 
 Transmit (TS 1-B 4.1.3): preamble, a header frame (SACCH IDLE, VCALL in both FACCH1), superframe frames (SACCH VCALL
 part 1/4 to 4/4, four VCH), and a release frame (SACCH IDLE, TX_REL in both FACCH1). Frames go out symbol by symbol:
@@ -152,6 +154,16 @@ hook hands each 72-bit frame to its sink, which takes the FEC off (`ambeFec`, 72
 parameter bits for `hal_vocoder_t`; `tx_voice` takes the next frame from its source, which encodes the microphone's
 49 bits and adds the FEC. The audio stream runs while the engine does. Nothing in the tree encodes or decodes NXDN
 speech: the engine, the call layer, the tests and `nxdntool` move made-up patterns.
+
+With `CONFIG_NXDN_SCRAMBLER` and a key from 1 to 32767, TS 1-D 5.3.1 and 5.4.4.1 apply a key-seeded 15-bit sequence
+to the 49 vocoder bits before FEC. The sequence restarts at each four-frame superframe; the positions of 9600-bit/s
+FACCH1 frames are skipped. The VCALL identifies the scramble cipher and key ID. On an
+NXDN Conventional system channel the receiver selects the system key by those fields, and holds scrambled voice
+when no matching key is available. Transmit uses the channel's selected key and refuses PTT if it is unavailable.
+See [NXDN in the codeplug](nxdn-codeplug.md). RX corrects FEC before descrambling and holds a frame with
+uncorrectable protected bits. TX drops a vocoder frame that fails FEC and uses scrambled silence if the air
+queue needs a replacement frame. DES and AES remain unsupported. The scrambling is unauthenticated and an
+incorrect key cannot be detected. Scrambled voice was checked on air against another radio running RadioFoundry and a commercial portable. See the [feature matrix](../feature-matrix.md).
 
 | Item | State |
 |---|---|
@@ -191,8 +203,8 @@ Refused in the listen-only bands, and where the board's air interface carries ne
 
 RAM only, one set for the VFO and for channels in NXDN for now (`radio_req_nxdn_settings`, debug link op 43,
 `rfoundry_debug.py radio nxdn`). A stored NXDN channel runs on its own: the rate, both RANs, the squelch and the talk
-target from its record, the unit ID from it or the radio-wide record ([nxdn-codeplug.md](nxdn-codeplug.md)); these
-settings don't reach it. The debug link view shows what is in force (`nxdn.run.*`).
+target come from its record. The unit ID comes from the channel, its system, or the radio-wide setting, in that
+order ([nxdn-codeplug.md](nxdn-codeplug.md)). The debug settings apply to the VFO. The debug link view shows what is in force (`nxdn.run.*`).
 
 | Setting | Values | Default | Notes |
 |---|---|---|---|
@@ -253,10 +265,11 @@ The radio core needs from a board: a provider (`board_t.air`) whose fit takes 24
 |---|---|
 | `tests/host/fecTest.c` (`test_conv`) | the Viterbi decoder: clean, punctured, soft against hard in noise |
 | `tests/host/nxdnTest.c` | the scrambler against its register, the syncs, the LICH and its parity, SACCH and FACCH1 round trips through errors and CRC checks, VCH places, the 7.2.1 FEC frames, messages; calls through the framer: clear, RAN squelch, RAN 0, late entry, LICH coasting, symbol errors, a header sync with an error, encrypted, 9600 bit/s |
+| `tests/host/nxdnScrambleTest.c` | the complete TS 1-D v1.3 scramble vectors for EHR voice (7.2.1.1) and UDCH user data (7.2.2.1), plus FEC correction and invalid inputs |
 | `tests/host/nxdnEngineTest.c` | two engines on made-up providers at both rates: a call heard with its fields and voice in order, an encoder stall covered by silence, no underruns, late entry, group and individual squelch, a squelch change mid-call, an abort, another RAN, RAN 0, an encrypted call; a call through a modeled discriminator tap and the soft modem at 2400 symbols/s, eight calls per noise level |
 | `tests/host/radioCoreTest.c` (`radioCoreTestNxdn`, `radioCoreTestP25Nxdn`) | the radio core against an NXDN engine on a fake provider: a call heard, its voice in order to the vocoder, another RAN, group squelch; PTT heard by the far engine with the settings, settings sent mid-transmission, 4800 bit/s, a TX-only and an RX-only fit, no fit, the time-out; the mode by request, the debug link and the VFO saved; P25 and NXDN in turn in the same memory; a zone scan over a stored NXDN channel: a stop with nothing on air, held on a late entry to its group, not on another group or RAN, never a stop at a rate the provider can't receive (`test_nxdn_scan`); dual watch with it as B: a hold on its group's call, not on another group, refused at such a rate, and with P25 on A one engine at a time (`test_nxdn_dual`) |
 | `tests/host/uiFlowTest.c` | the mode tile's order, the home screen in NXDN, the FM-only tiles |
-| `tests/hil/test_nxdn.py` | on the radio: the mode switch, the settings, a stored channel written over CPS; opt-in, an over decoded off air by the SDR bench's 4FSK receiver and `nxdntool` (one HR_C6000 radio: 9600 bit/s 78 frames, outer deviation 2399 Hz; 4800 bit/s 40 frames, 1012 Hz; no CRC failure), a stored channel that transmits keyed and decoded the same way with the channel's RAN, unit and group (`test_nxdn_stored_channel_tx`), a call the bench plays received (`test_nxdn_rx_from_bench`), and one whose voice frames are a speech recording's, decoded by the vocoder: every frame into the voice path, none silent, bad or lost, the decoded PCM peaking as speech does (`test_nxdn_rx_speech`, with `--ambe FILE`), and a zone scan or dual watch that holds on a stored NXDN channel when the bench calls there (`test_nxdn_scan_from_bench`, with `--allow-codeplug-write`; not yet run on a radio). They skip where the fit has no RX. Nothing measures the sound at the speaker |
+| `tests/hil/test_nxdn.py` | on the radio: the mode switch, the settings, a stored channel written over CPS; opt-in, an over decoded off air by the SDR bench's 4FSK receiver and `nxdntool` (one HR_C6000 radio: 9600 bit/s 78 frames, outer deviation 2399 Hz; 4800 bit/s 40 frames, 1012 Hz; no CRC failure), a stored channel that transmits keyed and decoded the same way with the channel's RAN, unit and group (`test_nxdn_stored_channel_tx`), a call the bench plays received (`test_nxdn_rx_from_bench`), and one whose voice frames are a speech recording's, decoded by the vocoder: every frame into the voice path, none silent, bad or lost, the decoded PCM peaking as speech does (`test_nxdn_rx_speech`, the speech of `tests/data/voice`; on a board with a speaker FIFO also its chunks, gaps and refused blocks), and a zone scan or dual watch that holds on a stored NXDN channel when the bench calls there (`test_nxdn_scan_from_bench`, with `--allow-codeplug-write`; not yet run on a radio). They skip where the fit has no RX. Nothing measures the sound at the speaker itself |
 | `tools/bench/nxdntool.py selftest` | the bench tool (below) both ways at both rates, with bit errors and through the soft modem, from bench receiver records, the summary line |
 
 The soft modem test (8 kHz tap, 2000 counts per kHz, so the outer level is 2100 counts and the step between levels
@@ -278,8 +291,8 @@ An over checked off air: the radio in NXDN on a test frequency, the SDR bench's 
 
 ## 9. Unconfirmed
 
-Facts the documents leave open, and what the code assumes. The documents have no frame-level test vectors (no CRC or
-scrambler examples), so the codec checks against itself and the clauses only.
+Facts the frame format and channel coding documents leave open, and what the code assumes. The frame codec checks
+its CRC and frame whitening against the clauses. The NXDN Scrambler uses the published vectors in section 8.
 
 | Item | Assumed | Where |
 |---|---|---|
@@ -292,9 +305,9 @@ scrambler examples), so the codec checks against itself and the clauses only.
 | A short sync | one wrong symbol in a header's FSW makes the framer miss the header (10 symbols, the fit's limit); the call is joined late at the next superframe | 5.3.1.2 |
 | Unit ID range | 1 to 65519 (the top IDs are special) | TS 1-B |
 | A board's transmit pulse | the provider's shaping at the profile's symbol rate and deviation, as its fit reports (`AIR_FIT_SHAPE_APPROX`, `AIR_FIT_DEV_APPROX`); whether a receiver of another make takes it is untested | 3.4, 3.5 |
-| Voice on air | the VCH bit order is settled against 7.2.1 (5); a call heard by a radio of another make is untested | 7.2 |
+| Voice on air | the VCH bit order is settled against 7.2.1 (5); [manual on-air scrambler interoperability checked](../feature-matrix.md) | 7.2 |
 
 ## 10. Not written
 
 Changing an NXDN channel's squelch on the radio, 9600 bit/s full rate, data (UDCH, short data), trunking (RCCH), status and other supplementary messages,
-encryption, a transmit filter in a provider.
+DES and AES encryption, a transmit filter in a provider.

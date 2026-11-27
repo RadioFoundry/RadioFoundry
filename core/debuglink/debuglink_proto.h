@@ -38,7 +38,15 @@ enum {
 	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
 	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
 	DL_CMD_AIR		= 0x24,	// the air interface on the bench: tap, session, RX, TX (CONFIG_AIR_RAW; debuglink_air.c, 3.28)
+	DL_CMD_SUPPORT		= 0x25,	// the support info: source, hardware, image hash (CONFIG_SUPPORT_INFO; debuglink_support.c, 3.29)
+	DL_CMD_SATELLITE	= 0x26,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE, 3.30)
+	DL_CMD_DETOUR		= 0x27,	// temporary settings a deadline reverts (CONFIG_DEBUGLINK_DMRIP; dl_dmrip.h, 7.4)
+	DL_CMD_DMRIP		= 0x28,	// the debug link over the air: status, key (CONFIG_DEBUGLINK_DMRIP; 7.5)
 };
+
+// DL_CMD_DMRIP operations (first payload byte; docs/spec/debuglink.md 7.5)
+#define DL_DMRIP_OP_STATUS	0u	// -> port u16, key source u8 (0 none, 1 chip UID, 2 set), counters ( 7.5)
+#define DL_DMRIP_OP_KEY		1u	// key[16] (all zero: back to the chip UID's) -> none. Over the cable only
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
 enum {
@@ -90,15 +98,44 @@ enum {
 	DL_AIR_OP_TX_ABORT	= 11,	// none -> none
 };
 
+// DL_CMD_SATELLITE operations (first payload byte; docs/spec/satellite.md 6)
+enum {
+	DL_SAT_OP_INFO = 0,	// -> version u8, capacity u16, installed count u16
+	DL_SAT_OP_LIST,		// start u16 -> count u8, then (catalog ID u32, epoch Unix seconds u32) entries
+	DL_SAT_OP_BEGIN,	// count u16, bytes u16, CRC-32 u32 -> transaction ID u16
+	DL_SAT_OP_DATA,		// transaction ID u16, offset u16, up to 59 data bytes -> next offset u16
+	DL_SAT_OP_COMMIT,	// transaction ID u16, CRC-32 u32 -> none
+	DL_SAT_OP_ABORT,	// transaction ID u16 -> none
+	DL_SAT_OP_SYNC_CHANNELS,	// none -> ensure installed satellites have channels in the Satellites zone
+	DL_SAT_OP_PROFILE_GET,	// -> count u8, then selected frequency-profile catalog IDs u32
+	DL_SAT_OP_PROFILE_SET,	// count u8, then up to 10 selected frequency-profile catalog IDs u32
+	DL_SAT_OP_REPLACE_BEGIN,	// count u16, bytes u16, CRC-32 u32 -> transaction ID u16; replace full TLE inventory
+	DL_SAT_OP_PROFILE_STAGE,	// transaction ID u16, count u8, then (ID, RX Hz, TX Hz u32, tone tenths u16); replacement only
+	DL_SAT_OP_PROFILE_VALUES_GET,	// -> count u8, then (ID, RX Hz, TX Hz u32, tone tenths u16) records
+	DL_SAT_OP_PROFILE_STAGE_CHUNK,	// transaction ID u16, total u8, offset u8, count u8, then profile records
+	DL_SAT_OP_SYNC_CHANNELS_STATUS	// -> satellite_channels_sync_status_t
+};
+
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)
 enum {
 	DL_HWOPT_OP_LIST	= 0,	// none -> key=value text: hwopt.count, hwopt.<i>.name / value / restart / choices
 	DL_HWOPT_OP_SET		= 1,	// option u8, choice u8 -> none (refused: the board didn't store it, or on air)
 };
 
+// DL_CMD_SUPPORT operations (the only payload byte; docs/spec/debuglink.md 3.29)
+enum {
+	DL_SUPPORT_OP_INFO	= 0,	// -> key=value text: source, repo, hw.<part>, image.addr / size
+	DL_SUPPORT_OP_HASH	= 1,	// -> image.state pending (image.done) or done (image.sha256), or none
+};
+
 // DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and
 // register. The board's RF chips are numbered below it
 #define DL_CHIP_SOC		0xFFu
+
+// DL_CMD_AUDIO_PROBE's first operations (the rest in debuglink_audio_probe.c): the ones the air may ask (7.3)
+#define DL_PROBE_OP_STATUS	0u
+#define DL_PROBE_OP_REG_READ	1u
+#define DL_PROBE_OP_REG_WRITE	2u
 
 // DL_CMD_RX2 operations (first payload byte; docs/spec/debuglink.md 3.22). The token is u32 little endian
 enum {
@@ -212,6 +249,7 @@ enum {
 	DL_APRS_F_TO_IS,		// our own packets to APRS-IS (the host helper, or the radio's own client) 0/1
 	DL_APRS_F_POWER,		// RF power: 0 = the radio's current level, n = the board's level n - 1
 	DL_APRS_F_AMBIGUITY,		// position ambiguity 0-4 (APRS101 ch. 8), for APRS packets and DMR reports
+	DL_APRS_F_MUTE,			// the speaker silent on the APRS frequency 0/1
 };
 
 // DL_CMD_SNMP operations (first payload byte; docs/spec/debuglink.md 3.17)

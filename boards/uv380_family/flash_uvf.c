@@ -4,6 +4,7 @@
 // (docs/spec/hardware-dm1701.md 13), through the shared driver (platform/stm32f4/spi_flash).
 #include "uvf.h"
 #include "pins.h"
+#include "config.h"
 #include "spi_flash/spi_flash_board.h"
 
 // docs/spec/hardware-dm1701.md 13.2. The open-firmware codeplug stays where the CPS tools expect it; our own areas sit
@@ -21,7 +22,9 @@ static const hal_flash_map_t map = {
 	.native_addr = 0xE00000u,
 	.native_size = 0x100000u,
 	.staging_addr = 0xF00000u,	// 256 KB of the unused top megabyte (docs/spec/tftp.md 4)
-	.staging_size = 0x040000u,
+	.staging_size = CONFIG_SATELLITE_TLE ? 0x03D000u : 0x040000u,
+	.satellite_addr = CONFIG_SATELLITE_TLE ? 0xF3D000u : 0u,
+	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,
 };
 
 static const stm32_spi_flash_cfg_t cfg = {

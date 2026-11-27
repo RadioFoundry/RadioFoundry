@@ -7,8 +7,10 @@
 #include <string.h>
 #include "dmr/dmrData.h"
 
-// Motorola CAI network: individual IDs are 12.x.y.z, groups 225.x.y.z
+// CAI networks (TS 102 361-3 5.1.1): individual IDs are 12.x.y.z, groups 225.x.y.z; a radio's peripheral network
+// (the host behind it) the next one, 13.x.y.z
 #define CAI_NETWORK_INDIVIDUAL		0x0C
+#define CAI_NETWORK_PERIPHERAL		0x0D
 #define CAI_NETWORK_GROUP			0xE1
 
 // Compressed UDP/IP (TS 102 361-3) port IDs
@@ -16,9 +18,6 @@
 #define UDPC_PORT_ID_LIP			2
 #define UDPC_PORT_ID_MOTOROLA_TMS	98
 #define DMR_UDP_PORT_LIP			5017
-// IP address IDs (Tables 7.15 / 7.16)
-#define UDPC_ID_RADIO_NETWORK		0
-#define UDPC_ID_GROUP_NETWORK		2
 
 DMR_DATA_BUFFER dmrDataPacket_t dmrDataRxPacket;
 
@@ -62,6 +61,11 @@ static uint32_t getU32(const uint8_t *p)
 uint32_t dmrDataIdAddress(bool group, uint32_t id)
 {
 	return ((uint32_t)(group ? CAI_NETWORK_GROUP : CAI_NETWORK_INDIVIDUAL) << 24) | (id & 0xFFFFFF);
+}
+
+uint32_t dmrDataPeripheralAddress(uint32_t id)
+{
+	return ((uint32_t)CAI_NETWORK_PERIPHERAL << 24) | (id & 0xFFFFFF);
 }
 
 bool dmrDataIpIsId(uint32_t ip, bool group, uint32_t id)
@@ -287,27 +291,84 @@ int dmrDataBuildCSBK(const uint8_t csbk[10], dmrBurst_t *out)
 	return 1;
 }
 
-// Call alert and radio check: target ID in bytes 4-6, source in 7-9. The radio check
-// answer is the request echoed back with byte 3 cleared, so its first ID is the radio answering
+uint8_t dmrDataRadioCheckKind(const uint8_t csbk[10], uint32_t own, uint32_t *peer)
+{
+	uint32_t first = getId(&csbk[4]);
+	uint32_t second = getId(&csbk[7]);
+	bool bit7 = (csbk[3] & 0x80) != 0;
+
+	// Octet 3 other than bit 7 set: another service on the opcode, not a radio check (never echoed as an answer)
+	if (((csbk[0] & 0x3F) != DMR_CSBKO_RADIO_CHECK) || ((csbk[3] & 0x7F) != 0) || (own == 0) || (first == second))
+	{
+		return 0;
+	}
+	if (csbk[1] == DMR_FID_MOTOROLA)
+	{
+		// Checker first in both: a request is to the second radio, an answer to the first
+		if (!bit7 && (second == own))
+		{
+			*peer = first;
+			return DMR_RC_REQUEST;
+		}
+		if (bit7 && (first == own))
+		{
+			*peer = second;
+			return DMR_RC_ANSWER;
+		}
+	}
+	else if (csbk[1] == DMR_FID_ETSI)
+	{
+		if (bit7 && (first == own))
+		{
+			*peer = second;
+			return DMR_RC_REQUEST;
+		}
+		if (!bit7 && ((first == own) || (second == own)))
+		{
+			*peer = (first == own) ? second : first;// the request echoed, or the IDs swapped (to us from the checked radio)
+			return DMR_RC_ANSWER;
+		}
+	}
+	return 0;
+}
+
+void dmrDataBuildRadioCheck(uint32_t dst, uint32_t src, bool etsi, uint8_t out[10])
+{
+	memset(out, 0, 10);
+	out[0] = 0x80 | DMR_CSBKO_RADIO_CHECK;// last block
+	out[1] = etsi ? DMR_FID_ETSI : DMR_FID_MOTOROLA;
+	out[3] = etsi ? 0x80 : 0x00;
+	putId(&out[4], etsi ? dst : src);
+	putId(&out[7], etsi ? src : dst);
+}
+
+uint32_t dmrDataRadioCheckDst(const uint8_t csbk[10])
+{
+	return getId((csbk[1] == DMR_FID_MOTOROLA) ? &csbk[7] : &csbk[4]);
+}
+
+// Call alert: target ID in octets 4-6, source in 7-9; the ack swaps them. A radio check answer is the request echoed
+// with octet 3 bit 7 flipped, in both forms
 int dmrDataBuildCSBKAnswer(const uint8_t *csbk, uint32_t src, dmrBurst_t *out)
 {
 	uint8_t opcode = csbk[0] & 0x3F;
 	uint8_t buf[10];
-
-	if (((csbk[1] != DMR_FID_ETSI) && (csbk[1] != DMR_FID_MOTOROLA)) || (getId(&csbk[4]) != src) || (getId(&csbk[7]) == src))
-	{
-		return 0;
-	}
+	uint32_t peer;
 
 	memcpy(buf, csbk, 10);
 	buf[0] = 0x80;// Last Block, not protected
 
-	if ((opcode == DMR_CSBKO_RADIO_CHECK) && (csbk[3] == 0x80))
+	if (opcode == DMR_CSBKO_RADIO_CHECK)
 	{
+		if (dmrDataRadioCheckKind(csbk, src, &peer) != DMR_RC_REQUEST)
+		{
+			return 0;
+		}
 		buf[0] |= DMR_CSBKO_RADIO_CHECK;
-		buf[3] = 0x00;
+		buf[3] ^= 0x80;
 	}
-	else if (opcode == DMR_CSBKO_CALL_ALERT)
+	else if ((opcode == DMR_CSBKO_CALL_ALERT) && ((csbk[1] == DMR_FID_ETSI) || (csbk[1] == DMR_FID_MOTOROLA)) &&
+			(getId(&csbk[4]) == src) && (getId(&csbk[7]) != src))
 	{
 		buf[0] |= DMR_CSBKO_CALL_ALERT_ACK;
 		memcpy(&buf[4], &csbk[7], 3);// to the caller
@@ -607,14 +668,14 @@ bool dmrDataUdpCompress(uint16_t srcPort, uint16_t dstPort)
 	}
 }
 
-int dmrDataCompressUDPHeader(uint16_t ipId, bool group, uint16_t srcPort, uint16_t dstPort, uint8_t out[DMR_UDPC_HEADER_MAX])
+int dmrDataCompressUDPHeader(uint16_t ipId, uint8_t ids, uint16_t srcPort, uint16_t dstPort, uint8_t out[DMR_UDPC_HEADER_MAX])
 {
 	uint8_t spid = udpcPortId(srcPort);
 	uint8_t dpid = udpcPortId(dstPort);
 	int n = 5;
 
 	putU16(&out[0], ipId);
-	out[2] = (UDPC_ID_RADIO_NETWORK << 4) | (group ? UDPC_ID_GROUP_NETWORK : UDPC_ID_RADIO_NETWORK);// SAID, DAID
+	out[2] = ids;// SAID, DAID
 	out[3] = spid;// opcode 00: its MSB here, its LSB in the next octet
 	out[4] = dpid;
 	// Extended header 1 holds the source port when it has no ID, else the destination port; extended header 2 the
@@ -637,12 +698,17 @@ uint16_t dmrDataNextIpId(void)
 	return ipIdentification++;
 }
 
-// The compressed header has no addresses, the receiver rebuilds the IDs' CAI addresses: only a packet that has those
-// may go compressed. Another address (an off-net destination behind a gateway radio) needs the full header, in every
-// compression mode
-static bool addressesFromIds(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp)
+// The compressed header has no addresses, the receiver rebuilds them from the IDs and the address IDs: the SAID and
+// DAID octet when both addresses are ones it names (an ID's CAI address, or a radio's peripheral network address), else
+// -1. Another address (an off-net destination behind a gateway radio) needs the full header, in every compression mode
+static int addressIds(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp)
 {
-	return (dstIp == dmrDataIdAddress(group, dst)) && (srcIp == dmrDataIdAddress(false, src));
+	int said = (srcIp == dmrDataIdAddress(false, src)) ? DMR_UDPC_ID_RADIO :
+			((srcIp == dmrDataPeripheralAddress(src)) ? DMR_UDPC_ID_PERIPHERAL : -1);
+	int daid = (dstIp == dmrDataIdAddress(group, dst)) ? (group ? DMR_UDPC_ID_GROUP : DMR_UDPC_ID_RADIO) :
+			((!group && (dstIp == dmrDataPeripheralAddress(dst))) ? DMR_UDPC_ID_PERIPHERAL : -1);
+
+	return ((said < 0) || (daid < 0)) ? -1 : DMR_UDPC_IDS(said, daid);
 }
 
 // UDP into ipPacket: compressed header and payload, or the IPv4 and UDP headers and payload. payload may not be in
@@ -650,10 +716,12 @@ static bool addressesFromIds(bool group, uint32_t dst, uint32_t src, uint32_t ds
 static int encodeUDP(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp, uint8_t ttl, uint16_t srcPort,
 						uint16_t dstPort, const uint8_t *payload, int length, bool compress, uint16_t ipId, uint8_t *sap)
 {
-	if (CONFIG_DMR_UDP_COMPRESS && compress && addressesFromIds(group, dst, src, dstIp, srcIp))
+	int ids = addressIds(group, dst, src, dstIp, srcIp);
+
+	if (CONFIG_DMR_UDP_COMPRESS && compress && (ids >= 0))
 	{
 		uint8_t h[DMR_UDPC_HEADER_MAX];
-		int n = dmrDataCompressUDPHeader(ipId, group, srcPort, dstPort, h);
+		int n = dmrDataCompressUDPHeader(ipId, (uint8_t)ids, srcPort, dstPort, h);
 
 		if ((n + length) > IP_PDU_MAX)
 		{
@@ -692,7 +760,7 @@ int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint
 		// The compressed header has no length: the receiver takes it from the packet, so only a datagram whose UDP
 		// length agrees with what we have goes compressed (octets past the UDP length are dropped, as padding)
 		bool fits = CONFIG_DMR_UDP_COMPRESS && compress && (udpLength >= 8) && (udpLength <= length) &&
-				addressesFromIds(group, dst, src, dstIp, srcIp);
+				(addressIds(group, dst, src, dstIp, srcIp) >= 0);
 
 		return encodeUDP(group, dst, src, dstIp, srcIp, ttl, getU16(&l4[0]), getU16(&l4[2]), &l4[8],
 							fits ? (udpLength - 8) : (length - 8), fits, ipId, sap);
@@ -1109,15 +1177,20 @@ int dmrDataBuildEtsiText(bool group, uint32_t dst, uint32_t src, const char *tex
 // ETSI IP text (TS 102 361-3 V1.3.1 5.7.1): the text as UTF-16BE (plane 0; Latin-1 here, one code unit per
 // character, no byte order mark, no terminator) in a UDP datagram from and to port 5016, with the full IPv4 / UDP
 // header (SAP 4, as every receiver of the IP bearer reads it; the compressed header of 5.6 is optional)
+size_t dmrDataLatin1ToUtf16BE(const char *text, uint8_t *out, size_t maxChars)
+{
+	size_t n = 0;
+	for (; n < maxChars && text[n] != '\0'; n++)
+	{
+		out[2 * n] = 0;
+		out[2 * n + 1] = (uint8_t)text[n];
+	}
+	return n;
+}
+
 int dmrDataIPTextUDP(const char *text, uint8_t l4[DMR_ETSI_TEXT_UDP_MAX])
 {
-	int n = 0;
-
-	for (; (text[n] != '\0') && (n < DMR_ETSI_TEXT_MAX); n++)
-	{
-		l4[8 + (2 * n)] = 0x00;
-		l4[8 + (2 * n) + 1] = (uint8_t)text[n];
-	}
+	int n = (int)dmrDataLatin1ToUtf16BE(text, &l4[8], DMR_ETSI_TEXT_MAX);
 	if (n == 0)
 	{
 		return 0;
@@ -1153,10 +1226,12 @@ int dmrDataBuildIPText(bool group, uint32_t dst, uint32_t src, const char *text,
 	return bursts;
 }
 
-// A Unicode code point as Latin-1, '?' outside it; control characters are dropped (0)
+// A Unicode code point as Latin-1, '?' outside it; control characters are dropped (0). The C1 controls and DEL
+// (0x7F-0x9F) too: they are no letter, and in the UI's text the bytes 0x80-0x86 are its own glyphs and icons
+// (core/ui/font.h), so a sender's U+0082 would have drawn an arrow
 static char latin1(uint32_t cp)
 {
-	if (cp < 0x20)
+	if ((cp < 0x20) || ((cp >= 0x7F) && (cp < 0xA0)))
 	{
 		return 0;
 	}
@@ -1831,9 +1906,12 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp)
 		const uint8_t *ptr = &d[5];
 		udp->srcPort = compressedPort(d[3] & 0x7F, &ptr);
 		udp->dstPort = compressedPort(d[4] & 0x7F, &ptr);
-		// No addresses in the header: SAID 0 / DAID 0 or 2, the source and destination IDs' (TS 102 361-3 7.2)
-		udp->srcIp = dmrDataIdAddress(false, packet->src);
-		udp->dstIp = dmrDataIdAddress(packet->group, packet->dst);
+		// No addresses in the header: the source and destination IDs' (TS 102 361-3 7.2), in the radio network
+		// (SAID 0, DAID 0 or 2) or, ID 1, a radio's peripheral network (the host behind it). Other IDs are reserved
+		udp->srcIp = ((d[2] >> 4) == DMR_UDPC_ID_PERIPHERAL) ? dmrDataPeripheralAddress(packet->src) :
+						dmrDataIdAddress(false, packet->src);
+		udp->dstIp = (((d[2] & 0x0F) == DMR_UDPC_ID_PERIPHERAL) && !packet->group) ?
+						dmrDataPeripheralAddress(packet->dst) : dmrDataIdAddress(packet->group, packet->dst);
 		udp->ttl = ipTtl(packet->group, DMR_IP_TTL_DEFAULT);
 		udp->payload = ptr;
 		udp->length = len - (ptr - d);
@@ -1924,7 +2002,14 @@ bool dmrDataDecodeTMS(const uint8_t *payload, int length, dmrDataTMS_t *tms)
 			c = ' ';
 		}
 
-		tms->text[n++] = (c < 0x100) ? c : '?';
+		// Drop the control characters (C0, DEL and the C1 range) the same way the ETSI and UTF-16 paths do: the UI
+		// font takes 0x80-0x9F as its own glyphs, so a sender's U+0082 would otherwise draw an arrow. latin1() sits
+		// outside this CONFIG_DMR_TMS block, maps a code point to Latin-1, and returns 0 for a control to be dropped.
+		char ch = latin1(c);
+		if (ch != 0)
+		{
+			tms->text[n++] = ch;
+		}
 	}
 	tms->text[n] = 0;
 

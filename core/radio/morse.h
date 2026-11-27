@@ -39,7 +39,9 @@ uint32_t morse_units(const char *text, uint8_t len);
 
 // Start keying text at now_ms (the first element starts at once)
 void morse_start(morse_t *m, const char *text, uint8_t len, uint8_t wpm, uint32_t now_ms);
-// Run with the time (every few ms): true while the key is down. m->done once the last element has ended
+// Run with the time (every few ms): true while the key is down. m->done once the last element has ended. Segments end
+// on the schedule, so a poll a little late doesn't drift it; one more than a dot late stretches the segment it ends and
+// the schedule goes on from then, so every element is keyed at its length
 bool morse_poll(morse_t *m, uint32_t now_ms);
 
 #endif

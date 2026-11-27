@@ -135,6 +135,7 @@ static void test_settings_basic(void)
 	CHECK(st.load == SETTINGS_DEFAULTS && st.seq == 0);
 	settings_read(&s);
 	CHECK(s.brightness == 100 && s.squelch == SETTINGS_UNSET8 && s.beeps == 1);
+	CHECK(s.satellite_index == SETTINGS_UNSET8);
 	CHECK((s.accent & SETTINGS_AUDIO_MASK) == 0);	// noise reduction on, AGC off (a record from before them: also 0)
 	// Zone shares accepted by default, and by a record that stored the old Off (0) or Ask (1); only 2 turns them off
 	CHECK(s.zs_offers == 0 && settings_zs_accept(&s));
@@ -372,6 +373,37 @@ static bool boot_any(void)
 	bool ok = storage_init();
 	settings_init();
 	return ok;
+}
+
+// A detour's hold while the settings area is claimed: the release goes back to the state before the hold, and the
+// claimed area then gets that state saved (not the "nothing stored" filler the claim puts in saved)
+static void test_hold_claim(void)
+{
+	settings_stats_t st;
+	settings_t s;
+
+	sim_flash_create(FLASH_SIZE, &map);
+	junk(map.settings_addr + 2 * STORAGE_SECTOR, 3000, 7);
+	CHECK(!boot_any() && storage_region() == STORAGE_REGION_FOREIGN);
+	settings_begin()->squelch = 5;
+	settings_end(100);
+	CHECK(settings_hold());
+	settings_begin()->squelch = 9;		// the detour's change
+	settings_end(200);
+	CHECK(storage_claim_request());
+	settings_poll(6000);			// claimed during the hold: nothing saved yet
+	settings_get_stats(&st);
+	CHECK(st.saves == 0);
+	settings_release(true);
+	settings_read(&s);
+	CHECK(s.squelch == 5 && s.vfo_ts == 1);	// home, not 0xFF
+	settings_get_stats(&st);
+	CHECK(st.dirty);
+	settings_poll(20000);
+	CHECK(boot_any());
+	settings_read(&s);
+	CHECK(s.squelch == 5);
+	CHECK(sim_flash_violations() == 0);
 }
 
 static void test_foreign(void)
@@ -668,6 +700,10 @@ static void test_map_end(void)
 	m.staging_addr = 0xF40000u;
 	m.staging_size = 0x40000u;
 	CHECK(hal_flash_map_end(&m, 4096) == 0xF80000u);
+	m.staging_size = 0x3D000u;
+	m.satellite_addr = 0xF7D000u;
+	m.satellite_size = 0x3000u;
+	CHECK(hal_flash_map_end(&m, 4096) == 0xF80000u);
 	hal_flash_map_t low = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
 				.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x10000u };
 	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);		// the journal's 2 erase units end it
@@ -726,8 +762,8 @@ static void test_crash_bits(void)
 	settings_set_crash_mode(&s, 1);
 	CHECK(settings_crash_mode(&s) == 1 && (s.accent & 0x0F) == (5 | SETTINGS_ACCENT_PLAIN) && !(s.accent & 0xC0));
 	CHECK(!(s.updown_home & 0x80));		// bit 7 stays free
-	s.theme = 3;				// out of range in bits 0-1: the default
-	CHECK(settings_theme(&s) == 0);
+	s.theme = 0xFF;				// bits 0-1 have no out-of-range value: 3 is the night theme
+	CHECK(settings_theme(&s) == 3);
 }
 
 // The Settings > Sound tones share sound_flags with the knob lock: each keeps its bits, and firmware from before the
@@ -917,7 +953,16 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, zone_jrn_index), 272 },
 		{ offsetof(settings_t, zone_jrn_count), 274 },
 		{ offsetof(settings_t, zone_jrn_kind), 276 },
+		{ offsetof(settings_t, t3_stun), 396 },
+		{ offsetof(settings_t, t3_kill), 397 },
+		{ offsetof(settings_t, satellite_index), 398 },
+		{ offsetof(settings_t, reserved10), 399 },
+		{ offsetof(settings_t, sig_dmr), 400 },
+		{ offsetof(settings_t, sig_fm), 403 },
+		{ offsetof(settings_t, reserved11), 406 },
+		{ offsetof(settings_t, aes_mi_res), 408 },
 	};
+	CHECK(sizeof(settings_t) == 412);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);
@@ -1199,6 +1244,42 @@ static void test_write_across_sectors(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+// settings_read_field: one field of the settings in force, whatever its width, as the struct holds it
+static void test_read_field(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	settings_t d, s;
+	settings_read(&d);
+	CHECK(SETTINGS_FIELD(brightness) == d.brightness && SETTINGS_FIELD(vfo_step_hz) == d.vfo_step_hz);
+	settings_t *w = settings_begin();
+	w->brightness = 0xA5;
+	w->auto_lock_s = 0xBEEF;
+	w->vfo_step_hz = 0xDEADBEEFu;
+	w->ref_trim_ppb = -1234;
+	w->lang[0] = 'i';
+	w->lang[1] = 't';
+	w->privacy_key[0] = 0x80000001u;
+	w->privacy_type[0] = 3;
+	settings_end(1);
+	settings_read(&s);
+	CHECK(SETTINGS_FIELD(brightness) == 0xA5 && SETTINGS_FIELD(auto_lock_s) == 0xBEEF &&
+	      SETTINGS_FIELD(vfo_step_hz) == 0xDEADBEEFu);
+	CHECK(SETTINGS_FIELD(ref_trim_ppb) == -1234 && SETTINGS_FIELD(ref_trim_ppb) == s.ref_trim_ppb);	// the sign comes back
+	CHECK(SETTINGS_FIELD(lang[0]) == 'i' && SETTINGS_FIELD(lang[1]) == 't');
+	CHECK(SETTINGS_FIELD(privacy_key[0]) == 0x80000001u && SETTINGS_FIELD(privacy_type[0]) == 3);
+	CHECK(SETTINGS_FIELD(zone_index) == s.zone_index && SETTINGS_FIELD(net_flags) == s.net_flags);
+	// the last byte of the struct, and ranges that aren't a field
+	CHECK(settings_read_field(sizeof(settings_t) - 1, 1) == ((const uint8_t *)&s)[sizeof(settings_t) - 1]);
+	CHECK(settings_read_field(sizeof(settings_t), 1) == 0 && settings_read_field(sizeof(settings_t) - 1, 2) == 0);
+	CHECK(settings_read_field((size_t)-1, 4) == 0 && settings_read_field(0, 3) == 0 && settings_read_field(0, 8) == 0);
+	// the value readers the fields feed give what the struct's do
+	CHECK(settings_theme_of(s.theme) == settings_theme(&s) && settings_updown_home_of(s.updown_home) == settings_updown_home(&s));
+	CHECK(settings_crash_contact_of(s.theme, s.updown_home) == settings_crash_contact(&s) &&
+	      settings_crash_mode_of(s.accent) == settings_crash_mode(&s) &&
+	      settings_zs_accept_of(s.zs_offers) == settings_zs_accept(&s));
+}
+
 int main(void)
 {
 	test_journal_basic();
@@ -1208,9 +1289,11 @@ int main(void)
 	test_settings_cuts();
 	test_settings_versions();
 	test_foreign();
+	test_hold_claim();
 	test_native_and_jobs();
 	test_settings_layout();
 	test_crash_bits();
+	test_read_field();
 	test_sound_flags();
 	test_map_end();
 	test_map_for();

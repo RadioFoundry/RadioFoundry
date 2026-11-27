@@ -8,6 +8,7 @@
 #ifndef RFOUNDRY_NXDN_ENGINE_H
 #define RFOUNDRY_NXDN_ENGINE_H
 
+#include "config.h"
 #include "nxdn.h"
 #include "../air/air_session.h"
 
@@ -21,6 +22,10 @@ typedef struct {
 	// Transmit, from the provider's task: the next 72-bit voice frame with its FEC, false when none is ready. NULL:
 	// every frame is `silence`
 	bool (*tx_voice)(uint8_t ehr[NXDN_EHR_BYTES], void *ctx);
+#if CONFIG_NXDN_SCRAMBLER
+	// Resolve a key when a call needs it. Zero means unavailable.
+	uint16_t (*traffic_key)(uint8_t system, uint8_t cipher, uint8_t id, void *ctx);
+#endif
 } nxdn_engine_hooks_t;
 
 typedef struct {
@@ -34,6 +39,12 @@ typedef struct {
 	uint8_t tx_call_type;	// NXDN_CALL_GROUP or NXDN_CALL_INDIVIDUAL
 	uint16_t tx_dst;	// the group or unit we call
 	bool emergency;
+	bool tx_inhibit;
+	uint8_t tx_cipher;
+	uint8_t tx_key_id;
+#if CONFIG_NXDN_SCRAMBLER
+	uint8_t system;		// traffic-key system for this channel
+#endif
 	const uint8_t *silence;	// a voice frame of silence (NXDN_EHR_BYTES), from the vocoder
 } nxdn_engine_cfg_t;
 

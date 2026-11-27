@@ -11,17 +11,20 @@ import { readFileSync } from "node:fs";
 import { CodeplugImage } from "../static/js/codeplug/image.js";
 import { decodeArea, getValue, setValue, putArea, KV_ADDR, KV_SIZE } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, newChannel, newContact, remove, validate, numberAll } from "../static/js/codeplug/model.js";
-import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey } from "../static/js/codeplug/channelmodes.js";
+import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey, countSecrets, withoutSecrets } from "../static/js/codeplug/channelmodes.js";
 import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../static/js/codeplug/modes.js";
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
+import { t3System, OPTS as T3_OPTS } from "../static/js/codeplug/mode_t3.js";
+import { aesSystem, randomAesKey } from "../static/js/codeplug/mode_aes.js";
 
 const VECTORS = new URL("../../tests/vectors/channel-modes.txt", import.meta.url);
 const bytes = (s) => (s === "-" ? null : Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16)));
 const hexOf = (b) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("").toUpperCase();
-const vectors = (kind) => readFileSync(VECTORS, "utf8").split("\n").filter((l) => l.startsWith(kind + " ")).map((l) => l.slice(kind.length + 1));
+const vectors = (kind) => readFileSync(VECTORS, "utf8").split(/\r?\n/).filter((l) => l.startsWith(kind + " ")).map((l) => l.slice(kind.length + 1));
 const area = (img) => decodeArea(img.bytes).entries;
 const round = (m) => decode(encode(m));
+const has = (p, code, c) => p.some((x) => x.code === code && (!c || x.item === c));
 
 test("vectors: name check", () => {
 	const v = vectors("check");
@@ -404,11 +407,51 @@ test("declared fields: hex with any, lists, keys, frequencies", () => {
 	// a field of another mode neither sets nor complains
 	const f = specField({ key: "x", label: "editor.x", type: "int", min: 0, max: 1 }, t, { on: () => false, get: (r) => r.p, put: () => assert.fail() }, "k");
 	assert.equal(f.parse({}, f.key, "9"), undefined);
+	// a select that reads other fields rebuilds its list in the form (#1042); a fixed one doesn't
+	const sel = (x) => specField({ key: "s", label: "editor.s", type: "select", options: () => [], ...x }, t, { get: () => ({}), put() {} }, "k");
+	assert.equal(sel({ dynamic: true }).dynamicOptions, true);
+	assert.equal(sel({}).dynamicOptions, false);
 });
 
 // --- NXDN conventional (docs/spec/nxdn-codeplug.md) ---
 
 import * as nxdn from "../static/js/codeplug/mode_nxdn.js";
+import { systemOwnIdField, systemsTab } from "../static/js/editor/modesview.js";
+
+test("Systems table leaves control channels and authentication key cells blank for NXDN", () => {
+	const m = empty();
+	const n = newSystem(m, 4, "Conventional");
+	const t3 = newSystem(m, 1, "Trunked");
+	n.number = 1;
+	t3.number = 2;
+	t3.entries.push({ control: true });
+	t3.secret = { key: "00000000000000000000000000000000" };
+	m.systems.push(n, t3);
+	const h = (tag, attrs, ...children) => ({ tag, children });
+	const page = systemsTab({ model: m, t: (key) => key, h, button: () => h("button") }, null);
+	const rows = page.children.find((part) => part?.children[0]?.tag === "table").children[0].children[1].children;
+	const cells = (row) => row.children.slice(6, 8).map((cell) => cell.children[0]);
+	assert.deepEqual(cells(rows[0]), ["", ""]);
+	assert.deepEqual(cells(rows[1]), ["1", "editor.modes.secret_set"]);
+});
+
+test("NXDN system Radio ID accepts blank or a whole number from 1 to 65519", () => {
+	const m = empty();
+	const system = newSystem(m, 4, "Operations");
+	m.systems.push(system);
+	const field = systemOwnIdField(nxdn.nxdnSystem, (key, { min, max } = {}) =>
+		key === "editor.err.range" ? `${min}–${max}` : key);
+	for (const [input, value] of [["", 0], ["  ", 0], ["1", 1], ["65519", 65519]]) {
+		assert.equal(field.parse(system, "ownId", input), undefined);
+		assert.equal(system.ownId, value);
+	}
+	for (const input of ["0", "-1", "1.5", "65520", "abc"]) {
+		assert.equal(field.parse(system, "ownId", input), "1–65519");
+		assert.equal(system.ownId, 65519);
+	}
+	system.ownId = 65520;
+	assert.ok(has(validate(m), "range", system));
+});
 
 test("vectors: NXDN conventional block, unit ID record", () => {
 	const conv = (rate, rx, tx, sq) => ({ rate9600: rate === "1", rxRan: parseInt(rx, 16), txRan: parseInt(tx, 16), squelch: parseInt(sq, 16) });
@@ -481,7 +524,6 @@ test("NXDN: offered with the radio's feature; group, unit and channel ID ranges"
 	assert.equal(kindName(4), "NXDN");
 	const { m, a, b } = nxdnSample();
 	assert.deepEqual(offeredKinds(m, "FM,DMR").map((k) => k.id), [4], "the codeplug holds it");
-	const has = (p, code, c) => p.some((x) => x.code === code && (!c || x.item === c));
 	let p = validate(m, { features: "FM,DMR,NXDN" });
 	assert.ok(!has(p, "mode_not_in_radio", a));
 	assert.ok(!has(p, "nxdn_group_range") && !has(p, "nxdn_unit_range"));
@@ -495,4 +537,293 @@ test("NXDN: offered with the radio's feature; group, unit and channel ID ranges"
 	a.contact.id = 7;
 	a.dmrId = 3101276;
 	assert.ok(has(validate(m, { features: "FM,DMR,NXDN" }), "nxdn_unit_range", a));
+});
+
+test("AES keys are traffic keys: round-trip by system and ID, stripped exports retain the protected channel", () => {
+	const m = empty(), c = newChannel({ name: "Voice" });
+	m.channels.push(c);
+	for (const name of ["North", "South"]) m.systems.push(newSystem(m, 5, name));
+	numberAll(m);
+	m.systems[0].trafficKeys = [{ id: 0, key: "12".repeat(32) }, { id: 255, key: "34".repeat(32) }];
+	m.systems[1].trafficKeys = [{ id: 0, key: "56".repeat(32) }];
+	setKind(m, c, 5);
+	c.params.id = 0;
+	const keys = (x) => x.systems.map((s) => s.trafficKeys.map(({ id, key }) => ({ id, key })));
+	const img = encode(m), again = decode(img);
+	// system, algorithm 0x25, key ID (u16), flags, the 32 key bytes
+	assert.equal(hexOf(getValue(area(img), MODE_KEY.traffic)), "0025000000" + "12".repeat(32));
+	assert.deepEqual(keys(again), keys(m));
+	assert.equal(again.channels[0].params.id, 0);
+	assert.equal(again.channels[0].rxOnly, true);
+	again.systems[0].trafficKeys.shift();
+	const updated = round(again);
+	assert.deepEqual(keys(updated), [keys(m)[0].slice(1), keys(m)[1]]);
+	assert.equal(countSecrets(img.bytes), 3);
+	withoutSecrets(img.bytes);
+	assert.equal(countSecrets(img.bytes), 0);
+	const stripped = decode(img);
+	assert.equal(stripped.channels[0].kind, 5);
+	assert.equal(stripped.channels[0].params.id, 0);
+	assert.ok(stripped.systems.every((s) => s.trafficKeys.length === 0));
+});
+
+test("AES: Generate fills a key from the CSPRNG", () => {
+	const bytes = Uint8Array.from({ length: 32 }, (_, i) => i);
+	const rng = { getRandomValues: (a) => (a.set(bytes.subarray(0, a.length)), a) };
+	assert.equal(randomAesKey(rng), hexOf(bytes));
+	const a = randomAesKey(), b = randomAesKey();
+	assert.match(a, /^[0-9A-F]{64}$/);
+	assert.notEqual(a, b);
+	const col = aesSystem.traffic.columns.find((x) => x.key === "key");
+	assert.ok(col.secret && col.generate);
+	assert.match(col.generate(), /^[0-9A-F]{64}$/);
+});
+
+test("NXDN: traffic keys round-trip, resolve per system, and preserve opaque records", () => {
+	const { m, a, b } = nxdnSample();
+	const system = newSystem(m, 4, "Operations");
+	system.trafficKeys = [{ id: 0, seed: 32767 }, { id: 63, seed: 1 }];
+	m.systems.push(system);
+	numberAll(m);
+	a.system = system;
+	a.params.txKeyId = 0;
+	const form = channelForm(m, (key) => key);
+	assert.deepEqual(form.find((field) => field.key === "k4.system").options(a).map(([value]) => value), [null, system]);
+	const txKey = form.find((field) => field.key === "k4.txKeyId");
+	assert.deepEqual(txKey.options(a).map(([value]) => value), [null, 0, 63]);
+	assert.deepEqual(txKey.options(b).map(([value]) => value), [null]);
+	assert.ok(!has(validate(m), "nxdn_missing_tx_key", a));
+	const img = encode(m);
+	assert.equal(hexOf(getValue(area(img), MODE_KEY.traffic)), "0001000000FF7F");
+	const opaqueSlot = MODE_KEY.traffic + 9;
+	const opaque = Uint8Array.of(0, 2, 0, 0, 0, 42);
+	putArea(img.bytes, setValue(area(img), opaqueSlot, opaque));
+	const decoded = decode(img);
+	const [first, second] = decoded.channels;
+	assert.equal(first.system, decoded.systems[0]);
+	assert.equal(first.params.txKeyId, 0);
+	assert.equal(second.name, b.name);
+	assert.equal(second.system, null);
+	assert.deepEqual(encode(decoded).bytes, img.bytes);
+
+	decoded.systems[0].trafficKeys = decoded.systems[0].trafficKeys.filter((key) => key.id !== 0);
+	assert.ok(has(validate(decoded), "nxdn_missing_tx_key", first));
+	first.params.txKeyId = 63;
+	const saved = area(encode(decoded));
+	assert.equal(getValue(saved, MODE_KEY.traffic), null);
+	assert.equal(hexOf(getValue(saved, MODE_KEY.traffic + 1)), "00013F00000100");
+	assert.deepEqual(getValue(saved, opaqueSlot), opaque);
+
+	const redacted = encode(decoded);
+	assert.equal(countSecrets(redacted.bytes), 2);
+	withoutSecrets(redacted.bytes);
+	assert.equal(countSecrets(redacted.bytes), 0);
+
+	remove(decoded, "systems", [decoded.systems[0]]);
+	assert.equal(first.kind, 4);
+	assert.equal(first.system, null);
+	assert.ok(has(validate(decoded), "nxdn_missing_tx_key", first));
+	assert.equal(countSecrets(encode(decoded).bytes), 0);
+});
+
+// --- Encrypted TX on amateur frequencies (docs/user/04-programming.md) ---
+
+import { AMATEUR_HZ } from "../static/js/codeplug/channelmodes.js";
+
+test("encrypted TX on amateur frequencies: AES and NXDN scrambler channels warn in 144-148, 222-225 and 420-450 MHz, edges included", () => {
+	assert.deepEqual(AMATEUR_HZ, [[144000000, 148000000], [222000000, 225000000], [420000000, 450000000]]);
+	const m = empty();
+	const aes = newSystem(m, 5, "AES");
+	aes.trafficKeys = [{ id: 1, key: "11".repeat(32) }];
+	const nx = newSystem(m, 4, "NXDN");
+	nx.trafficKeys = [{ id: 2, seed: 100 }];
+	m.systems.push(aes, nx);
+	numberAll(m);
+	const chan = (kind, hz, params, extra = {}) => {
+		const c = newChannel({ name: `C${m.channels.length}`, rxHz: hz, txHz: hz, contact: null, ...extra });
+		m.channels.push(c);
+		setKind(m, c, kind);
+		c.system = kind === 5 ? aes : nx;
+		Object.assign(c.params, params);
+		return c;
+	};
+	const inBand = [144000000, 146520000, 148000000, 222000000, 223500000, 225000000, 420000000, 426250000, 446006250, 450000000];
+	const outBand = [143999999, 148000001, 221999999, 225000001, 419999999, 450000001, 461462500, 902000000];
+	const aesIn = inBand.map((hz) => chan(5, hz, { id: 1 }));
+	const aesOut = outBand.map((hz) => chan(5, hz, { id: 1 }));
+	const nxIn = inBand.map((hz) => chan(4, hz, { txKeyId: 2 }));
+	const nxOut = outBand.map((hz) => chan(4, hz, { txKeyId: 2 }));
+	const aesNone = chan(5, 146520000, { id: null });
+	const nxClear = chan(4, 446006250, {});
+	const rxOnly = chan(5, 146520000, { id: 1 });
+	rxOnly.tagTx = false;
+	const nxRxOnly = chan(4, 446006250, { txKeyId: 2 });
+	nxRxOnly.tagTx = false;
+	// RX in the band, TX outside it: only the TX frequency counts
+	const splitOut = chan(5, 146520000, { id: 1 }, {});
+	splitOut.txHz = 461462500;
+	const splitIn = chan(4, 461462500, { txKeyId: 2 });
+	splitIn.txHz = 446006250;
+	const plain = newChannel({ name: "Plain", mode: "dmr", rxHz: 146520000, txHz: 146520000 });
+	m.channels.push(plain);
+	numberAll(m);
+	const p = validate(m);
+	const warned = (c) => p.some((x) => x.code === "crypto_amateur" && x.item === c && x.level === "warning" && x.field === "txHz");
+	for (const c of [...aesIn, ...nxIn, splitIn]) assert.ok(warned(c), `${c.kind === 5 ? "AES" : "NXDN"} at ${c.txHz} warns`);
+	for (const c of [...aesOut, ...nxOut, splitOut]) assert.ok(!warned(c), `${c.txHz} is outside the bands`);
+	assert.ok(!warned(aesNone), "AES channel with no key: clear");
+	assert.ok(!warned(nxClear), "NXDN channel with a Clear transmit key");
+	assert.ok(!warned(rxOnly) && !warned(nxRxOnly), "receive only: no warning");
+	assert.ok(!warned(plain), "a plain DMR channel");
+	assert.ok(!p.some((x) => x.code === "crypto_amateur" && x.level !== "warning"), "a warning, never an error");
+	// a system that may not transmit makes its channels receive only too
+	aes.tx = false;
+	assert.ok(!validate(m).some((x) => x.code === "crypto_amateur" && x.item.kind === 5));
+	// nothing is blocked: the codeplug still encodes, keys and all
+	aes.tx = true;
+	const back = decode(encode(m));
+	assert.equal(back.channels.find((c) => c.name === aesIn[1].name).params.id, 1);
+	assert.ok(validate(back).some((x) => x.code === "crypto_amateur"));
+});
+
+test("Tier III: follow every talk group and learning the system are option bits 0x0008 and 0x0010; others kept", () => {
+	assert.equal(T3_OPTS.followAll, 0x0008);
+	assert.equal(T3_OPTS.learnSystem, 0x0010);
+	const prev = new Uint8Array(39);
+	prev[6] = 0x08;		// 0x0800, reserved: kept as stored
+	const s = { ...t3System.newFields(), followAll: true, learnSystem: true };
+	const v = t3System.encode(s, prev);
+	assert.equal(v[5] | (v[6] << 8), 0x0800 | 0x0008 | 0x0010 | 0x0020);
+	const d = t3System.decode(v);
+	assert.ok(d.followAll && d.learnSystem && d.privateCalls && !d.allCalls);
+	const off = t3System.encode({ ...d, followAll: false, learnSystem: false }, v);
+	assert.equal(off[5] | (off[6] << 8), 0x0800 | 0x0020);
+	const fields = t3System.fields().map((f) => [f.key, f.section]);
+	assert.ok(fields.some(([k, sec]) => k === "followAll" && sec === "calls"));
+	assert.ok(fields.some(([k, sec]) => k === "learnSystem" && sec === "identity"));
+});
+
+// --- The recommended ham systems (docs/spec/ham-trunking.md) ---
+
+import { newHamSystem } from "../static/js/codeplug/channelmodes.js";
+import { HAM_T3 } from "../static/js/codeplug/mode_t3.js";
+import { HAM_P25 } from "../static/js/codeplug/mode_p25.js";
+
+test("recommended ham systems: Tier III Huge NET 1 and P25 WACN 32350, transmit on, no key, one control channel", () => {
+	const m = empty();
+	const t3 = newHamSystem(m, 1, { name: "", rxHz: 442012500, txHz: 447012500, site: 5 });
+	assert.equal(t3.name, "Ham Tier III");
+	assert.deepEqual([t3.tx, t3.needsKey, t3.secret, t3.ownId], [true, false, null, 0]);
+	assert.deepEqual([t3.fields.model, t3.fields.net, t3.fields.category, t3.fields.colorCode, t3.fields.registerTalkgroups, t3.fields.learnSystem, t3.fields.sites],
+		[3, 1, "a", 1, true, false, []]);
+	assert.deepEqual(t3.entries.map((e) => [e.cls, e.control, e.chan, e.rxHz, e.txHz, e.cc]), [[0, true, 21, 442012500, 447012500, null]]);
+	// four carriers a site, every site's numbers its own, all within the LCN range
+	assert.equal(HAM_T3.lcn(HAM_T3.siteMax, 4), 4092);
+	const p25 = newHamSystem(m, 3, { name: "Club P25", rxHz: 442037500, txHz: 0 });
+	assert.equal(p25.name, "Club P25");
+	assert.deepEqual([p25.tx, p25.fields.wacn, p25.fields.sysid, p25.fields.ccNac, p25.fields.skipEnc], [true, HAM_P25.wacn, null, 0x293, true]);
+	assert.notEqual(p25.fields.wacn, 0xBEE00, "never the common commercial default");
+	assert.deepEqual(p25.entries.map((e) => [e.cls, e.group, e.control, e.rxHz, e.txHz]), [[0, 0, true, 442037500, 442037500]]);
+	assert.equal(newHamSystem(m, 4, { rxHz: 1 }), null, "NXDN has none");
+	// added and written: both validate without errors and read back the same
+	for (const s of [t3, p25]) m.systems.push(s);
+	numberAll(m);
+	assert.deepEqual(validate(m).filter((p) => p.level === "error" && p.table === "systems"), []);
+	const d = decode(encode(m));
+	assert.deepEqual(d.systems.map((s) => s.fields), [t3.fields, p25.fields]);
+});
+
+test("Systems tab: the recommended ham system's button is there for a type that has one", () => {
+	const m = empty();
+	const h = (tag, attrs, ...children) => ({ tag, attrs, children });
+	const labels = [];
+	const page = systemsTab({ model: m, t: (key) => key, h, button: (text, fn, opts) => (labels.push([text, !!opts?.disabled]), h("button")) }, null);
+	assert.ok(page);
+	// the type list starts on Tier III, which has one
+	assert.deepEqual(labels.find(([x]) => x === "editor.modes.add_ham"), ["editor.modes.add_ham", false]);
+});
+
+// --- Systems the radio never transmits on (core/p25/p25.h: P25_WACN_NO_TX, P25_SYSID_NO_TX) ---
+
+import { systemTx } from "../static/js/codeplug/channelmodes.js";
+import { exportModes } from "../static/js/codeplug/qdmrmodes.js";
+import { liveSystemFields } from "../static/js/editor/modefields.js";
+import { WACN_NO_TX, WACN_NO_TX_MASK, SYSID_NO_TX } from "../static/js/codeplug/mode_p25.js";
+
+test("P25 noTx: the blocked WACN range and system ID, by their boundaries", () => {
+	const no = (wacn, sysid) => p25System.noTx({ wacn, sysid });
+	assert.equal(no(0xBEDFF, null), false);
+	assert.equal(no(0xBEE00, null), true);
+	assert.equal(no(0xBEEFF, null), true);
+	assert.equal(no(0xBEF00, null), false);
+	assert.equal(no(null, 0x00A), true, "system ID 00A with the WACN left blank");
+	assert.equal(no(null, 0x00B), false);
+	assert.equal(no(null, null), false);
+});
+
+test("P25 noTxNote: names the ID that matched, the WACN first, in the field's digits", () => {
+	const note = (wacn, sysid) => p25System.noTxNote({ wacn, sysid });
+	assert.deepEqual(note(0xBEE00, null), { key: "editor.p25.no_tx_wacn", params: { id: "BEE00" } });
+	assert.deepEqual(note(0xBEE5A, 0x00A), { key: "editor.p25.no_tx_wacn", params: { id: "BEE5A" } });
+	assert.deepEqual(note(0x12345, 0x00A), { key: "editor.p25.no_tx_sysid", params: { id: "00A" } });
+	assert.equal(note(0x12345, 0x00B), null);
+});
+
+test("P25 noTx: the constants are the firmware's", () => {
+	const h = readFileSync(new URL("../../core/p25/p25.h", import.meta.url), "utf8");
+	const def = (name) => parseInt(h.match(new RegExp(`#define\\s+${name}\\s+(0x[0-9A-Fa-f]+)`))[1], 16);
+	assert.equal(WACN_NO_TX, def("P25_WACN_NO_TX"));
+	assert.equal(WACN_NO_TX_MASK, def("P25_WACN_NO_TX_MASK"));
+	assert.equal(SYSID_NO_TX, def("P25_SYSID_NO_TX"));
+});
+
+function blockedSystem(fields) {
+	const m = empty();
+	const s = newSystem(m, 3, "Blocked");
+	s.fields = { ...s.fields, ...fields };
+	s.tx = true;
+	s.ownId = 1234;
+	s.entries.push({ cls: 0, group: 0, control: true, flags: 0, iden: 1, chanNo: 0x123, chan: 0, rxHz: 851012500, txHz: 806012500 });
+	s.entries.push({ cls: 2, group: 1, control: false, flags: 0, baseHz: 851006250, spacingHz: 6250, txOffsetHz: -45000000, bwHz: 12500, tdma: false, slots: 2 });
+	m.systems.push(s);
+	numberAll(m);
+	return { m, s };
+}
+
+test("saving a system on a blocked network ID writes the transmit flag off and keeps the rest", () => {
+	for (const [fields, blocked] of [[{ wacn: 0xBEE5A }, true], [{ wacn: 0x12345, sysid: 0x00A }, true], [{ wacn: 0xBEF00, sysid: 0x00B }, false]]) {
+		const { m } = blockedSystem({ noReg: true, ...fields });
+		const back = round(m).systems[0];
+		assert.equal(back.tx, !blocked);
+		assert.equal(back.ownId, 1234, "own ID kept");
+		assert.equal(back.fields.noReg, true, "no-registration bit kept");
+		assert.equal(back.entries.find((e) => e.cls === 0).txHz, 806012500, "control TX kept");
+		assert.equal(back.entries.find((e) => e.cls === 2).txOffsetHz, -45000000, "plan TX offset kept");
+	}
+});
+
+test("systemTx: the system's flag, unless its module says the radio never transmits on it", () => {
+	assert.equal(systemTx(blockedSystem({ wacn: 0xBEE5A }).s), false);
+	assert.equal(systemTx(blockedSystem({ wacn: 0x32350 }).s), true);
+	assert.equal(systemTx({ type: 99, tx: true, fields: {} }), true, "a type with no rule");
+	assert.equal(systemTx({ type: 99, tx: false, fields: {} }), false);
+});
+
+test("qdmr export of a blocked system says transmit: false", () => {
+	const out = (fields) => exportModes(blockedSystem(fields).m, () => null, () => {}, String).top.systems[0].transmit;
+	assert.equal(out({ wacn: 0xBEE5A }), false);
+	assert.equal(out({ wacn: 0x32350 }), true);
+});
+
+test("liveSystemFields: the identity as typed over the stored fields", () => {
+	const stored = { wacn: 0x32350, sysid: null, ccNac: 0x293, skipEnc: true };
+	const live = (typed) => liveSystemFields(p25System, stored, (k) => typed[k], t);
+	assert.equal(p25System.noTx(live({ "sys.wacn": "bee5a" })), true, "typed over a stored WACN that isn't blocked");
+	assert.equal(live({ "sys.wacn": "bee5a" }).wacn, 0xBEE5A);
+	assert.equal(live({ "sys.wacn": "bee5a" }).skipEnc, true, "other fields stay as stored");
+	assert.equal(live({ "sys.wacn": "zz" }).wacn, 0x32350, "text that doesn't parse keeps the stored value");
+	assert.equal(live({}).wacn, 0x32350, "nothing typed yet (first render)");
+	assert.equal(live({ "sys.wacn": "" }).wacn, null, "a cleared field reads as blank");
+	assert.equal(p25System.noTx(live({ "sys.sysid": "00a", "sys.wacn": "" })), true);
+	assert.equal(p25System.noTx(live({ "sys.wacn": "" })), false);
 });

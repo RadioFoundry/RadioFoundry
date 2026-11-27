@@ -9,6 +9,8 @@
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
 #include "dmr/ambe/ambeVoice.h"
+#include "dsp/miclimit.h"
+#include "radio/mic_gain.h"
 #endif
 
 #if CONFIG_DMR
@@ -48,12 +50,9 @@ static void call(dl_text_t *t, const char *p, const radio_dmr_call_t *c)
 	// ETSI GPS Info (CONFIG_DMR_GPS): degrees with 7 decimals, the error code, range and bearing from us
 	dl_text(t, "%s.gps_valid=%u\n", p, c->gps_valid);
 	if (c->gps_valid) {
-		uint32_t la = (uint32_t)(c->gps_lat < 0 ? -(int64_t)c->gps_lat : c->gps_lat);
-		uint32_t lo = (uint32_t)(c->gps_lon < 0 ? -(int64_t)c->gps_lon : c->gps_lon);
-
-		dl_text(t, "%s.gps_lat=%s%u.%07u\n%s.gps_lon=%s%u.%07u\n%s.gps_err=%u\n", p, c->gps_lat < 0 ? "-" : "",
-			(unsigned)(la / 10000000u), (unsigned)(la % 10000000u), p, c->gps_lon < 0 ? "-" : "",
-			(unsigned)(lo / 10000000u), (unsigned)(lo % 10000000u), p, c->gps_err);
+		char la[DL_DEG_LEN], lo[DL_DEG_LEN];
+		dl_text(t, "%s.gps_lat=%s\n%s.gps_lon=%s\n%s.gps_err=%u\n", p, dl_deg(la, c->gps_lat), p, dl_deg(lo, c->gps_lon), p,
+			c->gps_err);
 		if (c->gps_range)
 			dl_text(t, "%s.gps_dist_m=%u\n%s.gps_bearing=%u\n", p, (unsigned)c->gps_dist_m, p, c->gps_bearing);
 	}
@@ -74,6 +73,17 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			ambeVoiceGetStats(&a);
 			dl_text(t, "voice.tx_mic_peak=%u\nvoice.tx_test=%u\n", (unsigned)a.tx_mic_peak,
 				ambeVoiceTestSignal() ? 1u : 0u);
+			// The mic gain (DMR's) in force now; after it, the encoder's largest sample and the
+			// limiter's lowest gain in the latest transmission (- before one). Here, not in features: that section
+			// is at a reply's size
+			dl_text(t, "voice.mic_pcm_db=%d\nvoice.tx_enc_peak=%u\n", radio_mic_pcm_db(), (unsigned)a.tx_enc_peak);
+			// Blocks sent as silence while a beep played (the mic gate)
+			dl_text(t, "voice.tx_mic_muted=%u\n", (unsigned)a.tx_mic_muted);
+			if (a.tx_mic_low_q8 != 0) {
+				dl_text(t, "voice.tx_mic_low_db=%d\n", miclimit_q8_db((uint16_t)a.tx_mic_low_q8));
+			} else {
+				dl_text(t, "voice.tx_mic_low_db=-\n");
+			}
 		}
 		// Encode options (VOCODER_OPT_*): in force and supported; the codec's own word when the board reports it
 		dl_text(t, "voice.enc_options=0x%X\nvoice.enc_supported=0x%X\n", (unsigned)ambeVoiceEncodeOptions(),
@@ -146,8 +156,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			dmr_call_get_stats(&c);
 			dl_text(t, "call.rx_end_term=%u\ncall.rx_end_sync=%u\ncall.rx_end_fade=%u\n", (unsigned)c.rx_end_term,
 				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
-			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\n", (unsigned)c.rx_ts_dropped,
-				(unsigned)c.rx_cc_dropped);
+			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\ncall.rx_lc_taken=%u\n",
+				(unsigned)c.rx_ts_dropped, (unsigned)c.rx_cc_dropped, (unsigned)c.rx_lc_taken);
 			// The reverse channel heard while sending: here, as dmr_stats fills a reply
 			dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
 				(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);

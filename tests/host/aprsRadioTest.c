@@ -22,6 +22,7 @@
 #include "codeplug/codeplug_kv.h"	// the settings area fakes
 #include "fuzz.h"
 #include "ui/ui_svc_aprs.h"
+#include "ui/ui_svc.h"
 
 static int failures;
 static int checks;
@@ -56,15 +57,27 @@ static struct {
 
 static uint32_t now;
 uint32_t hal_millis(void) { return now; }	// ui_svc_aprs.c
+
+static ui_event_t last_ev;
+static int n_ev;
+bool ui_notify(const ui_event_t *ev) { last_ev = *ev; n_ev++; return true; }
 static char frames[8][AX25_TNC2_MAX];	// what went out, decoded from the tones
 static int nframes;
 
 static void r_init(void) {}
 static void r_set_mode(radio_mode_t m) { (void)m; }
+// Tunes off the APRS frequency with APRS receive still holding the FM audio: on the HR_C7000 a P25, NXDN or YSF
+// engine can't start then (dmr_glue.c air_take), so this must stay 0
+static int retune_while_aprs;
 static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 {
 	(void)bw;
 	(void)t;
+#if CONFIG_APRS_RX
+	if (hz != APRS_HZ && aprs_rx_listening()) {
+		retune_while_aprs++;
+	}
+#endif
 	hw.rx_hz = hz;
 	return true;
 }
@@ -89,17 +102,28 @@ static void r_tx_off(void)
 static void r_status(radio_status_t *st)
 {
 	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : 120;
-	st->rssi_dbm = -120;
+	st->rssi_dbm = st->noise < 64 ? -80 : -120;	// a signal reads above the floor (a voice peak's noise doesn't drop it)
 	st->carrier = false;
 	st->tone_ok = true;
 }
-static void r_audio(bool on) { (void)on; }
+static bool spk_on;	// the board's FM speaker path (radio_sm.c outputs)
+static bool spk_muted;	// speaker_mute, when test_mute gives the fake board one
+static int spk_blips;	// the speaker audible on the APRS frequency while muted (on and unmuted at once)
+static bool blip_watch;	// count spk_blips
+static void blip_check(void)
+{
+	if (blip_watch && spk_on && !spk_muted && hw.rx_hz == APRS_HZ) {
+		spk_blips++;
+	}
+}
+static void r_audio(bool on) { spk_on = on; blip_check(); }
+static void r_speaker_mute(bool mute) { spk_muted = mute; blip_check(); }
 static bool r_tone(uint16_t hz)
 {
 	hw.tone_hz = hz;
 	return true;
 }
-static const hal_radio_t fake_radio = {
+static hal_radio_t fake_radio = {	// not const: test_mute gives it speaker_mute
 	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
 	.audio = r_audio, .tx_tone = r_tone,
 };
@@ -1697,6 +1721,102 @@ static void feed(const int16_t *s)
 	run(RADIO_POLL_MS);
 }
 
+// From a channel on the APRS frequency to another, and dual watch hopping off it: the receive path lets go of the FM
+// audio before the board is tuned (a P25, NXDN or YSF engine needs it to start), not later in the same poll
+static void test_rx_release_on_retune(void)
+{
+	fake_tap.caps = AUDIO_TAP_FM_RX;
+	memset(&pcm, 0, sizeof(pcm));
+	reset();
+	retune_while_aprs = 0;
+	zone.count = 2;
+	zone.channels[1] = 2;
+	chan.rx_hz = chan.tx_hz = APRS_HZ;
+	settings_init();
+	radio_sm_init(&sm, now);
+	run(200);
+	CHECK(aprs_rx_listening() && hw.rx_hz == APRS_HZ);
+	req(RREQ_CH_STEP, 1);
+	CHECK(hw.rx_hz == CH2_HZ && !aprs_rx_listening() && retune_while_aprs == 0);
+	run(200);
+	CHECK(!aprs_rx_listening());
+	req(RREQ_CH_STEP, -1);	// back: it listens again
+	run(200);
+	CHECK(hw.rx_hz == APRS_HZ && aprs_rx_listening());
+#if CONFIG_DUAL_WATCH
+	// dual watch, one side on the APRS frequency: every hop off it is a retune
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	int starts = pcm.starts;
+	run(3000);
+	CHECK(sm.scan.kind == SCAN_DUAL && pcm.starts > starts + 3 && retune_while_aprs == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+#endif
+	fake_tap.caps = 0;
+}
+
+// Mute APRS audio: a signal on the APRS frequency keeps the speaker silent (the decoder still listens), Monitor plays
+// it, another channel isn't touched, and the setting is kept. A board with speaker_mute keeps the receive audio path
+// open and silences the speaker; one without has the path closed
+static void mute_case(bool hook)
+{
+	fake_radio.speaker_mute = hook ? r_speaker_mute : NULL;
+	spk_muted = false;
+	fake_tap.caps = AUDIO_TAP_FM_RX;
+	memset(&pcm, 0, sizeof(pcm));
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	chan.rx_hz = chan.tx_hz = APRS_HZ;
+	settings_init();
+	radio_sm_init(&sm, now);
+	hw.noise_on_aprs = 30;	// a carrier on 144.390
+	run(200);
+	CHECK(spk_on && !spk_muted && aprs_rx_listening());	// off by default: plays as before
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.mute = true;
+	aprs_set_cfg(&c, now);
+	run(100);
+	CHECK(aprs_rx_listening());
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	req(RREQ_MONITOR, 1);
+	CHECK(spk_on && !spk_muted);
+	req(RREQ_MONITOR, 0);
+	run(100);
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	// the end of a packet: the squelch closes and the speaker never plays for a moment on the way (with the hook,
+	// speaker_mute(false) before audio(false) did), nor when the next carrier opens it
+	spk_blips = 0;
+	blip_watch = true;
+	hw.noise_on_aprs = 120;
+	run(300);
+	CHECK(!spk_on && (!hook || spk_muted));
+	hw.noise_on_aprs = 30;
+	run(300);
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	blip_watch = false;
+	CHECK(spk_blips == 0);
+	aprs_init(now);	// as at power-up: the setting comes back
+	aprs_get_cfg(&c);
+	CHECK(c.mute);
+	hw.noise_on_aprs = 120;
+	req(RREQ_CH_STEP, 1);	// another channel, the squelch held open: plays
+	req(RREQ_MONITOR, 1);
+	CHECK(hw.rx_hz == CH2_HZ && spk_on && !spk_muted);
+	req(RREQ_MONITOR, 0);
+	c.mute = false;
+	aprs_set_cfg(&c, now);
+	fake_tap.caps = 0;
+	fake_radio.speaker_mute = NULL;
+}
+
+static void test_mute(void)
+{
+	mute_case(false);
+	mute_case(true);
+}
+
 // FM receive audio on the PCM stream (AUDIO_TAP_FM_RX) into the demodulator: only on the APRS frequency, battery saving
 // held off while it listens (docs/spec/aprs.md 5.3)
 static void test_rx_stream(void)
@@ -1885,6 +2005,68 @@ static void test_rx_board_only(void)
 }
 #endif
 
+// ui_svc_aprs_msg_poll: fires UI_EV_APRS_MESSAGE on a new inbound message; does not re-fire for the same message;
+// aprs_view_t carries last_msg_ms and last_msg_from after receipt
+#if CONFIG_APRS_RX
+static void test_msg_poll(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	n_ev = 0;
+
+	// no message yet: poll is silent
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 0);
+
+	// receive a message addressed to us
+	rx_line("Q1ABC-9>APRS,WIDE1-1::Q1TST-7  :Hello poll{51");
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1);
+
+	// first poll after receipt: fires one event with the right callsign and text
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1);
+	CHECK(last_ev.kind == UI_EV_APRS_MESSAGE);
+	CHECK(strcmp(last_ev.name, "Q1ABC-9") == 0);
+	CHECK(strcmp(last_ev.text, "Hello poll") == 0);
+
+	// second poll with the same msg_serial: no new event
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1);
+
+	// the view carries the sender and the timestamp
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.msg_serial == 1);
+	CHECK(v.last_msg_ms != 0);
+	CHECK(strcmp(v.last_msg_from, "Q1ABC-9") == 0);
+
+	// a second message from a different sender: poll fires again with the new message
+	rx_line("Q1XYZ-3>APRS,WIDE1-1::Q1TST-7  :Second message{52");
+	CHECK(wait_start(2, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 2);
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2);
+	CHECK(last_ev.kind == UI_EV_APRS_MESSAGE);
+	// peek(0) is the newest message in the inbox
+	aprs_msg_t m;
+	CHECK(aprs_msg_peek(0, &m));
+	CHECK(strcmp(last_ev.name, m.from) == 0);
+
+	// duplicate of the second message: msg_serial stays the same, poll stays silent
+	rx_line("Q1XYZ-3>APRS,WIDE1-1::Q1TST-7  :Second message{52");
+	run(500);
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2);
+
+	aprs_get_view(&v);
+	CHECK(v.msg_serial == 2);
+}
+#endif
+
 int main(void)
 {
 	test_defaults();
@@ -1912,6 +2094,7 @@ int main(void)
 	test_message_replaces_pending();
 #if CONFIG_APRS_RX
 	test_message_rejection();
+	test_msg_poll();
 #endif
 	test_dmr_position();
 	test_gps_setting();
@@ -1925,6 +2108,8 @@ int main(void)
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();
 	test_rx_stream();
+	test_rx_release_on_retune();
+	test_mute();
 	test_rx_board_only();
 	test_station_lookup();
 	test_station_range();

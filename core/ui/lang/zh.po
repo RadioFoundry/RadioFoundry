@@ -14,6 +14,11 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Glyphs: utf8\n"
 
+#: core/satellite/ui.c
+msgctxt "SATELLITE_ERR_TLE_SAVE"
+msgid "Couldn't save satellite TLE"
+msgstr "无法保存卫星 TLE"
+
 #: core/stubentry/stub_entry.h
 msgctxt "STUB_TITLE_PC_LOADER"
 msgid "PC Loader Connected"
@@ -24,7 +29,72 @@ msgctxt "STUB_HINT_POWER_CYCLE"
 msgid "Power-cycle to exit"
 msgstr "断电重启退出"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
+msgid "CI build"
+msgstr "CI 构建"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
+msgid "Build service"
+msgstr "构建服务"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_PR"
+msgid "Pull request"
+msgstr "PR 构建"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_LOCAL"
+msgid "Local build"
+msgstr "本地构建"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_FORK"
+msgid "Fork"
+msgstr "分支版本"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_UNKNOWN"
+msgid "Unknown"
+msgstr "不详"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_MCU"
+msgid "MCU: "
+msgstr "MCU： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_FLASH"
+msgid "Flash: "
+msgstr "存储器： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DISPLAY"
+msgid "Display: "
+msgstr "显示屏： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DMR_CHIP"
+msgid "DMR chip: "
+msgstr "DMR 器件： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_RF_CHIP"
+msgid "RF chip: "
+msgstr "射频器件： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_HARDWARE"
+msgid "Hardware: "
+msgstr "设备： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_HWOPT_UNSET"
+msgid "not set"
+msgstr "未设置"
+
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
 msgstr "关"
@@ -95,6 +165,11 @@ msgid "Delivered to "
 msgstr "已送达 "
 
 #: core/ui/ui_app.c
+msgctxt "SHARE_BANNER_NOT_SENT_TO"
+msgid "Not sent to "
+msgstr "未发送至 "
+
+#: core/ui/ui_app.c
 msgctxt "BANNER_NO_ANSWER_FROM"
 msgid "No answer from "
 msgstr "无应答： "
@@ -139,6 +214,11 @@ msgctxt "HOTSPOT_BANNER_OK_STOPS"
 msgid "OK stops it"
 msgstr "OK 停止"
 
+#: core/ui/ui_app.c
+msgctxt "APRS_BANNER_MSG_FROM"
+msgid "APRS message from "
+msgstr "APRS 信息来自 "
+
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "TOAST_SAVE_FAILED"
 msgid "Couldn't save: try again"
@@ -169,12 +249,7 @@ msgctxt "SHARE_BANNER_ZONE_FROM"
 msgid "⤓ Zone from "
 msgstr "⤓ 区域来自 "
 
-#: core/ui/ui_app.c
-msgctxt "SHARE_BANNER_NOT_SENT_TO"
-msgid "Not sent to "
-msgstr "未发送至 "
-
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_screens.c
 msgctxt "SHARE_BANNER_TRY_ON_DMR"
 msgid "Try again on a DMR channel"
 msgstr "请在 DMR 信道重试"
@@ -353,6 +428,21 @@ msgstr "正在扫描频段"
 msgctxt "SCAN_TOAST_SCANNING_ZONE"
 msgid "Scanning this zone"
 msgstr "正在扫描区域"
+
+#: core/ui/ui_app.c
+msgctxt "SCAN_TOAST_NOT_SCANNING"
+msgid "Not scanning"
+msgstr "未在扫描"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
+msgid "Skipped until the scan stops"
+msgstr "扫描停止前跳过"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
+msgid "Nothing to skip yet"
+msgstr "暂无可跳过"
 
 #: core/ui/ui_app.c
 msgctxt "TALK_TOAST_DEFAULT"
@@ -654,7 +744,7 @@ msgctxt "BATT_BANNER_BATTERY"
 msgid "Battery "
 msgstr "电池 "
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
+#: core/ui/ui_app.c
 msgctxt "BATT_PART_CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "%：请尽快充电"
@@ -868,6 +958,11 @@ msgstr "USB KISS"
 msgctxt "APRS_ROW_STATIONS_HEARD"
 msgid "Stations heard"
 msgstr "收到的台站"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_MUTE"
+msgid "Mute APRS audio"
+msgstr "APRS静音"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
@@ -1484,7 +1579,7 @@ msgctxt "ACT_ROW_TALK_TO"
 msgid "Talk to "
 msgstr "通话对象 "
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "ACT_ROW_PRIVATE_CALL"
 msgid "Private call"
 msgstr "个呼"
@@ -1540,24 +1635,29 @@ msgid "Messages: not in this build"
 msgstr "消息：本版本无"
 
 #: core/ui/ui_menus.c
-msgctxt "ACT_TOAST_CHECKING"
-msgid "Checking "
-msgstr "正在检查 "
-
-#: core/ui/ui_menus.c
 msgctxt "WHY_RADIO_CHECK_NOT_IN_BUILD"
 msgid "Radio check: not in this build"
 msgstr "电台检查：本版本无"
 
 #: core/ui/ui_menus.c
-msgctxt "ACT_TOAST_CALL_ALERT_TO"
-msgid "Call alert to "
-msgstr "呼叫提示至 "
+msgctxt "ACT_TOAST_CHECKING"
+msgid "Checking "
+msgstr "正在检查 "
+
+#: core/ui/ui_menus.c
+msgctxt "MSG_TOAST_SEND_FAILED"
+msgid "Couldn't send: try again"
+msgstr "发送失败：请重试"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_CALL_ALERT_NOT_IN_BUILD"
 msgid "Call alert: not in this build"
 msgstr "呼叫提示：本版本无"
+
+#: core/ui/ui_menus.c
+msgctxt "ACT_TOAST_CALL_ALERT_TO"
+msgid "Call alert to "
+msgstr "呼叫提示至 "
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_POS_REQUESTS_NOT_IN_BUILD"
@@ -1628,11 +1728,6 @@ msgstr "请求确认"
 msgctxt "MSG_LABEL_INCLUDE_POSITION"
 msgid "Include position"
 msgstr "APRS 位置"
-
-#: core/ui/ui_menus.c
-msgctxt "MSG_TOAST_SEND_FAILED"
-msgid "Couldn't send: try again"
-msgstr "发送失败：请重试"
 
 #: core/ui/ui_menus.c
 msgctxt "TOAST_SENDING_TO"
@@ -2044,6 +2139,41 @@ msgctxt "LABEL_NAME"
 msgid "Name"
 msgstr "名称"
 
+#: core/ui/ui_menus.c core/ui/ui_satellite.c
+msgctxt "SATELLITE_2"
+msgid "Satellite"
+msgstr "卫星"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
+msgid "1 ABC"
+msgstr "1 ABC"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_NUMERIC"
+msgid "1 123"
+msgstr "1 123"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_LOWER"
+msgid "1 abc"
+msgstr "1 abc"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_UPPER"
+msgid "2 ABC"
+msgstr "2 ABC"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_NUMERIC"
+msgid "2 123"
+msgstr "2 123"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
+msgid "2 abc"
+msgstr "2 abc"
+
 #: core/ui/ui_menus.c
 msgctxt "TEXT_HINT_KEEP"
 msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
@@ -2138,6 +2268,11 @@ msgstr "发射亚音"
 msgctxt "WORD_TONE_BURST"
 msgid "Tone burst"
 msgstr "突发音"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_AES_KEY"
+msgid "AES key"
+msgstr "AES 密钥"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
@@ -2660,11 +2795,6 @@ msgid "Hotspot"
 msgstr "热点"
 
 #: core/ui/ui_menus.c
-msgctxt "TITLE_BATTERY"
-msgid "Battery"
-msgstr "电池"
-
-#: core/ui/ui_menus.c
 msgctxt "TITLE_ABOUT"
 msgid "About"
 msgstr "关于"
@@ -2703,11 +2833,6 @@ msgstr "中继台"
 msgctxt "SFR_VALUE_REPEATER_ERDM"
 msgid "Repeater (ERDM style)"
 msgstr "中继台（ERDM 式）"
-
-#: core/ui/ui_menus.c
-msgctxt "TITLE_SUPPLY"
-msgid "Supply"
-msgstr "供电"
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_NO_GPS_OR_OFF"
@@ -3058,6 +3183,21 @@ msgstr "上下  # +/-  OK 完成"
 msgctxt "TRIM_TOAST_MAX"
 msgid "Up to 10.0 ppm"
 msgstr "最大 10.0 ppm"
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_SOURCE"
+msgid "Source: "
+msgstr "来源： "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_IMAGE"
+msgid "Image: "
+msgstr "固件标识： "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_VALUE_IMAGE_CHECKING"
+msgid "checking"
+msgstr "检查中"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_FIRMWARE"
@@ -3490,6 +3630,11 @@ msgid "High contrast"
 msgstr "高对比度"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_THEME_NIGHT"
+msgid "Night (red)"
+msgstr "晚间（红色）"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_DEFAULT"
 msgid "Default"
 msgstr "默认"
@@ -3580,6 +3725,16 @@ msgid "Prev zone"
 msgstr "上一区域"
 
 #: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_SCAN_SKIP"
+msgid "Scan skip"
+msgstr "跳过信道"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_MONITOR_TOGGLE"
+msgid "Monitor toggle"
+msgstr "锁定监听"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_KEY_LOCK"
 msgid "Key lock"
 msgstr "按键锁"
@@ -3620,6 +3775,11 @@ msgid "Channel"
 msgstr "信道"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
+msgid "Automatic"
+msgstr "自动"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_ETSI_SHORT"
 msgid "ETSI short"
 msgstr "ETSI 简码"
@@ -3638,6 +3798,16 @@ msgstr "第一份副本"
 msgctxt "SET_VALUE_SFR_RX_DUAL_PATH"
 msgid "Dual-path RX"
 msgstr "双路接收"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_KEY_TYPE_8_BIT"
+msgid "8-bit (1-255)"
+msgstr "8 位 (1-255)"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_KEY_TYPE_16_BIT"
+msgid "16-bit (0-65535)"
+msgstr "16 位 (0-65535)"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_VALUE_SPEAKER"
@@ -3930,6 +4100,11 @@ msgid "Send in DMR calls"
 msgstr "DMR 通话带位置"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_GPS_POSITION"
+msgid "Save GPS position"
+msgstr "保存 GPS 位置"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_HOTSPOT_ALLOWED"
 msgid "Hotspot allowed"
 msgstr "允许热点"
@@ -4200,6 +4375,11 @@ msgid "Colors are for color screens"
 msgstr "颜色仅用于彩屏"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_NIGHT_RED_ONLY"
+msgid "Night theme: red only"
+msgstr "晚间主题：仅红色"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_MIC_GAIN_NOT_IN_BUILD"
 msgid "Mic gain: not in this build"
 msgstr "麦克风增益：本版本无"
@@ -4253,6 +4433,16 @@ msgstr "DMR 定位：本版本无"
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "诊断：本版本无"
+
+#: core/ui/ui_menus.c
+msgctxt "GPS_POSITION_SAVED"
+msgid "GPS position saved"
+msgstr "GPS 位置已保存"
+
+#: core/ui/ui_menus.c
+msgctxt "NO_CURRENT_GPS_FIX"
+msgid "No current GPS fix"
+msgstr "当前无 GPS 定位"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
@@ -4350,16 +4540,6 @@ msgid "Always skip"
 msgstr "总是跳过"
 
 #: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
-msgid "Skipped until the scan stops"
-msgstr "扫描停止前跳过"
-
-#: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
-msgid "Nothing to skip yet"
-msgstr "暂无可跳过"
-
-#: core/ui/ui_menus.c
 msgctxt "SCAN_TOAST_STOPPED_HERE"
 msgid "Scan stopped here"
 msgstr "扫描停在此处"
@@ -4423,6 +4603,151 @@ msgstr "经度"
 msgctxt "POS_TOAST_RANGE"
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "北南 90，东西 180"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_STALE"
+msgid "TLE is 14+ days old; refresh from site"
+msgstr "TLE已超过14天；请从网站更新"
+
+#: core/ui/ui_satellite.c
+msgctxt "TLE_UPDATE_FAILED_2"
+msgid "TLE update failed"
+msgstr "TLE 更新失败"
+
+#: core/ui/ui_satellite.c
+msgctxt "TLE_UPDATE_QUEUED"
+msgid "TLE update queued"
+msgstr "TLE 更新已排队"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_UNAVAILABLE_4"
+msgid "Satellite unavailable"
+msgstr "卫星不可用"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_RISE"
+msgid "↑ in"
+msgstr "↑ 后"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_SET"
+msgid "↓ in"
+msgstr "↓ 后"
+
+#: core/ui/ui_satellite.c
+msgctxt "OTHER_SATELLITE_2"
+msgid "Other satellite"
+msgstr "其他卫星"
+
+#: core/ui/ui_satellite.c
+msgctxt "VISIBLE_2"
+msgid "Visible"
+msgstr "可见"
+
+#: core/ui/ui_satellite.c
+msgctxt "BELOW_HORIZON_2"
+msgid "Below horizon"
+msgstr "地平线下"
+
+#: core/ui/ui_satellite.c
+msgctxt "WAITING_FOR_POSITION_TIME_2"
+msgid "Waiting for position/time"
+msgstr "等待位置/时间"
+
+#: core/ui/ui_satellite.c
+msgctxt "NOW"
+msgid "Now"
+msgstr "当前"
+
+#: core/ui/ui_satellite.c
+msgctxt "PREDICTING_PASSES_2"
+msgid "Predicting passes"
+msgstr "正在预测过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
+msgid "No TLEs: load from site"
+msgstr "无TLE：请从网站加载"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "TLE天数"
+
+#: core/ui/ui_satellite.c
+msgctxt "GPS_TIME_UNAVAILABLE"
+msgid "GPS/time unavailable"
+msgstr "GPS/时间不可用"
+
+#: core/ui/ui_satellite.c
+msgctxt "NO_PASSES_IN_NEXT_24H"
+msgid "No passes in next 24h"
+msgstr "未来 24 小时无过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASSES"
+msgid "Next passes"
+msgstr "后续过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_PICK_BACK"
+msgid "Up Down pick  Back"
+msgstr "返回 上下选择"
+
+#: core/ui/ui_satellite.c
+msgctxt "CATALOG"
+msgid "Catalog"
+msgstr "编号"
+
+#: core/ui/ui_satellite.c
+msgctxt "TRACKING_4"
+msgid "Tracking"
+msgstr "跟踪中"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASS"
+msgid "Next pass"
+msgstr "下次过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "VISIBLE_NOW"
+msgid "Visible now"
+msgstr "当前可见"
+
+#: core/ui/ui_satellite.c
+msgctxt "CALCULATING"
+msgid "Calculating"
+msgstr "计算中"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_STATE_BEYOND_FORECAST"
+msgid "Beyond forecast"
+msgstr "超出预报"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_SATELLITE_OK_TRACK"
+msgid "Up Down satellite  OK track  Hold OK arm  # TLE  Back"
+msgstr "上下选择卫星  OK track  长按 OK 启动  # TLE  返回"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_SATELLITE_OK_TRACK_2"
+msgid "Up Down satellite  OK track  # TLE  Back"
+msgstr "返回 上下选择卫星  OK track  # TLE"
+
+#: core/ui/ui_satellite.c
+msgctxt "SO_50_ARM_REQUESTED"
+msgid "SO-50 arm requested"
+msgstr "已请求启动 SO-50 定时器"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOP_FAILED"
+msgid "Tracking not stopped"
+msgstr "跟踪未停止"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOPPED"
+msgid "Tracking stopped"
+msgstr "跟踪已停止"
 
 #: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
@@ -4545,6 +4870,16 @@ msgid "No TX frequency set"
 msgstr "未设发射频率"
 
 #: core/ui/ui_screens.c
+msgctxt "WHY_AES_KEY"
+msgid "AES key or TX disabled"
+msgstr "无 AES 密钥或已禁用发射"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_WAIT"
+msgid "AES: saving, try again"
+msgstr "AES：正在保存，请重试"
+
+#: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"
 msgid "Mode: not in this build"
 msgstr "模式：本版本无"
@@ -4605,6 +4940,11 @@ msgid "This mode: receive only"
 msgstr "此模式：仅接收"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_DATA_ENCRYPTED"
+msgid "Encrypted channels can't send text"
+msgstr "加密信道无法发送消息"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_NO_CC"
 msgid "No control channel"
 msgstr "未找到网络"
@@ -4630,9 +4970,19 @@ msgid "Voice channel unusable"
 msgstr "话音信道不可用"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
+msgid "RX-only system: no TX"
+msgstr "仅接收系统：禁止发射"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"
 msgid "Another system heard"
 msgstr "只收到其他系统"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "不支持的系统"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
@@ -4755,6 +5105,16 @@ msgid "DMR modem off"
 msgstr "DMR 调制解调器关"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_TITLE_INCOMING_CALL"
+msgid "Incoming private call"
+msgstr "收到个呼"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_HINT_PTT_ANSWER"
+msgid "Press PTT to answer"
+msgstr "按 PTT 接听"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_FALLBACK"
 msgid "Fallback"
 msgstr "备用信道"
@@ -4778,6 +5138,11 @@ msgstr "搜索中"
 msgctxt "TRUNK_STATE_IN_CALL"
 msgid "In call"
 msgstr "通话中"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_CALLING"
+msgid "Calling"
+msgstr "正在呼叫"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_REFUSED"
@@ -4823,6 +5188,16 @@ msgstr "数听"
 msgctxt "HOME_CHIP_PRIVACY"
 msgid "Priv"
 msgstr "加密"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "不支持的系统"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND_NOTE"
+msgid "Cannot join"
+msgstr "无法加入"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_MODEL_TINY"
@@ -4978,6 +5353,11 @@ msgstr "不能发射"
 msgctxt "ACTIVITY_BODY_TX_WAITS"
 msgid "Transmit waits for it"
 msgstr "设置前不能发射"
+
+#: core/ui/ui_screens.c
+msgctxt "APRS_ACTIVITY_LAST_MSG"
+msgid "APRS: "
+msgstr "APRS: "
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LAST"
@@ -5283,6 +5663,11 @@ msgstr "1-9 更改  长按 OK 保存"
 msgctxt "QUICK_HINT_ALL_SETTINGS"
 msgid "0 All settings  Hold OK save"
 msgstr "0 所有设置  长按 OK 保存"
+
+#: core/ui/ui_screens.c
+msgctxt "DIAG_VARIANT_MISMATCH"
+msgid "This firmware may be for another version of this radio"
+msgstr "此固件可能用于本电台的其他版本"
 
 #: core/ui/ui_screens.c
 msgctxt "DIAG_HINT"

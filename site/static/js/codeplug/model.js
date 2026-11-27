@@ -14,7 +14,7 @@ import {
 	LIST_SIZE, decodeList, encodeList, DTMF_CONTACTS, decodeDtmf, encodeDtmf, validDtmf, APRS_BASE, APRS_SIZE,
 	decodeAprs, encodeAprs, decodeGeneral, encodeGeneral, VFO, LUCZ,
 } from "./records.js";
-import { parseTone } from "./fields.js";
+import { parseTone, nameBytes } from "./fields.js";
 import { readHeader } from "./iddb.js";
 import { decodeArea, keyValid, recordValid, KEYS, RECORD_KEYS } from "./kv.js";
 import { decodeModes, encodeModes, syncModes, removeModes, validateModes, MODE_LIMITS } from "./channelmodes.js";
@@ -50,7 +50,7 @@ export function decode(image) {
 	for (let n = 1; n <= LIMITS.channels; n++) {
 		if (!channelUsed(b, n)) continue;
 		const c = decodeChannel(b.subarray(channelAddr(n), channelAddr(n) + CH_SIZE));
-		if (c) m.channels.push(linkRefs(m, { number: n, ...c }));
+		if (c) m.channels.push(followListen(linkRefs(m, { number: n, ...c })));
 	}
 	decodeModes(m, b);
 	for (const a of VFO) {
@@ -139,6 +139,7 @@ const CHANNEL_KEYS = [
 	"name", "rxHz", "txHz", "mode", "power", "tot", "rxTone", "txTone", "bw", "rxOnly", "allSkip", "zoneSkip", "vox",
 	"squelch", "colorCode", "timeslot", "contact", "rxList", "aprs", "dmrId", "noBeep", "noEco", "dmo", "roam",
 	"aliasTs1", "aliasTs2", "useLocation", "lat", "lon", "sfr", "sfrA", "sfrB", "toneBurst",
+	"acceptBadCrc",
 ];
 
 function flatChannel(c) {
@@ -257,7 +258,7 @@ export function newChannel(fields = {}) {
 		txTone: "", bw: 12.5, rxOnly: false, allSkip: false, zoneSkip: false, vox: false, squelch: 0, colorCode: 1,
 		timeslot: 1, contact: null, rxList: null, aprs: null, dmrId: 0, noBeep: false, noEco: false, dmo: false,
 		roam: false, aliasTs1: 0, aliasTs2: 0, useLocation: false, lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0,
-		toneBurst: false, kind: 0, ...fields,
+		toneBurst: false, acceptBadCrc: false, kind: 0, ...fields,
 	};
 }
 
@@ -294,6 +295,17 @@ export function listenBand(hz) {
 	return null;
 }
 
+// A channel whose RX is in a listen band is RX only with TX on RX, as the radio's channel editor saves it: no stray TX
+// frequency from before (a channel read, imported or edited elsewhere) is shown, exported or written. A TX frequency
+// in a listen band makes the channel RX only too. Returns c
+export function followListen(c) {
+	if (listenBand(c.rxHz)) {
+		c.rxOnly = true;
+		c.txHz = c.rxHz;
+	} else if (listenBand(c.txHz)) c.rxOnly = true;	// no radio transmits there: the channel is RX only
+	return c;
+}
+
 // --- Validation ---
 
 // Problems as {level: "error" | "warning", table, item, field, code, params}; the page words them
@@ -323,7 +335,7 @@ export function validate(m, { bands = null, features = null } = {}) {
 
 	for (const c of m.channels) {
 		if (!c.name) err("channels", c, "name", "no_name");
-		if (c.name.length > LIMITS.name) err("channels", c, "name", "too_long", { max: LIMITS.name });
+		if (nameBytes(c.name) > LIMITS.name) err("channels", c, "name", "too_long", { max: LIMITS.name });
 		for (const f of ["rxHz", "txHz"]) {
 			if (!(c[f] > 0 && c[f] < 1e9)) err("channels", c, f, "bad_freq");
 			else if (bands && !bands.some(([lo, hi]) => c[f] >= lo && c[f] <= hi)) warn("channels", c, f, "out_of_band");
@@ -333,8 +345,6 @@ export function validate(m, { bands = null, features = null } = {}) {
 		if (c.mode === "dmr" && !c.kind && !c.contact && !c.rxOnly) warn("channels", c, "contact", "no_contact");
 		const band = listenBand(c.rxHz);
 		if (band && c.mode === "dmr") warn("channels", c, "mode", `listen_dmr_${band}`);
-		const txBand = listenBand(c.txHz);
-		if (txBand && !c.rxOnly) warn("channels", c, "rxOnly", `listen_tx_${txBand}`);
 		for (const k of REFS) if (typeof c[k] === "number") warn("channels", c, k, "dangling", { number: c[k] });
 		if (c.dmrId > 0xFFFFFF) err("channels", c, "dmrId", "id_range");
 	}
@@ -344,13 +354,13 @@ export function validate(m, { bands = null, features = null } = {}) {
 
 	for (const z of m.zones) {
 		if (!z.name) err("zones", z, "name", "no_name");
-		if (z.name.length > LIMITS.name) err("zones", z, "name", "too_long", { max: LIMITS.name });
+		if (nameBytes(z.name) > LIMITS.name) err("zones", z, "name", "too_long", { max: LIMITS.name });
 		if (z.channels.length > LIMITS.zoneChannels) err("zones", z, "channels", "too_many", { max: LIMITS.zoneChannels, count: z.channels.length });
 		if (!z.channels.length) warn("zones", z, "channels", "empty");
 	}
 	for (const c of m.contacts) {
 		if (!c.name) err("contacts", c, "name", "no_name");
-		if (c.name.length > LIMITS.name) err("contacts", c, "name", "too_long", { max: LIMITS.name });
+		if (nameBytes(c.name) > LIMITS.name) err("contacts", c, "name", "too_long", { max: LIMITS.name });
 		if (c.type !== "all" && !(c.id >= 1 && c.id <= 0xFFFFFF)) err("contacts", c, "id", "id_range");
 	}
 	for (const l of m.rxLists) {
@@ -363,8 +373,8 @@ export function validate(m, { bands = null, features = null } = {}) {
 	}
 	for (const a of m.aprs) {
 		if (!a.name) err("aprs", a, "name", "no_name");
-		if (a.name.length > LIMITS.aprsName) err("aprs", a, "name", "too_long", { max: LIMITS.aprsName });
-		if (a.comment.length > LIMITS.aprsComment) err("aprs", a, "comment", "too_long", { max: LIMITS.aprsComment });
+		if (nameBytes(a.name) > LIMITS.aprsName) err("aprs", a, "name", "too_long", { max: LIMITS.aprsName });
+		if (nameBytes(a.comment) > LIMITS.aprsComment) err("aprs", a, "comment", "too_long", { max: LIMITS.aprsComment });
 	}
 	validateModes(m, err, warn, { features, baseNames: () => (m.base ? channelNames(m.base.bytes) : new Map()) });
 	return out;

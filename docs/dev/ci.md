@@ -40,7 +40,7 @@ push runs only the manual workflow. A newer push cancels the run in progress (`c
 
 | Job | Command |
 |---|---|
-| `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) |
+| `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the bench tools (`tools/ci.sh --steps bench`) and the UI screen gallery (`uiSim --gallery`) |
 | `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links and the strict web site build among the Python checks; the job installs `site/requirements.txt` for the site) |
 | `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --toolchain arm`: every board built with the Arm toolchain, default and maximal (with the stack check), in one job |
 | `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --toolchain csky`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) unless the runner has csky-elf GCC; skipped where the image isn't available |
@@ -59,8 +59,9 @@ application region, also put in the job summary on GitHub) and fails when the ap
 images and logs are workflow artifacts (`firmware-arm`, `firmware-csky`), as are the unit test logs with the screen gallery
 (`host-logs`) and the coverage report (`coverage-report`).
 
-`reuse lint` is part of the `checks` job only when the repository variable `RFOUNDRY_CI_REUSE` is `true`; it doesn't pass on
-the current tree yet (run it to see the files), and the nightly reports it as a warning meanwhile.
+`reuse lint` is part of the `checks` job only when the repository variable `RFOUNDRY_CI_REUSE` is `true`. The tree
+passes it; with the variable set, a pull request that adds a file without an SPDX header (or a `REUSE.toml` entry)
+fails the job. Without the variable the nightly reports it as a warning.
 
 ## Submodules
 
@@ -128,8 +129,8 @@ before and after, side by side. It's advisory: no required check waits on it.
 
    The gallery's color pages are drawn once more in each highlight color the workflow's `UI_GALLERY_COLORS` names
    (`env` at the top of `ui-gallery.yml`: one line, in double quotes, any of `red orange yellow teal light_blue purple
-   pink`; three for now). Theme pages are also drawn in the light and high-contrast themes (`<screen>__light`,
-   `<screen>__high_contrast`). When a color page or any of its color or theme shots changed, the comparison shows the
+   pink`; three for now). Theme pages are also drawn in the light, high-contrast and night themes
+   (`<screen>__light`, `<screen>__high_contrast`, `<screen>__night`). When a color page or any of its color or theme shots changed, the comparison shows the
    whole set as one row of the composite: a column per shot, the page first, then its colors in the list's order and
    its themes, before above after, the unchanged ones marked so. Such a row counts as two of the eight.
    `make -C tests/host ui-gallery` reads the same line, so the committed gallery shows the same colors. Changing the
@@ -181,7 +182,7 @@ The job summary lists the changed beeps. A video is about 240 KB; a beep's WAV 2
 |---|---|
 | `matrix (Arm)` | `tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal |
 | `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC |
-| `reuse` | `reuse lint`, a warning until it passes |
+| `reuse` | `reuse lint`, a warning (the `checks` job fails on it once `RFOUNDRY_CI_REUSE` is `true`) |
 
 The maximal build turns on every switch except the board's `BOARD_UNSUPPORTED` (the hardware can't),
 `BOARD_NOT_WRITTEN` (the code isn't written for the radio yet) and `MAXIMAL_SKIP` lists, and `CONFIG_AUDIO_PROBE`
@@ -234,12 +235,13 @@ tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board 
 |---|---|
 | `registry` | Every `board.toml` and `platform.toml` is well formed and agrees with `board.mk`, the linker scripts and `board_t`; `tools/rfoundry/rfoundry/registry.json` is current; the loader's self-test (`tools/boards.py`) |
 | `host` | `make -C tests/host`, with each board's own tests (`boards/<b>/tests/host.mk`) |
+| `bench` | Each bench tool with a Makefile under `tools/bench/*/` (built from the `core/` sources, such as the P25 and NXDN tools), with zero warnings |
 | `python` | Every Python file parses, the HIL test collection, rfoundry's tests, every tool's `--self-test` (found by searching `tools/` and `stub/`, so a new tool needs no ci.sh change), doc links, the glossary, the web site build and the flasher's tests |
 | `firmware` | Every board whose compiler is installed: the default build, each build option value (`board.toml` `[[build_options]]`, such as a band), each `[ci] extra` configuration, the feature matrix, and the flash stubs of each built platform (`platform.toml` `stubs`) |
 | `licenses` | `tools/license_grep.sh` and `reuse lint` |
 | `similarity` | `tools/similarity_scan.py`, only with `RFOUNDRY_SIMILARITY_REFS` set |
 
-Every step but `host` needs Python 3.11 or later for the registry's TOML. `tools/rfoundry_python.sh` finds it:
+Every step but `host` and `bench` needs Python 3.11 or later for the registry's TOML. `tools/rfoundry_python.sh` finds it:
 `$RFOUNDRY_PYTHON`, else the newest `python3.N` on `PATH`. A board whose compiler is missing is skipped with the command
 that installs it (its platform's `toolchain.build`). `--quick` builds each board's default and maximal configurations,
 `--matrix` the feature matrix.

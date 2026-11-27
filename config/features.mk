@@ -19,8 +19,12 @@ CONFIG_FM ?= y
 CONFIG_SUBTONE ?= $(CONFIG_FM)
 # DMR Tier II voice: modem driver, call stack, AMBE FEC, vocoder hosting
 CONFIG_DMR ?= y
-# basic privacy (Motorola / Anytone BP) on the voice path (needs DMR)
+# basic privacy, 8-bit and 16-bit keys, on the voice path (needs DMR)
 CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
+# AES-256 voice encryption, the DMRA scheme (PI header ALG 0x25, docs/spec/dmr-voice.md 5.1): calls with a PI header
+# decrypted, and our overs encrypted, on channels bound to a traffic key in the codeplug. Needs DMR_PRIVACY (its AMBE
+# FEC helpers)
+CONFIG_DMR_AES ?= $(CONFIG_DMR_PRIVACY)
 # talker alias decode and TX of our radio name (needs DMR)
 CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 # ETSI GPS Info in the embedded LC (FLCO 8): the caller's position decoded and shown, ours sent from the position
@@ -28,7 +32,7 @@ CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 CONFIG_DMR_GPS ?= $(CONFIG_DMR)
 # DMR text messages (SMS; needs DMR): ETSI IP text and ETSI defined short data, sent and received (docs/spec/dmr-data.md 5)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)
-# Motorola TMS format support for text messages: send, receive, the TMS ACK (needs DMR_SMS; docs/spec/dmr-data.md 5.1)
+# TMS format support for text messages: send, receive, the TMS ACK (needs DMR_SMS; docs/spec/dmr-data.md 5.1)
 CONFIG_DMR_TMS ?= $(CONFIG_DMR_SMS)
 # ARS registration with a presence server (needs DMR; docs/spec/dmr-data.md)
 CONFIG_DMR_ARS ?= $(CONFIG_DMR)
@@ -76,8 +80,9 @@ CONFIG_NET_HTTP ?= $(CONFIG_NET_TCP)
 # the status server's static files (core/net/http_assets) stored gzip compressed at build time and served with
 # Content-Encoding: gzip; off: stored and served as they are (needs NET_HTTP; tools/gen_http_assets.py)
 CONFIG_NET_HTTP_GZIP ?= $(CONFIG_NET_HTTP)
-# web control on the status server: /ws (WebSocket) for the radio's front panel page, keys, status and receive audio
-# (needs NET_HTTP; core/net/ws.c, docs/spec/tcp-services.md 5)
+# web control on the status server: /ws (WebSocket) for the radio's front panel page, keys, status and receive audio,
+# and for programs on the host: zone and channel select and step, the board GPS's fix (needs NET_HTTP; core/net/ws.c,
+# core/net/webctl.c, core/net/radio_ctl.c, docs/spec/tcp-services.md 5)
 CONFIG_NET_WEBCTL ?= $(CONFIG_NET_HTTP)
 # Hamlib rigctld on port 4532: frequency, mode, PTT, S meter for loggers and SDR programs (needs NET_TCP;
 # core/net/rigctld.c)
@@ -141,6 +146,10 @@ CONFIG_VFO_FM ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_FM))),
 CONFIG_VFO_DMR ?= $(if $(and $(filter y,$(CONFIG_VFO)),$(filter y,$(CONFIG_DMR))),y,n)
 # the debug link: framed commands on the host port for bench automation (docs/spec/debuglink.md; needs HOSTLINK)
 CONFIG_DEBUGLINK ?= $(CONFIG_HOSTLINK)
+# the debug link over the air: authenticated requests on UDP 3335 of the radio's DMR IP address, through a bench IP
+# gateway, and the detour command (temporary settings that a deadline on the radio reverts; docs/spec/debuglink.md 7).
+# A bench diagnostic, off by default and in every release (needs DEBUGLINK and DMR_IP_GATEWAY)
+CONFIG_DEBUGLINK_DMRIP ?= n
 # every task's least free stack in the debug link's tasks view: the kernel's task create / delete trace hooks keep a
 # table of the tasks (core/app/task_stack.c, docs/spec/debuglink.md 3.7; needs DEBUGLINK). About 0.6 KB
 CONFIG_TASK_STACKS ?= $(CONFIG_DEBUGLINK)
@@ -178,9 +187,13 @@ CONFIG_LANG_IT ?= n
 CONFIG_LANG_FR ?= n
 # Chinese on the radio (core/ui/lang/zh.po): the Latin fonts have no glyph for it, so it brings a 16x16 CJK font of the
 # characters its catalog uses (core/ui/cjk_font_data.c, built by tools/cjkfont.py) and text the text layer decodes.
-# Off by default: about 16 KB of glyphs and 12 KB of text. Each radio with another display font needs its glyphs checked
+# Off by default: about 27 KB of glyphs and 17 KB of text. Each radio with another display font needs its glyphs checked
 # against that font's height (docs/dev/translating.md)
 CONFIG_LANG_ZH ?= n
+# the CJK glyph table for Chinese channel names and text: built with CONFIG_LANG_ZH, but a board too small to show
+# Chinese (docs/build-config.md) turns it off and keeps the translated menus (it draws boxes for any Chinese). Needs
+# CONFIG_LANG_ZH (the radio's font has no glyph for the characters otherwise)
+CONFIG_CJK_GLYPHS ?= $(CONFIG_LANG_ZH)
 # the language the radio starts in, until the user picks one in Settings > Display > Language: one switch per language,
 # at most one on (with more, the first listed wins), off = English. Needs that language's switch. No flash cost
 CONFIG_LANG_DEFAULT_ES ?= n
@@ -273,6 +286,11 @@ CONFIG_CRASH_REPORT ?= $(if $(and $(filter y,$(CONFIG_CRASH_SCREEN)),$(filter y,
 # the chip (the IWDG on the STM32F4, the SoC's watchdog on the HR_C7000; docs/spec/watchdog.md). With the debug link it
 # also has a bench test (command 0x1D). Off: no watchdog runs, as before. Needs nothing else
 CONFIG_WATCHDOG ?= y
+# the support info: About shows where the build came from and the radio's hardware identity (chips and their versions
+# where a model has several), and hashes the firmware image so a host can tell one of our images from another; the
+# debug link's SUPPORT command gives the same to the web site's support download (core/support,
+# docs/spec/support-info.md). Read only when asked, never at start-up. Needs nothing else
+CONFIG_SUPPORT_INFO ?= y
 # the fault trace: a CPU fault prints its registers on the host UART, three framed lines a second apart, before the
 # restart (core/crash/crash_trace.c, tools/rfoundry_fault_trace.py; docs/spec/crash-log.md 2.3). Only where the host port is
 # a UART the fault handler can drive polled: the HR_C7000 radios (the STM32 radios' config.mk turn it off: USB only).
@@ -307,6 +325,7 @@ CONFIG_P25 ?= $(CONFIG_DMR)
 # on the air interface, and the NXDN channel mode. Voice frames go to and from the vocoder the board already hosts for
 # DMR, through the DMR voice path; nothing of the vocoder is in it. Needs DMR
 CONFIG_NXDN ?= $(CONFIG_DMR)
+CONFIG_NXDN_SCRAMBLER ?= $(CONFIG_NXDN)
 # Derived, never set by hand (a command line or a board's config.mk that sets one stops the build): AIR the air
 # interface, on with any air-framed mode (P25, NXDN); IMBE the full-rate voice decoder and MBE the MBE core, with P25
 $(foreach f,AIR IMBE MBE,$(if $(filter-out undefined,$(origin CONFIG_$(f))),$(error CONFIG_$(f) is derived from CONFIG_P25 \
@@ -325,10 +344,14 @@ CONFIG_P25_TRUNK ?= $(CONFIG_P25)
 # core/ui/ui_gps.c, docs/spec/position.md 3). Needs GPS; off, Tools > Position is a page of text
 CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 
+# Satellite TLE storage and tracking (docs/spec/satellite.md); needs DEBUGLINK. Full and amateur builds use 12 KB of
+# update staging
+CONFIG_SATELLITE_TLE ?= $(if $(filter y,$(CONFIG_DEBUGLINK)),y,n)
 
-FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
-	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG BACKLIGHT_TEST FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_FR LANG_ZH LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_FR LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP SIG_TONES FM_TX_TONES DTMF \
-	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR P25 P25_TRUNK NXDN AIR_RAW
+
+FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_AES DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
+	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK DEBUGLINK_DMRIP CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG BACKLIGHT_TEST FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_FR LANG_ZH CJK_GLYPHS LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_FR LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP SIG_TONES FM_TX_TONES DTMF \
+	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG SUPPORT_INFO FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY SATELLITE_TLE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR P25 P25_TRUNK NXDN NXDN_SCRAMBLER AIR_RAW
 
 # The panel's width in pixels: the display class the board's board.toml names (hardware.gallery = "160x128", the width
 # first). Empty when it names none, which counts as a narrow panel
@@ -352,6 +375,8 @@ $(if $(and $(call feature_on,LANG_DEFAULT_ES),$(if $(call feature_on,LANG_ES),,x
 $(if $(and $(call feature_on,LANG_DEFAULT_IT),$(if $(call feature_on,LANG_IT),,x)),$(error CONFIG_LANG_DEFAULT_IT=y needs CONFIG_LANG_IT=y))
 $(if $(and $(call feature_on,LANG_DEFAULT_FR),$(if $(call feature_on,LANG_FR),,x)),$(error CONFIG_LANG_DEFAULT_FR=y needs CONFIG_LANG_FR=y))
 $(if $(and $(call feature_on,LANG_DEFAULT_ZH),$(if $(call feature_on,LANG_ZH),,x)),$(error CONFIG_LANG_DEFAULT_ZH=y needs CONFIG_LANG_ZH=y))
+$(if $(and $(call feature_on,DMR_AES),$(if $(call feature_on,DMR_PRIVACY),,x)),$(error CONFIG_DMR_AES=y needs CONFIG_DMR_PRIVACY=y))
+$(if $(and $(call feature_on,CJK_GLYPHS),$(if $(call feature_on,LANG_ZH),,x)),$(error CONFIG_CJK_GLYPHS=y needs CONFIG_LANG_ZH=y))
 $(foreach f,SFR_DUALPATH_RX SFR_CWID,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,SFR),,x)),$(error CONFIG_$(f)=y needs CONFIG_SFR=y)))
 $(foreach f,DMR_TRUNK_TX,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_TRUNK),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_TRUNK=y)))
 $(foreach f,DMR_TRUNK_SUPL DMR_TRUNK_GW,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_TRUNK_TX),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_TRUNK_TX=y)))
@@ -390,6 +415,7 @@ ifneq ($(call feature_on,HOTSPOT_SPLIT),)
     $(error CONFIG_HOTSPOT_SPLIT=y needs CONFIG_HOTSPOT=y)
   endif
 endif
+$(if $(and $(call feature_on,NXDN_SCRAMBLER),$(if $(call feature_on,NXDN),,x)),$(error CONFIG_NXDN_SCRAMBLER=y needs CONFIG_NXDN=y))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_P25=y or CONFIG_NXDN=y (an air-framed mode)))
 $(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))
 $(if $(and $(call feature_on,P25),$(if $(call feature_on,DMR),,x)),$(error CONFIG_P25=y needs CONFIG_DMR=y (its talk groups are the codeplug's contacts)))
@@ -398,6 +424,11 @@ $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(e
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)
+  endif
+endif
+ifneq ($(call feature_on,SATELLITE_TLE),)
+  ifeq ($(call feature_on,DEBUGLINK),)
+    $(error CONFIG_SATELLITE_TLE=y needs CONFIG_DEBUGLINK=y)
   endif
 endif
 ifneq ($(call feature_on,TASK_STACKS),)
@@ -459,6 +490,11 @@ endif
 ifneq ($(call feature_on,SNMP),)
   ifeq ($(call feature_on,DMR_IP_GATEWAY),)
     $(error CONFIG_SNMP=y needs CONFIG_DMR_IP_GATEWAY=y)
+  endif
+endif
+ifneq ($(call feature_on,DEBUGLINK_DMRIP),)
+  ifneq ($(call feature_on,DEBUGLINK)$(call feature_on,DMR_IP_GATEWAY),yy)
+    $(error CONFIG_DEBUGLINK_DMRIP=y needs CONFIG_DEBUGLINK=y and CONFIG_DMR_IP_GATEWAY=y)
   endif
 endif
 ifneq ($(call feature_on,VFO_FM),)

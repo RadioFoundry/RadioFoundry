@@ -39,6 +39,12 @@
 #ifndef RFOUNDRY_GIT_TIME
 #define RFOUNDRY_GIT_TIME 0u
 #endif
+#ifndef RFOUNDRY_GIT_SOURCE
+#define RFOUNDRY_GIT_SOURCE "unknown"
+#endif
+#ifndef RFOUNDRY_GIT_REPO
+#define RFOUNDRY_GIT_REPO ""
+#endif
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
 #define SHOT_TAIL_MS		250	// after the last chunk: long enough for the host's check pass to start
@@ -46,21 +52,6 @@
 #define RADIO_OP_GAP_MS		20u	// radio requests at most this often (the radio core's queue holds 16)
 #define REBOOT_DELAY_MS		250u	// the REBOOT reply goes out over USB before the reset
 
-// Radio operations (DL_CMD_RADIO, first payload byte)
-enum {
-	OP_CHANNEL_STEP = 1, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH,
-	OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT,
-	OP_DMR_TARGET, OP_DMR_CONTACT, OP_DMR_CALL_BACK, OP_DMR_TARGET_CLEAR, OP_DMR_PRIVACY,
-	// 20-24: the radio features' (DL_OP_SCAN .. DL_OP_SETTING, debuglink_view_radio.c)
-	OP_USB_NETWORK = 25,
-	// 26: DMR roaming (DL_OP_ROAM, debuglink_view_radio.c)
-	OP_USB_NET_SETTINGS = 27,	// flags u8, link IP u32 (stored; docs/spec/usb-network.md 5)
-	OP_PPP = 28,			// on u8: PPP on the serial host port (docs/spec/ppp.md; CONFIG_NET_PPP builds)
-	// 29: a vibration pattern (DL_OP_VIBRATE, debuglink_view_radio.c)
-	// 30: the speaker volume (DL_OP_VOLUME, debuglink_view_radio.c)
-	// 31, 32: DMR fields, Copy to VFO (DL_OP_DMR_FIELDS, DL_OP_VFO_COPY, debuglink_view_radio.c)
-	// 33, 34: the DMR voice test signal, a DTMF key down or up (DL_OP_VOICE_TEST, DL_OP_DTMF, debuglink_view_radio.c)
-};
 
 static dl_parser_t parser;
 static uint8_t reply[DL_HDR + DL_REPLY_MAX + 2u];
@@ -232,6 +223,10 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	if (RFOUNDRY_RELEASE[0] != '\0') {
 		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
 	}
+	dl_text_kv_str(&t, "source", RFOUNDRY_GIT_SOURCE);	// where the build came from (support-info.md 1)
+	if (RFOUNDRY_GIT_REPO[0] != '\0') {
+		dl_text_kv_str(&t, "repo", RFOUNDRY_GIT_REPO);
+	}
 	dl_text_kv_str(&t, "board", board.name);
 	dl_text(&t, "features=%s%s\n", build_modes_now(), build_features_now());
 	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
@@ -266,10 +261,12 @@ static void shot_hold(bool last)
 static size_t shot_packed(const hal_display_t *d, uint32_t offset, uint8_t *out, size_t cap)
 {
 	static dl_shot_t s;	// static: the host link task's stack also holds the encoder's hash table
-	uint32_t stride = d->bpp == 1 ? (d->width + 7u) / 8u : d->bpp == 4 ? (d->width + 1u) / 2u : d->width * 2u;
+	gfx_fb_rect_t r;
 
+	gfx_fb_rect(&r);	// the panel, or its safe area only: sent as it is, the host rebuilds the insets
 	s.fb = gfx_framebuffer();
-	s.size = stride * d->height;
+	s.size = r.stride * r.h;
+	s.safe_area = r.safe_area;
 	if (s.size > 0xFFFFu) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
@@ -342,7 +339,7 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	if (indexed) {
 		gfx_read_rgb565(offset, out + 19, n);
 	} else {
-		memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
+		gfx_read_packed(offset, out + 19, n);	// the whole panel's rows, whatever the frame buffer holds
 	}
 	return 19u + n;
 }
@@ -435,6 +432,19 @@ static size_t cmd_get_view(const uint8_t *req, uint16_t len, uint8_t *out, size_
 		t.full = false;
 		dl_text(&t, "truncated=1\n");
 	}
+#if CONFIG_DEBUGLINK_DMRIP
+	if (len >= 3) {
+		// A page: offset u16, limit u16 (0 or none: the whole reply), a key prefix (3.7). Small replies over the air
+		uint16_t limit = len >= 5 ? (uint16_t)(req[3] | (req[4] << 8)) : 0;
+		if (limit == 0 || limit > cap - 6) {
+			limit = (uint16_t)(cap - 6);
+		} else if (limit < DL_VIEW_PAGE_MIN) {
+			limit = DL_VIEW_PAGE_MIN;	// the section= line and the more= line always fit
+		}
+		t.len = dl_view_page((char *)out + 6, t.len, len > 5 ? (const char *)req + 5 : "", len > 5 ? len - 5u : 0,
+				     (uint16_t)(req[1] | (req[2] << 8)), limit);
+	}
+#endif
 	return 6 + t.len;
 }
 
@@ -451,13 +461,13 @@ void debuglink_link_counters(uint32_t out[DL_LINK_COUNTERS])
 static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 {
 	static const uint8_t arg_len[] = {
-		[OP_CHANNEL_STEP] = 1, [OP_ZONE_POS] = 2, [OP_ZONE] = 2, [OP_VFO] = 1, [OP_VFO_SET] = 4, [OP_VFO_STEP] = 1,
-		[OP_POWER] = 1, [OP_SQUELCH] = 1, [OP_BANDWIDTH] = 1, [OP_TONE] = 4, [OP_MONITOR] = 1, [OP_CLEAR_TEMP] = 0,
-		[OP_REPLY_CANCEL] = 0, [OP_HOTSPOT_EXIT] = 0,
-		[OP_DMR_TARGET] = 4, [OP_DMR_CONTACT] = 2, [OP_DMR_CALL_BACK] = 0, [OP_DMR_TARGET_CLEAR] = 0,
-		[OP_DMR_PRIVACY] = 3, [OP_USB_NETWORK] = 1, [OP_USB_NET_SETTINGS] = 5,
+		[DL_OP_CHANNEL_STEP] = 1, [DL_OP_ZONE_POS] = 2, [DL_OP_ZONE] = 2, [DL_OP_VFO] = 1, [DL_OP_VFO_SET] = 4, [DL_OP_VFO_STEP] = 1,
+		[DL_OP_POWER] = 1, [DL_OP_SQUELCH] = 1, [DL_OP_BANDWIDTH] = 1, [DL_OP_TONE] = 4, [DL_OP_MONITOR] = 1, [DL_OP_CLEAR_TEMP] = 0,
+		[DL_OP_REPLY_CANCEL] = 0, [DL_OP_HOTSPOT_EXIT] = 0,
+		[DL_OP_DMR_TARGET] = 4, [DL_OP_DMR_CONTACT] = 2, [DL_OP_DMR_CALL_BACK] = 0, [DL_OP_DMR_TARGET_CLEAR] = 0,
+		[DL_OP_DMR_PRIVACY] = 3, [DL_OP_USB_NETWORK] = 1, [DL_OP_USB_NET_SETTINGS] = 5,
 #if CONFIG_NET_PPP
-		[OP_PPP] = 1,
+		[DL_OP_PPP] = 1,
 #endif
 	};
 	uint32_t now = hal_millis();
@@ -482,37 +492,37 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 	}
 	const uint8_t *a = req + 1;
 	switch (req[0]) {
-	case OP_CHANNEL_STEP:
+	case DL_OP_CHANNEL_STEP:
 		radio_req_channel_step((int8_t)a[0]);
 		break;
-	case OP_ZONE_POS:
+	case DL_OP_ZONE_POS:
 		radio_req_zone_pos(get16(a));
 		break;
-	case OP_ZONE:
+	case DL_OP_ZONE:
 		radio_req_zone(get16(a));
 		break;
-	case OP_VFO:
+	case DL_OP_VFO:
 		radio_req_vfo(a[0] != 0);
 		break;
-	case OP_VFO_SET:
+	case DL_OP_VFO_SET:
 		radio_req_vfo_set(get32(a));
 		break;
-	case OP_VFO_STEP:
+	case DL_OP_VFO_STEP:
 		radio_req_vfo_step((int8_t)a[0]);
 		break;
-	case OP_POWER:
+	case DL_OP_POWER:
 		radio_req_power((int8_t)a[0]);
 		break;
-	case OP_SQUELCH:
+	case DL_OP_SQUELCH:
 		radio_req_squelch((int8_t)a[0]);
 		break;
-	case OP_BANDWIDTH:
+	case DL_OP_BANDWIDTH:
 		if (a[0] > RADIO_BW_25K) {
 			return status_only(out, DL_ST_BAD_ARG);
 		}
 		radio_req_bandwidth((radio_bw_t)a[0]);
 		break;
-	case OP_TONE: {
+	case DL_OP_TONE: {
 		subtone_t tone = { .type = a[1], .value = get16(a + 2) };
 		if ((a[0] & RADIO_TONE_BOTH) == 0 || a[0] > RADIO_TONE_BOTH || tone.type > TONE_DCS_INV) {
 			return status_only(out, DL_ST_BAD_ARG);
@@ -520,60 +530,60 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		radio_req_tone(a[0], tone);
 		break;
 	}
-	case OP_MONITOR:
+	case DL_OP_MONITOR:
 		radio_req_monitor(a[0] != 0);
 		break;
-	case OP_CLEAR_TEMP:
+	case DL_OP_CLEAR_TEMP:
 		radio_req_clear_temporary();
 		break;
-	case OP_REPLY_CANCEL:
+	case DL_OP_REPLY_CANCEL:
 #if CONFIG_DMR
 		radio_req_reply_cancel();
 		break;
 #else
 		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
-	case OP_HOTSPOT_EXIT:
+	case DL_OP_HOTSPOT_EXIT:
 		hostlink_hotspot_exit();
 		break;
 #if CONFIG_DMR
-	case OP_DMR_TARGET:	// u32 LE: ID in bits 23:0, bit 24 private
+	case DL_OP_DMR_TARGET:	// u32 LE: ID in bits 23:0, bit 24 private
 		radio_req_dmr_target(get32(a) & 0xFFFFFFu, (get32(a) >> 24) & 1u);
 		break;
-	case OP_DMR_CONTACT:
+	case DL_OP_DMR_CONTACT:
 		radio_req_dmr_contact(get16(a));
 		break;
-	case OP_DMR_CALL_BACK:
+	case DL_OP_DMR_CALL_BACK:
 		radio_req_dmr_call_back();
 		break;
-	case OP_DMR_TARGET_CLEAR:
+	case DL_OP_DMR_TARGET_CLEAR:
 		radio_req_dmr_target_clear();
 		break;
 #else
-	case OP_DMR_TARGET:
-	case OP_DMR_CONTACT:
-	case OP_DMR_CALL_BACK:
-	case OP_DMR_TARGET_CLEAR:
+	case DL_OP_DMR_TARGET:
+	case DL_OP_DMR_CONTACT:
+	case DL_OP_DMR_CALL_BACK:
+	case DL_OP_DMR_TARGET_CLEAR:
 		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
-	case OP_DMR_PRIVACY:	// type u8, key u16 LE (RAM only, never stored)
+	case DL_OP_DMR_PRIVACY:	// type u8, key u16 LE (RAM only, never stored)
 #if CONFIG_DMR_PRIVACY
 		radio_req_dmr_privacy(a[0], get16(a + 1));
 		break;
 #else
 		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
-	case OP_USB_NETWORK:
+	case DL_OP_USB_NETWORK:
 		if (!hostlink_request_usb_network(a[0] != 0)) {
 			return status_only(out, DL_ST_UNAVAILABLE);
 		}
 		break;
 #if CONFIG_NET_PPP
-	case OP_PPP:
+	case DL_OP_PPP:
 		hostlink_request_ppp(a[0] != 0);
 		break;
 #endif
-	case OP_USB_NET_SETTINGS: {	// bit 0 network at power-on, 1 passthrough, 2 fixed link; the link IP (0 = default)
+	case DL_OP_USB_NET_SETTINGS: {	// bit 0 network at power-on, 1 passthrough, 2 fixed link; the link IP (0 = default)
 #if CONFIG_USB_NETWORK
 		uint32_t ip = (uint32_t)a[1] | ((uint32_t)a[2] << 8) | ((uint32_t)a[3] << 16) | ((uint32_t)a[4] << 24);
 		settings_t *st = settings_begin();
@@ -861,9 +871,23 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_chip_reg(req, len, out, cap);
 	case DL_CMD_HWOPT:
 		return debuglink_cmd_hwopt(req, len, out, cap);
+	case DL_CMD_SATELLITE:
+		return debuglink_cmd_satellite(req, len, out, cap);
 #if CONFIG_AIR_RAW
 	case DL_CMD_AIR:
 		return debuglink_cmd_air(req, len, out, cap);
+#endif
+	case DL_CMD_SUPPORT:
+#if CONFIG_SUPPORT_INFO
+		return debuglink_cmd_support(req, len, out, cap);
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
+#endif
+#if CONFIG_DEBUGLINK_DMRIP
+	case DL_CMD_DETOUR:
+		return debuglink_cmd_detour(req, len, out, cap);
+	case DL_CMD_DMRIP:
+		return debuglink_cmd_dmrip(req, len, out, cap);
 #endif
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
@@ -876,6 +900,25 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 	}
 }
 
+#if CONFIG_DEBUGLINK_DMRIP
+size_t debuglink_dispatch(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	return handle(cmd, req, len, out, cap);
+}
+
+static uint32_t reply_gen;
+
+uint8_t *debuglink_reply_buffer(void)
+{
+	return reply;
+}
+
+uint32_t debuglink_reply_gen(void)
+{
+	return reply_gen;
+}
+#endif
+
 static void write_out(const uint8_t *buf, size_t len)
 {
 	hostlink_write(buf, len);
@@ -883,6 +926,9 @@ static void write_out(const uint8_t *buf, size_t len)
 
 static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 {
+#if CONFIG_DEBUGLINK_DMRIP
+	reply_gen++;		// the over-the-air transport's last reply in reply[] may go
+#endif
 	size_t took = dl_parser_feed(&parser, buf, len, now_ms, handle, write_out, reply);
 	if (reboot_pending) {
 		reboot_now();

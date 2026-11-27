@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // netSvcTest's cases: each TCP service against the scripted peer, with fakes for the APRS engine and the radio core
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "netSvcFakes.h"
@@ -11,6 +12,7 @@
 #include "dmr/ipGateway.h"
 #include "config.h"
 #include "radio/radio.h"
+#include "codeplug/codeplug.h"
 #include "hostlink/hostlink_view.h"
 #include "ui/gfx.h"
 #include "debuglink/debuglink.h"
@@ -21,6 +23,7 @@
 #include "net/webctl.h"
 #include "aprs/aprs.h"
 #include "net/aprsis.h"
+#include "position/position.h"
 #include "net/http_assets.h"
 #include "http_assets_gen.h"	// generated here by the Makefile (gzip, as the firmware's default)
 
@@ -100,6 +103,20 @@ static void test_kiss(void)
 	pump();
 	CHECK(ring_n == 0 && a.rxn == 10 * (int)sizeof(big));
 
+	// A web page's request (its body holding a frame), or a client from beyond the host: dropped, the first client
+	// kept, no frame taken
+	static peer_t w;
+	static const char post[] = "POST / HTTP/1.1\r\nHost: 12.255.255.254:8001\r\nContent-Type: text/plain\r\n\r\n"
+				   "\xC0\x00" "ABC\xC0";
+	int frames = got_frames;
+	CHECK(peer_connect(&w, 0xC0000201u, 50010, NET_KISS_PORT) == false || w.reset);
+	CHECK(!a.reset && got_frames == frames);
+	CHECK(peer_connect(&w, net_test_host_ip(), 50011, NET_KISS_PORT));
+	peer_send(&w, post, sizeof(post) - 1);
+	run_for(20);
+	CHECK(w.reset && got_frames == frames && !net_tnc_taken());
+	CHECK(peer_connect(&a, net_test_host_ip(), 50012, NET_KISS_PORT));
+
 	// A second client replaces the first
 	CHECK(peer_connect(&b, net_test_host_ip(), 50002, NET_KISS_PORT));
 	CHECK(a.reset && b.established);
@@ -150,6 +167,12 @@ static bool fake_ppp;
 bool ppp_running(void) { return fake_ppp; }
 extern hal_display_t fake_display;
 void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
+{
+	for (size_t i = 0; i < n; i++, off++)
+		out[i] = off < sizeof fb ? ((const uint8_t *)fb)[off] : 0;
+}
+// The panel's rows at its own depth: here the frame buffer is the whole panel, as gfx's is without fb_safe_area
+void gfx_read_packed(uint32_t off, uint8_t *out, size_t n)
 {
 	for (size_t i = 0; i < n; i++, off++)
 		out[i] = off < sizeof fb ? ((const uint8_t *)fb)[off] : 0;
@@ -211,7 +234,7 @@ static void test_http(void)
 
 	// The page: the asset table's bytes as they are, gzip compressed with Content-Encoding (httpAssetsTest checks the
 	// table against core/net/http_assets)
-	CHECK(http_get(&a, 51000, "GET / HTTP/1.1\r\nHost: 12.0.39.20\r\nAccept: */*\r\n\r\n") > 0);
+	CHECK(http_get(&a, 51000, "GET / HTTP/1.1\r\nHost: 12.0.39.21\r\nAccept: */*\r\n\r\n") > 0);
 	CHECK(strncmp((char *)a.rx, "HTTP/1.0 200 OK\r\n", 17) == 0 && strstr((char *)a.rx, "Content-Type: text/html"));
 	CHECK(strcmp(http_assets[0].path, "/") == 0 && http_assets[0].gzip &&
 	      strstr((char *)a.rx, "\r\nContent-Encoding: gzip\r\n"));
@@ -251,6 +274,58 @@ static void test_http(void)
 	CHECK(http_get(&a, 51005, "GET /api/view HTTP/1.0\r\n\r\n") > 0);
 	CHECK(strstr(body_of(&a), "{\"sections\":[\"core\",\"net\"]}") != NULL);
 	CHECK(http_get(&a, 51006, "GET /api/view?section=nope HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 404 "));
+	// Any page may read the status; nothing else is shared with other pages
+	CHECK(http_get(&a, 51130, "GET /status HTTP/1.0\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, "\r\nAccess-Control-Allow-Origin: *\r\n"));
+	CHECK(http_get(&a, 51131, "GET /api/view?section=core HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 ") &&
+	      !strstr((char *)a.rx, "Access-Control"));
+	CHECK(http_get(&a, 51132, "GET / HTTP/1.0\r\n\r\n") > 0 && !strstr((char *)a.rx, "Access-Control"));
+	// An allowed page (the project's site or one served on the host) may read every API reply: its Origin comes back.
+	// Matched whole: a name that only starts or ends like one is another page
+	static const char *const allowed[] = { "https://radiofoundry.org", "http://radiofoundry.org",
+		"https://editor.RadioFoundry.org", "https://a.b.radiofoundry.org", "http://localhost:8080",
+		"http://127.0.0.1:5173", "https://localhost" };
+	static const char *const other[] = { "https://radiofoundry.org.example.com", "https://evilradiofoundry.org",
+		"https://.radiofoundry.org", "https://a..radiofoundry.org", "https://a_b.radiofoundry.org",
+		"ftp://radiofoundry.org", "http://localhost.example.com", "http://127.0.0.10", "http://localhost:",
+		"http://localhost:80x", "https://abcdefghijklmnopqrstuv.radiofoundry.org", "null" };
+	char rq[400], want[120];
+	for (size_t i = 0; i < sizeof allowed / sizeof allowed[0]; i++) {
+		snprintf(rq, sizeof rq, "GET /api/view?section=core HTTP/1.1\r\nOrigin: %s\r\nSec-Fetch-Site: cross-site\r\n\r\n",
+			 allowed[i]);
+		snprintf(want, sizeof want, "\r\nAccess-Control-Allow-Origin: %s\r\n\r\n{", allowed[i]);
+		CHECK(http_get(&a, (uint16_t)(51140 + i), rq) > 0 && strstr((char *)a.rx, " 200 ") && strstr((char *)a.rx, want));
+	}
+	for (size_t i = 0; i < sizeof other / sizeof other[0]; i++) {
+		snprintf(rq, sizeof rq, "GET /api/view?section=core HTTP/1.1\r\nOrigin: %s\r\n\r\n", other[i]);
+		CHECK(http_get(&a, (uint16_t)(51160 + i), rq) > 0 && !strstr((char *)a.rx, "Access-Control"));
+	}
+	// The status: any page, but an allowed one gets its own Origin
+	CHECK(http_get(&a, 51180, "GET /status HTTP/1.1\r\nOrigin: https://radiofoundry.org\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, "\r\nAccess-Control-Allow-Origin: https://radiofoundry.org\r\n\r\n{"));
+	// The static files carry none
+	CHECK(http_get(&a, 51181, "GET / HTTP/1.1\r\nOrigin: https://radiofoundry.org\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, " 200 ") && !strstr((char *)a.rx, "Access-Control"));
+	// A browser asks first for a public page reaching a private address: yes for an allowed page, else 405
+	CHECK(http_get(&a, 51182, "OPTIONS /api/view HTTP/1.1\r\nOrigin: https://radiofoundry.org\r\n"
+		       "Access-Control-Request-Method: GET\r\nAccess-Control-Request-Private-Network: true\r\n\r\n") > 0);
+	CHECK(strncmp((char *)a.rx, "HTTP/1.0 204 No Content\r\n", 25) == 0 &&
+	      strstr((char *)a.rx, "\r\nAccess-Control-Allow-Private-Network: true\r\n") &&
+	      strstr((char *)a.rx, "\r\nAccess-Control-Allow-Origin: https://radiofoundry.org\r\n\r\n") &&
+	      a.rxn == (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx));
+	CHECK(http_get(&a, 51183, "OPTIONS /api/view HTTP/1.1\r\nOrigin: https://example.com\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, " 405 "));
+	// A header line longer than the room left before the kept Origin is cut, not run into it
+	snprintf(rq, sizeof rq, "GET /api/view?section=core HTTP/1.1\r\nOrigin: http://localhost:1\r\nX-Long: %0200d\r\n\r\n", 0);
+	CHECK(http_get(&a, 51184, rq) > 0 && strstr((char *)a.rx, "\r\nAccess-Control-Allow-Origin: http://localhost:1\r\n\r\n{"));
+	// At a name that isn't the radio's (a page that pointed its own name at it): the page's files, nothing else
+	CHECK(http_get(&a, 51133, "GET /status HTTP/1.1\r\nHost: radio.example.com\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, " 403 "));
+	CHECK(http_get(&a, 51134, "GET /api/view HTTP/1.1\r\nhost: radio.example.com:80\r\n\r\n") > 0 &&
+	      strstr((char *)a.rx, " 403 "));
+	CHECK(http_get(&a, 51135, "GET / HTTP/1.1\r\nHost: radio.example.com\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(http_get(&a, 51136, "GET /status HTTP/1.1\r\nHost: 12.0.39.21:80\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(http_get(&a, 51137, "GET /status HTTP/1.1\r\nHost: 1.2.3\r\n\r\n") > 0 && strstr((char *)a.rx, " 403 "));
 
 	// The screen as a BMP, straight from the frame buffer
 	for (int i = 0; i < 160 * 128; i++) {
@@ -366,15 +441,39 @@ static void test_http(void)
 }
 
 // ---- fake radio core requests ----
-static int req_vfo_on, req_vfo_set, req_bw = -1, req_mode = -1;
+static int req_vfo_on, req_vfo_off, req_vfo_set, req_bw = -1, req_mode = -1;
 static uint32_t req_hz;
 static bool req_ptt;
 static int ptt_downs;
-void radio_req_vfo(bool on) { req_vfo_on += on; }
+void radio_req_vfo(bool on) { req_vfo_on += on; req_vfo_off += !on; }
 void radio_req_vfo_set(uint32_t hz) { req_vfo_set++; req_hz = hz; }
 void radio_req_ptt(bool down) { ptt_downs += down && !req_ptt; req_ptt = down; }
 void radio_req_bandwidth(radio_bw_t bw) { req_bw = bw; }
 void radio_req_mode(uint8_t mode) { req_mode = mode; }
+
+// ---- zone and channel control (radio_ctl.c) ----
+// Three zones; the control reads only their count and the codeplug's change count
+static int req_zone = -1, req_zone_pos = -1, req_zone_n, req_pos_n, req_steps, req_step_n;
+void radio_req_zone(uint16_t index) { req_zone = index; req_zone_n++; }
+void radio_req_zone_pos(uint16_t pos) { req_zone_pos = pos; req_pos_n++; }
+void radio_req_channel_step(int8_t dir) { req_steps += dir; req_step_n++; }
+static int hold_zone = -1;
+void input_switch_hold(uint16_t zone) { hold_zone = zone; }
+uint16_t codeplug_zone_count(void) { return 3; }
+static uint32_t fake_serial = 7;
+uint32_t codeplug_serial(void) { return fake_serial; }
+
+// Channel number n as the view holds it: odd ones DMR
+static void fake_channel(uint16_t number, channel_t *out)
+{
+	memset(out, 0, sizeof(*out));
+	snprintf(out->name, sizeof(out->name), "Ch%u", number);
+	out->rx_hz = 446000000u + number * 12500u;
+	out->tx_hz = out->rx_hz;
+	out->mode = (number % 2u) ? RADIO_MODE_DMR : RADIO_MODE_FM;
+	out->color_code = 1;
+	out->timeslot = 2;
+}
 
 // One command line, the answer (waits for it)
 static const char *rig(peer_t *p, const char *line)
@@ -424,6 +523,17 @@ static void test_rigctl(void)
 	CHECK(strcmp(rig(&a, "M USB 2400\n"), "RPRT -1\n") == 0);
 	CHECK(strcmp(rig(&a, "+m\n"), "get_mode:\nMode: FM\nPassband: 12500\nRPRT 0\n") == 0);
 
+	// A web page's POST, its body a PTT command: the connection is dropped at the request line, nothing runs
+	static peer_t w;
+	static const char post[] = "POST / HTTP/1.1\r\nHost: 12.255.255.254:4532\r\nContent-Type: text/plain\r\n"
+				   "Content-Length: 8\r\n\r\nF 1\nT 1\n";
+	int vfo_sets = req_vfo_set;
+	CHECK(peer_connect(&w, net_test_host_ip(), 52010, NET_RIGCTL_PORT));
+	peer_send(&w, post, sizeof(post) - 1);
+	run_for(20);
+	CHECK(w.fin && !req_ptt && req_vfo_set == vfo_sets);
+	peer_close(&w);
+
 	// PTT: keyed, released, rate limited, released when the client goes
 	CHECK(strcmp(rig(&a, "t\n"), "0\n") == 0);
 	CHECK(strcmp(rig(&a, "T 1\n"), "RPRT 0\n") == 0 && req_ptt);
@@ -451,8 +561,16 @@ static void test_rigctl(void)
 	CHECK(strcmp(rig(&a, "\\get_info\n"), "RadioFoundry fake\n") == 0);
 	CHECK(strcmp(rig(&a, "\\chk_vfo\n"), "0\n") == 0);
 	const char *ds = rig(&a, "\\dump_state\n");
-	CHECK(strncmp(ds, "0\n2\n2\n136000000.000000 174000000.000000 0x20 -1 -1", 49) == 0);
+	CHECK(strncmp(ds, "0\n2\n2\n136000000 174000000 0x20 -1 -1", 35) == 0);
 	CHECK(strstr(ds, "0x40000000\n0x0\n0x0\n0x0\n") != NULL);
+	{	// every band listed, and the answer ends with its last line
+		static const char tail[] = "0x0\n0x0\n0x40000000\n0x0\n0x0\n0x0\n";
+		size_t n = strlen(ds), t = sizeof(tail) - 1u;
+		CHECK(n > t && strcmp(ds + n - t, tail) == 0);
+		CHECK(strstr(ds, "65000000 108000000 0x20 -1 -1") != NULL);
+		CHECK(strstr(ds, "480000000 520000000 0x20 -1 -1") != NULL);
+		CHECK(strstr(ds, "400000000 480000000 0x20 1000 5000") != NULL);	// the second TX range too
+	}
 	CHECK(strcmp(rig(&a, "xyz\n"), "RPRT -4\n") == 0);
 
 	// A line longer than the line buffer is refused whole, never run cut short: 4.4652 GHz cut by a digit would be
@@ -527,6 +645,19 @@ static void test_aprsis(void)
 	// Set from beyond the host: refused; from the host: stored, the client connects and logs in
 	CHECK(http_get_from(&far, 0xC0000201u, 53000, "GET /api/aprsis?server=192.0.2.10 HTTP/1.0\r\n\r\n") > 0);
 	CHECK(strstr((char *)far.rx, " 403 ") && settings.aprsis_ip == 0);
+	// From the host, but sent by another site's page in a browser there: refused
+	CHECK(http_get(&h, 53040, "GET /api/aprsis?server=192.0.2.10 HTTP/1.1\r\nSec-Fetch-Site: cross-site\r\n\r\n") > 0);
+	CHECK(strstr((char *)h.rx, " 403 ") && settings.aprsis_ip == 0);
+	CHECK(http_get(&h, 53041, "GET /api/aprsis?server=192.0.2.10 HTTP/1.1\r\nOrigin: http://example.com\r\n\r\n") > 0);
+	CHECK(strstr((char *)h.rx, " 403 ") && settings.aprsis_ip == 0);
+	CHECK(http_get(&h, 53042, "GET /api/aprsis?server=999.0.2.10 HTTP/1.1\r\nSec-Fetch-Site: same-origin\r\n\r\n") > 0);
+	CHECK(strstr((char *)h.rx, " 400 "));	// past the check: the address is what is wrong
+	// An allowed page (the project's site) gets past it too; a lookalike name doesn't
+	CHECK(http_get(&h, 53043, "GET /api/aprsis?server=999.0.2.10 HTTP/1.1\r\nSec-Fetch-Site: cross-site\r\n"
+		       "Origin: https://radiofoundry.org\r\n\r\n") > 0 && strstr((char *)h.rx, " 400 "));
+	CHECK(http_get(&h, 53044, "GET /api/aprsis?server=192.0.2.10 HTTP/1.1\r\nSec-Fetch-Site: cross-site\r\n"
+		       "Origin: https://radiofoundry.org.example.com\r\n\r\n") > 0);
+	CHECK(strstr((char *)h.rx, " 403 ") && settings.aprsis_ip == 0);
 	CHECK(http_get(&h, 53001, "GET /api/aprsis?server=999.0.2.10 HTTP/1.0\r\n\r\n") > 0 && strstr((char *)h.rx, " 400 "));
 	CHECK(http_get(&h, 53002, "GET /api/aprsis?server=192.0.2.10%3A14580&range=50 HTTP/1.0\r\n\r\n") > 0);
 	CHECK(strstr(body_of(&h), "\"server\":\"192.0.2.10:14580\"") && strstr(body_of(&h), "\"range_km\":50"));
@@ -648,7 +779,7 @@ static void test_fuzz(void)
 
 	// HTTP
 	static const char *const hseeds[] = {
-		"GET / HTTP/1.1\r\nHost: 12.0.39.20\r\nAccept: */*\r\n\r\n",
+		"GET / HTTP/1.1\r\nHost: 12.0.39.21\r\nAccept: */*\r\n\r\n",
 		"GET /status HTTP/1.0\r\n\r\n",
 		"GET /api/view?section=core&x=1 HTTP/1.0\r\n\r\n",
 		"HEAD /api/view?section=1 HTTP/1.0\r\nX: y\r\n\r\n",
@@ -833,7 +964,7 @@ static bool ws_find(peer_t *p, int *at, const char *needle, char *out, int max)
 static bool ws_open(peer_t *p, uint32_t ip, uint16_t port, const char *extra)
 {
 	char req[300];
-	snprintf(req, sizeof req, "GET /ws HTTP/1.1\r\nHost: radio\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+	snprintf(req, sizeof req, "GET /ws HTTP/1.1\r\nHost: 12.255.255.254\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
 		 "sec-WebSocket-KEY:  dGhlIHNhbXBsZSBub25jZQ==\r\n%sSec-WebSocket-Version: 13\r\n\r\n", extra);
 	if (!peer_connect(p, ip, port, NET_HTTP_PORT)) {
 		return false;
@@ -965,7 +1096,7 @@ static void test_webctl(void)
 	CHECK(strstr((char *)a.rx, "\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"));
 	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
 	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1);
-	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":true,\"keys\":[3,7],\"ptt\":7,\"encoder\":true,"
+	CHECK(strcmp(m, "{\"hello\":1,\"proto\":1,\"caps\":[\"select\",\"step\",\"status\",\"gps\"],\"control\":true,\"audio\":true,\"keys\":[3,7],\"ptt\":7,\"encoder\":true,"
 		"\"screen\":[160,128,16,0,0,160,128]}") == 0);
 	run_for(300);
 	CHECK(ws_find(&a, &at, "\"rx_hz\":446006250", m, sizeof m));
@@ -985,6 +1116,24 @@ static void test_webctl(void)
 	CHECK(strstr((char *)b.rx, "HTTP/1.0 503 Service Unavailable"));
 	CHECK(http_get(&b, 53003, "GET /ws HTTP/1.1\r\n\r\n") > 0 && strstr((char *)b.rx, " 400 "));
 	CHECK(http_get(&b, 53004, "GET /ws HTTP/1.1\r\nSec-WebSocket-Key: short==\r\n\r\n") > 0 && strstr((char *)b.rx, " 400 "));
+	// Only the radio's own page: another page's Origin (a name, another address, none it can name) is refused before
+	// the client count; the radio's own address or a client that sends no Origin gets that far (503 here)
+	static const char *const foreign[] = { "Origin: http://example.com\r\n", "Origin: http://192.0.2.1\r\n",
+		"Origin: null\r\n", "Origin: https://12.255.255.254\r\n", "Origin: http://12.255.255.254.example.com\r\n",
+		"Host: radio.example.com\r\n" };
+	char rq[200];
+	for (size_t i = 0; i < sizeof foreign / sizeof foreign[0]; i++) {
+		snprintf(rq, sizeof rq, "GET /ws HTTP/1.1\r\n%sSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n", foreign[i]);
+		CHECK(http_get(&b, (uint16_t)(53120 + i), rq) > 0 && strstr((char *)b.rx, " 403 "));
+	}
+	CHECK(http_get(&b, 53130, "GET /ws HTTP/1.1\r\nHost: 12.255.255.254\r\nOrigin: http://12.255.255.254\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
+	      strstr((char *)b.rx, " 503 "));
+	CHECK(http_get(&b, 53131, "GET /ws HTTP/1.1\r\nOrigin: http://12.255.255.254:80\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
+	      strstr((char *)b.rx, " 503 "));
+	CHECK(http_get(&b, 53132, "GET /ws HTTP/1.1\r\nOrigin: https://radiofoundry.org\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
+	      strstr((char *)b.rx, " 503 "));	// an allowed page
+	CHECK(http_get(&b, 53133, "GET /ws HTTP/1.1\r\nOrigin: http://localhost:3000\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0 &&
+	      strstr((char *)b.rx, " 503 "));
 
 	// Keys: down holds (capped by the input task), up releases; one at a time; keys not on the radio refused
 	ws_text(&a, "d3");
@@ -1032,7 +1181,9 @@ static void test_webctl(void)
 	ws_text(&a, "d3");
 	ws_text(&a, "d7");
 	CHECK(inj_mask == 8u && inj_ptt);
-	at = a.rxn;
+	run_for(10);
+	peer_clear(&a);	// the screen frames so far have nearly filled the test peer's 64 KB: room for what follows
+	at = 0;
 	run_for(WEBCTL_PING_MS + 10);
 	bool pinged = false;
 	while ((op = ws_next(&a, &at, m, sizeof m, &len)) >= 0) {
@@ -1132,6 +1283,268 @@ static void test_webctl(void)
 }
 #endif
 
+// ---- zone, channel and the board GPS over /ws (webctl.c, radio_ctl.c) ----
+static position_gps_t fake_gps;
+static bool fake_gps_heard;
+bool position_gps(position_gps_t *out, uint32_t now)
+{
+	(void)now;
+	if (fake_gps_heard) {
+		*out = fake_gps;
+	}
+	return fake_gps_heard;
+}
+
+// The next text frame from the radio after *at that isn't the status (an error or a fix), "" when none came
+static const char *ws_last(peer_t *p, int *at, char *m, int max)
+{
+	int len;
+
+	m[0] = '\0';
+	while (ws_next(p, at, m, max, &len) >= 0) {
+		if (m[0] == '{' && strncmp(m, "{\"radio\":", 9) != 0) {
+			return m;
+		}
+	}
+	m[0] = '\0';
+	return m;
+}
+
+static void test_webctl_ctl(void)
+{
+	static peer_t a, far;
+	char m[1024];
+	int at, len, zn, pn, sn;
+
+	memset(&fake_view, 0, sizeof(fake_view));
+	fake_view.zone_index = 1;
+	fake_view.zone_pos = 1;
+	fake_view.zone_size = 2;
+	strcpy(fake_view.zone_name, "Caf\xe9");
+	fake_channel(101, &fake_view.ch);
+	fake_view.channel_number = 101;
+	CHECK(ws_open(&a, net_test_host_ip(), 53200, ""));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	run_for(300);
+	// The status says where the radio is: the zone's position and name (Latin-1 as \u00XX), the codeplug's count
+	CHECK(ws_find(&a, &at, "\"zone\":1,\"pos\":1,\"zone_name\":\"Caf\\u00e9\",\"channel_number\":101,", m, sizeof m));
+	CHECK(strstr(m, "\"codeplug\":7,"));
+
+	// Select: the current zone's position alone, another zone then a position; a channel switch leaves the choice.
+	// Only an error is answered
+	zn = req_zone_n;
+	pn = req_pos_n;
+	at = a.rxn;
+	ws_text(&a, "select?zone=1&pos=0");
+	CHECK(req_zone_n == zn && req_pos_n == pn + 1 && req_zone_pos == 0);
+	run_for(30);
+	ws_text(&a, "select?zone=2&pos=40");
+	CHECK(req_zone_n == zn + 1 && req_zone == 2 && req_pos_n == pn + 2 && req_zone_pos == 40 && hold_zone == 2);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "") == 0);
+	run_for(30);
+	// In the VFO: back to the channel first
+	fake_view.vfo = true;
+	int off = req_vfo_off;
+	ws_text(&a, "select?zone=0");
+	CHECK(req_vfo_off == off + 1 && req_zone == 0);
+	fake_view.vfo = false;
+	run_for(30);
+
+	// Malformed: 400. Out of range, not a request; the current zone's size is the view's, another zone's position goes
+	// to the radio, which ignores one past the end
+	static const char *const bad[] = { "select?zone=3", "select?zone=1&pos=2", "select?zone=x1", "step?channel=0",
+					   "step?channel=101", "step", "selectx", "stepx", "zz" };
+	zn = req_zone_n;
+	sn = req_step_n;
+	for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+		ws_text(&a, bad[i]);
+		CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":400}") == 0);
+	}
+	CHECK(req_zone_n == zn && req_step_n == sn);
+	ws_text(&a, "select?zone=2&pos=79");
+	CHECK(req_zone_n == zn + 1);
+	run_for(100);
+	// Transmitting or a hotspot: 409, nothing asked of the radio
+	zn = req_zone_n;
+	fake_view.state = RS_TX;
+	ws_text(&a, "select?zone=1");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":409}") == 0);
+	ws_text(&a, "step?channel=-1");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":409}") == 0);
+	fake_view.state = RS_IDLE;
+	fake_view.hotspot = true;
+	ws_text(&a, "step?zone=1");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":409}") == 0);
+	fake_view.hotspot = false;
+	CHECK(req_zone_n == zn && req_step_n == sn);
+
+	// Steps: a knob's quick turns add up into one request; the radio core wraps a channel step at the zone's ends
+	run_for(30);
+	req_steps = 0;
+	ws_text(&a, "step?channel=1");
+	CHECK(req_step_n == sn + 1 && req_steps == 1);
+	ws_text(&a, "step?channel=-3");
+	run_for(30);
+	CHECK(req_steps == -2);
+	// Zones wrap here: from zone 1 (of 3), +1 is 2, +1 again (before the view shows 2) wraps to 0, -1 back to 2;
+	// from 0, -1 is the last
+	run_for(1100);
+	ws_text(&a, "step?zone=1");
+	run_for(30);
+	CHECK(req_zone == 2);
+	ws_text(&a, "step?zone=1");
+	run_for(30);
+	CHECK(req_zone == 0);
+	ws_text(&a, "step?zone=-1");
+	run_for(30);
+	CHECK(req_zone == 2);
+	run_for(1100);
+	fake_view.zone_index = 0;
+	ws_text(&a, "step?zone=-1");
+	run_for(30);
+	CHECK(req_zone == 2);
+	run_for(1100);
+	ws_text(&a, "step?zone=4");
+	run_for(30);
+	CHECK(req_zone == 1);
+	fake_view.zone_index = 1;
+	// A channel step from the VFO: back to the channel the VFO came from is its first step (from position 5, +1 lands
+	// on 5, +3 on 7); a second step before the view shows the channel is a plain step
+	run_for(1100);
+	fake_view.vfo = true;
+	off = req_vfo_off;
+	sn = req_step_n;
+	req_steps = 0;
+	ws_text(&a, "step?channel=1");
+	CHECK(req_vfo_off == off + 1 && req_step_n == sn);
+	run_for(30);
+	ws_text(&a, "step?channel=2");
+	CHECK(req_vfo_off == off + 1 && req_steps == 2);
+	run_for(1100);
+	ws_text(&a, "step?channel=3");
+	CHECK(req_vfo_off == off + 2 && req_steps == 4);
+	fake_view.vfo = false;
+	run_for(150);
+
+	// "status?changes": the status only when the zone or channel moves, not for the signal or the clock
+	ws_text(&a, "status?changes");
+	run_for(300);
+	at = a.rxn;
+	fake_view.rssi_dbm = -70;
+	run_for(3000);
+	CHECK(!ws_find(&a, &at, "\"rx_hz\"", m, sizeof m));
+	fake_view.zone_pos = 0;
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"pos\":0,", m, sizeof m));
+	// a quick run of changes (a knob turned fast) sends where it came to rest, not every step
+	at = a.rxn;
+	for (uint16_t i = 1; i <= 8; i++) {
+		fake_view.zone_pos = i;
+		run_for(20);
+	}
+	run_for(300);
+	int n = 0;
+	while (ws_find(&a, &at, "\"pos\":", m, sizeof m)) {
+		n++;
+	}
+	CHECK(n >= 1 && n <= 2 && strstr(m, "\"pos\":8,"));
+	// the talk target alone, the codeplug count alone, the VFO's frequency or mode (no index changes)
+	at = a.rxn;
+	fake_view.dmr.target_id = 91;
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"target\":91,", m, sizeof m));
+	fake_serial = 8;
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"codeplug\":8,", m, sizeof m));
+	fake_serial = 7;
+	fake_view.ch.rx_hz = 446100000;
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"codeplug\":7,", m, sizeof m) && strstr(m, "\"rx_hz\":446100000"));
+	fake_view.ch.mode = RADIO_MODE_FM;
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"mode\":\"fm\"", m, sizeof m));
+	fake_view.ch.mode = RADIO_MODE_DMR;
+	fake_view.dmr.target_id = 0;
+	run_for(300);
+	ws_text(&a, "status");
+	at = a.rxn;
+	run_for(1300);
+	CHECK(ws_find(&a, &at, "\"uptime_s\"", m, sizeof m));	// every change again
+	ws_text(&a, "status?all");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":400}") == 0);
+
+	// "gps": the board GPS's fix once per GPS second, unknown fields left out
+	memset(&fake_gps, 0, sizeof(fake_gps));
+	fake_gps.fix = true;
+	fake_gps.lat = 337490000;
+	fake_gps.lon = -843880000;
+	fake_gps.alt_m = 320;
+	fake_gps.speed_kmh = 4;
+	fake_gps.course = 271;
+	fake_gps.sats = 9;
+	fake_gps.hdop10 = 9;
+	fake_gps.utc_hms = 123519;
+	fake_gps_heard = true;
+	ws_text(&a, "status?changes");	// the fixes alone from here
+	run_for(300);
+	at = a.rxn;
+	run_for(1000);
+	CHECK(!ws_find(&a, &at, "\"gps\"", m, sizeof m));	// none until asked
+	ws_text(&a, "gps");
+	run_for(30);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"gps\":1,\"lat\":33.7490000,\"lon\":-84.3880000,\"alt_m\":320,\"kmh\":4,"
+		     "\"course\":271,\"hdop\":0.9,\"sats\":9,\"utc\":123519}") == 0);
+	run_for(1500);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "") == 0);	// the same second: not again
+	fake_gps.utc_hms++;
+	fake_gps.alt_m = POSITION_ALT_NONE;
+	fake_gps.speed_kmh = fake_gps.course = fake_gps.hdop10 = 0xFFFF;
+	fake_gps.lat = -1;
+	fake_gps.lon = -1800000000;
+	run_for(30);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"gps\":1,\"lat\":-0.0000001,\"lon\":-180.0000000,\"sats\":9,"
+		     "\"utc\":123520}") == 0);
+	// no fix or the GPS not heard: nothing
+	fake_gps.fix = false;
+	fake_gps.utc_hms++;
+	run_for(30);
+	fake_gps.fix = true;
+	fake_gps_heard = false;
+	fake_gps.utc_hms++;
+	run_for(30);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "") == 0);
+	fake_gps_heard = true;
+	ws_text(&a, "gps?off");
+	fake_gps.utc_hms++;
+	run_for(30);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "") == 0);
+	// a radio without a GPS refuses it
+	fake_gps_fitted = false;
+	ws_text(&a, "gps");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":409}") == 0);
+	fake_gps_fitted = true;
+	peer_close(&a);
+	run_for(3000);
+
+	// From beyond the host: no zone, channel or position
+	CHECK(ws_open(&far, 0xC0000201u, 53201, ""));
+	at = (int)(strstr((char *)far.rx, "\r\n\r\n") + 4 - (char *)far.rx);
+	CHECK(ws_next(&far, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"control\":false"));
+	run_for(300);
+	at = far.rxn;	// past the status
+	zn = req_zone_n;
+	ws_text(&far, "select?zone=2");
+	CHECK(strcmp(ws_last(&far, &at, m, sizeof m), "{\"err\":403}") == 0 && req_zone_n == zn);
+	ws_text(&far, "gps");
+	CHECK(strcmp(ws_last(&far, &at, m, sizeof m), "{\"err\":403}") == 0);
+	fake_gps.utc_hms++;
+	run_for(300);
+	CHECK(!ws_find(&far, &at, "\"gps\"", m, sizeof m));
+	peer_close(&far);
+	run_for(3000);
+	fake_gps_heard = false;
+}
+
 void tests_run(void)
 {
 	test_kiss();
@@ -1142,4 +1555,7 @@ void tests_run(void)
 	test_rigctl();
 	test_aprsis();
 	test_fuzz();
+#if CONFIG_NET_WEBCTL
+	test_webctl_ctl();	// last: its waits move the clock the others' checks expect
+#endif
 }

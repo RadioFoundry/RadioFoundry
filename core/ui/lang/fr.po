@@ -12,6 +12,11 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: core/satellite/ui.c
+msgctxt "SATELLITE_ERR_TLE_SAVE"
+msgid "Couldn't save satellite TLE"
+msgstr "Impossible d'enregistrer le TLE satellite"
+
 #: core/stubentry/stub_entry.h
 msgctxt "STUB_TITLE_PC_LOADER"
 msgid "PC Loader Connected"
@@ -22,7 +27,72 @@ msgctxt "STUB_HINT_POWER_CYCLE"
 msgid "Power-cycle to exit"
 msgstr "Redémarrer pr sortir"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
+msgid "CI build"
+msgstr "Compilation CI"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
+msgid "Build service"
+msgstr "Service de compilation"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_PR"
+msgid "Pull request"
+msgstr "Pull request"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_LOCAL"
+msgid "Local build"
+msgstr "Compilé localement"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_FORK"
+msgid "Fork"
+msgstr "Fork"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_UNKNOWN"
+msgid "Unknown"
+msgstr "Inconnu"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_MCU"
+msgid "MCU: "
+msgstr "MCU : "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_FLASH"
+msgid "Flash: "
+msgstr "Flash : "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DISPLAY"
+msgid "Display: "
+msgstr "Écran : "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DMR_CHIP"
+msgid "DMR chip: "
+msgstr "Puce DMR : "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_RF_CHIP"
+msgid "RF chip: "
+msgstr "Puce RF : "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_HARDWARE"
+msgid "Hardware: "
+msgstr "Matériel : "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_HWOPT_UNSET"
+msgid "not set"
+msgstr "non défini"
+
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
 msgstr "Désactivé"
@@ -93,6 +163,11 @@ msgid "Delivered to "
 msgstr "Délivré à "
 
 #: core/ui/ui_app.c
+msgctxt "SHARE_BANNER_NOT_SENT_TO"
+msgid "Not sent to "
+msgstr "Non envoyé à "
+
+#: core/ui/ui_app.c
 msgctxt "BANNER_NO_ANSWER_FROM"
 msgid "No answer from "
 msgstr "Pas de réponse de "
@@ -137,6 +212,11 @@ msgctxt "HOTSPOT_BANNER_OK_STOPS"
 msgid "OK stops it"
 msgstr "OK pour arrêter"
 
+#: core/ui/ui_app.c
+msgctxt "APRS_BANNER_MSG_FROM"
+msgid "APRS message from "
+msgstr "Message APRS de "
+
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "TOAST_SAVE_FAILED"
 msgid "Couldn't save: try again"
@@ -167,12 +247,7 @@ msgctxt "SHARE_BANNER_ZONE_FROM"
 msgid "⤓ Zone from "
 msgstr "⤓ Zone de "
 
-#: core/ui/ui_app.c
-msgctxt "SHARE_BANNER_NOT_SENT_TO"
-msgid "Not sent to "
-msgstr "Non envoyé à "
-
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_screens.c
 msgctxt "SHARE_BANNER_TRY_ON_DMR"
 msgid "Try again on a DMR channel"
 msgstr "Essayer sur canal DMR"
@@ -351,6 +426,21 @@ msgstr "Balayage bande"
 msgctxt "SCAN_TOAST_SCANNING_ZONE"
 msgid "Scanning this zone"
 msgstr "Balayage zone"
+
+#: core/ui/ui_app.c
+msgctxt "SCAN_TOAST_NOT_SCANNING"
+msgid "Not scanning"
+msgstr "Pas de balayage"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
+msgid "Skipped until the scan stops"
+msgstr "Ignoré jusqu'à stop"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
+msgid "Nothing to skip yet"
+msgstr "Rien à ignorer"
 
 #: core/ui/ui_app.c
 msgctxt "TALK_TOAST_DEFAULT"
@@ -652,7 +742,7 @@ msgctxt "BATT_BANNER_BATTERY"
 msgid "Battery "
 msgstr "Batterie "
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
+#: core/ui/ui_app.c
 msgctxt "BATT_PART_CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "% : recharger vite"
@@ -866,6 +956,11 @@ msgstr "KISS via USB"
 msgctxt "APRS_ROW_STATIONS_HEARD"
 msgid "Stations heard"
 msgstr "Stations reçues"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_MUTE"
+msgid "Mute APRS audio"
+msgstr "Couper son APRS"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
@@ -1482,7 +1577,7 @@ msgctxt "ACT_ROW_TALK_TO"
 msgid "Talk to "
 msgstr "Parler à "
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "ACT_ROW_PRIVATE_CALL"
 msgid "Private call"
 msgstr "Appel privé"
@@ -1538,24 +1633,29 @@ msgid "Messages: not in this build"
 msgstr "Messages indispo."
 
 #: core/ui/ui_menus.c
-msgctxt "ACT_TOAST_CHECKING"
-msgid "Checking "
-msgstr "Vérification de "
-
-#: core/ui/ui_menus.c
 msgctxt "WHY_RADIO_CHECK_NOT_IN_BUILD"
 msgid "Radio check: not in this build"
 msgstr "Test radio indispo."
 
 #: core/ui/ui_menus.c
-msgctxt "ACT_TOAST_CALL_ALERT_TO"
-msgid "Call alert to "
-msgstr "Alerte d'appel vers "
+msgctxt "ACT_TOAST_CHECKING"
+msgid "Checking "
+msgstr "Vérification de "
+
+#: core/ui/ui_menus.c
+msgctxt "MSG_TOAST_SEND_FAILED"
+msgid "Couldn't send: try again"
+msgstr "Erreur d'envoi"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_CALL_ALERT_NOT_IN_BUILD"
 msgid "Call alert: not in this build"
 msgstr "Alerte indisponible"
+
+#: core/ui/ui_menus.c
+msgctxt "ACT_TOAST_CALL_ALERT_TO"
+msgid "Call alert to "
+msgstr "Alerte d'appel vers "
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_POS_REQUESTS_NOT_IN_BUILD"
@@ -1626,11 +1726,6 @@ msgstr "Demander un accusé"
 msgctxt "MSG_LABEL_INCLUDE_POSITION"
 msgid "Include position"
 msgstr "Position APRS"
-
-#: core/ui/ui_menus.c
-msgctxt "MSG_TOAST_SEND_FAILED"
-msgid "Couldn't send: try again"
-msgstr "Erreur d'envoi"
 
 #: core/ui/ui_menus.c
 msgctxt "TOAST_SENDING_TO"
@@ -2042,6 +2137,41 @@ msgctxt "LABEL_NAME"
 msgid "Name"
 msgstr "Nom"
 
+#: core/ui/ui_menus.c core/ui/ui_satellite.c
+msgctxt "SATELLITE_2"
+msgid "Satellite"
+msgstr "Satellite"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
+msgid "1 ABC"
+msgstr "1 ABC"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_NUMERIC"
+msgid "1 123"
+msgstr "1 123"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_LOWER"
+msgid "1 abc"
+msgstr "1 abc"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_UPPER"
+msgid "2 ABC"
+msgstr "2 ABC"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_NUMERIC"
+msgid "2 123"
+msgstr "2 123"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
+msgid "2 abc"
+msgstr "2 abc"
+
 #: core/ui/ui_menus.c
 msgctxt "TEXT_HINT_KEEP"
 msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
@@ -2136,6 +2266,11 @@ msgstr "CTCSS/DCS TX"
 msgctxt "WORD_TONE_BURST"
 msgid "Tone burst"
 msgstr "Tonalité d'appel"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_AES_KEY"
+msgid "AES key"
+msgstr "Clé AES"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
@@ -2658,11 +2793,6 @@ msgid "Hotspot"
 msgstr "Point d'accès"
 
 #: core/ui/ui_menus.c
-msgctxt "TITLE_BATTERY"
-msgid "Battery"
-msgstr "Batterie"
-
-#: core/ui/ui_menus.c
 msgctxt "TITLE_ABOUT"
 msgid "About"
 msgstr "À propos"
@@ -2701,11 +2831,6 @@ msgstr "Répéteur"
 msgctxt "SFR_VALUE_REPEATER_ERDM"
 msgid "Repeater (ERDM style)"
 msgstr "Répéteur (ERDM)"
-
-#: core/ui/ui_menus.c
-msgctxt "TITLE_SUPPLY"
-msgid "Supply"
-msgstr "Alimentation"
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_NO_GPS_OR_OFF"
@@ -3056,6 +3181,21 @@ msgstr "Haut/Bas # +/- OK ok"
 msgctxt "TRIM_TOAST_MAX"
 msgid "Up to 10.0 ppm"
 msgstr "Max 10,0 ppm"
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_SOURCE"
+msgid "Source: "
+msgstr "Origine : "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_IMAGE"
+msgid "Image: "
+msgstr "Image : "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_VALUE_IMAGE_CHECKING"
+msgid "checking"
+msgstr "vérification"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_FIRMWARE"
@@ -3488,6 +3628,11 @@ msgid "High contrast"
 msgstr "Contraste élevé"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_THEME_NIGHT"
+msgid "Night (red)"
+msgstr "Nuit (rouge)"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_DEFAULT"
 msgid "Default"
 msgstr "Par défaut"
@@ -3578,6 +3723,16 @@ msgid "Prev zone"
 msgstr "Zone précédente"
 
 #: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_SCAN_SKIP"
+msgid "Scan skip"
+msgstr "Ignorer canal"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_MONITOR_TOGGLE"
+msgid "Monitor toggle"
+msgstr "Moniteur verrouillé"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_KEY_LOCK"
 msgid "Key lock"
 msgstr "Verrou clavier"
@@ -3618,6 +3773,11 @@ msgid "Channel"
 msgstr "Canal"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
+msgid "Automatic"
+msgstr "Automatique"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_ETSI_SHORT"
 msgid "ETSI short"
 msgstr "ETSI court"
@@ -3636,6 +3796,16 @@ msgstr "Première copie"
 msgctxt "SET_VALUE_SFR_RX_DUAL_PATH"
 msgid "Dual-path RX"
 msgstr "RX double voie"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_KEY_TYPE_8_BIT"
+msgid "8-bit (1-255)"
+msgstr "8 bits (1-255)"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_KEY_TYPE_16_BIT"
+msgid "16-bit (0-65535)"
+msgstr "16 bits (0-65535)"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_VALUE_SPEAKER"
@@ -3928,6 +4098,11 @@ msgid "Send in DMR calls"
 msgstr "Pos. dans appels DMR"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_GPS_POSITION"
+msgid "Save GPS position"
+msgstr "Enregistrer la position GPS"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_HOTSPOT_ALLOWED"
 msgid "Hotspot allowed"
 msgstr "Hotspot autorisé"
@@ -4198,6 +4373,11 @@ msgid "Colors are for color screens"
 msgstr "Écran couleur requis"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_NIGHT_RED_ONLY"
+msgid "Night theme: red only"
+msgstr "Thème nuit : rouge seul"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_MIC_GAIN_NOT_IN_BUILD"
 msgid "Mic gain: not in this build"
 msgstr "Gain mic non dispo"
@@ -4251,6 +4431,16 @@ msgstr "Pos. DMR non dispo."
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "Diag. non supporté"
+
+#: core/ui/ui_menus.c
+msgctxt "GPS_POSITION_SAVED"
+msgid "GPS position saved"
+msgstr "Position GPS enregistrée"
+
+#: core/ui/ui_menus.c
+msgctxt "NO_CURRENT_GPS_FIX"
+msgid "No current GPS fix"
+msgstr "Pas de position GPS actuelle"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
@@ -4348,16 +4538,6 @@ msgid "Always skip"
 msgstr "Toujours ignorer"
 
 #: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
-msgid "Skipped until the scan stops"
-msgstr "Ignoré jusqu'à stop"
-
-#: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
-msgid "Nothing to skip yet"
-msgstr "Rien à ignorer"
-
-#: core/ui/ui_menus.c
 msgctxt "SCAN_TOAST_STOPPED_HERE"
 msgid "Scan stopped here"
 msgstr "Balayage stoppé ici"
@@ -4421,6 +4601,151 @@ msgstr "Longitude"
 msgctxt "POS_TOAST_RANGE"
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "Max 90 N/S, 180 E/O"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_STALE"
+msgid "TLE is 14+ days old; refresh from site"
+msgstr "TLE de plus de 14 jours ; actualisez depuis le site"
+
+#: core/ui/ui_satellite.c
+msgctxt "TLE_UPDATE_FAILED_2"
+msgid "TLE update failed"
+msgstr "Échec de la mise à jour TLE"
+
+#: core/ui/ui_satellite.c
+msgctxt "TLE_UPDATE_QUEUED"
+msgid "TLE update queued"
+msgstr "Mise à jour TLE en attente"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_UNAVAILABLE_4"
+msgid "Satellite unavailable"
+msgstr "Satellite indisponible"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_RISE"
+msgid "↑ in"
+msgstr "↑ dans"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_SET"
+msgid "↓ in"
+msgstr "↓ dans"
+
+#: core/ui/ui_satellite.c
+msgctxt "OTHER_SATELLITE_2"
+msgid "Other satellite"
+msgstr "Autre satellite"
+
+#: core/ui/ui_satellite.c
+msgctxt "VISIBLE_2"
+msgid "Visible"
+msgstr "Visible"
+
+#: core/ui/ui_satellite.c
+msgctxt "BELOW_HORIZON_2"
+msgid "Below horizon"
+msgstr "Sous l'horizon"
+
+#: core/ui/ui_satellite.c
+msgctxt "WAITING_FOR_POSITION_TIME_2"
+msgid "Waiting for position/time"
+msgstr "En attente de position/heure"
+
+#: core/ui/ui_satellite.c
+msgctxt "NOW"
+msgid "Now"
+msgstr "Maintenant"
+
+#: core/ui/ui_satellite.c
+msgctxt "PREDICTING_PASSES_2"
+msgid "Predicting passes"
+msgstr "Calcul des passages"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
+msgid "No TLEs: load from site"
+msgstr "Pas de TLE : charger depuis le site"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "Âge du TLE"
+
+#: core/ui/ui_satellite.c
+msgctxt "GPS_TIME_UNAVAILABLE"
+msgid "GPS/time unavailable"
+msgstr "GPS/heure indisponibles"
+
+#: core/ui/ui_satellite.c
+msgctxt "NO_PASSES_IN_NEXT_24H"
+msgid "No passes in next 24h"
+msgstr "Aucun passage dans les 24 h"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASSES"
+msgid "Next passes"
+msgstr "Prochains passages"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_PICK_BACK"
+msgid "Up Down pick  Back"
+msgstr "Haut Bas choisir  Retour"
+
+#: core/ui/ui_satellite.c
+msgctxt "CATALOG"
+msgid "Catalog"
+msgstr "Catalogue"
+
+#: core/ui/ui_satellite.c
+msgctxt "TRACKING_4"
+msgid "Tracking"
+msgstr "Suivi"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASS"
+msgid "Next pass"
+msgstr "Prochain passage"
+
+#: core/ui/ui_satellite.c
+msgctxt "VISIBLE_NOW"
+msgid "Visible now"
+msgstr "Visible maintenant"
+
+#: core/ui/ui_satellite.c
+msgctxt "CALCULATING"
+msgid "Calculating"
+msgstr "Calcul en cours"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_STATE_BEYOND_FORECAST"
+msgid "Beyond forecast"
+msgstr "Hors prévision"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_SATELLITE_OK_TRACK"
+msgid "Up Down satellite  OK track  Hold OK arm  # TLE  Back"
+msgstr "Haut Bas satellite  OK suiv.  Maintenir OK armer  # TLE  Retour"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_SATELLITE_OK_TRACK_2"
+msgid "Up Down satellite  OK track  # TLE  Back"
+msgstr "Haut Bas satellite  OK suiv.  # TLE  Retour"
+
+#: core/ui/ui_satellite.c
+msgctxt "SO_50_ARM_REQUESTED"
+msgid "SO-50 arm requested"
+msgstr "Armement SO-50 demandé"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOP_FAILED"
+msgid "Tracking not stopped"
+msgstr "Suivi non arrêté"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOPPED"
+msgid "Tracking stopped"
+msgstr "Suivi arrêté"
 
 #: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
@@ -4543,6 +4868,16 @@ msgid "No TX frequency set"
 msgstr "Freq TX non déf."
 
 #: core/ui/ui_screens.c
+msgctxt "WHY_AES_KEY"
+msgid "AES key or TX disabled"
+msgstr "Clé AES ou TX désactivé"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_WAIT"
+msgid "AES: saving, try again"
+msgstr "AES : attente, réessayez"
+
+#: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"
 msgid "Mode: not in this build"
 msgstr "Mode non supporté"
@@ -4603,6 +4938,11 @@ msgid "This mode: receive only"
 msgstr "Ce mode: réception seule"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_DATA_ENCRYPTED"
+msgid "Encrypted channels can't send text"
+msgstr "Pas de texte sur canal chiffré"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_NO_CC"
 msgid "No control channel"
 msgstr "Pas de canal contrôle"
@@ -4628,9 +4968,19 @@ msgid "Voice channel unusable"
 msgstr "Canal voix inutilisable"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
+msgid "RX-only system: no TX"
+msgstr "Système en RX seule : pas de TX"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"
 msgid "Another system heard"
 msgstr "Autre système entendu"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "Système incompatible"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
@@ -4753,6 +5103,16 @@ msgid "DMR modem off"
 msgstr "Modem DMR inactif"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_TITLE_INCOMING_CALL"
+msgid "Incoming private call"
+msgstr "Appel privé entrant"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_HINT_PTT_ANSWER"
+msgid "Press PTT to answer"
+msgstr "Appuyez sur PTT pour répondre"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_FALLBACK"
 msgid "Fallback"
 msgstr "Secours"
@@ -4776,6 +5136,11 @@ msgstr "Recherche"
 msgctxt "TRUNK_STATE_IN_CALL"
 msgid "In call"
 msgstr "En appel"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_CALLING"
+msgid "Calling"
+msgstr "Appel en cours"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_REFUSED"
@@ -4821,6 +5186,16 @@ msgstr "DMon"
 msgctxt "HOME_CHIP_PRIVACY"
 msgid "Priv"
 msgstr "Priv"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "Système incompatible"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND_NOTE"
+msgid "Cannot join"
+msgstr "Impossible de rejoindre"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_MODEL_TINY"
@@ -4976,6 +5351,11 @@ msgstr "Émission impossible"
 msgctxt "ACTIVITY_BODY_TX_WAITS"
 msgid "Transmit waits for it"
 msgstr "Pas de TX avant"
+
+#: core/ui/ui_screens.c
+msgctxt "APRS_ACTIVITY_LAST_MSG"
+msgid "APRS: "
+msgstr "APRS: "
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LAST"
@@ -5281,6 +5661,11 @@ msgstr "1-9 modif mtnOK sauv"
 msgctxt "QUICK_HINT_ALL_SETTINGS"
 msgid "0 All settings  Hold OK save"
 msgstr "0 Tous param mtnOK"
+
+#: core/ui/ui_screens.c
+msgctxt "DIAG_VARIANT_MISMATCH"
+msgid "This firmware may be for another version of this radio"
+msgstr "Ce firmware vise peut-être une autre version de cette radio"
 
 #: core/ui/ui_screens.c
 msgctxt "DIAG_HINT"

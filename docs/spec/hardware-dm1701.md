@@ -374,7 +374,7 @@ generate false PTT events when their bias is removed, so keep PA13 high during r
 | Read | address+W, register, then repeated transaction address+R, 2 bytes (high first). A stop between the two works |
 | Retries | the bus occasionally NAKs; retry up to 3 times with 1 ms between |
 | Bus clear | a transfer cut short in a read leaves the chip holding SDA low; the peripheral then reports busy and its reset doesn't help. After the third failed try: SCL clocked by hand until SDA is released (9 pulses at most), a stop, then the peripheral set up again. Diagnostics line 4 counts them (`clr`) |
-| Reference | 26 MHz assumed (reg 0x04 bit0 = 0 and reg 0x30 bit14 = 1 select 25.6/26 MHz and 26/13 MHz, i.e. 26 MHz). Unverified on the board |
+| Reference | 26 MHz (reg 0x04 bit0 = 0 and reg 0x30 bit14 = 1 select 25.6/26 MHz and 26/13 MHz; the DTMF tone values match the 13/26 MHz column of the chip's table) |
 | Paging | reg 0x7F selects the register page (0 or 1); page 1 holds the AGC table |
 
 Caching the last value written per register and page avoids redundant I2C traffic (writes that do not change a value
@@ -415,7 +415,7 @@ skip the action rather than block).
 | 25 | 0x5A = 0x06DB | unknown |
 | 26 | 0x63 = 0x16AD | pre-emphasis bypass threshold |
 | 27 | 0x0F = 0x8A24 | unknown |
-| 28 | 0x05 = 0x8763 | unknown (also written before every frequency change) |
+| 28 | 0x05 = 0x8763 | synthesizer mode, normal (5.6; written again before every frequency change) |
 | 29 | 0x30 = 0x40A4 | prepare calibration |
 | 30 | 0x30 = 0x40A6 | calibration enable |
 | 31 | wait 100 ms | |
@@ -560,12 +560,29 @@ Write sequence (RX or TX frequency):
 | Step | Action |
 |---|---|
 | 1 | 0x30 = idle value (5.3) |
-| 2 | 0x05 = 0x8763 ("normal" frequency mode) |
+| 2 | 0x05 = the mode word for the channel (below) |
 | 3 | 0x29 = high word |
 | 4 | 0x2A = low word |
 | 5 | 0x49 = 0x0C15 (squelch open/shut thresholds; see 5.9) |
 | 6 | 0x30 = RX on value |
 | 7 | set the PA DAC: the TX drive value when this was the TX frequency, 0 when RX |
+
+Reg 0x05 is the synthesizer mode. The chip's register table gives a normal word and a special word for channels on a
+harmonic of the reference clock, at the multiples of the reference / 4:
+
+| Reference | Special word | Special channels |
+|---|---|---|
+| 25.6 or 26 MHz | 0x8543 | multiples of 6.4 or 6.5 MHz |
+| 12.8 or 13 MHz | 0x86D3 | multiples of 3.2 or 3.25 MHz |
+| any | 0x8763 | every other channel (normal) |
+
+The word must be written with the receiver and transmitter off, before 0x29/0x2A (steps 1-4), and the normal word goes
+back on the next channel. A UV380-family board picks the 26 MHz rule (0x8543 at 136.5, 143 ... 169, 403, 409.5 ...
+474.5 MHz) with `uvf_variant_t.rf_spur_step_hz` and adds its own channels where its other clocks put a spur
+(`uvf_variant_t.rf_spurs`, checked first). The DM-1701 keeps 0x8763 on every channel: on the bench no word showed a
+spur at 136.5, 409.5, 448 or 455 MHz, and a special word below 455 MHz (0x8643) cut FM deviation by 1.1 dB. The
+word follows the channel frequency, not the synthesizer word with the TX or DMR receive offset. The driver API is
+`at1846s_set_spurs` and `at1846s_r05`.
 
 TX frequency offset (empirical): with the normal TX sequence (RX frequency written, then TX frequency written with RX
 on, then TX on) the carrier is about 3 kHz low; RadioFoundry adds +3.00 kHz (12.5 kHz) or +6.15 kHz (25 kHz FM) to
@@ -1127,8 +1144,9 @@ request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the 
 0, so the duty is N %. 0 % and 100 % stop the DMA and drive the pin directly.
 
 RadioFoundry uses two one-word DMA writes per PWM cycle (`boards/uv380_family/backlight_uvf.h`):
-At 40 kHz TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
-Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, 80,000 transfers a second. The ripple of the
+TIM1's update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
+Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, two transfers per cycle. The rates below were tried; the PWM now runs at 2 kHz
+(36000 counts per cycle) and stops while transmitting or while receive audio from a signal is open. The ripple of the
 switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
 demodulated from a separate receiver, peak deviation:
 
@@ -1139,8 +1157,17 @@ demodulated from a separate receiver, peak deviation:
 | 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | The conducted measurement below supersedes the over-the-air estimate for this line |
 
 The panel's backlight driver doesn't follow 40 kHz: Brightness 20 % looked close to full, and the idle dim step (a
-fifth) hardly showed. At 2 kHz it dims as set. The PWM uses 2 kHz while idle and 40 kHz while transmitting or while FM or DMR receive audio is open.
-The receive selection follows the audio route even at zero volume, when FM still feeds APRS.
+fifth) hardly showed. At 2 kHz it dims as set. The PWM runs at 2 kHz while idle. While transmitting, or while
+receive audio from a signal is open, the pin is held high at any brightness above 0 %. Receive audio is open while the
+FM squelch is open or the monitor is on, and while a DMR, P25 or NXDN call plays: the green LED's state, which the
+radio core passes to the board (`hal_radio_t.rx_open`). The volume doesn't count, so FM at zero volume, which still
+feeds APRS, holds the pin too. A key beep or other local PCM alone keeps the PWM: the ripple reaches the audio through
+the synthesizer, only with a carrier present (below).
+
+An earlier build ran 40 kHz in those states with a one-count pulse (14 ns) for every level below 100 %, expecting the
+stage's tail to fill the period. On one DM-1701 the tail did fill the period and the panel was fully lit. On other DM-1701 and MD-UV380 family
+radios the screen went dark during transmit and receive audio (#759). The likely cause is a stage that doesn't respond
+to a pulse that short; the bench DM-1701 doesn't show the fault, so this is not confirmed. A steady pin gives the same light as a 40 kHz rate the stage follows, without depending on its turn-on.
 
 A conducted DM-1701 UHF measurement through 60 dB of attenuation found at most 4.4 Hz deviation at 40 kHz over
 5–90 % pin duty, with sidebands at or below -85 dBc. At 2 kHz and 50 % brightness, an unmodulated -88 dBm carrier
@@ -1207,11 +1234,10 @@ DM-1701 A:
 
 That tail is why 40 kHz (a 25 us period) can't dim at all, why at 15 kHz and 50 % (33 us off) the LEDs never go dark,
 and why 2 kHz lit Brightness 10 % at about 18 %. Clean transmit needs about 18 kHz or more and dimming a few kHz or
-less, so the rate switches. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
+less. While transmitting or receiving, the pin is steady, the reference in every measurement above. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
 the tail is the brightness: at 2 kHz and Brightness 20 % the pin is high for 62 us and the light ends at 100 us of the
 500 us cycle. A level too low for the tail keeps one count, the least the rate allows: about 8 % at 2 kHz (the idle
-dim floor of 5 % lights at that). At 40 kHz every level below 100 % is the one count and the panel is fully lit, as
-before; transmit then measured 5.5, 2.5, 1.8 and 7.0 Hz at 2, 4, 6 and 8 kHz, the same as above.
+dim floor of 5 % lights at that).
 
 Caveats: the rail shows the regulator's response as well as the load (a sag at turn-on, an overshoot at turn-off,
 each settling over 100-200 us), so averaging the rail over a cycle doesn't give the duty; only the time of each edge
@@ -1329,7 +1355,40 @@ RadioFoundry's thresholds: `board.battery_low_mv` 6200, `battery_critical_mv` 60
 Log-taper pot read on PA0. Raw ranges (measured): DM-1701 min about 29, max about 2075,
 breakpoint about 318; MD-UV380 22..2070, breakpoint 309; MD-UV390 Plus 10 W 19..2054, breakpoint 308; RT3S 23..2020,
 breakpoint 317; MD-2017 32..2048, breakpoint 321. A two-segment linear approximation around the breakpoint maps it to
--31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis).
+-31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis). RadioFoundry writes the knob's
+0..100 % linearly over -31..+31 steps of HR_C6000 4:0x37 ([modem-hrc6000.md](modem-hrc6000.md) 2). The same gain scales
+beeps. The board sets `volume_pcm` and gives the measured curve below (`volume_db10`, table `rx_gain_db10` in
+`radio_uvf.c`), so above volume step 7 the radio core plays each beep softer by the gain over step 7's and the beep
+sounds as at step 7 (`radio-features.md` 4). The speaker volume is not changed for a beep.
+
+The chip offers no electrical copy of its output (with the audio probe's tone on the DAC in DMR, the I2S input stays at
+its noise floor at every 0x37 setting), so the curve is measured at the speaker. A 1500 Hz tone at a fixed PCM level
+played on the prompt FIFO in FM at each of the 63 gain steps, with the programming cable out (the cable mutes the
+speaker), recorded by a microphone 3-5 cm from the grille. Two passes 12 dB apart agree within 0.5 dB, and the level
+rises about 0.77 dB a step over the whole range (not the manual's 1.5 dB). Per volume step:
+
+| Step | Knob | 0x37 step | Speaker level vs step 7 | Beep level at `beep_level` 60 |
+|---|---|---|---|---|
+| 1 | 6 % | -28 | -18.8 dB | 60 |
+| 2 | 13 % | -23 | -14.9 dB | 60 |
+| 3 | 19 % | -20 | -12.5 dB | 60 |
+| 4 | 25 % | -16 | -9.4 dB | 60 |
+| 5 | 31 % | -12 | -6.2 dB | 60 |
+| 6 | 38 % | -8 | -3.1 dB | 60 |
+| 7 | 44 % | -4 | 0 dB | 60 |
+| 8 | 50 % | 0 | +3.1 dB | 42 |
+| 9 | 56 % | +3 | +5.5 dB | 32 |
+| 10 | 63 % | +8 | +9.3 dB | 21 |
+| 11 | 69 % | +11 | +11.7 dB | 16 |
+| 12 | 75 % | +15 | +14.7 dB | 11 |
+| 13 | 81 % | +19 | +17.7 dB | 8 |
+| 14 | 88 % | +23 | +21.0 dB | 5 |
+| 15 | 94 % | +27 | +23.9 dB | 4 |
+| 16 | 100 % | +31 | +26.9 dB | 3 |
+
+The beep level is a whole number of at least 1, so at the top steps a beep can sound louder than at step 7: up to about
+1 dB at `beep_level` 60, and about 7 dB at `beep_level` 10 (step 16 plays level 1 for 0.45). The
+other UV380 family radios have the same chip and knob mapping and use the same curve.
 
 ### 11.3 Mic level
 
@@ -1360,6 +1419,11 @@ table, overwrite those 8 bytes with the marker, derive the very-low power row an
 write the result to 0x010000. The firmware never writes the security registers. The STM32F4 stub can put a backup of
 them back (`stubtool.py --write-secreg`, [stub-stm32f4.md](stub-stm32f4.md) 6.2), refusing a register whose one-time
 lock bit is set; nothing ever writes status register 2.
+
+RadioFoundry reads both copies and writes neither. It takes each band from the working copy when that band passes the
+checks there (no zero power point, very low <= low < high, no erased row), else from the factory table, converted in
+RAM. A working copy with one bad band (a high row wrapped past 255 by a converter that doesn't saturate) still gives
+the other band; the diagnostics page then shows `cal mixed`.
 
 Power conversion when deriving the working copy (empirical): very low = low x k0 (always), and if
 converting: low x= k1, mid x= k2, high x= k3.
@@ -1825,8 +1889,9 @@ across the family.
 3. The bootloader leaves HSE/PLL running: switch to HSI before reprogramming HSE/PLL.
 4. CCM RAM is not zeroed or initialized by default startup code and is invisible to DMA. RadioFoundry puts the RTOS heap (every
    task stack), the slot engine, the radio state machine and the big CPU-only buffers there; `.ccmbss`
-   (`RFOUNDRY_CPU_RAM`) is zeroed before `main` by a `.preinit_array` entry in `board.c`, `.ccmram` (`RFOUNDRY_CPU_RAM_NOINIT`)
-   is not. DMA buffers stay static in main SRAM, and each stream's set-up checks that (`DMA_RAM_OK`).
+   (`RFOUNDRY_CPU_RAM`) is zeroed and `.ccmdata` (`RFOUNDRY_CPU_DATA`) copied from flash before `main` by a
+   `.preinit_array` entry in `platform/stm32f4/ccm.c`, `.ccmram` (`RFOUNDRY_CPU_RAM_NOINIT`) is not. The heap is the rest of
+   the CCM. DMA buffers stay static in main SRAM, and each stream's set-up checks that (`DMA_RAM_OK`).
 5. The codec must be at exactly 0x0807537C; the code budget is the space below it. Keep large constant tables above the
    codec end if the code grows.
 6. PA13 is SWDIO; driving it as mic power breaks SWD (use connect-under-reset).

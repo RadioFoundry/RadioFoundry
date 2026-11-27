@@ -212,7 +212,7 @@ bool ui_svc_roam(uint8_t cmd)
 uint32_t ui_svc_feat_radio(void)
 {
 	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
-	bool knob = radio_volume_knob();
+	bool knob = radio_volume_follows_knob();
 	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
 	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0) |
 	       (knob ? UI_FEAT_VOLUME_KNOB : 0) |
@@ -283,8 +283,8 @@ bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
 			if (!(CONFIG_VFO_FM || CONFIG_VFO_DMR))
 				return false;
 		} else if (r[i].pos >= CODEPLUG_ZONE_MAX || !codeplug_zone(r[i].zone, &z) || r[i].pos >= z.count ||
-			   !codeplug_channel(z.channels[r[i].pos], &ch) || ch.kind == CODEPLUG_KIND_P25_TRUNK) {
-			return false;	// a trunked channel follows its system: not one to watch
+			   !codeplug_channel(z.channels[r[i].pos], &ch) || codeplug_kind_trunked(ch.kind)) {
+			return false;	// a trunked channel (P25 or Tier III) follows its system: not one to watch
 		}
 	}
 	if (sel > 1 || (r[0].vfo == r[1].vfo && r[0].zone == r[1].zone && r[0].pos == r[1].pos))

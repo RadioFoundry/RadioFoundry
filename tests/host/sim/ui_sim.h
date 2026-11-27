@@ -19,6 +19,7 @@ typedef struct {
 	uint8_t inset_tb;	// top and bottom
 	bool aa;		// anti-aliased fonts: the radio is built with CONFIG_FONT_AA
 	bool big;		// lists and labels one size up: the radio is built with CONFIG_FONT_BIG
+	bool safe;		// the frame buffer holds the safe area only, as the radio builds it (hal_display_t fb_safe_area)
 } sim_geom_t;
 
 // K full keypad, M navigation keys, V a mobile's front panel + hand-mic keypad, F few keys, P that front panel
@@ -34,9 +35,9 @@ const sim_geom_t *sim_geom_find(const char *name);
 void sim_reset(const sim_geom_t *g, sim_map_t map);
 // Run a script (tokens separated by spaces; see ui_sim.c). Returns false and fills err on the first failure
 bool sim_run(const char *script, char *err, size_t err_len);
-// Color themes (Settings > Display), as ui_theme_set numbers them: "dark", "light", "high_contrast"; theme: in a
+// Color themes (Settings > Display), as ui_theme_set numbers them: "dark", "light", "high_contrast", "night"; theme: in a
 // script. sim_theme_find: the number, or -1
-#define SIM_THEME_COUNT	3
+#define SIM_THEME_COUNT	4
 extern const char *const sim_themes[SIM_THEME_COUNT];
 int sim_theme_find(const char *name);
 // A highlight color by its gallery name (red, light_blue, ...; color: in a script): UI_ACCENT_*, or -1
@@ -70,6 +71,8 @@ void sim_worst(bool on);
 // two texts on top of each other, a box drawn over part of a text. Each problem is one line of text
 #define SIM_LAYOUT_MAX	16
 int sim_layout_issues(char out[][160], int max);
+bool sim_text_has_color(const char *text, uint16_t color);
+bool sim_text_bounds(const char *text, int *x, int *y, int *w, int *h);
 
 // State for checks
 typedef struct {

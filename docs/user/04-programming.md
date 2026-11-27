@@ -30,7 +30,7 @@ server: files, the codeplug and your RadioID API key stay on your computer.
    When the radio's DMR ID database would take 20 seconds or more to read (megabytes over the programming cable), the
    editor first says how long and asks whether to read it too. Skip it unless you want
    to edit the database or keep it in a saved file: a write then leaves the radio's database as it is. The
-   **DMR ID Database** tab can read it later.
+   **DMR ID Database** tab can read it later, or remove it without reading it.
 3. Edit the codeplug.
 4. Choose **Write to Radio**. The editor compares the codeplug with the radio's and writes only the bytes that
    changed. It shows how many bytes and about how long it takes, then writes and verifies them. The radio loads the
@@ -44,6 +44,10 @@ APRS goes back to the radio's default: check it before you transmit. A channel's
 nearest new level.
 
 ### Programming several radios
+
+Opening a saved file or draft sends its valid settings area, including its channel modes and trunking systems.
+After reading from a radio, edits on that connection merge only the settings you changed, preserving settings
+changed in the radio's menus. A file without a valid settings area leaves the radio's existing area intact.
 
 To put one codeplug into several radios, write it to each in turn. Before each write the editor checks which radio is
 connected. A radio swapped on the programming cable is read again before anything is written, so the write is
@@ -83,7 +87,9 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | DMR ID Database | Names for DMR IDs that aren't contacts, built from RadioID.net ([below](#dmr-id-database-and-contacts-from-radioidnet)) |
 | Problems | Errors and warnings, each with a link to the record |
 
-In a table, double-click a cell or type on it to edit it in place. Click a column heading to sort, and type in the
+In a table, double-click a cell or type on it to edit it in place. The RX Tone and TX Tone fields list the CTCSS tones
+and DCS codes. Typing narrows the list, and the arrow keys and Enter pick a tone. A tone missing from the list, such as
+69.4, is taken as typed, and a short DCS code such as D23 becomes D023N. Click a column heading to sort, and type in the
 filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them (not on Zones or RX Lists, whose members are
 edited in their own dialog). **Undo** and **Redo**
 cover every change, including an import.
@@ -121,8 +127,9 @@ Per system:
 
 When the codeplug holds keys, **Save** as a codeplug file asks whether to include them;
 they are left out unless you tick **Include the keys in this file**. Anyone with a file that holds them can read them.
-CSV and qdmr files hold neither systems nor channel modes: a channel of another mode goes into them as a receive-only
-DMR channel, and comes back from one as that. Keep a codeplug file for them.
+A qdmr file holds systems and channel modes in a block of its own that qdmr ignores (below), but never keys. CSV files
+hold neither: a channel of another mode goes into one as a receive-only DMR channel, and comes back from one as that.
+Keep a codeplug file for them.
 
 ### P25 and NXDN
 
@@ -154,6 +161,45 @@ channel.
 |---|---|
 | P25 unit ID | Your P25 ID. Blank: the DMR ID |
 | NXDN unit ID | Your NXDN ID, 1-65519. Blank: the DMR ID if it is 65519 or less, else 1 |
+
+#### NXDN Scrambler
+
+The NXDN Scrambler is a 15-bit algorithm with 32,767 possible keys. The NXDN standard defines it for voice and
+data calls, but RadioFoundry currently supports it for conventional voice calls only. It deters casual listening,
+but does not provide dependable security, and the receiver cannot verify who sent a scrambled call. Use scrambling
+only in licensed services that permit it. Most countries prohibit using codes or ciphers that obscure the meaning of amateur
+radio messages ([Encryption on amateur frequencies](#encryption-on-amateur-frequencies)). The Amateur firmware variant
+disables the NXDN Scrambler.
+
+To use the NXDN scrambler:
+
+1. In **Systems**, choose **Add System** and set the type to **NXDN Conventional**. Leave **Radio ID on this system**
+   blank to use the **NXDN unit ID** from the **Radio** tab on channels without their own **Own ID**.
+2. Under **Traffic keys**, select **Add key**. Enter a **Key ID** from 0 to 63 and a **Scrambler seed** from
+   1 to 32767. Use each key ID once per system. Radios exchanging scrambled calls need the same key ID and seed.
+3. Edit an NXDN channel, select the **System**, and choose a **Transmit key**. Choose **Clear** to transmit without
+   scrambling while still receiving scrambled calls with matching system keys. Save the channel and write the
+   codeplug to the radio.
+
+The radio shows **ENC** when it plays scrambled voice. If a scrambled call has no matching receive key, the radio
+shows **Encrypted: not played**. If a channel's selected transmit key is missing, pressing PTT on that channel
+does not transmit.
+
+**Show scrambler seeds** reveals the stored values. File exports omit the keys by default. Zone shares omit them
+as well.
+
+#### Encryption on amateur frequencies
+
+Most countries don't allow messages encoded to obscure their meaning on amateur frequencies. In the US the rule is
+47 CFR 97.113(a)(4). Encryption and scrambling belong in licensed services that permit them.
+
+The Codeplug Editor lists a warning under **Problems** for a channel that transmits with an AES key or an NXDN
+scrambler key on a frequency from 144 to 148 MHz, 222 to 225 MHz or 420 to 450 MHz, the edges included. These ranges are the
+common amateur 2 m, 1.25 m and 70 cm allocations. A receive-only channel gets no warning. Basic privacy keys are set on the
+radio, not in the codeplug, so the editor can't check them.
+
+The warning blocks nothing. The codeplug still saves and writes, and the radio doesn't refuse to transmit. Receiving
+encrypted calls is not affected. Each operator is responsible for following the terms of their license.
 
 **P25 Trunking system** (Systems tab, type P25 Trunking). A new system is listen only: set **Transmit** to register and
 transmit.
@@ -203,7 +249,8 @@ saving it again replaces the date and time.
 CSV files have a header row with the column names, and refer to other records by name (a channel's TX contact, a
 zone's channels). Save a table first to see the columns. An import matches rows to existing records by number, then by
 name. A file can hold only some columns; the others keep their values. Records missing from the file are removed.
-Values the editor can't take are listed by row and column after the import.
+Values the editor can't take are listed by row and column after the import. A channel's TX timeout rounds up to the
+next 15 s step, as the radio stores it (100 s becomes 105 s).
 
 A qdmr file replaces the channels, zones, contacts, DTMF contacts, RX group lists, APRS configurations and the Radio
 tab's settings other than the ARS server and IP gateway in one change, so one **Undo** reverses it. The VFOs and the DMR ID database stay as they were.
@@ -211,6 +258,13 @@ Afterwards the editor lists what it changed or left out, such as scan lists, enc
 shortened. Saving as qdmr YAML lists what qdmr's format can't hold: SFR settings, power levels qdmr has no name for,
 and locations, which are rounded to 6-character grid locators (about 5 km). The Tools page converts between qdmr YAML
 and codeplug files too, and converts an original firmware codeplug to either.
+
+Systems, channel modes (Tier III, P25, NXDN) and **Accept Invalid CRC** go into the qdmr file in a `radioFoundry`
+block. qdmr opens the file and ignores the block, and never writes one: save from the Codeplug Editor to keep the block.
+Opening a file with the block replaces the codeplug's systems too. Opening a file without one, such as any file qdmr
+wrote, keeps the systems. Keys are never saved in the file: when the file is opened again in a codeplug that has the
+same system, the system keeps its key; anywhere else, enter the key again on the **Systems** tab. The block's keys are
+in the [qdmr YAML spec](../spec/qdmr-yaml.md#37-the-radiofoundry-block).
 
 ### DMR ID database and contacts from RadioID.net
 
@@ -233,6 +287,11 @@ Then choose:
 The page previews the records, and shows the database size against the radio's room. **Write ID Database** puts it in
 the codeplug; **Write to Radio** then sends it. **Add as Contacts** adds the users as private-call contacts instead,
 skipping IDs that are already contacts. The editor remembers these choices in the browser.
+
+A database too big for the connected radio is never sent. That happens when it was built with no radio chosen, or comes
+from a file made for a bigger radio. **Write to Radio** then offers **Cut to Fit**: the names with the highest IDs are
+left out, and the editor says how many. **Remove ID Database** clears the database, also one the read skipped or one
+the editor can't read. **Write to Radio** then erases it on the radio, and a new one can be written.
 
 Keep contacts for what you call: your talkgroups and the few people you make private calls to. The codeplug holds at
 most 1024 contacts, and every one is a row in Contacts and the talk target picker. Let the ID database name everyone

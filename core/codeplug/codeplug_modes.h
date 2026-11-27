@@ -36,12 +36,15 @@ bool radio_nxdn_fits(void);
 	X(1, DMR_TRUNK, "T3", CONFIG_DMR_TRUNK)	/* DMR Tier III trunked (radio/radio_trunk.h) */ \
 	X(2, P25, "P25", CODEPLUG_RUNS_P25)	/* P25 conventional: the radio core runs it (core/radio/radio_p25.c) */ \
 	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK && CODEPLUG_RUNS_P25)	/* P25 trunked, receive only (radio_p25.c) */ \
-	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN)	/* NXDN conventional: the radio core runs it (core/radio/radio_nxdn.c) */
+	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN)	/* NXDN conventional: the radio core runs it (core/radio/radio_nxdn.c) */ \
+	X(5, DMR_AES, "AES", CONFIG_DMR_AES)
 
 // System types: the first byte of a system record
 #define CODEPLUG_SYSTEM_TYPES(X) \
 	X(1, DMR_TRUNK, "T3", CONFIG_DMR_TRUNK)	/* a DMR Tier III system */ \
-	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK)	/* a P25 trunked system (2 is reserved for a P25 conventional one) */
+	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK)	/* a P25 trunked system (2 is reserved for a P25 conventional one) */ \
+	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN) /* NXDN conventional identity and traffic keys */ \
+	X(5, DMR_AES, "AES", CONFIG_DMR_AES)
 
 // A test (or a build that adds a mode out of tree) may append rows of its own, defined before this header
 #ifndef CODEPLUG_KINDS_EXTRA
@@ -54,7 +57,7 @@ bool radio_nxdn_fits(void);
 // Whether this build reads the mode-scoped record families (codeplug_records.h): the OR of the build conditions of the
 // modes that use them: P25 and NXDN read their radio-wide records, Tier III its systems. A test defines it 1
 #ifndef CODEPLUG_MODE_RECORDS
-#define CODEPLUG_MODE_RECORDS	(CONFIG_P25 || CONFIG_NXDN || CONFIG_DMR_TRUNK)
+#define CODEPLUG_MODE_RECORDS	(CONFIG_P25 || CONFIG_NXDN || CONFIG_DMR_TRUNK || CONFIG_DMR_AES)
 #endif
 
 #define CODEPLUG_KIND_ENUM(id, token, name, built)	CODEPLUG_KIND_##token = id,
@@ -75,6 +78,12 @@ static inline bool codeplug_kind_built(uint8_t kind)
 	CODEPLUG_KINDS_EXTRA(CODEPLUG_REG_BUILT)
 	default: return false;
 	}
+}
+
+// A kind whose channel follows its system (a control channel, the grants): never a scan stop or a dual watch channel
+static inline bool codeplug_kind_trunked(uint8_t kind)
+{
+	return kind == CODEPLUG_KIND_DMR_TRUNK || kind == CODEPLUG_KIND_P25_TRUNK;
 }
 
 static inline bool codeplug_systype_built(uint8_t type)

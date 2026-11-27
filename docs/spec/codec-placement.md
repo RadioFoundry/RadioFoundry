@@ -69,12 +69,21 @@ copy.
 |---|---|---|
 | Slot | Version 1: header, code, tables. The code's run address is stock's | Version 2: the same bytes, unchanged from stock, plus the relocation list (the map's `self_refs` offsets; `table_refs` too once tables move) after the tables |
 | Boot | Copies the code to its stock address | Copies the code to the board's codec window and adds (window - stock run address) to each listed word, then checks the signature |
-| RAM | Low region, codec window at stock's address, high region | One region for RadioFoundry from 0x10000; the codec window at the top of SRAM, sized to the largest code among the board's maps; the start-up stack below it |
+| RAM | Low region, codec window at stock's address, high region | One region for RadioFoundry from 0x10000; the codec window at the top of SRAM, sized to the largest code among the board's maps; the start-up stack in the top of the RTOS heap, the last section below it |
 | Tables | Copied to their stock modem SRAM address | Unchanged: the board reserves the union of its builds' table windows |
 | Slot identity | CRC-32 and SHA-256 of the stock bytes | The same: the slot keeps stock bytes, so a backup or a kept slot is still recognized by the profile hashes |
 
 The codec window (in SRAM) is the largest code among the board's maps, and the table window (in modem SRAM) is the
 union of its builds' tables. Both are in the radio's codec page and the board's linker script.
+
+The rest of the modem SRAM has fixed users too: the PCM buffers at its start and the crash log's words at its end
+(0x18007EF0..0x18008000, `platform/hrc7000/platform.h`). A board may give RadioFoundry a part above the table window
+as the linker region `MODEM_BSS` (`__modem_bss_lo`, `__modem_bss_hi` in its `memory.ld`), with a margin past the
+tables' end where it is not known whether the codec writes there. The section `.modem_bss` goes there and crt0 zeroes
+it. It holds the state the core marks `RFOUNDRY_COLD_RAM` (`core/config.h`): large buffers task code uses now and
+then, never one an interrupt, the audio, the modem or the codec touches, and no stack. A board without such a part
+aliases `MODEM_BSS` to its RAM, and the same state is ordinary bss. The linker fails the build when the part overlaps
+the table window, the PCM buffers or the crash log. Which boards have one is in their hardware pages.
 
 Version 2 is the only slot format the firmware and the tools write. A radio with a version 1 slot reports no codec
 (FM works). The web flasher rebuilds such a slot as version 2 when the build has a codec map (`c7000v1.js`, kept

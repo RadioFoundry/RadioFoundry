@@ -31,6 +31,7 @@ typedef enum {
 	UI_BANNER_RESULT,	// result of something we sent (radio check answered, message delivered, ...)
 	UI_BANNER_INFO,		// anything else ("Hotspot started by host. Back to stop.")
 	UI_BANNER_ZONE_OFFER,	// another radio offers a zone or channel: CONTEXT opens the offer
+	UI_BANNER_APRS_MESSAGE,	// APRS message addressed to us: CONTEXT opens the APRS messages screen
 } ui_banner_kind_t;
 
 typedef struct {
@@ -110,6 +111,7 @@ typedef struct {
 	bool locked;		// keys locked (long QUICK)
 	bool scanning;
 	uint8_t usb_net;	// UI_USB_NET_*: the status strip's USB network word and link arrows
+	uint8_t gps;		// UI_GPS_*: the status strip's GPS icon
 	bool hints;		// the hint row is shown (Settings > Display)
 	bool large_text;	// Home shows only the channel and the talk target (Settings > Display)
 	bool privacy;		// the next DMR transmission is encrypted
@@ -168,18 +170,28 @@ extern ui_layout_t ui_layout;
 // the computer has brought up, so IP over DMR can flow ("IP" and the up and down arrows, usb-network.md 1)
 enum { UI_USB_NET_OFF, UI_USB_NET_WAIT, UI_USB_NET_UP };
 
+// ui_state_t.gps: the status strip's GPS icon, a satellite dish. None on a radio without a GPS (board_has_gps: a module
+// detected after start-up gets it then); hollow while Settings > Location > GPS is off; solid while it is on without a
+// fix, silent included; with a fix, solid with its feed arm and two waves
+enum { UI_GPS_NONE, UI_GPS_OFF, UI_GPS_SEARCH, UI_GPS_FIX };
+
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper and
 // pills are inverse video
 typedef struct {
 	color_t bg, fg, dim, line, tx, rx, warn, idle, pill_fg, pill_dark_fg, focus, hint_bg, priv;
+	color_t idle_fg;		// the idle pill's word (pill_fg is the word on the TX color)
 	color_t focus_fg;		// text on the focus highlight
 	color_t chnum;			// Home's channel number
 	color_t strip_bg;		// the filled status strip's background (its text is pill_dark_fg)
 	color_t strip_warn;		// warnings on it
 } ui_colors_t;
 extern ui_colors_t ui_col;
-// Color theme on color displays (Settings > Display): 0 dark, 1 light, 2 high contrast. After ui_layout_init
+// Color theme on color displays (Settings > Display), the values of settings_t.theme. Night is shades of pure red
+// on black, for eyes adapted to the dark: it has no highlight color of its own choosing
+enum { UI_THEME_DARK, UI_THEME_LIGHT, UI_THEME_HIGH_CONTRAST, UI_THEME_NIGHT, UI_THEME_COUNT };
+// After ui_layout_init; a value out of range is the dark theme
 void ui_theme_set(uint8_t theme);
+uint8_t ui_theme_get(void);
 // Color displays (Settings > Display): the highlight color (UI_ACCENT_*, ui_svc.h) for list and tile focus and Home's
 // channel number, and whether the status strip is filled with it. Both re-apply the theme's colors
 void ui_accent_set(uint8_t accent);
@@ -254,6 +266,10 @@ void ui_draw_quick(const radio_view_t *v, const ui_state_t *s);
 // Hotspot mode (hostlink in MMDVM mode): frequencies, color code, TX / RX, last call, how to leave
 void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_state_t *s);
 #endif
+#if CONFIG_DMR_TRUNK
+// Incoming private call: the caller and how to answer.
+void ui_draw_incoming_call(const radio_view_t *v, const ui_state_t *s, const char *name);
+#endif
 // Received emergency: full screen, the caller, how to acknowledge
 void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, const char *name);
 // Volume (the VOL key, a radio without a knob): the step 0 (mute) .. RADIO_VOLUME_MAX as a bar and a number
@@ -282,6 +298,8 @@ uint32_t ui_freq_entry_hz(const char *digits, uint8_t len);
 uint32_t ui_freq_parse(const char *digits, uint8_t len);
 // Text for the board's bands ("136-174 400-480"), for hints; only the ones that may transmit when tx
 void ui_bands_text(char *out, size_t len, bool tx);
+// Why the radio can't send (why: tx_deny_t), as the user reads it; buf is returned
+const char *ui_deny_text(const radio_view_t *v, uint8_t why, char *buf, size_t len);
 // The board's power level name
 const char *ui_power_name(uint8_t level, uint32_t tx_hz);
 // A call from a dialing gateway on the trunked system in use (CONFIG_DMR_TRUNK_GW): the caller's number it gave

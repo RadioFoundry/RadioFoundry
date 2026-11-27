@@ -8,6 +8,7 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "radio/beep.h"
+#include "radio/spk_aux.h"
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
@@ -36,13 +37,6 @@
 #include "position/position.h"
 #endif
 
-#define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
-#define DL_SETTING_ENC_OPTIONS	31u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
-#define DL_SETTING_ZS_OFFERS	32u	// SETTING id of zone share offers (zone_share_api.h)
-#define DL_SETTING_REF_TRIM	35u	// SETTING id of the reference trim, ppb two's complement (radio/ref_trim.h)
-#define DL_SETTING_TONES_OFF	36u	// SETTING id of the Settings > Sound tones (radio_settings_t.tones_off)
-#define DL_SETTING_GPS		37u	// SETTING id of Settings > Location > GPS (settings_t.gps, board_t.gps)
-
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
 	return v < n ? names[v] : "?";
@@ -64,12 +58,26 @@ void debuglink_view_audio(dl_text_t *t)
 #endif
 	const hal_audio_t *a = board.audio;
 	if (a != NULL && a->stream_stats != NULL) {
-		audio_stream_stats_t s;
+		audio_stream_stats_t s = { 0 };
 		a->stream_stats(&s);
 		dl_text(t, "audio.blocks=%u\naudio.late=%u\naudio.dropped=%u\n", (unsigned)s.blocks, (unsigned)s.late,
 			(unsigned)s.dropped);
+		if (s.fifo_chunks != 0 || s.fifo_full != 0 || s.fifo_fm) {	// only boards with a second speaker path
+			dl_text(t, "audio.fifo_chunks=%u\naudio.fifo_gaps=%u\naudio.fifo_full=%u\naudio.fifo_fm=%u\n",
+				(unsigned)s.fifo_chunks, (unsigned)s.fifo_gaps, (unsigned)s.fifo_full, s.fifo_fm ? 1u : 0u);
+		}
 	}
-	(void)t;
+	const hal_spk_aux_t *aux = spk_aux_of(a);
+	if (aux != NULL) {	// the speaker's second output (radio-features.md 4.4)
+		dl_text(t, "audio.spk_aux=1\naudio.spk_aux_on=%u\naudio.spk_aux_sounds=%u\n", aux->core->pending() ? 1u : 0u,
+			(unsigned)aux->core->sounds());
+	}
+	// Settings > Display > Brightness as stored (the UI saves each change), the backlight's level while lit: a board
+	// may drive the backlight differently while transmitting or receiving a signal. Here, as the features section is
+	// full
+	unsigned brightness = settings_begin()->brightness;
+	settings_end(hal_millis());	// nothing changed: nothing to save
+	dl_text(t, "set.brightness=%u\n", brightness);
 }
 
 // The last PA drive sweep (RADIO op 39): the points it ran and the top level's drive it counted from
@@ -191,6 +199,11 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	static const char *const vsrc[] = { "none", "knob", "soft", "override", "hold" };
 	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
 		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 5), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
+	// Sent only for a radio that can't set its volume: elsewhere volume.sent already shows the level, and this reply has
+	// little room left
+	if (v->volume_src == RVOL_NONE && v->volume_knob >= 0) {
+		dl_text(t, "volume.knob=%d\n", v->volume_knob);
+	}
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);
