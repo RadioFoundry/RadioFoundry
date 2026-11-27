@@ -1963,12 +1963,16 @@
     "GD": [
      "GD32F303 (built until mid-2022)",
      "d578uv",
-     null
+     null,
+     "testing",
+     "In testing: FM, DMR voice and data, dual watch and GPS work on the radio. Air band AM needs the KTMicro receiver, which some radios don't carry. To go back, write the manufacturer's firmware file through the factory update mode."
     ],
     "AT": [
      "AT32F43x (built from mid-2022)",
      "d578uva",
-     null
+     null,
+     "bring-up",
+     "Untested: no AT32 radio has run this build yet. The code is the GD32 build's, set up for the AT32F435. The factory update mode is never written, so a radio that does not start still goes back: write the manufacturer's firmware file through the factory update mode. Please report what works and what does not."
     ]
    },
    "anytone_models": {
@@ -4578,12 +4582,16 @@
     "GD": [
      "GD32F303 (built until mid-2022)",
      "d578uv",
-     null
+     null,
+     "testing",
+     "In testing: FM, DMR voice and data, dual watch and GPS work on the radio. Air band AM needs the KTMicro receiver, which some radios don't carry. To go back, write the manufacturer's firmware file through the factory update mode."
     ],
     "AT": [
      "AT32F43x (built from mid-2022)",
      "d578uva",
-     null
+     null,
+     "bring-up",
+     "Untested: no AT32 radio has run this build yet. The code is the GD32 build's, set up for the AT32F435. The factory update mode is never written, so a radio that does not start still goes back: write the manufacturer's firmware file through the factory update mode. Please report what works and what does not."
     ]
    },
    "anytone_models": {
@@ -4739,22 +4747,30 @@
     "DBB": [
      "DB25-D PRO: two BK4819 (2024 on)",
      "db25d",
+     null,
+     "supported",
      null
     ],
     "D64": [
      "FD6818 transceiver, 0x7813 LO (2021-2023)",
      "db25d",
-     null
+     null,
+     "testing",
+     "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
     ],
     "D66": [
      "FD6818 transceiver and LO (2021-2023)",
      "db25d",
-     null
+     null,
+     "testing",
+     "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
     ],
     "D6T": [
      "FD6818 transceiver, AT1141 LO (2021-2023)",
      "db25d",
-     null
+     null,
+     "testing",
+     "Untested on this hardware: its FD6818 transceiver and LO are driven from an analysis of the manufacturer's firmware, so FM and DMR may not receive or transmit. To go back, write the manufacturer's firmware file through the factory update mode."
     ]
    },
    "anytone_models": {},

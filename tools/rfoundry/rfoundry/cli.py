@@ -1218,7 +1218,10 @@ def cmd_flash_anytone(args, board, man, app, block):
         say("dry run: nothing was written")
         return 0
     radio, model = _anytone_connect(args, board)
-    atmod.check_install(board, model, args.variant)
+    got = atmod.check_install(board, model, args.variant)
+    note = board.variant_notice(got)
+    if note:
+        say("note: %s" % note)
     rc = _anytone_write(args, board, man, radio, board.app_base, data, "RadioFoundry %s" % man.get("version"))
     if rc == 0:
         state.forget_probe()
@@ -1369,6 +1372,9 @@ def cmd_detect(args):
         say("         %s" % ("RadioFoundry can't be installed on it yet: %s" % why if why else
                             "RadioFoundry installs on it" if runs == board.id else
                             "no RadioFoundry image for this variant: only its stock firmware can be written"))
+        note = board.variant_notice(got) if not why and runs == board.id else None
+        if note:
+            say("         %s" % note)
         return 0
     p = debuglink.probe(args.port, log=say) if not args.no_probe else None
     if p:

@@ -52,7 +52,7 @@ runs = { board = "d578uva" }
 level = "testing"
 summary = """\
 FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. \
-Open: air band AM on a radio with the KTMicro receiver. The AT32 radios can't be installed yet."""
+Open: air band AM on a radio with the KTMicro receiver. The AT32 radios take the d578uva test build."""
 release = "testing"
 
 # The vendor bootloader (0x08000000..0x08005FFF) is never written; the image goes to 0x08006000 through the factory

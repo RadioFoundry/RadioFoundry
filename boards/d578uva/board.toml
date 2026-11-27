@@ -50,7 +50,7 @@ runs = { board = "d578uva" }
 [status]
 level = "bring-up"
 summary = """\
-The GD32 builds' code on the AT32F435, offered as a test build: no AT32 radio has run it yet. \
+A test build: the GD32 build's code set up for the AT32F435. No AT32 radio has run this build yet. \
 Open: every function on the radio."""
 release = "testing"
 

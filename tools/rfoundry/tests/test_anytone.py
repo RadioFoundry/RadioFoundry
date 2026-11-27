@@ -124,14 +124,26 @@ class Protocol(unittest.TestCase):
                 at.check_install(B, m)
             self.assertEqual(at.check_restore(B, m, {m}), code)
 
-    def test_blocked_variant_refused_on_every_board_but_restores(self):
-        pairs = [(b, c) for b in boards.BOARDS.values() for c in getattr(b, "anytone_models", {}) if b.variant_blocked(c)]
-        self.assertTrue(pairs, "the check needs a blocked variant")
-        for b, code in pairs:
-            m = b.anytone_models[code][0]
-            with self.assertRaisesRegex(at.UpdateError, "can't be installed on it yet"):
-                at.check_install(b, m)
-            self.assertEqual(at.check_restore(b, m, {m}), code)
+    def test_blocked_variant_refused_but_restores(self):
+        # no variant is blocked today: block one by hand, as board.toml's "blocked" would
+        code = runs_here()[0]
+        m = model_of(code)
+        v = list(B.variants[code])
+        v[2] = "not ready"
+        with mock.patch.dict(B.variants, {code: v}):
+            with self.assertRaisesRegex(at.UpdateError, "can't be installed on it yet: not ready"):
+                at.check_install(B, m)
+            self.assertEqual(at.check_restore(B, m, {m}), code)
+
+    def test_variant_notice(self):
+        # a variant's notice is shown before an install unless the variant is supported
+        code = runs_here()[0]
+        v = list(B.variants[code]) + [None] * 5
+        for level, want in (("supported", None), ("testing", "say this"), ("bring-up", "say this")):
+            with mock.patch.dict(B.variants, {code: v[:3] + [level, "say this"]}):
+                self.assertEqual(B.variant_notice(code), want)
+        with mock.patch.dict(B.variants, {code: v[:3]}):
+            self.assertIsNone(B.variant_notice(code))
 
     def test_stock_set(self):
         with tempfile.TemporaryDirectory() as d:

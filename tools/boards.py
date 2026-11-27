@@ -1581,9 +1581,10 @@ def rfoundry_view(boards):
             # the backup before the install (origbackup.js), or None
             "original_backup": fl.get("original_backup"),
             "stub": b.stub(),
-            # [hardware] variants: code -> (name, the board whose image it runs or None); the anytone-update family's
-            # model names per variant code
-            "variants": {v["code"]: [v["name"], v.get("runs", {}).get("board"), v.get("blocked")] for v in d["hardware"].get("variants", [])},
+            # [hardware] variants: code -> [name, the board whose image it runs or None, why it is blocked or None,
+            # its level, the notice shown before an install]; the anytone-update family's model names per variant code
+            "variants": {v["code"]: [v["name"], v.get("runs", {}).get("board"), v.get("blocked"), v.get("level"),
+                                     v.get("notice")] for v in d["hardware"].get("variants", [])},
             "anytone_models": {k: list(v) for k, v in fl.get("anytone", {}).get("models", {}).items()},
             "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
             # the radio types another open firmware's CPS radio info reports for this radio (board.toml [cps])

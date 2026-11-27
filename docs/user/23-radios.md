@@ -16,7 +16,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
 | [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 boards have not run on a radio, one V4A/V5 report has DMR transmit dropping out (#750), and SFR loses inbound voice frames. |
-| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. Open: air band AM on a radio with the KTMicro receiver. The AT32 radios can't be installed yet. |
+| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. Open: air band AM on a radio with the KTMicro receiver. The AT32 radios take the d578uva test build. |
 | [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio. |
 <!-- end generated -->
 
@@ -711,8 +711,8 @@ This section is the radios with a GigaDevice GD32F303 processor; the radios with
 image ([AT-D578UV (AT32)](#anytone-at-d578uv-at32)). It runs on the radio.
 
 **Which AT-D578UV.** Open the radio's version screen. A radio that shows `GD_Ver` has the GD32F303 and takes the
-`d578uv` image. A radio that shows `AT_Ver` has the AT32 processor, and RadioFoundry can't be installed on it yet
-([AT-D578UV (AT32)](#anytone-at-d578uv-at32)). Or press
+`d578uv` image. A radio that shows `AT_Ver` has the AT32 processor and takes the
+`d578uva` test build ([AT-D578UV (AT32)](#anytone-at-d578uv-at32)). Or press
 **Auto-Detect Now** on the installer's build step and connect the radio as it is: on with its original firmware, in
 update mode, or running RadioFoundry. The installer checks the radio's model again just before it writes, and refuses
 the other variant's image.
@@ -822,10 +822,10 @@ room for what the GD32F303 image leaves out:
   APRS-IS) don't fit beside them and are left out, and network audio (AllStarLink, DVSwitch) isn't written: the
   voice stays in the DMR chip.
 
-**The AT32 image is a test build.** No AT32 radio has run RadioFoundry yet: the image is the GD32 build's code set up
-for the AT32F435, and the list above is what it is built to have. The installer says so before writing. The factory
-update mode is never written, so a radio that doesn't start can still be put back. Please report what works and what
-doesn't.
+**The AT32 image is a test build.** No AT32 radio has run RadioFoundry yet. The image is the GD32 build's code set up
+for the AT32F435, and the list above is what the build includes. The web installer and `rfoundry` both show this
+warning before writing. The factory update mode is never written, so a radio that doesn't start can still be put back.
+Please report what works and what doesn't.
 
 An AT32 radio can still get its original firmware back: `rfoundry restore-stock FW.CDD --board d578uva`, where the
 `.CDD` is an AT32 build, or the installer's restore task on the AT-D578UV.
