@@ -25,12 +25,14 @@ is unsupported if its running firmware does not expose theme-pack support.
 
 1. Open the [Theme Pack Builder](https://photogdoug.github.io/RadioFoundry-sat-fw-Themes/tools/themes/builder.html)
    in a Chromium browser such as Chrome or Edge.
-2. Choose one of the four stock palettes or create your own by editing the color fields. The starter library contains
+2. Use **Radio model** above the preview to see the mockup for a supported RadioFoundry radio with a display.
+   Monochrome models appear in grayscale. The RT10 has no display, so it is not listed.
+3. Choose one of the four stock palettes or create your own by editing the color fields. The starter library contains
    only the themes in RadioFoundry source: Dark, Light, High contrast, and Night (red). Your saved themes are kept in
    this browser.
-3. Save each custom theme by name, then add themes from the library to **Your pack**. A pack can hold up to 10
+4. Save each custom theme by name, then add themes from the library to **Your pack**. A pack can hold up to 10
    palettes, including stock palettes and your own saved palettes.
-4. Download the `.rftheme` file. Keep the editable JSON download too if you want to move the pack to another browser
+5. Download the `.rftheme` file. Keep the editable JSON download too if you want to move the pack to another browser
    or continue editing it later.
 
 ## Install or remove a pack

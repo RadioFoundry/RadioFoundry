@@ -73,11 +73,19 @@ const downloadPackButton = byId("download-rftheme");
 const downloadJsonButton = byId("download-json");
 const previewZoom = byId("preview-zoom");
 const previewZoomValue = byId("preview-zoom-value");
+const radioSelect = byId("radio-model");
+const radioPreview = byId("theme-preview");
+const radioFrame = byId("radio-preview-image");
+const radioScreen = byId("radio-screen");
+const radioPreviewDetail = byId("radio-preview-detail");
 
 let presets = [];
 let customThemes = readStore(STORE_THEMES, []);
 let packIds = readStore(STORE_PACK, []);
 let editingId = null;
+let radioModels = [];
+let activeRadio = null;
+let activePreviewGeometry = null;
 
 function readStore(key, fallback) {
 	try {
@@ -232,8 +240,7 @@ function readEditorTheme() {
 
 function renderPreview(colors = null) {
 	const palette = colors || Object.fromEntries(FIELDS.map(([key]) => [key, normalizeColor(byId(`hex-${key}`)?.value) || DEFAULT_COLORS[key]]));
-	const preview = byId("theme-preview");
-	setPreviewPalette(preview, palette);
+	setPreviewPalette(radioPreview, palette);
 	for (const [key] of FIELDS) {
 		const screen = colorGrid.querySelector(`.color-preview[data-field="${key}"] .color-preview-screen`);
 		if (screen) setPreviewPalette(screen, { ...DEFAULT_COLORS, [key]: palette[key] });
@@ -242,10 +249,84 @@ function renderPreview(colors = null) {
 
 function renderPreviewZoom() {
 	const zoom = Number(previewZoom.value);
-	byId("theme-preview").style.setProperty("--radio-zoom", String(zoom));
+	radioPreview.style.setProperty("--radio-zoom", String(zoom));
 	const value = `${Math.round(zoom * 100)}%`;
 	previewZoomValue.value = value;
 	previewZoomValue.textContent = value;
+}
+
+function sizeRadioPreview(geometry) {
+	const aspect = geometry.aspect;
+	radioPreview.style.setProperty("--radio-preview-aspect", `${aspect} / 1`);
+	const narrow = window.matchMedia("(max-width: 850px)").matches;
+	const maxHeight = Math.min(window.innerHeight * (narrow ? 0.3 : 0.48), narrow ? 224 : 352);
+	const maxWidth = narrow ? 112 : 240;
+	radioPreview.style.setProperty("--radio-preview-max-width", `${Math.min(maxWidth, maxHeight * aspect)}px`);
+}
+
+function showRadioPreview(radio) {
+	activeRadio = radio;
+	const geometry = radio.id === "dm32" ? {
+		aspect: 342 / 455,
+		screen: { w: 240, h: 320 },
+		screen_pct: { left: 25.7, top: 27.7, width: 48.5, height: 50.8 },
+	} : radio.frame_geometry;
+	activePreviewGeometry = geometry;
+	const screen = geometry.screen_pct;
+	const screenSize = geometry.screen;
+	const color = /\bcolor\b/i.test(radio.display) &&
+		(radio.config?.full ? radio.config.full.includes("UI_COLOR") : true);
+	const screenAspect = screenSize ? screenSize.w / screenSize.h : 1;
+	const frameImage = radio.id === "dm32" ? "static/img/radio-preview.jpg" : radio.frame_image;
+	radioFrame.src = `${byId("theme-builder").dataset.radioRoot}${frameImage}?v=${encodeURIComponent(byId("theme-builder").dataset.assets || "")}`;
+	radioScreen.style.setProperty("--screen-left", `${screen.left}%`);
+	radioScreen.style.setProperty("--screen-top", `${screen.top}%`);
+	radioScreen.style.setProperty("--screen-width", `${screen.width}%`);
+	radioScreen.style.setProperty("--screen-height", `${screen.height}%`);
+	radioScreen.style.setProperty("--screen-font", `${screen.width * 0.066}cqw`);
+	radioScreen.dataset.layout = screenAspect > 1.1 ? "landscape" : "portrait";
+	radioPreview.dataset.display = color ? "color" : "mono";
+	radioPreview.style.aspectRatio = `${geometry.aspect} / 1`;
+	const screenCenterX = screen.left + screen.width / 2;
+	const screenCenterY = screen.top + screen.height / 2;
+	byId("radio-preview-canvas").style.transformOrigin = `${screenCenterX}% ${screenCenterY}%`;
+	radioPreview.setAttribute("aria-label", `${radio.name} with a live RadioFoundry theme preview on its display`);
+	radioPreviewDetail.textContent = color
+		? `${radio.name} · ${radio.display}. This mockup previews color themes.`
+		: `${radio.name} · ${radio.display}. This monochrome display is shown in grayscale.`;
+	sizeRadioPreview(geometry);
+}
+
+async function loadRadioModels() {
+	try {
+		const app = byId("theme-builder");
+		const response = await fetch(app.dataset.radios);
+		if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+		const data = await response.json();
+		radioModels = (Array.isArray(data.radios) ? data.radios : [])
+			.filter((radio) => radio.display && radio.display !== "none" && radio.frame_image &&
+				radio.frame_geometry?.screen_pct && radio.frame_geometry?.aspect)
+			.sort((a, b) => a.order - b.order);
+		if (!radioModels.length) throw new Error("No supported radios with displays were found.");
+		radioSelect.replaceChildren(...radioModels.map((radio) => {
+			const option = document.createElement("option");
+			option.value = radio.id;
+			option.textContent = `${radio.name} — ${radio.display}`;
+			return option;
+		}));
+		const initial = radioModels.find((radio) => radio.id === "dm32") || radioModels[0];
+		radioSelect.value = initial.id;
+		radioSelect.addEventListener("change", () => {
+			const selected = radioModels.find((radio) => radio.id === radioSelect.value);
+			if (selected) showRadioPreview(selected);
+		});
+		showRadioPreview(initial);
+	} catch (error) {
+		radioSelect.disabled = true;
+		radioSelect.replaceChildren(new Option("Radio list unavailable", ""));
+		radioPreviewDetail.textContent = "Radio mockups could not be loaded. Refresh the page or build the site data first.";
+		console.warn("Could not load supported-radio mockups:", error);
+	}
 }
 
 function swatches(colors) {
@@ -661,6 +742,7 @@ createColorFields();
 renderPreview();
 previewZoom.addEventListener("input", renderPreviewZoom);
 renderPreviewZoom();
+window.addEventListener("resize", () => { if (activePreviewGeometry) sizeRadioPreview(activePreviewGeometry); });
 byId("theme-editor").addEventListener("submit", saveTheme);
 byId("new-theme").addEventListener("click", () => { resetEditor(); setStatus("Ready for a new theme."); });
 byId("clear-pack").addEventListener("click", () => {
@@ -674,3 +756,4 @@ byId("import-json-file").addEventListener("change", () => importJson(byId("impor
 downloadPackButton.addEventListener("click", exportBinary);
 downloadJsonButton.addEventListener("click", exportJson);
 loadPresets();
+loadRadioModels();

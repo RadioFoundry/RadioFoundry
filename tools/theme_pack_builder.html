@@ -29,7 +29,7 @@
 		<p class="lead">Choose colors for all 18 theme fields, save palettes in this browser, and assemble a pack of up to 10 themes.</p>
 	</header>
 
-	<section class="wrap section builder-grid" aria-label="Theme designer">
+	<section class="wrap section builder-grid" id="theme-builder" data-radios="../build/site/data/radios.json" data-radio-root="../build/site/" data-assets="local" aria-label="Theme designer">
 		<div class="builder-column">
 			<section class="builder-card" aria-labelledby="library-title">
 				<div class="library-heading">
@@ -69,10 +69,21 @@
 
 		<aside class="builder-column" aria-label="Theme preview and pack">
 			<section class="builder-card" aria-labelledby="preview-title">
-				<h2 id="preview-title">Live preview</h2>
+				<div class="preview-heading"><h2 id="preview-title">Live preview</h2></div>
+				<div class="preview-controls">
+					<label class="preview-model-control" for="radio-model"><span>Radio model</span>
+						<select id="radio-model" aria-describedby="radio-preview-detail"><option>Loading supported radios…</option></select>
+					</label>
+					<label class="preview-zoom-control" for="preview-zoom"><span>Zoom</span>
+						<input id="preview-zoom" type="range" min="1" max="1.8" step="0.1" value="1.3" aria-label="Radio screen zoom">
+						<output id="preview-zoom-value" for="preview-zoom">130%</output>
+					</label>
+				</div>
+				<p class="radio-preview-detail small muted" id="radio-preview-detail">Loading radio display mockups…</p>
 				<div id="theme-preview" class="radio-preview" role="img" aria-label="Radio with a live theme preview on its display">
-					<img class="radio-preview-image" src="../site/static/img/radio-preview.jpg" alt="" aria-hidden="true" decoding="async">
-					<div class="radio-screen" aria-hidden="true">
+					<div class="radio-preview-canvas" id="radio-preview-canvas">
+					<img class="radio-preview-image" id="radio-preview-image" src="" alt="" aria-hidden="true" decoding="async">
+					<div class="radio-screen" id="radio-screen" aria-hidden="true" data-layout="portrait">
 					<div class="rf-statusbar">
 						<div class="rf-status-mode"><span class="rf-idle">IDLE</span><span class="rf-protocol">DMR</span></div>
 						<div class="rf-status-indicators">
@@ -89,7 +100,8 @@
 					<div class="rf-softkeys"><span>OK Menu</span><span>* Quick</span></div>
 					</div>
 				</div>
-			<p class="small muted">Preview the home-screen layout. Colors can look slightly different on the radio because its display uses RGB565.</p>
+				</div>
+				<p class="radio-preview-note small muted">The DM-32UV keeps the close-up view; other models use RadioFoundry’s radio drawings. Monochrome models appear in grayscale; color displays may render RGB565 colors differently.</p>
 			</section>
 
 			<section class="builder-card pack-card" aria-labelledby="pack-title">
