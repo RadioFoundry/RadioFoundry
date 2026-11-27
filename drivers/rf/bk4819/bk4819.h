@@ -39,6 +39,10 @@ typedef struct {
 #define BK4819_REG_CTCSS_FREQ	0x07	// CTCSS word, or the DCS bit rate
 #define BK4819_REG_DCS_CODE	0x08	// DCS word: low 12 bits, then the high 12 bits with bit 15 set
 #define BK4819_REG_CSS_STATUS	0x0C	// b10 CTCSS found, b14 DCS found, b15 inverted DCS found (as the FD6818)
+// 0x0C bit 1: the chip's squelch says a carrier. Open needs RSSI 0x67 at or over 0x78's high byte, the noise 0x65 at
+// or under 0x4F bits 6:0 and the glitch count 0x63 at or under 0x4E bits 7:0; it closes on RSSI under 0x78's low
+// byte, noise over 0x4F bits 14:8 or glitches over 0x4D bits 7:0 (register list)
+#define BK4819_CSS_SQ_LINK	0x0002u
 #define BK4819_REG_CSS_DETECT	0x52	// b15 sub-audio tail; CTCSS found / lost thresholds (as the FD6818)
 #define BK4819_REG_ENABLES	0x30
 #define BK4819_REG_GPIO		0x33	// GPIO outputs: bits 14:8 output disable, bits 6:0 level (bk4819_gpio)

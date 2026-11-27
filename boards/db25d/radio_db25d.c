@@ -696,11 +696,15 @@ static uint8_t sql_noise(int16_t rssi_dbm)
 		return (uint8_t)(last_noise_raw & 0x7Fu);
 	}
 	uint8_t n = radio_sql_rssi_noise(sql_open, rssi_dbm);
-	if (fd && n < RADIO_SQL_NO_CARRIER &&
-	    !fd6818_sql_carrier(last_noise_raw, db25d_main_glitch(), rssi_dbm, rx_bw == RADIO_BW_25K)) {
-		n = RADIO_SQL_NO_CARRIER;	// over every level's close line, level 1's too
+	if (n >= RADIO_SQL_NO_CARRIER) {
+		return n;
 	}
-	return n;
+	// Signal strength alone opens on what an antenna picks up on an empty channel: the chip's noise and glitch
+	// verdict has to say carrier too (hardware-db25d.md, squelch). The BK4819's own squelch makes that verdict, its
+	// RSSI threshold (0x78) left at the reset value far below the page's
+	bool carrier = fd ? fd6818_sql_carrier(last_noise_raw, db25d_main_glitch(), rssi_dbm, rx_bw == RADIO_BW_25K)
+			  : mode != RADIO_MODE_FM || (last_css_raw & BK4819_CSS_SQ_LINK) != 0u;
+	return carrier ? n : RADIO_SQL_NO_CARRIER;	// no carrier: over every level's close line, level 1's too
 }
 
 static void status(radio_status_t *st)
