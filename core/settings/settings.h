@@ -506,8 +506,14 @@ void settings_read(settings_t *out);
 // fit; 0 for any other size or a range outside the struct. SETTINGS_FIELD(brightness) says it with the field's name and
 // type: a signed field comes back with its sign
 uint32_t settings_read_field(size_t offset, size_t size);
-#define SETTINGS_FIELD(f) ((__typeof__(((settings_t *)0)->f))settings_read_field(offsetof(settings_t, f), \
-							      sizeof(((settings_t *)0)->f)))
+
+// A field of another size (an array, a struct member) fails to compile instead of reading as 0
+#define SETTINGS_FIELD_SIZE_OK(f) (sizeof(((settings_t *)0)->f) == 1 || sizeof(((settings_t *)0)->f) == 2 || \
+				   sizeof(((settings_t *)0)->f) == 4)
+#define SETTINGS_FIELD(f) ((__typeof__(((settings_t *)0)->f))((void)sizeof(char[SETTINGS_FIELD_SIZE_OK(f) ? 1 : -1]), \
+							      settings_read_field(offsetof(settings_t, f), \
+										  sizeof(((settings_t *)0)->f))))
+
 // A 32-bit field equals value both in force and in the last saved record, checked under one lock.
 bool settings_u32_is_saved(size_t offset, uint32_t value);
 // Change: begin returns the live copy (under a short lock), end releases it and notes the time if anything changed
