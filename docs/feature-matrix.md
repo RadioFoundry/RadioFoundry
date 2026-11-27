@@ -326,6 +326,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Receiver battery saver | `BATTERY_SAVE` | 272 | 228 |  |
 | Frequency trim, Settings > Advanced | `REF_TRIM` | 2,012 | 2,356 | The hook on each radio, the page and the setting |
 | Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM |
+| Air band AM receive from the receiver envelope | `AM_ENVELOPE` | — | — | Experimental receive-only AM audio from a board-provided RSSI envelope; needs `FM`, `DMR` and `RX_EXT`. See [am-envelope.md](spec/am-envelope.md) |
 | Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
 | Receive past the rated bands, Settings > Advanced | `RX_EXT` | 560 | — | Receive only, FM, off by default; ranges from each receiver chip's documents. MD-380: no receiver range in its chip documents |
 | DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 377,332 | 275,716 | Includes every DMR feature and everything on IP over DMR |
