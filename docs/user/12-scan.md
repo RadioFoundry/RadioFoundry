@@ -228,13 +228,15 @@ both keys may use the same action. Choosing an assignment does not change that p
 on the graph. A toast shows the result. Assignments and parameter values are remembered. While typing a number,
 # remains the separator and * does not run its assigned action.
 
+These defaults apply to fresh settings. Later openings and power cycles restore your saved choices.
+
 Press **OK** outside frequency entry for **Spectrum Settings**. **Up / Down** choose a row:
 
 | Setting | How to change it |
 |---|---|
-| Squelch | OK, type magnitude 0..160, OK. The minus is automatic: `80` gives **-80 dBm**, `0` gives **0 dBm**. Default -80 dBm. |
+| Squelch | OK, type magnitude 0..160, OK. The minus is automatic: `80` gives **-80 dBm**, `0` gives **0 dBm**. Default -60 dBm. |
 | Sweeping | OK, type spacing in kHz, OK. **#** is the decimal point: `6 # 2 5` means 6.25 kHz. Range 1.00..100.00 kHz. |
-| Bandwidth | OK cycles 65 / 97 / 129 points. MHz is calculated from count and spacing. |
+| Bandwidth | OK cycles 65 / 97 / 129 points. Default 97 points (the middle choice), or 1.2 MHz at the default 12.50 kHz spacing. MHz follows count and spacing. |
 | Dwell time | OK, type milliseconds per scanned frequency, OK. Range 10..1000 ms; default 10. Higher is slower. |
 | Filter | OK switches **Wide (25 kHz)** / **Narrow (12.5 kHz)**. Wide by default. It applies to scanning and listening. |
 | Auto peak | OK cycles **After sweep** (default) / **Immediate** / **Off**. |

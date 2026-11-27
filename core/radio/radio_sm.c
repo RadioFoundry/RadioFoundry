@@ -9484,7 +9484,7 @@ static void spectrum_request(radio_sm_t *sm, const radio_req_t *req, uint32_t no
 		return;
 	if (!spectrum_start(s, center, band->lo_hz, band->hi_hz, SETTINGS_FIELD(spectrum_step_hz),
 			    SETTINGS_FIELD(spectrum_bins), now_ms) &&
-	    !spectrum_start(s, center, band->lo_hz, band->hi_hz, 12500, SPECTRUM_BINS, now_ms))
+	    !spectrum_start(s, center, band->lo_hz, band->hi_hz, 12500, 97, now_ms))
 		return;
 #if CONFIG_SCAN
 	if (dual_running(sm)) {
@@ -9497,7 +9497,7 @@ static void spectrum_request(radio_sm_t *sm, const radio_req_t *req, uint32_t no
 	int16_t squelch_dbm = SETTINGS_FIELD(spectrum_squelch_dbm);
 	if (squelch_dbm < -160 || squelch_dbm > 0) {
 		uint8_t legacy = SETTINGS_FIELD(spectrum_squelch);
-		if (legacy > 100) legacy = 80;
+		if (legacy > 100) legacy = 100;
 		squelch_dbm = (int16_t)((int)legacy - 160);
 	}
 	s->squelch_dbm = squelch_dbm;

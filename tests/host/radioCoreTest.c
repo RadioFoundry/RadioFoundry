@@ -2006,19 +2006,20 @@ static void test_spectrum(void)
 	uint8_t caught = sm.view.spectrum.index;
 	uint32_t caught_hz = hw.rx_hz;
 	int retunes = hw.rx_calls;
-	hw.st.rssi_dbm = -70;
+	hw.st.rssi_dbm = -50;
 	for (unsigned i = 0; !sm.view.spectrum.audio_open && i < 200; i++) run(10);
 	CHECK(sm.view.spectrum.tuner == caught && sm.view.spectrum.center_hz == center);
 	CHECK(sm.view.spectrum.audio_open && hw.audio && hw.rx_hz == caught_hz);
 	CHECK(hw.rx_calls > retunes); // finish the sweep, then tune and confirm its strongest bin
-	CHECK(sm.view.rssi_dbm == -70);
+	CHECK(sm.view.rssi_dbm == -50);
+	int held_retunes = hw.rx_calls;
 	hw.st.rssi_dbm = -120;
 	run(350);
-	CHECK(!sm.view.spectrum.audio_open && sm.view.spectrum.index != caught);
+	CHECK(!sm.view.spectrum.audio_open && hw.rx_calls > held_retunes);
 	spectrum_cmd(SPECTRUM_CENTER, (int32_t)center);
 	spectrum_cmd(SPECTRUM_TUNER, 1);
 	CHECK(sm.view.spectrum.center_hz == center && hw.rx_hz == original + 12500);
-	hw.st.rssi_dbm = -64;
+	hw.st.rssi_dbm = -54;
 	run(20);
 	CHECK(sm.view.spectrum.audio_open && hw.audio && sm.view.spectrum.listening);
 	uint32_t held_hz = hw.rx_hz;
@@ -2212,7 +2213,7 @@ static void test_spectrum_immediate(void)
 	uint8_t bin = sm.view.spectrum.index;
 	uint32_t hz = hw.rx_hz, sweeps = sm.view.spectrum.sweeps;
 	int retunes = hw.rx_calls;
-	hw.st.rssi_dbm = -70;
+	hw.st.rssi_dbm = -50;
 	run(10);
 	CHECK(sm.view.spectrum.listening && sm.view.spectrum.audio_open && hw.audio);
 	CHECK(sm.view.spectrum.tuner == bin && sm.view.spectrum.index == bin + 1);
@@ -2231,25 +2232,31 @@ static void test_spectrum_persist(void)
 	dmr_start(true);
 	uint32_t original = sm.view.ch.rx_hz;
 	spectrum_cmd(SPECTRUM_START, 0);
+	// Fresh settings select the middle window; saved preferences below must supersede every default.
+	CHECK(sm.view.spectrum.squelch_dbm == -60 && sm.view.spectrum.step_hz == 12500 && sm.view.spectrum.bins == 97);
+	CHECK(spectrum_view_frequency(&sm.view.spectrum, 96) - spectrum_view_frequency(&sm.view.spectrum, 0) == 1200000);
+	CHECK(sm.view.spectrum.dwell_ms == 10 && !sm.view.spectrum.narrow && sm.view.spectrum.auto_peak == SPECTRUM_AUTO_SWEEP);
+	CHECK(sm.view.spectrum.star_key == SPECTRUM_KEY_CENTER_TUNER && sm.view.spectrum.hash_key == SPECTRUM_KEY_BANDWIDTH);
+
 	spectrum_cmd(SPECTRUM_CENTER, 145062500);
 	spectrum_cmd(SPECTRUM_STEP, 6250);
-	spectrum_cmd(SPECTRUM_BANDWIDTH, 97);
+	spectrum_cmd(SPECTRUM_BANDWIDTH, 65);
 	spectrum_cmd(SPECTRUM_SQUELCH, -120);
 	spectrum_cmd(SPECTRUM_TUNER, 1);
 	CHECK(hw.rx_hz == 145068750);
 	settings_t saved;
 	settings_read(&saved);
 	CHECK(saved.spectrum_center_hz == 145062500 && saved.spectrum_step_hz == 6250 &&
-	      saved.spectrum_bins == 97 && saved.spectrum_squelch_dbm == -120 && saved.spectrum_tuner_hz == 145068750);
+	      saved.spectrum_bins == 65 && saved.spectrum_squelch_dbm == -120 && saved.spectrum_tuner_hz == 145068750);
 	spectrum_cmd(SPECTRUM_STOP, 0);
 	CHECK(hw.rx_hz == original);
 	spectrum_cmd(SPECTRUM_START, 0);
-	CHECK(sm.view.spectrum.bins == 97 && sm.view.spectrum.squelch_dbm == -120 && hw.rx_hz == 145068750);
+	CHECK(sm.view.spectrum.bins == 65 && sm.view.spectrum.squelch_dbm == -120 && hw.rx_hz == 145068750);
 	// A scanned carrier changes the live tuner, without dirtying the saved manual preference.
 	hw.st.rssi_dbm = -160;
 	run(400);
 	for (unsigned i = 0; sm.view.spectrum.listening && i < 10; i++) run(10);
-	hw.st.rssi_dbm = -70;
+	hw.st.rssi_dbm = -50;
 	run(2000);
 	CHECK(sm.view.spectrum.audio_open && hw.rx_hz != saved.spectrum_tuner_hz);
 	CHECK(SETTINGS_FIELD(spectrum_tuner_hz) == saved.spectrum_tuner_hz);
@@ -2270,7 +2277,7 @@ static void test_spectrum_persist(void)
 	CHECK(!sm.view.spectrum.active && hw.rx_hz == original);
 	spectrum_cmd(SPECTRUM_START, 0);
 	CHECK(sm.view.spectrum.center_hz == 145062500 && sm.view.spectrum.step_hz == 6250 &&
-	      sm.view.spectrum.bins == 97 && sm.view.spectrum.squelch_dbm == -120 && hw.rx_hz == 145068750);
+	      sm.view.spectrum.bins == 65 && sm.view.spectrum.squelch_dbm == -120 && hw.rx_hz == 145068750);
 	CHECK(sm.view.spectrum.dwell_ms == 50 && sm.view.spectrum.scale_db == -20 &&
 	      sm.view.spectrum.auto_peak == SPECTRUM_AUTO_IMMEDIATE);
 	CHECK(sm.view.spectrum.narrow && hw.rx_bw == RADIO_BW_12K5);
@@ -2278,13 +2285,13 @@ static void test_spectrum_persist(void)
 	run(200);
 	CHECK(hw.rx_bw == RADIO_BW_12K5 && hw.rx_hz != saved.spectrum_tuner_hz);
 	spectrum_cmd(SPECTRUM_AUTO_PEAK, 1);
-	hw.st.rssi_dbm = -70;
+	hw.st.rssi_dbm = -50;
 	for (unsigned i = 0; !sm.view.spectrum.audio_open && i < 600; i++) run(10);
 	CHECK(sm.view.spectrum.audio_open && hw.audio && hw.rx_bw == RADIO_BW_12K5);
 	spectrum_cmd(SPECTRUM_SQUELCH, 1);
 	spectrum_cmd(SPECTRUM_BANDWIDTH, 66);
 	spectrum_cmd(SPECTRUM_FILTER, 2);
-	CHECK(SETTINGS_FIELD(spectrum_squelch_dbm) == -120 && SETTINGS_FIELD(spectrum_bins) == 97);
+	CHECK(SETTINGS_FIELD(spectrum_squelch_dbm) == -120 && SETTINGS_FIELD(spectrum_bins) == 65);
 	CHECK(SETTINGS_FIELD(spectrum_narrow) == 1 && hw.rx_bw == RADIO_BW_12K5);
 	spectrum_cmd(SPECTRUM_STOP, 0);
 	// Corrupt or unavailable preferences fall back safely; no settings layout reset is needed.
@@ -2302,10 +2309,20 @@ static void test_spectrum_persist(void)
 	settings_end(now);
 	spectrum_cmd(SPECTRUM_START, 0);
 	CHECK(sm.view.spectrum.center_hz == original && sm.view.spectrum.step_hz == 12500 &&
-	      sm.view.spectrum.bins == 129 && sm.view.spectrum.squelch_dbm == -80 && hw.rx_hz == original);
+	      sm.view.spectrum.bins == 97 && sm.view.spectrum.squelch_dbm == -60 && hw.rx_hz == original);
 	CHECK(sm.view.spectrum.dwell_ms == 10 && sm.view.spectrum.scale_db == 0 &&
 	      sm.view.spectrum.auto_peak == SPECTRUM_AUTO_SWEEP);
 	CHECK(!sm.view.spectrum.narrow && hw.rx_bw == RADIO_BW_25K);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	st = settings_begin();
+	st->spectrum_bins = 129;
+	st->spectrum_step_hz = 12500;
+	st->spectrum_squelch = 80;
+	st->spectrum_squelch_dbm = INT16_MIN;
+	settings_end(now);
+	boot();
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.bins == 129 && sm.view.spectrum.squelch_dbm == -80);
 	spectrum_cmd(SPECTRUM_STOP, 0);
 	st = settings_begin();
 	st->spectrum_squelch = 40;
@@ -2383,18 +2400,18 @@ static void test_spectrum_edge_pan(void)
 	spectrum_view_t *s = &sm.view.spectrum;
 	CHECK(!s->center_tuner);
 	for (unsigned i = 0; i < s->bins / 2u; i++) spectrum_cmd(SPECTRUM_TUNER, -1);
-	CHECK(s->tuner == 0 && s->center_hz == 446000000 && hw.rx_hz == 445200000);
+	CHECK(s->tuner == 0 && s->center_hz == 446000000 && hw.rx_hz == 445400000);
 	spectrum_cmd(SPECTRUM_TUNER, -1);
-	CHECK(s->tuner == 0 && s->center_hz == 445987500 && hw.rx_hz == 445187500);
-	CHECK(SETTINGS_FIELD(spectrum_center_hz) == 445987500 && SETTINGS_FIELD(spectrum_tuner_hz) == 445187500);
+	CHECK(s->tuner == 0 && s->center_hz == 445987500 && hw.rx_hz == 445387500);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == 445987500 && SETTINGS_FIELD(spectrum_tuner_hz) == 445387500);
 	spectrum_cmd(SPECTRUM_STOP, 0);
 	spectrum_cmd(SPECTRUM_START, 0);
-	CHECK(!s->center_tuner && s->tuner == 0 && s->center_hz == 445987500 && hw.rx_hz == 445187500);
+	CHECK(!s->center_tuner && s->tuner == 0 && s->center_hz == 445987500 && hw.rx_hz == 445387500);
 	for (unsigned i = 1; i < s->bins; i++) spectrum_cmd(SPECTRUM_TUNER, 1);
-	CHECK(s->tuner == s->bins - 1 && s->center_hz == 445987500 && hw.rx_hz == 446787500);
+	CHECK(s->tuner == s->bins - 1 && s->center_hz == 445987500 && hw.rx_hz == 446587500);
 	spectrum_cmd(SPECTRUM_TUNER, 1);
-	CHECK(s->tuner == s->bins - 1 && s->center_hz == 446000000 && hw.rx_hz == 446800000);
-	CHECK(SETTINGS_FIELD(spectrum_center_hz) == 446000000 && SETTINGS_FIELD(spectrum_tuner_hz) == 446800000);
+	CHECK(s->tuner == s->bins - 1 && s->center_hz == 446000000 && hw.rx_hz == 446600000);
+	CHECK(SETTINGS_FIELD(spectrum_center_hz) == 446000000 && SETTINGS_FIELD(spectrum_tuner_hz) == 446600000);
 	spectrum_cmd(SPECTRUM_STOP, 0);
 }
 

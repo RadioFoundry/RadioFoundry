@@ -656,7 +656,7 @@ static void test_settings_spectrum_upgrade(void)
 	settings_get_stats(&stats);
 	CHECK(stats.load == SETTINGS_UPGRADED && s.squelch == 4 && s.aes_mi_res == 0x12345678u);
 	CHECK(s.spectrum_center_hz == 0 && s.spectrum_tuner_hz == 0 && s.spectrum_step_hz == 12500 &&
-	      s.spectrum_squelch == 80 && s.spectrum_bins == 129);
+	      s.spectrum_squelch == 100 && s.spectrum_bins == 97);
 	CHECK(s.spectrum_dwell_ms == 10 && s.spectrum_no_peak == 0 && s.spectrum_scale_db == 0);
 	CHECK(s.spectrum_narrow == 0 && s.spectrum_squelch_dbm == INT16_MIN && s.spectrum_peak_immediate == 0);
 	CHECK(s.spectrum_center_tuner == 0 && s.spectrum_keys == 0);
@@ -664,7 +664,7 @@ static void test_settings_spectrum_upgrade(void)
 	st->spectrum_center_hz = 145062500;
 	st->spectrum_tuner_hz = 145068750;
 	st->spectrum_step_hz = 6250;
-	st->spectrum_bins = 97;
+	st->spectrum_bins = 129;
 	st->spectrum_squelch = 42;
 	st->spectrum_dwell_ms = 50;
 	st->spectrum_no_peak = 1;
@@ -680,7 +680,7 @@ static void test_settings_spectrum_upgrade(void)
 	settings_get_stats(&stats);
 	CHECK(stats.load == SETTINGS_LOADED && s.aes_mi_res == 0x12345678u && s.squelch == 4);
 	CHECK(s.spectrum_center_hz == 145062500 && s.spectrum_tuner_hz == 145068750 &&
-	      s.spectrum_step_hz == 6250 && s.spectrum_bins == 97 && s.spectrum_squelch == 42);
+	      s.spectrum_step_hz == 6250 && s.spectrum_bins == 129 && s.spectrum_squelch == 42);
 	CHECK(s.spectrum_dwell_ms == 50 && s.spectrum_no_peak == 1 && s.spectrum_scale_db == -20 && s.spectrum_narrow == 1 && s.spectrum_squelch_dbm == -120);
 	CHECK(s.spectrum_center_tuner == 1 && s.spectrum_keys == 0x0b);
 	st = settings_begin();

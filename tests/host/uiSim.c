@@ -45,7 +45,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "tools_spectrum_unfocused", "ok 6 up up" },
 	{ "tools_spectrum_offer", "zoneoffer:9991234 back ok 6 up" },
 	{ "spectrum", "ok 6 up ok" },
-	{ "spectrum_captured", "ok 6 up ok spectrumrx:72,-65" },
+	{ "spectrum_captured", "ok 6 up ok spectrumrx:56,-55" },
 	{ "spectrum_edit", "ok 6 0 4 3 8 2 5" },
 	{ "spectrum_settings", "ok 6 0 ok" },
 	{ "spectrum_shortcuts", "ok 6 0 ok up ok ok up ok" },

@@ -72,8 +72,8 @@ void settings_defaults(settings_t *s)
 	s->satellite_index = SETTINGS_UNSET8;
 	s->power_levels = board.power_count;
 	s->spectrum_step_hz = 12500;
-	s->spectrum_bins = 129;
-	s->spectrum_squelch = 80;
+	s->spectrum_bins = 97;
+	s->spectrum_squelch = 100;
 	s->spectrum_squelch_dbm = INT16_MIN;
 	s->spectrum_dwell_ms = 10;
 }

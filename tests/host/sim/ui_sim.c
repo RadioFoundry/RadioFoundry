@@ -2781,8 +2781,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	memset(&spectrum, 0, sizeof spectrum);
 	memset(&spectrum_preferences, 0, sizeof spectrum_preferences);
 	spectrum_preferences.step = 12500;
-	spectrum_preferences.bins = 129;
-	spectrum_preferences.squelch_dbm = -80;
+	spectrum_preferences.bins = 97;
+	spectrum_preferences.squelch_dbm = -60;
 	spectrum_preferences.dwell_ms = 10;
 	spectrum_preferences.auto_peak = SPECTRUM_AUTO_SWEEP;
 	spectrum_preferences.star_key = SPECTRUM_KEY_CENTER_TUNER;

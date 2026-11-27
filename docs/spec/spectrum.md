@@ -42,7 +42,7 @@ The startup/housekeeping task also reserves 16 extra stack words for the deeper 
 
 ## Sweep and listening
 
-The window has 65, 97 or 129 bins in one board band, initially 129. Spacing is 1.00 to 100.00 kHz in 0.01 kHz
+The window has 65, 97 or 129 bins in one board band, initially 97. Spacing is 1.00 to 100.00 kHz in 0.01 kHz
 increments, initially 12.50 kHz. The center is clamped to keep both endpoints in the band. Invalid or oversized
 windows leave the previous one unchanged. Changing center can change bands and recenters the tuner. Spacing or
 point-count changes preserve its absolute frequency when representable, otherwise clamp to the nearest endpoint.
@@ -77,7 +77,7 @@ throughput need verification on hardware. Short bursts can be missed; this is no
 calibration. The three point counts span 0.8 / 1.2 / 1.6 MHz at 12.50 kHz, or 0.4 / 0.6 / 0.8 MHz at 6.25 kHz.
 BW is always `(bins - 1) * step_hz`, not a fixed MHz preset.
 
-Squelch is a direct signed threshold from -160 to 0 dBm, default -80 dBm. A more negative value opens more easily;
+Squelch is a direct signed threshold from -160 to 0 dBm, default -60 dBm. A more negative value opens more easily;
 -160 opens at the receiver floor, while 0 requires 0 dBm. Listening and automatic selection share
 `spectrum_threshold_dbm`. Close has 3 dB hysteresis. Audio mutes when the carrier drops; the receiver waits 300 ms
 after the last held reading before resuming. An open squelch keeps the receiver on the tuner.
@@ -119,9 +119,9 @@ OK outside entry opens **Spectrum Settings** (`screen=spectrum-settings`), a sta
 
 | Row | OK | Value |
 |---|---|---|
-| Squelch | Type a magnitude; the minus is automatic, OK confirms | -160..0 dBm; default -80 dBm; zero has no minus |
+| Squelch | Type a magnitude; the minus is automatic, OK confirms | -160..0 dBm; default -60 dBm; zero has no minus |
 | Sweeping | Empty numeric editor; # for decimal, OK confirms | 1.00..100.00 kHz |
-| Bandwidth | Cycle 65 / 97 / 129 points | MHz computed from point count and spacing |
+| Bandwidth | Cycle 65 / 97 / 129 points | 97 points by default; MHz computed from point count and spacing |
 | Dwell time | Empty numeric editor, digits then OK | 10..1000 ms |
 | Filter | Toggle | Wide (25 kHz, default) / Narrow (12.5 kHz) |
 | Auto peak | Cycle | After sweep (default) / Immediate / Off |
@@ -180,13 +180,15 @@ Manual changes update appended `spectrum_*` fields of `settings_t` through the n
 ([settings-store.md](settings-store.md)). Power-off flushes pending changes. Automatic captures and RSSI samples
 never update settings or postpone a save. Only manual tuner, center, spacing, BW and Center tuner edits can change the saved tuner.
 Opening the analyzer restores its settings; it does not start automatically on Home after boot.
+Fresh settings use the defaults below. Valid saved preferences, including earlier -80 dBm / 129-point defaults,
+are restored unchanged; opening the analyzer never resets them.
 
 Records from before Spectrum retain their old fields and gain defaults: current-channel center, center tuner,
-12.50 kHz, 129 points and squelch -80 dBm. The previous 428-byte record gains 10 ms dwell, Auto peak on and zero
+12.50 kHz, 97 points (the middle choice, 1.2 MHz at the default spacing) and squelch -60 dBm. The previous 428-byte record gains 10 ms dwell, Auto peak on and zero
 dBm offset. The 432-byte record gains Wide filtering and a direct dBm threshold without changing the old field's
 meaning. When `spectrum_squelch_dbm` is unset (`INT16_MIN`) or invalid, a valid legacy level is imported as
 `legacy - 160`: old 80 becomes -80 dBm, old 40 becomes -120 dBm and old zero becomes -160 dBm (open).
-An invalid legacy value uses old 80. Manual edits save the direct threshold and the closest legacy level, clamped
+An invalid legacy value uses 100 (-60 dBm). Manual edits save the direct threshold and the closest legacy level, clamped
 to the older build's 0..100 range, for a downgrade. `spectrum_peak_immediate` uses the former reserved byte at
 offset 433: zero retains After sweep, one selects Immediate. `spectrum_no_peak == 1` takes precedence and keeps
 Off. `spectrum_center_tuner` uses the zeroed byte at offset 426 (formerly `reserved12[0]`): only 1 enables it;
@@ -197,7 +199,7 @@ are reserved; a nonzero upper bit restores both defaults. Assignment edits do no
 chosen action. Center, spacing, point-count and filter changes preserve the assignments. Earlier records and existing Off preferences retain their
 behavior; the record size stays 436 bytes.
 
-Invalid frequencies fall back to the current channel; invalid spacing or count to 12.50 kHz / 129 points; invalid
+Invalid frequencies fall back to the current channel; invalid spacing or count to 12.50 kHz / 97 points; invalid
 dwell to 10 ms, automatic mode to After sweep, filter to Wide and offset to zero. The saved tuner rounds to the nearest bin
 inside the restored window, otherwise starts at the center. Existing -40, 0 and +40 dB offsets remain valid.
 
