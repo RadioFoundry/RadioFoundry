@@ -25,16 +25,16 @@ typedef struct {
 	p25_follow_cfg_t cfg;
 	p25_follow_cc_t cc[P25_CP_CTL_MAX];
 	p25_follow_iden_t iden[P25_FOLLOW_IDENS];
+	// Keep words before the byte state so padding does not exhaust the lent vocoder memory.
+	uint32_t hz, id, burst_hz;
 	// The last retune the follower asked (its tune hook, from either task): want moves past done until the radio
 	// task has carried it out
 	volatile uint8_t want, done;
 	uint8_t what;
-	uint32_t hz, id;
 	bool owed;			// the receiver is on the new frequency, the follower not told yet
 	volatile uint8_t in_prov, in_radio;	// which task is inside the follower
 	// The inbound burst the follower asked last (its send hook, from either task), as want / done above
 	volatile uint8_t burst_want, burst_done;
-	uint32_t burst_hz;
 	uint8_t burst[P25_TSBK_BYTES];
 	// PTT and the end of our transmission, for the follower at the radio task's next turn inside it
 	bool ptt, talk_end;

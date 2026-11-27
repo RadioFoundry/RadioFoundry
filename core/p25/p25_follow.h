@@ -81,10 +81,10 @@ typedef struct {
 	uint32_t wacn;		// P25_FOLLOW_WACN_ANY: any
 	uint16_t sysid;		// P25_FOLLOW_SYSID_ANY: any
 	uint16_t nac;		// of the control channel; P25_NAC_ANY: any
-	uint8_t flags;		// P25_FOLLOW_*
 	uint32_t unit_id;	// ours; 0 none
 	uint16_t talk_group;	// 0 none
 	uint8_t ngroups;	// more talk groups followed
+	uint8_t flags;		// P25_FOLLOW_*
 	const uint16_t *groups;
 	#if CONFIG_P25_ROAM
 	roam_t *roam;	// shared policy, caller-owned; NULL disables
