@@ -163,6 +163,17 @@ through its chip. It needs the tap's scale (`tx_counts_per_khz`): the outer leve
 negated when the tap says `tx_invert`. D-STAR's GMSK modulator runs on it ([dstar-modem.md](dstar-modem.md) 2.2).
 No provider sends a session's chunks through it yet.
 
+### 6.2 Transmit taps
+
+A board's transmit tap queues what `tx_write` gives it and plays it to the modulator, holding the last sample when the
+queue runs dry; `tx_latency_ms` is how long a sample written takes to reach the air, so the caller keys that much
+longer after the last one. `air_tx_ring.h` is the queue a board can use: single producer, single consumer, 64 ms at
+8 kHz.
+
+On the HR_C7000 radios the transmit tap is the TX RAM in FM transmit ([modem-hrc7000.md](modem-hrc7000.md) 8.6), on a
+board whose glue has a flat FM transmit route (`hrc_dmr_board_t.flat_tap`): the route D-STAR sends through. Its scale,
+polarity, high-pass and latency are the route's calibration (`audio_tap_flat_cal_t`), read again at each `tx_start`.
+
 The work is per filtered sample, 24,000 a second at 4800 symbols, so that path decides the load. Its rules are in
 `core/dsp/fxp.h`, with the kernels the signal code shares (the interpolator's dot product, exact scaling in 32-bit
 steps, 64-bit products for the voice codecs), each in plain C and with a core's own instructions where they help:

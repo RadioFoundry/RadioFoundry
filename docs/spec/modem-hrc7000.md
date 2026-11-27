@@ -1091,6 +1091,12 @@ Driver (`drivers/modem/hrc7000/hrc7000.h`, `platform/hrc7000/fm_flat_tx.c`):
 Cost per half (estimated from the code, csky-elf-gcc 14 `-Os`, not measured): the write is about 10 instructions per
 sample, some 3-5 k cycles a half with the modem bus's byte writes, every 32 ms; the pull is the data modem's.
 
+The same route is `hrc_baseband`'s transmit half ([air-interface.md](air-interface.md) 6.2) on a board whose glue gives
+it (`hrc_dmr_board_t.flat_tap`, under `CONFIG_AIR` with a flat path built): `tx_write` queues samples in a 64 ms ring
+(`air_tx_ring.h`, 1 KB) and the FM TX hook pulls each half from it, holding the last sample when it runs dry. Its
+scale, polarity, high-pass and latency are the route's calibration, read at each `tx_start`; it needs FM transmit, as
+`fm_tx_inject` does, and refuses while a session or the receive tap holds the chip (10).
+
 ---
 
 ## 9. Driver requirements
