@@ -50,7 +50,7 @@ is `tools/bringup.py list --radio <id>`.
 | `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ | ✕ |
-| `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written | not recorded |
+| `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `p25` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `p25_trunk` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `nxdn` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
@@ -273,7 +273,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `SIG_TONES` | ● | ● | ● | ● | ○ | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● | ✕ |
-| `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |
+| `RX_EXT` | ● | ● | ● | ● | … | ● | ● | ● |
 | `VOX` | … | ● | ● | … | ● | ● | ● | … |
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● |

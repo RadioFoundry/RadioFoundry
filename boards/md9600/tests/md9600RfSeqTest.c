@@ -11,6 +11,7 @@
 #include "rfseq_md9600.h"
 #include "md9600.h"
 #include "config.h"
+#include "board.h"
 
 #ifndef CONFIG_MD9600_TX
 #define CONFIG_MD9600_TX	0
@@ -380,6 +381,13 @@ static void test_rx(void)
 		}
 		check_rx_order((md9600_rev_t)r, 145500000u, true);
 		check_rx_order((md9600_rev_t)r, 446006250u, false);
+#if CONFIG_RX_EXT
+		check_rx_order((md9600_rev_t)r, 501000000u, false);
+		fresh((md9600_rev_t)r, true);
+		CHECK(md9600_rf_tx_check(&rf, 501000000u, 0) != MD9600_RF_OK);
+		CHECK(md9600_rf_tx(&rf, 501000000u, false, 0) != MD9600_RF_OK);
+		CHECK(pa_off_now() && count(EV_PLL, -1) == 0);
+#endif
 	}
 	md9600_rev_t r = MD9600_REV_V5;
 	// DMR: narrow IF and the FM audio stages off
@@ -1221,6 +1229,7 @@ static void test_hwopt(void)
 
 int main(void)
 {
+	board_rx_ext_set(true);
 	test_init();
 	test_power_up();
 	test_rx();

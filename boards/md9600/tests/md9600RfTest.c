@@ -12,6 +12,7 @@
 #include "rf/ak2365a/ak2365a.h"
 #include "rfplan_md9600.h"
 #include "config.h"
+#include "board.h"
 
 static int failures;
 
@@ -162,6 +163,16 @@ static void test_bands(void)
 	CHECK(!md9600_band_of(135999999u, &b));
 	CHECK(!md9600_band_of(300000000u, &b));
 	CHECK(!md9600_band_of(480000001u, &b));
+	CHECK(!md9600_band_of(501000000u, &b)); // TX range must never expand
+	board_rx_ext_set(false);
+	CHECK(!md9600_rx_band_of(501000000u, &b));
+	board_rx_ext_set(true);
+	CHECK(md9600_rx_band_of(500000000u, &b) == (CONFIG_RX_EXT != 0));
+	CHECK(md9600_rx_band_of(503000000u, &b) == (CONFIG_RX_EXT != 0));
+	CHECK(!board_in_band(501000000u, true));
+	CHECK(md9600_rx_band_of(501000000u, &b) == (CONFIG_RX_EXT != 0));
+	CHECK(!md9600_rx_band_of(499999999u, &b));
+	CHECK(!md9600_rx_band_of(503000001u, &b));
 	CHECK(md9600_if_lines_v5(MD9600_VHF, true) == 0x07);
 	CHECK(md9600_if_lines_v5(MD9600_UHF, false) == 0x08);
 }
@@ -175,6 +186,11 @@ static void test_plan(void)
 	CHECK(md9600_pll_plan(MD9600_REV_V1V3, 145000000u, false, &p));
 	CHECK(p.band == MD9600_VHF && p.lo_hz == 194950000u && p.vco_hz == 389900000u && p.bits == 16 && p.count == 8);
 	CHECK(p.words[2] == 0x5005);		// R 6
+	CHECK(!md9600_pll_plan(MD9600_REV_V1V3, 501000000u, true, &p));
+	CHECK(md9600_pll_plan(MD9600_REV_V1V3, 501000000u, false, &p) == (CONFIG_RX_EXT != 0));
+#if CONFIG_RX_EXT
+	CHECK(p.band == MD9600_UHF && p.lo_hz == 451050000u && p.vco_hz == 451050000u && p.count == 8);
+#endif
 	// UHF transmit on the carrier, R 4
 	CHECK(md9600_pll_plan(MD9600_REV_V1V3, 446000000u, true, &p));
 	CHECK(p.band == MD9600_UHF && p.lo_hz == 446000000u && p.vco_hz == 446000000u && p.words[2] == 0x5003);
@@ -292,6 +308,7 @@ static void test_probe_pick(void)
 
 int main(void)
 {
+	board_rx_ext_set(true);
 #if CONFIG_MD9600_V4
 	test_pll1590();
 #endif

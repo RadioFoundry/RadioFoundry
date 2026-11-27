@@ -1228,3 +1228,15 @@ UHF, against the SDR bench:
 
 Not checked: P25 and NXDN transmit (the provider reports both as untested), sensitivity on the FM copy, VHF (the
 receive I/Q swap there inverts the copy's spectrum), and trunking.
+
+## Experimental 500–503 MHz reception
+
+Settings > Advanced > RX past bands enables the 500–503 MHz receive-only range.
+The range is off by default. The transmit band table and RF sequencing refuse transmission
+throughout this window. `CONFIG_RX_EXT=n` removes the extension from the build.
+
+The synthesizer planners represent this window using the existing UHF receive path.
+On V1–V3 the first LO is 49.95 MHz below the receive frequency. Factory receive-tuning
+curves are extrapolated and bounded to the DAC range; factory calibration is unchanged.
+There is no known board PLL-lock feedback. Sensitivity across this window has not
+been measured; successful synthesizer programming alone does not establish PLL lock.
