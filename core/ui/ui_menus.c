@@ -3217,7 +3217,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_TEMP;
 #endif
 	str_copy(it->label, sizeof it->label, r == CE_DMO && ced_is_p25(ch) ? TR(CHAN_LABEL_TALKAROUND, "Talkaround") :
-		r == CE_CODE && ced_is_nxdn(ch) ? "RAN" : r == CE_CODE && ced_is_ysf(ch) ? "DG-ID" : tr(labels[r]));
+		r == CE_CODE && ced_is_nxdn(ch) ? "RAN" : r == CE_CODE && ced_is_ysf(ch) ? "TX DG-ID" : tr(labels[r]));
 #if CONFIG_ZONE_SHARE
 	if (r == CE_SHARE && !(feats() & UI_FEAT_ZONE_SHARE))
 		it->flags |= UI_ITEM_DIM;

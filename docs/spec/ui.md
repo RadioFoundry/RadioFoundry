@@ -97,7 +97,7 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   the radio receives an encrypted call and holds its audio.
 - YSF Home names the caller by callsign: "N1ABC > DG-ID 12", the DG-ID dropped first when the line is short (the callsign is kept longest). A call of
   another DG-ID shows "Other DG-ID: not played", one that isn't DN voice "Not DN voice: not played". The talk line
-  shows the DG-ID PTT sends ("DG-ID 00"), or "No callsign" in the warning color while PTT is refused for want of one;
+  shows the DG-ID PTT sends ("TX DG-ID 00"), or "No callsign" in the warning color while PTT is refused for want of one;
   the chips show the power and the DG-ID heard ("RX DG-ID 00"). The radio ID is not on Home ([ysf.md](ysf.md) 6.5).
 
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
@@ -231,12 +231,13 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   P25 writes a stored P25 channel from the radio's P25 settings ([p25-codeplug.md](p25-codeplug.md) 2.3).
 - An NXDN channel the same way: Mode "NXDN", then RAN and Rate in place of NAC, no Talkaround. Own ID over 65519 is
   refused ("NXDN IDs go up to 65519").
-- A YSF channel: Mode "YSF", then DG-ID (sent) and RX DG-ID (heard, 00 every one) in place of NAC; no TX contact,
+- A YSF channel: Mode "YSF", then TX DG-ID and RX DG-ID (00 hears every one) in place of NAC; no TX contact,
   Own ID or Talkaround (YSF names the radio by callsign and radio ID). OK opens a row, digits type 0-99, Up and Down
   step through 0-99, and OK sets it.
-- On a YSF channel quick settings tile 3 opens Rooms (no tones) and tile 8 is the DG-ID sent (no width): Up/Down step
-  0-99, digits type two, OK sets it; the one heard stays (`ui_svc_ysf_dgid`). The Rooms page's RX DG-ID row sets the
-  one heard. In the VFO they stay; on a stored channel they last until another channel is taken
+- On YSF the quick settings are: 2 RX DG-ID (the squelch doesn't gate YSF), 3 Rooms (no tones), 5 and 6 empty on a
+  channel (`QT_NONE`: Monitor and VOX open FM's audio only; the VFO's 5 stays TX freq), 8 TX DG-ID (no width). A
+  DG-ID tile: Up/Down step 0-99, digits type two, OK sets it, the other one stays (`ui_svc_ysf_dgid`). The Rooms
+  page's TX DG-ID and RX DG-ID rows do the same. In the VFO they stay; on a stored channel they last until another channel is taken
   (`radio_ysf_settings_t.temp_chan`). # on Home opens Rooms (a YSF call has no
   caller's actions). Recent lists a YSF call by callsign and DG-ID (`ui_recent_t.ysf`); Hub > last caller, call back
   and # skip it, its actions toast "No actions here".

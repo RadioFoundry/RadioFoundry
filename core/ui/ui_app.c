@@ -1419,7 +1419,8 @@ static void quick_change(uint8_t kind, int8_t dir)
 		break;
 	}
 #if CONFIG_YSF
-	case QT_DGID: {
+	case QT_DGID:
+	case QT_RX_DGID: {
 		int g = ui_st.dgid_edit + dir;
 		ui_st.dgid_edit = (uint8_t)(g < 0 ? 99 : g > 99 ? 0 : g);
 		break;
@@ -1448,6 +1449,8 @@ static void quick_close_editor(void)
 #if CONFIG_YSF
 	if (kind == QT_DGID && ui_st.quick_edit)
 		(void)ui_svc_ysf_dgid(ui_st.dgid_edit, view->ysf.rx_dgid, view->vfo ? 0 : view->channel_number);
+	if (kind == QT_RX_DGID && ui_st.quick_edit)
+		(void)ui_svc_ysf_dgid(view->ysf.tx_dgid, ui_st.dgid_edit, view->vfo ? 0 : view->channel_number);
 #endif
 	ui_st.quick_edit = false;
 }
@@ -1469,6 +1472,7 @@ static void quick_unavailable(uint8_t kind)
 	case QT_MODE: ui_toast(TR(WHY_VFO_ONE_MODE_IN_BUILD, "VFO: one mode in this build")); break;
 	case QT_TO_VFO: ui_toast(TR(WHY_VFO_NOT_IN_BUILD, "VFO: not in this build")); break;
 	case QT_VOX: ui_toast(TR(WHY_VOX_NOT_ON_RADIO_YET, "VOX: not on this radio yet")); break;
+	case QT_NONE: break;	// an empty tile: nothing to say
 	default: ui_toast(TR(WHY_NOT_IN_BUILD, "Not in this build")); break;
 	}
 }
@@ -1600,7 +1604,8 @@ static void quick_activate(int tile)
 		break;
 #if CONFIG_YSF
 	case QT_DGID:
-		ui_st.dgid_edit = view->ysf.tx_dgid;
+	case QT_RX_DGID:
+		ui_st.dgid_edit = kind == QT_DGID ? view->ysf.tx_dgid : view->ysf.rx_dgid;
 		ui_st.quick_edit = true;
 		break;
 #endif
@@ -1671,7 +1676,7 @@ bool ui_quick_key(const input_event_t *ev)
 			int c = ui_st.cc_edit * 10 + d;
 			ui_st.cc_edit = (uint8_t)(ui_st.cc_edit < 2 && c <= 15 && ui_st.cc_edit != 0 ? c : d);
 #if CONFIG_YSF
-		} else if (ui_st.quick_edit && kind == QT_DGID) {
+		} else if (ui_st.quick_edit && (kind == QT_DGID || kind == QT_RX_DGID)) {
 			int g = ui_st.dgid_edit * 10 + d;	// two digits; a third starts again
 			ui_st.dgid_edit = (uint8_t)(ui_st.dgid_edit != 0 && ui_st.dgid_edit < 10 && g <= 99 ? g : d);
 #endif

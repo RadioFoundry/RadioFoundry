@@ -434,16 +434,17 @@ and room nodes hear it as they hear a commercial portable.
 - PTT sends with DG-ID 0, your callsign and your radio ID. The callsign is the one set for YSF, in **Settings > My radio > YSF
   callsign** or the Codeplug Editor. The radio name isn't used. Without one, Home says "No callsign", and PTT shows
   "No callsign set".
-- Home shows "YSF", the DG-ID PTT sends ("DG-ID 00") and the DG-ID heard ("RX DG-ID 00"). During a
+- Home shows "YSF", the DG-ID PTT sends ("TX DG-ID 00") and the DG-ID heard ("RX DG-ID 00"). During a
   call it shows the caller's callsign and the call's DG-ID, or why the call isn't played. Calls heard go into
   **Recent** with the callsign and DG-ID, and while idle Home shows the last one ("N1ABC", "DG-ID 12 11s ago"). Your
   own callsign coming back from a hotspot is left out.
 - **Squelch**: YSF doesn't need it. The radio decodes a YSF signal whatever the squelch level and never plays noise;
-  the DG-ID decides what plays. The squelch level only tells scan and dual watch when to stop on the channel. A
+  the DG-ID decides what plays. The squelch level only tells scan and dual watch when to stop on the channel, so it
+  isn't in the quick settings on YSF (the radio-wide level is **Settings > Talk & listen > Default squelch**). A
   room data transmission from a repeater shows its callsign and "Data" and goes into Recent.
-- **DG-ID**: quick settings tile **8**, or the first row of the Rooms page (# on Home), sets the DG-ID PTT sends.
-  The second row of the Rooms page, **RX DG-ID**, sets the one heard: 00 hears every DG-ID, another value only calls
-  with that DG-ID. Type two digits or step with Up/Down, **OK** sets it. In the VFO they stay until the radio is
+- **TX DG-ID**: quick settings tile **8**, or the first row of the Rooms page (# on Home), sets the DG-ID PTT sends.
+  **RX DG-ID**: quick settings tile **2**, or the second row of the Rooms page, sets the one heard: 00 hears every
+  DG-ID, another value only calls with that DG-ID. Type two digits or step with Up/Down, **OK** sets it. In the VFO they stay until the radio is
   switched off; on a stored channel they last until you change channel. To keep a channel's DG-IDs, set them in the
   channel editor.
 - Through a hotspot or a gateway, leave RX DG-ID at 00: many answer on DG-ID 00 whatever DG-ID called them, and an

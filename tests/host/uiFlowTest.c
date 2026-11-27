@@ -165,15 +165,19 @@ static const flow_t flows[] = {
 	  "screen=channel writes=1 toast=Saved_channel_3 shows=YSF shows=DG-ID", 1, true },
 	{ "E Mode: the saved YSF channel opens as YSF", "ysf ok 5 ok down down ok long:ok back back back", "ok 5 ok",
 	  "screen=channel shows=YSF shows=DG-ID hides=Color_code", 3, false },
-	{ "E YSF DG-ID: typed", "ysf ok 5 ok down down ok down", "ok 4 2 ok", "focus=DG-ID shows=42", 4, false },
+	{ "E YSF DG-ID: typed", "ysf ok 5 ok down down ok down", "ok 4 2 ok", "focus=TX_DG-ID shows=42", 4, false },
 	{ "E YSF RX DG-ID: typed", "ysf ok 5 ok down down ok down down", "ok 3 5 ok", "focus=RX_DG-ID shows=35", 4, false },
 	// Rooms (ysf.md 9): tile 3 on YSF opens it; the node's status, a typed room ID connected, the room list
 	{ "Q YSF: tile 3 is Rooms", "dlmode:ysf", "quick 3", "screen=rooms shows=Node shows=Room_ID", 2, false },
 	{ "T YSF: 0 in Tools is Rooms", "dlmode:ysf", "ok 6 0", "screen=rooms shows=Node", 3, false },
 	{ "H YSF: # on Home is Rooms", "dlmode:ysf", "ctx", "screen=rooms shows=Node", 1, false },
-	// The DG-IDs: quick settings tile 8 (Width's place) and the Rooms page's first row send, its second row hears (00:
-	// every DG-ID, so a gateway's answer on another one still plays); a channel's for now
-	{ "Q YSF: tile 8 is the DG-ID", "dlmode:ysf", "quick 8", "screen=quick shows=DG-ID", 2, false },
+	// The DG-IDs: quick settings tile 8 (Width's place) and the Rooms page's first row send; tile 2 (the squelch's,
+	// which doesn't gate YSF) and the Rooms page's second row hear (00: every DG-ID, so a gateway's answer on another
+	// one still plays); a channel's for now. Tiles 5 and 6 are empty on a channel (Monitor and VOX are FM's)
+	{ "Q YSF: tile 8 is the TX DG-ID", "dlmode:ysf", "quick 8", "screen=quick shows=TX_DG", 2, false },
+	{ "Q YSF: tile 2 is the RX DG-ID", "dlmode:ysf", "quick 2 1 7 ok", "dgid=0 rxdgid=17 shows=RX_DG shows=17", 5, false },
+	{ "Q YSF: tiles 5 and 6 are empty", "dlmode:ysf", "quick 5 6", "screen=quick hides=MON hides=VOX hides=SQL toast=none", 3, false },
+	{ "Q YSF VFO: tile 5 stays TX freq", "ok 4 up ok dlmode:ysf", "quick 5 up ok", "txfreq=147120000", 4, false },
 	{ "Q YSF: DG-ID typed", "dlmode:ysf", "quick 8 2 5 ok", "dgid=25 rxdgid=0 shows=25", 5, false },
 	{ "Q YSF: DG-ID stepped down from 00", "dlmode:ysf", "quick 8 down ok", "dgid=99", 4, false },
 	{ "W Rooms: DG-ID row typed", "dlmode:ysf quick 3", "ok 1 2 ok", "screen=rooms dgid=12 rxdgid=0 shows=12", 4, false },

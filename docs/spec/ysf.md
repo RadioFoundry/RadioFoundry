@@ -212,7 +212,7 @@ remarks 3-4, whichever arrives first; five characters that aren't all 0-9 or A-Z
 
 PTT sends the transmit DG-ID. A channel stores both, and the channel editor, quick settings and the Rooms page set
 them apart: a gateway or a parrot may answer on another DG-ID (often 00) than the one it was called on, so the usual
-setting sends a group's DG-ID and hears 00. Quick settings tile 8 sets only the one sent.
+setting sends a group's DG-ID and hears 00. Quick settings tile 8 sets the one sent, tile 2 the one heard.
 
 The FM squelch doesn't gate YSF. The soft modem demodulates all the time and a call starts on the frame sync and a good
 FICH, so a weak signal is decoded whatever the squelch level, and noise never plays (no sync, no call). The squelch
@@ -333,7 +333,7 @@ caller's radio ID shows as `ysf.src_rid` on the debug link.
 |---|---|
 | The engine shares NXDN's memory | One air mode runs at a time; a block of its own cost 1.9 KB of RAM |
 | No transmit level, preamble or field-layout settings | The values here are the measured ones; a setting would only let a radio drift from them |
-| Transmit and receive DG-ID set apart; the quick tile sets only transmit | One value both ways kept a gateway's answer on 00 from playing; receive 00 still hears a group on its own DG-ID |
+| Transmit and receive DG-ID set apart, each with its own quick tile (8 and 2) | One value both ways kept a gateway's answer on 00 from playing; receive 00 still hears a group on its own DG-ID |
 
 ## 8. Scope: what this first version does and doesn't
 
@@ -403,7 +403,7 @@ with no buffer for a whole list:
 | Item | Rule |
 |---|---|
 | Where | Tools > Rooms (key 0 there, while no zone offer waits), # on Home and quick settings tile 3 on a YSF channel (Tone's place: YSF has no tones), a key set to Rooms (`KEYFN_YSF_ROOMS`). Off a YSF channel: "Rooms: on a YSF channel" |
-| The page | DG-ID (sent, as quick settings tile 8: OK, two digits, OK sets it; BACK leaves it), RX DG-ID (heard, the same way), Node (OK asks for the status), Room, Room ID (digits type it anywhere on the page, kept while the radio runs), Connect, Disconnect, Rooms (the list, 20 a page), Search (text entry) |
+| The page | TX DG-ID (as quick settings tile 8: OK, two digits, OK sets it; BACK leaves it), RX DG-ID (as tile 2), Node (OK asks for the status), Room, Room ID (digits type it anywhere on the page, kept while the radio runs), Connect, Disconnect, Rooms (the list, 20 a page), Search (text entry) |
 | Waiting | Until the node answers what was asked: "Waiting..."; "No answer" after 8 s |
 | State | `radio_ysf_wx`: the last reply's fields, what was asked; `radio_ysf_wx_room`: the page of rooms. The provider's task writes them, the screens read them under a sequence count |
 | Memory | The reply's parser runs in the engine's memory (about 0.7 KB); the published state and page of rooms in the radio core (about 0.6 KB) |

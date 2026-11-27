@@ -80,7 +80,7 @@ static uint16_t wx_count(void)
 
 static void wx_item(uint16_t i, ui_item_t *it)
 {
-	static const tr_id_t labels[WX_COUNT] = { TRX(QUICK_LABEL_DGID, "DG-ID"), TRX(YSF_LABEL_RX_DGID, "RX DG-ID"),
+	static const tr_id_t labels[WX_COUNT] = { TRX(YSF_LABEL_TX_DGID, "TX DG-ID"), TRX(YSF_LABEL_RX_DGID, "RX DG-ID"),
 		TRN(WX_LABEL_NODE, "Node"), TRN(WX_LABEL_ROOM, "Room"),
 		TRN(WX_LABEL_ROOM_ID, "Room ID"), TRN(WX_ROW_CONNECT, "Connect"), TRN(WX_ROW_DISCONNECT, "Disconnect"),
 		TRN(WX_ROW_ROOMS, "Rooms"),

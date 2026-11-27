@@ -1198,7 +1198,7 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		c = ui_col.warn;
 	} else if (v->ch.mode == RADIO_MODE_YSF) {
 		// What PTT sends to: the DG-ID (YSF has no talk groups)
-		sb_str(&b, "DG-ID ");
+		sb_str(&b, "TX DG-ID ");
 		sb_u32(&b, v->ysf.tx_dgid, 2);
 #endif
 	} else {
@@ -3784,6 +3784,10 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 		kind = QT_YSF_ROOMS;	// no tones on YSF: tile 3 opens Rooms
 	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_BANDWIDTH)
 		kind = QT_DGID;		// nor a width: tile 8 is the transmit DG-ID
+	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_SQUELCH)
+		kind = QT_RX_DGID;	// the squelch doesn't gate YSF (ysf.md 5): tile 2 is the receive DG-ID
+	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && (kind == QT_VOX || (kind == QT_MONITOR && !v->vfo)))
+		return QT_NONE;		// VOX and the monitor open FM's audio only; the VFO's tile 5 stays TX freq
 	if (v->vfo && (kind == QT_MONITOR || kind == QT_PRIVACY))
 		return QT_SPLIT;	// the VFO's TX frequency; Monitor stays on its key, privacy on channels
 	return kind;
@@ -3822,14 +3826,16 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 			TEXT_ALT_NEXT "To VFO" TEXT_ALT_CLOSE),
 		[QT_SPLIT] = TRN(QUICK_LABEL_TX_FREQ, TEXT_ALT_OPEN "TX freq" TEXT_ALT_NEXT "TXFreq" TEXT_ALT_CLOSE),
 		[QT_YSF_ROOMS] = TRN(QUICK_LABEL_ROOMS, "Rooms"),
-		[QT_DGID] = TRX(QUICK_LABEL_DGID, "DG-ID"),
+		[QT_DGID] = TRX(QUICK_LABEL_TX_DGID, TEXT_ALT_OPEN "TX DG-ID" TEXT_ALT_NEXT "TX DG" TEXT_ALT_CLOSE),
+		[QT_RX_DGID] = TRX(QUICK_LABEL_RX_DGID, TEXT_ALT_OPEN "RX DG-ID" TEXT_ALT_NEXT "RX DG" TEXT_ALT_CLOSE),
 	};
 	uint8_t kind = ui_quick_kind(tile, v);
 	bool editing = s->quick_edit && s->quick_focus == tile;
 	sbuf_t b;
 	sb_init(&b, label, label_len);
 	sb_chr(&b, (char)('1' + tile));
-	sb_str(&b, tr(names[kind]));
+	if (kind != QT_NONE)
+		sb_str(&b, tr(names[kind]));	// an empty tile has its number only
 	sb_init(&b, value, value_len);
 	switch (kind) {
 	case QT_POWER:
@@ -3915,6 +3921,12 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	case QT_DGID:
 		sb_u32(&b, editing ? s->dgid_edit : v->ysf.tx_dgid, 2);
 		return true;
+	case QT_RX_DGID:
+		sb_u32(&b, editing ? s->dgid_edit : v->ysf.rx_dgid, 2);
+		return true;
+	case QT_NONE:
+		sb_str(&b, "-");
+		return false;
 #endif
 #if CONFIG_DMR
 	case QT_TIMESLOT:
