@@ -472,7 +472,7 @@ test("vectors: NXDN conventional block, unit ID record", () => {
 	}
 });
 
-// --- System Fusion (docs/spec/ysf-codeplug.md) ---
+// --- YSF (docs/spec/ysf-codeplug.md) ---
 
 test("vectors: YSF channel block, callsign record", () => {
 	assert.ok(vectors("ysfchan").length >= 8);
