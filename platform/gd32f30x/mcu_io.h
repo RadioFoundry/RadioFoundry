@@ -24,6 +24,8 @@ typedef gd32_pull_t mcu_pull_t;
 static inline void mcu_pin_force(mcu_gpio_t *p, uint16_t pins, bool level) { gd32_pin_force(p, pins, level); }
 static inline void mcu_pin_out(mcu_gpio_t *p, uint16_t pins, bool level, bool od) { gd32_pin_out(p, pins, level, od); }
 static inline void mcu_pin_in(mcu_gpio_t *p, uint16_t pins, mcu_pull_t pull) { gd32_pin_in(p, pins, pull); }
+// One output drive on this MCU: nothing to set
+static inline void mcu_pin_drive_normal(mcu_gpio_t *p, uint16_t pins) { (void)p; (void)pins; }
 static inline void mcu_pin_analog(mcu_gpio_t *p, uint16_t pins) { gd32_pin_analog(p, pins); }
 static inline void mcu_pin_write(mcu_gpio_t *p, uint16_t pins, bool level) { gd32_pin_write(p, pins, level); }
 static inline bool mcu_pin_read(mcu_gpio_t *p, uint16_t pin) { return gd32_pin_read(p, pin); }

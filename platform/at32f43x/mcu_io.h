@@ -20,6 +20,8 @@ typedef at32_pull_t mcu_pull_t;
 static inline void mcu_pin_force(mcu_gpio_t *p, uint16_t pins, bool level) { at32_pin_force(p, pins, level); }
 static inline void mcu_pin_out(mcu_gpio_t *p, uint16_t pins, bool level, bool od) { at32_pin_out(p, pins, level, od); }
 static inline void mcu_pin_in(mcu_gpio_t *p, uint16_t pins, mcu_pull_t pull) { at32_pin_in(p, pins, pull); }
+// Normal (weaker) output drive on these pins from now on; the default is the strongest the MCU has
+static inline void mcu_pin_drive_normal(mcu_gpio_t *p, uint16_t pins) { at32_pin_drive_normal(p, pins); }
 static inline void mcu_pin_analog(mcu_gpio_t *p, uint16_t pins) { at32_pin_analog(p, pins); }
 static inline void mcu_pin_write(mcu_gpio_t *p, uint16_t pins, bool level) { at32_pin_write(p, pins, level); }
 static inline bool mcu_pin_read(mcu_gpio_t *p, uint16_t pin) { return at32_pin_read(p, pin); }

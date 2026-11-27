@@ -26,17 +26,50 @@ static uint32_t put2(uint32_t reg, uint16_t pins, uint32_t v)
 	return reg;
 }
 
+// The pins a board runs at normal drive (at32_pin_drive_normal), per port A-H
+static uint16_t normal_drive[8];
+
+// 01 in each pin's two-bit field
+static inline __attribute__((always_inline)) uint32_t ones(uint16_t pins)
+{
+	uint32_t m = 0;
+	for (uint32_t n = 0; n < 16u; n++) {
+		if (pins & (1u << n)) {
+			m |= 1u << (2u * n);
+		}
+	}
+	return m;
+}
+
+// Each pin's drive strength: 01 large, 10 normal, the one the board asked for (RM, ODRVR)
+static inline __attribute__((always_inline)) uint32_t drive(at32_gpio_t *port, uint16_t pins)
+{
+	uint32_t all = ones(pins);
+	uint32_t normal = ones(pins & normal_drive[GPIO_PORT_INDEX(port) & 7u]);
+	return (port->ODRVR & ~(all * 3u)) | (all & ~normal) | (normal << 1);
+}
+
 // Read-modify-writes of the port's words: interrupts masked, so a task or handler that changes another pin of the port
-// in between (the RF bus and the receiver's I2C share port B) isn't undone. Every pin set up gets drive strength 1
-// (strong): the reset value is not one the radio's buses were designed around
+// in between (the RF bus and the receiver's I2C share port B) isn't undone. A pin gets large drive unless the board
+// put it on normal drive (at32_pin_drive_normal)
 static void pin_cfg(at32_gpio_t *port, uint16_t pins, uint32_t mode, bool open_drain, at32_pull_t pull)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();
 	port->OMODE = open_drain ? (port->OMODE | pins) : (port->OMODE & ~(uint32_t)pins);
-	port->ODRVR = put2(port->ODRVR, pins, 1u);
+	port->ODRVR = drive(port, pins);
 	port->PULL = put2(port->PULL, pins, pull == AT32_PULL_UP ? 1u : pull == AT32_PULL_DOWN ? 2u : 0u);
 	port->CFGR = put2(port->CFGR, pins, mode);
+	__set_PRIMASK(primask);
+}
+
+void at32_pin_drive_normal(at32_gpio_t *port, uint16_t pins)
+{
+	at32_gpio_clock(port);
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+	normal_drive[GPIO_PORT_INDEX(port) & 7u] |= pins;
+	port->ODRVR = drive(port, pins);
 	__set_PRIMASK(primask);
 }
 

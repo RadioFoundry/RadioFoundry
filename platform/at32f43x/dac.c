@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DAC: the two 12-bit outputs (DAC1 on PA4, DAC2 on PA5; channels 0 and 1 here), output buffer off (the setting
-// the radio's circuits run with), written by software.
+// DAC: the two 12-bit outputs (DAC1 on PA4, DAC2 on PA5; channels 0 and 1 here), output buffer off, so the
+// output swings the full 0..VREF range (a buffered one stops short of each rail), written by software.
 // Writes are single stores, so any task (and a fault handler) may write
 #include "platform.h"
 

@@ -46,6 +46,8 @@ void at32_gpio_clock(at32_gpio_t *port);
 // For board_rf_safe: the port's clock on, the level, then push-pull output, with plain register writes. Safe in a
 // fault handler and before the clocks are set up
 void at32_pin_force(at32_gpio_t *port, uint16_t pins, bool level);
+// The pins run at normal drive from now on, through every later set-up; every other pin gets large drive
+void at32_pin_drive_normal(at32_gpio_t *port, uint16_t pins);
 void at32_pin_out(at32_gpio_t *port, uint16_t pins, bool level, bool open_drain);
 void at32_pin_in(at32_gpio_t *port, uint16_t pins, at32_pull_t pull);
 // The multiplexed function af (0..15, the data sheet's pin table) on the pins

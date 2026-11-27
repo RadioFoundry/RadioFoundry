@@ -179,11 +179,20 @@ void board_early_init(void)
 	mcu_clock_init(CRYSTAL_HZ, CORE_HZ);
 	// PA15, PB3 and PB4 are the NAND's MISO and the RF bus: free them from JTAG, keep SWD
 	mcu_jtag_release();
+	// Normal drive on the lines whose circuits were designed for normal drive (an MCU with one drive strength ignores this): the
+	// power key, side key, auxiliary select, speaker mute, RF bus, power latch, PC4, rail, USB pull-up, TX enable and
+	// LCD read strobe
+	mcu_pin_drive_normal(GPIOA, MCU_PIN(0) | MCU_PIN(1) | MCU_PIN(5) | MCU_PIN(7));
+	mcu_pin_drive_normal(GPIOB, MCU_PIN(3) | MCU_PIN(4));
+	mcu_pin_drive_normal(GPIOC, MCU_PIN(3) | MCU_PIN(4));
+	mcu_pin_drive_normal(GPIOE, MCU_PIN(0) | MCU_PIN(2) | MCU_PIN(6) | MCU_PIN(15));
 }
 
 void board_init(void)
 {
-	// The rail first: the RF chips the bus init turns off and the backlight sit on it
+	// The power latch held first, then the power key, supply and knob inputs and the ADC: nothing else sets them up
+	d578uv_power.init();
+	// The rail next: the RF chips the bus init turns off and the backlight sit on it
 	mcu_pin_out(PIN_RAIL, true, false);
 	hal_delay_ms(150);
 	d578uv_bus_init();	// the backlight (on the RF bus) is set before the radio starts
