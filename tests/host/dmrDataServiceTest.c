@@ -32,7 +32,7 @@ static dmrDataChannel_t ch = { .ownId = OUR_ID, .talkGroup = 9, .rmo = false, .c
 static bool channelClear = true;
 static bool txAccept = true;
 static bool txAutoDone = true;		// the fake stack finishes each list at once
-static int events[16];
+static int events[32];
 
 // Zone sharing's receive hook (zoneShareSvc.c in the firmware): what the service handed it
 static int zsRxCalls;
@@ -186,7 +186,7 @@ static bool fakeTxStart(const dmrBurst_t *bursts, int count, void *ctx)
 
 static bool fakeClear(uint32_t nowMs, void *ctx) { return channelClear; }
 static bool fakeInRxGroup(uint32_t tg, void *ctx) { return tg == 91; }
-static void fakeNotify(const dmrDataEvent_t *e, void *ctx) { if (e->kind < 16) events[e->kind]++; }
+static void fakeNotify(const dmrDataEvent_t *e, void *ctx) { if (e->kind < 32) events[e->kind]++; }
 
 static int packetsHeard;
 static void fakePacket(const dmrDataPacket_t *p, void *ctx) { packetsHeard++; }
@@ -1584,6 +1584,16 @@ static void testIpAddresses(void)
 	p = txPacket();
 	CHECK(p != NULL && p->sap == DMR_SAP_UDPIP_COMPRESSION);
 	CHECK(p != NULL && dmrDataGetUDP(p, &udp) && udp.dstIp == dmrDataIdAddress(false, RADIO_A));
+	// From the host behind us (usb-network.md 3.1): our peripheral network address, SAID 1, under the ID the packet
+	// goes from, also when the channel's ID changed after it was queued
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OUR_PERIPHERAL, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT,
+							   DMR_IP_PROTO_UDP, ipL4, 8 + 20));
+	ch.ownId = OUR_ID + 1;
+	runMainTask(SEND_MS);
+	p = txPacket();
+	CHECK(p != NULL && p->sap == DMR_SAP_UDPIP_COMPRESSION && p->src == OUR_ID + 1 && p->data[2] == 0x10);
+	CHECK(p != NULL && dmrDataGetUDP(p, &udp) && udp.srcIp == dmrDataPeripheralAddress(OUR_ID + 1));
+	ch.ownId = OUR_ID;
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 	decodeTx = true;
 
@@ -2673,7 +2683,7 @@ static void testPrivacy(void)
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	int count, heard;
 
-	// A scheme with no data form: the text never goes out, and fails
+	// A scheme with no data form: the text never goes out, and fails as blocked, not as unanswered
 	reset();
 	ch.privacy = block;
 	CHECK(sms_send(RADIO_A, false, "secret", true, DMR_SMS_FORMAT_TMS));
@@ -2681,6 +2691,34 @@ static void testPrivacy(void)
 	CHECK(sentCount == 0);
 	CHECK(stats.txPrivacyBlocked >= 1);
 	CHECK(sms_send_state() == DMR_REQ_FAILED);
+	CHECK((events[DMR_DATA_EV_SMS_BLOCKED] == 1) && (events[DMR_DATA_EV_SMS_FAILED] == 0));
+
+	// ... but signaling carries no content: radio check and call alert still go (#1109)
+	reset();
+	ch.privacy = block;
+	CHECK(dmr_signal_radio_check(RADIO_A));
+	runMainTask(100);
+	CHECK(countCsbk(DMR_CSBKO_RADIO_CHECK, OUR_ID) == 1);
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x80, OUR_ID, RADIO_A);
+	runMainTask(100);
+	CHECK(events[DMR_DATA_EV_RADIO_CHECK_OK] == 1);
+	reset();
+	ch.privacy = block;
+	uint32_t blocked = stats.txPrivacyBlocked;
+	CHECK(dmr_signal_call_alert(RADIO_B));
+	runMainTask(100);
+	CHECK(countCsbk(DMR_CSBKO_CALL_ALERT, RADIO_B) == 1);
+	CHECK(stats.txPrivacyBlocked == blocked);
+
+	// ARS has nothing to register there: no registration is built and refused every tick
+	reset();
+	ch.privacy = block;
+	settings.arsServer = ARS_SERVER;
+	blocked = stats.txPrivacyBlocked;
+	uint32_t arsSent = stats.arsSent;
+	runMainTask(20000);
+	CHECK((stats.txPrivacyBlocked == blocked) && (stats.arsSent == arsSent));
+	settings.arsServer = 0;
 
 	// Encrypted: the privacy header follows the data header, and the receiver with the key reads the text
 	reset();

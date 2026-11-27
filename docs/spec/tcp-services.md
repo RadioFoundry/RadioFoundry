@@ -3,7 +3,7 @@
 # TCP services on the USB network link
 
 In the USB network personality ([usb-network.md](usb-network.md)) the radio has an address of its own on the link
-(the host's address xor 1, e.g. 12.0.39.20 for DMR ID 10005). With `CONFIG_NET_TCP` it runs a small TCP there and a
+(12.<DMR ID>, e.g. 12.0.39.21 for DMR ID 10005; the host is 13.0.39.21). With `CONFIG_NET_TCP` it runs a small TCP there and a
 few services on it. TCP never goes over the air: the IP gateway hands the TCP only segments addressed to the radio
 itself, and TCP to other radios' addresses is dropped as before.
 
@@ -18,7 +18,6 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP, port 8001 (`core/net/kiss_tcp.c`, section 4) |
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server, port 80 (`core/net/http.c`, section 5) |
 | `CONFIG_NET_WEBCTL` | = NET_HTTP | web control: the front panel page and its WebSocket `/ws` (`core/net/webctl.c`, `core/net/ws.c`, section 5.1) |
-| `CONFIG_NET_RADIO_UDP` | = DMR_IP_GATEWAY | zone and channel control over UDP, port 4191, with no TCP or HTTP (`core/net/radio_udp.c`, section 8) |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
@@ -119,7 +118,7 @@ Where a request comes from (a browser says so in its headers; tools that send no
 |---|---|
 | `/` and `/<file>` | the static files (below); `/` is `index.html`, the status as a table and the screen, refreshed every 3 s; with `CONFIG_NET_WEBCTL` the front panel page (5.1) |
 | `/ws` | with `CONFIG_NET_WEBCTL`: the WebSocket upgrade (5.1); 400 without a valid key or for HEAD, 403 from another page (`Origin`), 503 while another client has it |
-| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
+| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo codeplug` (the codeplug's edit count: a change means read the lists again) `zone pos` (the zone's index and the position in it, 0-based) `zone_name channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
 | `/api/screen.bmp` | the frame buffer as a BMP, top-down (negative height), at the panel's depth: 1 bpp with two palette entries (the paper and ink of the UI gallery), 4 bpp with the 16-entry palette (`gfx_palette`), both the frame buffer's rows as they are; 16 bpp as BI_BITFIELDS (RGB565 masks). About 10 KB on a 160 x 128 4 bpp screen, 38 KB on 240 x 320, 1 KB on 128 x 64 1 bpp; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI |
@@ -189,13 +188,16 @@ until it goes. The radio's rules:
 | Binary from the client | close 1003 (nothing takes it yet) |
 | Close | the client's close code is sent back, then the connection closes |
 | Ping | one every 5 s; nothing from the client for 15 s and it is dropped |
-| Status | `/status`'s JSON as a text frame, rendered every 250 ms and sent when it changed |
+| Status | `/status`'s JSON as a text frame, rendered every 250 ms and sent when it changed; after `status?changes` only when the zone or channel changed (below) |
+| GPS | after `gps`: the board GPS's fix, one text frame per GPS second (below) |
 | Screen | after `s1`: binary frames of the rows that changed, the first time every row (below). A row goes out when a redraw changed it and only between UI frames, so the copy is never half drawn; rows that don't fit TCP's buffer wait for the next poll |
 | Audio | 20 ms binary frames (`'A'`, a reserved 0, then 160 samples of 8 kHz PCM16 little-endian), while the client asked and the squelch is open; needs `CONFIG_NET_USRP` (the frames USRP reads, `usb-audio.md`); a frame that doesn't fit in TCP's buffer is dropped. Not while PPP carries the link: its 128 kbit/s doesn't fit a 115200 baud UART ([ppp.md](ppp.md) 6), so the hello says `audio:false` and `a1` is refused; keys, status and the screen work as on USB |
 
 The first frame is the hello:
-`{"hello":1,"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true,"screen":[160,128,4,0,0,160,128]}`
-(the keymap's bits, the PTT key's bit or -1, whether the radio has an encoder). `screen` is the panel's width, height
+`{"hello":1,"proto":1,"caps":["select","step","status","gps"],"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true,"screen":[160,128,4,0,0,160,128]}`
+(`proto` the protocol's version, `caps` the requests in words this radio takes, `gps` only on a radio with a GPS: a
+client checks these instead of guessing from the firmware version; then the keymap's bits, the PTT key's bit or -1,
+whether the radio has an encoder). `screen` is the panel's width, height
 and bpp, then the visible part inside the insets: left, top, width, height. It is left out when the frame buffer
 can't be sent (as `/api/screen.bmp`'s 404) or a raw row doesn't fit a frame. Commands are text frames:
 
@@ -206,6 +208,47 @@ can't be sent (as `/api/screen.bmp`'s 404) or a raw row doesn't fit a frame. Com
 | `e<n>` | n encoder detents, -127..127 (forward is positive) |
 | `a1` / `a0` | receive audio on / off |
 | `s1` / `s0` | the screen on / off; `s1` sends every row again |
+| `select?zone=Z[&pos=P]` | to zone Z, its first channel or position P, leaving the VFO (8) |
+| `step?channel=N` / `step?zone=N` | N channels or zones on, negative back, as 8 |
+| `gps` / `gps?off` | the board GPS's fixes on / off |
+| `status?changes` / `status` | the status only when the zone or channel changes / whenever it changes (the default) |
+
+A text frame whose second byte is a letter is a request in words; `select` and `step` are in 8. Only an error is answered, `{"err":N}`: 400 malformed,
+403 from beyond the host, 409 refused now (transmitting, a hotspot; `gps` on a radio without one). Otherwise the
+status that follows shows the result: it has `zone pos zone_name channel_number codeplug`, so it doubles as the
+change notice.
+
+`status?changes` is for a control app, takRF for one: the status the front panel page wants changes with the clock
+and the signal, at least once a second. With it, the status goes only when the zone, position, channel number, VFO,
+codeplug, frequency, mode, timeslot or talk target changes (frequency and mode for the VFO, which no index shows), and
+the radio renders it only then. A fast knob turn sends where it came to rest: the check runs every 250 ms.
+
+A fix, after `gps`:
+
+```
+{"gps":1,"lat":33.7490000,"lon":-84.3880000,"alt_m":320,"kmh":4,"course":271,"hdop":0.9,"sats":9,"utc":123519}
+```
+
+| Field | |
+|---|---|
+| `gps` | always 1: a client tells a fix from the status by it (or by `lat`) |
+| `lat lon` | degrees, 7 decimals, south and west negative |
+| `alt_m` | meters above mean sea level (GGA) |
+| `kmh course` | speed over ground, km/h, and course, degrees true (RMC) |
+| `sats` | satellites used |
+| `hdop` | horizontal dilution of precision |
+| `utc` | the fix's UTC time, hhmmss as a number (`5` is 00:00:05). The date isn't sent |
+
+- A field the module didn't send is left out (`alt_m kmh course hdop`). The keys' order isn't fixed: read it as JSON.
+- Sent once per GPS second while the board GPS has a fix under a minute old (`position_gps`); a frame that doesn't fit
+  TCP's buffer is tried again at the next poll while that second lasts.
+- **Host only.** As keys and PTT: `gps` from beyond the host is 403. `/status` never has a position.
+- **Board GPS only.** Never a position the host fed the radio (`POSITION_SRC_HOST`) or the fixed position, so a phone
+  that feeds the radio NMEA never gets its own position back.
+- **Exact.** The ambiguity setting is for reports on the air; the link belongs to the operator.
+- The GPS keeps its own rules ([position.md](position.md)): Settings > Location > GPS off means no fix and nothing sent.
+- `tools/rfoundry_gps.py` prints the fixes, or sends them as NMEA to gpsd; `tools/rfoundry_ws.py` is a /ws client in
+  Python's standard library.
 
 A screen frame is `'S'`, the palette's size n (2 at bpp 1, 16 at bpp 4, 0 at bpp 16), n RGB565 colors (`gfx_palette`,
 little-endian), then rows. The palette comes with every frame and applies to its rows, as the panel shows them. Each
@@ -227,7 +270,8 @@ closes, its TCP ends, or it is dropped. Unknown commands are counted and ignored
 View keys: `webctl.client` (its TCP slot, -1 none) `webctl.control webctl.conns webctl.commands webctl.refused`
 (control from beyond the host, an unknown key) `webctl.busy` (another injected key held) `webctl.errors
 webctl.frames_out webctl.audio_out webctl.audio_dropped webctl.screen` (the client asked for it) `webctl.screen_out`
-(screen frames) `webctl.ptt webctl.ptt_downs`.
+(screen frames) `webctl.ptt webctl.ptt_downs webctl.gps` (fixes on) `webctl.changes` (`status?changes` on). Requests
+in words count in `webctl.commands`, refusals in `webctl.refused`.
 
 ## 6. rigctld (port 4532)
 
@@ -292,8 +336,8 @@ the iGate rules stay in the APRS engine ([aprs.md](aprs.md) 9.1).
 
 ### 7.1 Routing through the host
 
-The radio's address (12.x.y.z, the host's xor 1) is only known to the host, which must forward and NAT it. With
-`RADIO=12.0.39.20` (the radio's address) and the host's Internet interface `en0` / `eth0`:
+The radio's address (12.<DMR ID>) is only known to the host, which must forward and NAT it. With
+`RADIO=12.0.39.21` (the radio's address) and the host's Internet interface `en0` / `eth0`:
 
 ```
 # macOS
@@ -310,101 +354,47 @@ sudo iptables -A FORWARD -i eth0 -o usb0 -m state --state RELATED,ESTABLISHED -j
 The replies come back translated to the radio's address and reach it over the host route the radio's DHCP gave
 (option 121). A server address inside 12.0.0.0/8 can't be used (the host routes that range to the radio).
 
-## 8. Zone and channel control over UDP (port 4191)
+## 8. Zone and channel control
 
-For a device or program on the host, over USB network or PPP (takRF's radio controls): know where the radio is, select
-a zone and channel, or step them as a knob would. `CONFIG_NET_RADIO_UDP`, `core/net/radio_udp.c`. It needs only the
-IP gateway: no TCP, no HTTP, no web control. A tight build can leave out `NET_TCP` (about 6 KB of RAM) and still be
-controlled. Each request is one datagram to the radio's port 4191, and each is answered with one datagram.
+For a program on the host or a page in its browser (takRF's radio controls, the radio's own page): select a zone and
+channel, or step them as a knob would. The requests come as `/ws` text frames (5.1); `core/net/radio_ctl.c`, built
+with `CONFIG_NET_WEBCTL`, keeps them apart from the WebSocket so another carrier is easy to add. Where the radio is
+comes in the status (`zone pos zone_name channel_number codeplug`).
 
 | Request | |
 |---|---|
-| `select` | where the radio is |
 | `select?zone=Z` / `select?zone=Z&pos=P` | to zone Z, its first channel or position P, leaving the VFO |
 | `step?channel=N` | N channels on, negative back (-100 to 100, not 0), wrapping in the zone. From the VFO: back to the channel the VFO came from is the first step (VFO from position 5: +1 lands on 5, +3 on 7) |
 | `step?zone=N` | N zones on, wrapping at the ends, to the zone's first channel |
-| `select?notify=0` | no more notices |
 
-- Zones and positions are 0-based indexes, the same in every request and reply.
-- ASCII, at most 40 bytes; a trailing newline is ignored (`echo select | nc -u -w1 <radio> 4191`).
-
-### 8.1 Addresses
-
-- **Send to the radio's own address on the link, and nowhere else.** On the default /32 link that is the host's
-  address xor 1 (DMR ID 10005: the host is 12.0.39.21, the radio 12.0.39.20). It is the DHCP server and router the
-  host got with its lease (option 54), and on PPP the link's peer address.
-- The radio answers on that address for its own ports only. **Any other datagram into the individual or talkgroup
-  ranges, or to a port the radio doesn't serve, goes over the air** as DMR data, to the radio with that ID
-  ([usb-network.md](usb-network.md)). A client that guesses an address, probes ports, or sends to 4191 on firmware
-  built without this makes the radio transmit. Check that VERSION lists `NET_RADIO_UDP` before sending. A radio in
-  USB network or PPP mode must be ready to transmit: an antenna or a dummy load, on a frequency the operator may use.
-- The reply goes from port 4191 to the request's source address and port, the notices to the same. A client binds one
-  socket to its end of the link and gets both there.
-
-### 8.2 Replies and notices
-
-Where the radio is, from the radio's view alone (no flash read), so a client can ask often:
-
-```
-{"zone":0,"pos":4,"vfo":false,"codeplug":12,"seq":7,"zone_name":"FAV",
- "number":27,"name":"HS GA","mode":"dmr","rx_hz":443700000,"cc":1,"ts":1,"tg":2,"call":"group","lease":120}
-```
-
-| Field | |
-|---|---|
-| `zone pos zone_name` | the zone and position; in the VFO, the channel the VFO came from |
-| `vfo` | `true` while the VFO is on |
-| `codeplug` | the codeplug's change count (`codeplug_serial`: the radio's menus, a CPS or TFTP write) |
-| `seq` | notices sent (u32, wrapping; 0 before any); a client lines replies and notices up by it |
-| `number name mode rx_hz` | the channel (`number` its codeplug number, `mode` `fm` `dmr` `p25` `nxdn`); in the VFO the VFO's settings, `number` 0 |
-| `cc ts` | DMR: color code, timeslot |
-| `tg call` | DMR with a talk target: the radio's own, a manual change included (`group` / `private`) |
-| `lease` | replies only: seconds the sender stays subscribed (120; 0 after `notify=0`) |
-| `err` | replies only, when refused: 400 (malformed, out of range, too long) or 409 (transmitting or hotspot mode) |
-
-- Names are Latin-1. A byte from 0x7F up is sent as `\u00XX`, so the JSON is ASCII and valid (RFC 8259 8.1).
-- A reply or notice that would not fit a datagram leaves out the channel's keys after `number`.
-- The reply is where the radio is when the request comes. A select or step moves it a little later: the notice brings
-  that.
-
-Notices:
-
-- Every request makes its source address and port the one subscriber, for 120 s. A new subscriber replaces the old.
-  A client renews with `select` about every 60 s, which also reads where the radio is.
-- One datagram from port 4191, the reply's JSON without `lease` and `err`: when any of `zone pos vfo codeplug`, the
-  channel number, `rx_hz`, `mode`, `ts` or the talk target changes (`rx_hz` and `mode` for the VFO, which no index
-  shows), and every 30 s as a heartbeat, changed or not. A reply counts as a notice: none repeats it.
-- The radio looks for a change every 100 ms, so a fast knob turn sends where it came to rest, not every detent.
-- Nothing is sent without a subscriber or while the link is down. A send the link refuses (busy) is tried again at
-  the next check.
-
-### 8.3 Rules
-
-- From the link only: the port is bound with `ipGatewayUdpBind`, never the air's. Whoever is on the USB network or PPP
-  link owns the radio, so there is no host check.
-- Not reliable, by design. A lost step is not sent again: the user steps again. Where the radio is comes in every
-  reply, every notice and the heartbeat, so a client that lost one learns it from the next.
+- Zones and positions are 0-based indexes, the same in every request and in the status.
+- ASCII, at most 124 bytes (a `/ws` frame).
+- Refused: 400 (malformed, out of range), 403 (from beyond the host), 409 (transmitting or hotspot mode). Nothing is
+  asked of the radio then.
 - The requests are the radio core's own (`radio_req_zone`, `radio_req_zone_pos`, `radio_req_channel_step`, and
   `radio_req_vfo` to leave the VFO), so the UI's refusals apply, at most one every 20 ms as rigctld's: steps that come
   quicker add up into one request, and a zone step counts from the zone last asked for (for 1 s) rather than from the
   view, which lags it. A select replaces steps not yet passed on.
+- Wrapping: a channel step wraps at the zone's ends in the radio core; a zone step wraps here, modulo the zone count
+  (from the first zone, -1 is the last).
 - A position in the current zone is checked against its size (in the view). Another zone's isn't read (no zone in
   RAM): the radio ignores a position past its end and stays on the zone's first channel.
 - The knob: on a radio whose knob is read as steps, its next detent moves on from the host's channel. On one whose
   knob is read as a position (`hal_input_t.position`), the host's choice stands, the zone too, until the knob is
   turned ([ui.md](ui.md) 3).
-- Idle, it costs the radio nothing: the view is read only for a request, a step still to pass on, or every 100 ms
-  while a client is subscribed.
-- RAM: no buffer of its own. The request is parsed from a 41 byte copy on the stack; the reply and notices are written
-  into the IP gateway's frame buffer. Static state is the subscriber, the pending requests and the counters.
-- Debug link view keys (`net_svc`): `radio_udp.requests bad refused selects steps`, `radio_udp.notify` (the subscriber's
-  port, 0 none), `radio_udp.notices`, `radio_udp.busy` (sends the link refused).
+- Not reliable by itself: a step lost with its connection is not sent again. The status after it says where the radio
+  is.
+- Idle, it costs the radio nothing: the view is read only for a request or a step still to pass on. RAM: 24 bytes of
+  pending state.
 
 ## 9. Changes in the IP gateway
 
 `core/dmr/ipGateway.{c,h}`: TCP (protocol 6) to the radio's own address goes to the function set with
 `ipGatewaySetTCP` (NULL by default: dropped, as before), from any source and before the "only what the host itself
-sends" check; any other TCP is dropped and never goes over the air. `ipGatewayLocalPayload` / `ipGatewaySendLocal`
+sends" check; any other TCP is dropped and never goes over the air. UDP from the host to the radio's own address (or
+12.255.255.254) on a port no service has bound gets an ICMP port unreachable, SCTP there an ICMP protocol unreachable
+(RFC 1122 3.2.2.1); neither is sent over the air ([usb-network.md](usb-network.md) 3).
+`ipGatewayLocalPayload` / `ipGatewaySendLocal`
 send a packet from the radio's address to any destination through the host's MAC address. The TCP's glue
 (`core/net/net.c`) waits up to 20 ms for a busy USB IN endpoint before giving a segment up to the retransmission timer.
 
@@ -433,11 +423,12 @@ send a packet from the radio's address to any destination through the host's MAC
   the host, 400 for a bad address), the login line, logresp verified / unverified and the waits, the engine's 'G'
   lines to the server and nothing else, server lines to the engine without comments, a silent server dropped and
   tried again, a callsign change, turned off. `netSvcTest.pcap` is checked by tshark.
-- Host, UDP control (`netSvcCases.c`, `test_radio_udp`): the reply exactly, the VFO, a Latin-1 name, the codeplug
-  count, selects (the VFO left), each malformed or out of range request (400), 409 while transmitting or a hotspot,
-  steps adding up, zone steps wrapping, a channel step from the VFO, notices on a move, a fast knob, the talk target,
-  the codeplug count and the VFO's frequency and mode, `seq`, the heartbeat, a second client taking over, the lease
-  ending, `notify=0`. HIL: `tests/hil/test_radio_udp.py`.
+- Host, zone, channel and GPS over `/ws` (`netSvcCases.c`, `test_webctl_ctl`): the status's position, zone name
+  (Latin-1 as `\u00XX`) and codeplug count, selects (the VFO left, the knob held), each malformed or out of range
+  request (400), 409 while transmitting or a hotspot, steps adding up, zone steps wrapping both ways, a channel step
+  from the VFO, `status?changes` (nothing for the signal or the clock; a move, a fast knob, the talk target, the
+  codeplug count, the VFO's frequency and mode), the fixes (one per GPS second, unknown fields left out, none without
+  a fix, none after `gps?off`, 409 without a GPS), 403 from beyond the host. HIL: `tests/hil/test_webctl_ctl.py`.
 - HIL: `tests/hil/test_tcp_services.py` (opt-in, below).
 - The host OS stack is the other end in the HIL tests (curl, nc); a tap / utun test on the host would need root and
   is not done.

@@ -9,6 +9,7 @@
 #include "ui_nav.h"
 #include "ui_svc.h"
 #include "ui_svc_aprs.h"
+#include "ui_screens.h"
 #include "aprs/aprs_fmt.h"
 #include "font.h"
 #include "fmt.h"
@@ -275,6 +276,18 @@ static void act_item(uint16_t i, ui_item_t *it)
 	}
 }
 
+// The channel can send DMR data now (packet: text, else signaling); otherwise the reason is shown, as PTT shows it, and
+// nothing is sent: never a "No answer" for a send that didn't go. buf: the caller's toast buffer (static)
+static bool data_ready(bool packet, char *buf, size_t len)
+{
+	const radio_view_t *v = ui_view();
+	uint8_t deny = packet ? v->packet_deny : v->data_deny;
+	if (deny == TXDENY_NONE)
+		return true;
+	ui_toast(ui_deny_text(v, deny, buf, len));
+	return false;
+}
+
 static void act_select(uint16_t i, bool hold)
 {
 	static char msg[40];
@@ -301,12 +314,18 @@ static void act_select(uint16_t i, bool hold)
 		ui_talk(&ui_target, true);
 		break;
 	case A_MESSAGE:
-		if (feats() & UI_FEAT_SMS)
-			ui_push(SCR_COMPOSE, 0);
-		else
+		if (!(feats() & UI_FEAT_SMS))
 			ui_toast(TR(WHY_MESSAGES_NOT_IN_BUILD, "Messages: not in this build"));
+		else if (data_ready(true, msg, sizeof msg))
+			ui_push(SCR_COMPOSE, 0);
 		break;
 	case A_CHECK:
+		if (!(feats() & UI_FEAT_SIGNALING)) {
+			ui_toast(TR(WHY_RADIO_CHECK_NOT_IN_BUILD, "Radio check: not in this build"));
+			break;
+		}
+		if (!data_ready(false, msg, sizeof msg))
+			break;
 		if (ui_svc_radio_check(ui_target.id)) {
 			sb_str(&b, TR(ACT_TOAST_CHECKING, "Checking "));
 			sb_str(&b, name);
@@ -314,17 +333,23 @@ static void act_select(uint16_t i, bool hold)
 			ui_go_home();
 			ui_toast(msg);
 		} else {
-			ui_toast(TR(WHY_RADIO_CHECK_NOT_IN_BUILD, "Radio check: not in this build"));
+			ui_toast(TR(MSG_TOAST_SEND_FAILED, "Couldn't send: try again"));	// another one still running
 		}
 		break;
 	case A_ALERT:
+		if (!(feats() & UI_FEAT_SIGNALING)) {
+			ui_toast(TR(WHY_CALL_ALERT_NOT_IN_BUILD, "Call alert: not in this build"));
+			break;
+		}
+		if (!data_ready(false, msg, sizeof msg))
+			break;
 		if (ui_svc_call_alert(ui_target.id)) {
 			sb_str(&b, TR(ACT_TOAST_CALL_ALERT_TO, "Call alert to "));
 			sb_str(&b, name);
 			ui_go_home();
 			ui_toast(msg);
 		} else {
-			ui_toast(TR(WHY_CALL_ALERT_NOT_IN_BUILD, "Call alert: not in this build"));
+			ui_toast(TR(MSG_TOAST_SEND_FAILED, "Couldn't send: try again"));	// another one still running
 		}
 		break;
 	case A_POSITION:
@@ -452,6 +477,8 @@ static void send_text(const char *text, bool aprs, int reply_index)
 	} else {
 		ui_sb_target(name, sizeof name, &ui_target);
 	}
+	if (!aprs && !data_ready(true, msg, sizeof msg))
+		return;	// the channel changed since the message was opened
 	bool sent = aprs ? ui_svc_aprs_send_message(aprs_to, text, aprs_message_flags) :
 		reply_index >= 0 ? ui_svc_msg_reply((uint16_t)reply_index, text) :
 		ui_svc_msg_send(ui_target.id, ui_target.group, text);
@@ -6695,11 +6722,20 @@ static const int16_t v_updown[] = { 0, 1, 2 };
 static const tr_id_t n_updown[] = { TRN(SET_VALUE_UPDOWN_CHANNEL, "Channel"), TRN(WORD_ZONE, "Zone"),
 	TRN(KEYFN_VALUE_TALK_TARGET, "Talk target") };
 #if CONFIG_VFO
-static const int16_t v_step[] = { 0, 250, 500, 625, 833, 1000, 1250, 2000, 2500, 5000, 10000 };	// 10 Hz units
+// 1 step = 10 Hz
+static const int16_t v_step[] = { 0, 250, 500, 625,
+#if CONFIG_AM_RX
+	// 8.33 kHz is the air band's channel spacing
+	833,
+#endif
+	1000, 1250, 2000, 2500, 5000, 10000 };
 static const tr_id_t n_step[] = { TRN(VALUE_AUTO, "Auto"), TRX(VALUE_2_5_KHZ, "2.5 kHz"), TRX(VALUE_5_KHZ, "5 kHz"),
-	TRX(VALUE_6_25_KHZ, "6.25 kHz"), TRX(VALUE_8_33_KHZ, "8.33 kHz"), TRX(VALUE_10_KHZ, "10 kHz"),
-	TRX(VALUE_12_5_KHZ, "12.5 kHz"), TRX(VALUE_20_KHZ, "20 kHz"), TRX(VALUE_25_KHZ, "25 kHz"),
-	TRX(VALUE_50_KHZ, "50 kHz"), TRX(VALUE_100_KHZ, "100 kHz") };
+	TRX(VALUE_6_25_KHZ, "6.25 kHz"),
+#if CONFIG_AM_RX
+	TRX(VALUE_8_33_KHZ, "8.33 kHz"),
+#endif
+	TRX(VALUE_10_KHZ, "10 kHz"), TRX(VALUE_12_5_KHZ, "12.5 kHz"), TRX(VALUE_20_KHZ, "20 kHz"),
+	TRX(VALUE_25_KHZ, "25 kHz"), TRX(VALUE_50_KHZ, "50 kHz"), TRX(VALUE_100_KHZ, "100 kHz") };
 #endif
 #if CONFIG_VFO && CONFIG_BCAST_FM
 static const int16_t v_bcast_step[] = { 200, 100 };	// kHz
@@ -6724,7 +6760,7 @@ static const tr_id_t n_msgfmt[] = {
 	TRN(SET_VALUE_MSGFMT_AUTOMATIC, "Automatic"), TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"),
 	TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
 #if CONFIG_DMR_TMS
-	TRX(VALUE_MOTOROLA, "Motorola"),
+	TRX(SET_VALUE_MSGFMT_TMS, "TMS"),
 #endif
 };
 #endif
@@ -6749,8 +6785,9 @@ static const tr_id_t n_sfrcwid[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_5_MIN, "5 
 #endif
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
-static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_MOTOROLA, "Motorola"),
-	TRX(SET_VALUE_KEY_TYPE_ANYTONE, "Anytone") };
+// Basic privacy key types, named by key size with the key's range (set_range follows the type)
+static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRN(SET_VALUE_KEY_TYPE_8_BIT, "8-bit (1-255)"),
+	TRN(SET_VALUE_KEY_TYPE_16_BIT, "16-bit (0-65535)") };
 #endif
 
 #if CONFIG_SIG_TONES
@@ -7531,7 +7568,7 @@ static const char *set_why_not(const set_item_t *s)
 	}
 }
 
-// A number setting's range: the privacy key's follows its type (Motorola 1-255, Anytone 0-65535)
+// A number setting's range: the privacy key's follows its type (8-bit 1-255, 16-bit 0-65535)
 static void set_range(const set_item_t *s, int32_t *lo, int32_t *hi)
 {
 	*lo = s->min;

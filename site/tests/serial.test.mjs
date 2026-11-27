@@ -282,6 +282,16 @@ test("a cable under RT Systems' vendor id is offered by the chooser filters and 
 	assert.deepEqual(await grantedPorts([RFOUNDRY_USB, ...CABLES]), [rt]);
 });
 
+test("AIOC (1209:7388) is offered by exact product id, without matching other pid.codes devices", async (t) => {
+	assert.ok(CABLES.some((f) => f.usbVendorId === 0x1209 && f.usbProductId === 0x7388));
+	assert.ok(!CABLES.some((f) => f.usbVendorId === 0x1209 && f.usbProductId === undefined));
+	const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+	t.after(() => { nav ? Object.defineProperty(globalThis, "navigator", nav) : delete globalThis.navigator; });
+	const aioc = new GrantedPort(0x1209, 0x7388), other = new GrantedPort(0x1209, 0x0001);
+	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [aioc, other] } }, configurable: true });
+	assert.deepEqual(await grantedPorts([RFOUNDRY_USB, ...CABLES]), [aioc]);
+});
+
 test("the cable vendor ids are listed once: no page keeps a copy of its own", () => {
 	// a list typed out in a page is how one chooser came to miss a cable the others offered
 	const root = new URL("../static/js/", import.meta.url).pathname;

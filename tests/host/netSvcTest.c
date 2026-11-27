@@ -17,8 +17,8 @@
 int failures, checks;
 
 #define RADIO_ID	10005u
-#define HOST_IP		(IPGW_INDIVIDUAL_NET | RADIO_ID)	// 12.0.39.21
-#define RADIO_IP	(HOST_IP ^ 1u)
+#define HOST_IP		(IPGW_PERIPHERAL_NET | RADIO_ID)	// 13.0.39.21
+#define RADIO_IP	(IPGW_INDIVIDUAL_NET | RADIO_ID)	// 12.0.39.21
 
 static const uint8_t HOST_MAC[6] = { 0x02, 0x44, 0x01, 0x02, 0x03, 0x04 };
 static const uint8_t RADIO_MAC[6] = { 0x02, 0x44, 0x01, 0x02, 0x03, 0x05 };
@@ -79,7 +79,10 @@ static int8_t fake_encoder(void)
 }
 
 static const hal_input_t fake_input = { .encoder = fake_encoder };	// the web control's hello says it has one
-const board_t board = { .name = "fake", .input = &fake_input, .netif = &fake_netif, .display = &fake_display, .power_count = 2,
+bool fake_gps_fitted = true;
+static bool fake_gps_present(void) { return fake_gps_fitted; }
+static const hal_gps_t fake_gps_hal = { .present = fake_gps_present };	// the web control's fixes (webctl.c)
+const board_t board = { .name = "fake", .caps = CAP_GPS, .gps = &fake_gps_hal, .input = &fake_input, .netif = &fake_netif, .display = &fake_display, .power_count = 2,
 			.power_names = power_names, .bands = bands, .band_count = 6, .keymap = keymap, .keymap_len = 2 };
 
 // ---- what the gateway needs from its user ----

@@ -3,12 +3,14 @@
 // MD-380 power latch, battery, LEDs and the ADC (docs/spec/hardware-md380.md section 10).
 // ADC1 scans the volume knob position, battery, mic level, RSSI, the noise level and the temperature sensor
 // continuously; DMA2 Stream4 keeps the last SCANS results in a circular buffer, so a reading is a short average with
-// no interrupt and no locking. The volume knob sets the loudness in analog hardware, so hal volume() is -1.
+// no interrupt and no locking. The volume knob sets the loudness in analog hardware: hal volume() reports where it is,
+// and the board has no hal_radio_t.volume.
 #include "md380.h"
 #include "FreeRTOS.h"
 #include "pins.h"
 #include "hal_time.h"
 #include "radio/power_switch.h"
+#include "radio/volume_pot.h"
 #include "audio/miclevel/miclevel.h"
 #include "config.h"
 
@@ -38,6 +40,8 @@ static bool started;
 static uint32_t start_ms;
 static uint32_t filtered_mv, filter_ms;
 static pwrsw_t pwrsw;
+static volume_pot_t vol_pot;
+static int8_t vol_pct = -1;	// no position read yet
 
 static void adc_start(void)
 {
@@ -175,10 +179,22 @@ static uint8_t battery_pct(void)
 	return 100;
 }
 
-// The knob sets the loudness in analog hardware (the amplifier's input level), not through the MCU
+// The volume knob's position, for the on-screen volume bar. The knob changes the loudness by itself; the firmware only
+// watches it. The three readings are described in hardware-md380.md 6.1.
+// - Returns -1 for a moment after power-up, until the ADC readings are steady. A wrong first value would look like the
+//   user turning the knob.
+// - Switching the radio off with the knob also removes power from the potentiometer, so its reading falls. The battery
+//   reading falls at the same instant, and while it is low the last position is kept.
+// - Returns 0 in the bottom zone (8 counts over the bottom reading), and the amplifier then stays off: the knob alone
+//   leaves the speaker faintly audible there, and the bottom of the knob means silent.
 static int8_t volume(void)
 {
-	return -1;
+	static const volume_pot_cal_t cal = { MD380_VOL_MIN, MD380_VOL_MID, MD380_VOL_MAX, 8 };
+	if (settled() && battery_now_mv() >= PWRSW_OFF_MV) {
+		vol_pct = volume_pot_percent(&vol_pot, &cal, adc_read(CH_VOLUME));
+		md380_speaker_knob_mute(vol_pct == 0);
+	}
+	return vol_pct;
 }
 
 // The volume knob switch breaks the battery sense line while the latch holds the supply (hardware-md380.md 10.1):

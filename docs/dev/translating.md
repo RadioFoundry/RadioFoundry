@@ -89,7 +89,19 @@ the generated `tr_keys.h`), and `tr()` reads it from a table: no search. With ev
 English text itself and costs nothing. Code compiles the same either way.
 
 `tools/i18n.py` reads the marks, keeps the catalogs in step and turns them into the tables the build links in: the
-English of every key, and each language's translations by key.
+English of each key, and each language's translations by key.
+
+Each build packs only the strings of the code the build compiles. Make preprocesses each source with the build's
+flags and collects the `TR_<KEY>` names left in the output (a `.tr` file beside the object); `tools/i18n.py --gen
+--used` then leaves every other key's text out of the tables. A mark under a switch that is off costs no text:
+
+| | Comes from |
+|---|---|
+| Key numbers (`tr_keys.h`) | Every key in the source: a key has the same number in every build |
+| Text in the tables | The keys this build compiles. Any other key costs 1 byte per table (its empty string) |
+
+The host tests and the simulator build the full tables (`--gen` without `--used`). The catalogs and `--sync`/`--check`
+read the whole source as before: a translator translates every string, built in or not.
 
 ### Adding a language
 
@@ -160,7 +172,7 @@ above: one catalog, one switch, the same checks.
 |---|---|
 | The catalog | `tools/i18n.py --new zh 中文 Chinese` writes it with an `X-Glyphs: utf8` header and an `X-Language-Name-Latin` one. A catalog with that header holds UTF-8: ASCII, `font.h`'s glyphs, and characters the CJK face has. Two-byte characters (Latin-1 letters with an accent) are not allowed: the text layer decodes only three-byte sequences, so that Latin-1 names, messages and the Spanish catalog keep working in a build with the CJK face. `--check` lists every character it rejects or the face lacks |
 | The list | A build without the CJK face (`CONFIG_LANG_ZH` off) still lists the language, dimmed: it shows `X-Language-Name-Latin` ("Chinese"), because the Latin font would draw the UTF-8 name as boxes |
-| The face | `tools/cjkfont.py` rasterizes every character the catalogs use plus a reviewed list of Chinese province, prefecture-level city and common repeater words (`tools/cjk_names_zh.txt`) into a 16x16 one-bit glyph and writes the table the firmware links. The current table has 802 characters and is about 27 KB; with the text, Chinese costs about 44 KB. Channel names that use a character outside this list draw a box. Run it whenever a translation or the names list adds a character (`--check` fails until it does) and commit both |
+| The face | `tools/cjkfont.py` rasterizes every character the catalogs use plus a reviewed list of Chinese province, prefecture-level city and common repeater words (`tools/cjk_names_zh.txt`) into a 16x16 one-bit glyph and writes the table the firmware links. The current table has 803 characters and is about 27 KB; with the text, Chinese costs about 44 KB. Channel names that use a character outside this list draw a box. Run it whenever a translation or the names list adds a character (`--check` fails until it does) and commit both |
 | The font | One whose license allows embedding bitmaps: an SIL OFL font such as Noto Sans CJK SC or Source Han Sans. The generated file carries the font's copyright, its full OFL text and the font file's SHA-256, because that data is under the font's license, not MIT (see the header of `core/ui/cjk_font_data.c`). Do not use a vendor font that forbids it |
 | Size | A CJK character is 16 px wide and 16 tall, the height of the 8x16 font: 8 characters a line on a 128 px screen, 10 on a 160 px one, 15 on a 240 px one. **A line must be at least 16 px high.** A 240 px color radio draws its words in 8x16 (a CJK build moves its text pages up to that font too) and shows Chinese everywhere; the 160 px class draws them in 6x12 and moves lists, labels, the strip, the hints and the text pages up to the 8x16 font while the language in use is wide, so its lines and rows get taller (`ui_layout_init`, [ui.md 2.5](../spec/ui.md#25-languages)). A 128x64 panel has no room for 16 px lines: it lists `LANG_ZH` and `LANG_DEFAULT_ZH` in `BOARD_UNSUPPORTED`, and CI's maximal build and the flasher leave the language out there. Flash is the other limit: the face and the catalog add about 44 KB, so compare that with the board's app region (`boards/<radio>/memory.ld`) and [the feature matrix](../feature-matrix.md#whole-images). A board without room leaves `CONFIG_LANG_ZH` off in its `config.mk`; the language packs otherwise build side by side |
 | Cutting | A string too long for its space is cut at the end, whole characters only (`gfx_text_fit_end` for a line that keeps its start, `gfx_text_fit` for a middle cut), because Chinese has no spaces to cut at a middle. A line wraps after any CJK character (`wrap_line`); Latin words inside it still wrap at their spaces |
@@ -264,9 +276,10 @@ Commit only the English gallery.
 
 ### Flash cost
 
-The first language costs the most: the lookup, the English of every key in one table (the literals it replaces, plus
-an offset per 8 keys) and the Latin-1 glyphs of every font. Each further language adds only its text, about the size
-of the catalog's translations, and an offset per 8 keys. Measure a language like any switch
+The first language costs the most: the lookup, the English of every key the build compiles in one table (the literals
+it replaces, plus an offset per 8 keys) and the Latin-1 glyphs of every font. Each further language adds only its
+text, about the size of the catalog's translations of those keys, and an offset per 8 keys. A string under a switch
+that is off costs 1 byte per table. Measure a language like any switch
 ([building.md](building.md)) and put the bytes in the feature matrix.
 
 ## Translating the web site

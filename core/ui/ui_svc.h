@@ -50,7 +50,7 @@ extern radio_view_t ui_svc_view;
 #define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
 #define UI_FEAT_BCAST		(1u << 18)	// a broadcast FM receiver (radio_bcast_capable): its VFO step setting
 #define UI_FEAT_ZONE_SHARE	(1u << 19)	// ui_svc_zone_* (zone sharing over DMR data, CONFIG_ZONE_SHARE)
-#define UI_FEAT_VOLUME_KNOB	(1u << 21)	// the MCU reads a volume knob (radio_volume_knob): Settings > Key lock > Knob when locked
+#define UI_FEAT_VOLUME_KNOB	(1u << 21)	// the level follows a knob (radio_volume_follows_knob): Settings > Key lock > Knob when locked
 #define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
 #define UI_FEAT_P25		(1u << 22)	// P25 on this board (CONFIG_P25, radio_p25_fits): the VFO's mode tile offers it
 #define UI_FEAT_NXDN		(1u << 23)	// NXDN on this board (CONFIG_NXDN, radio_nxdn_fits): the same
@@ -182,7 +182,7 @@ bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len);
 #endif
 
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---
-typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR, UI_BEEP_MESSAGE, UI_BEEP_BATTERY_LOW } ui_beep_t;
+typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR, UI_BEEP_MESSAGE, UI_BEEP_BATTERY_LOW, UI_BEEP_CALL_ALERT } ui_beep_t;
 void ui_svc_beep(uint8_t beep);
 // --- Vibration (radio-features 4.1): a pattern on the board's motor; the UI asks only when Settings > Sound >
 // Vibrate is on. Weak no-op without CONFIG_VIBRATE ---
@@ -485,7 +485,7 @@ int32_t ui_svc_reply_shown(const radio_settings_t *s);
 typedef enum {
 	UI_EV_MESSAGE,		// a message arrived: index (inbox), id, name, text
 	UI_EV_MESSAGE_SENT,	// ok = delivered (confirmed; index 1: sent, the format or a group has no confirmation) /
-				// failed after retries
+				// failed after retries (index 2: not sent, the channel's encryption has no form for text)
 	UI_EV_CALL_ALERT,	// call alert received from id
 	UI_EV_RADIO_CHECK,	// answer to our radio check: ok, ms
 	UI_EV_PRIVATE_CALL,	// a private call to us from id started

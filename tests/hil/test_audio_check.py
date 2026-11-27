@@ -372,3 +372,165 @@ def test_sweep_bad_capture():
     x += 0.08 * np.sin(2 * np.pi * (6000 - 300 * t) * t) * ((t > 0.4) & (t < 0.4 + ms / 1000))
     r = A.check_sweep(x, FS, lo, hi, ms)
     assert any("capture" in p for p in r.problems), r.report()
+
+
+# --- audio_report.py: the calibration report ---
+
+import audio_report as R  # noqa: E402
+
+
+def tone_with(hz=1500, s=1.0, amp=0.1, h3_dbc=None, hum_amp=0.0, noise_db=-80, seed=2):
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(s * FS)) / FS
+    x = amp * np.sin(2 * np.pi * hz * t)
+    if h3_dbc is not None:
+        x += amp * 10 ** (h3_dbc / 20) * np.sin(2 * np.pi * 3 * hz * t)
+    pad = np.zeros(int(0.5 * FS))
+    y = np.concatenate([pad, x, pad])
+    y += hum_amp * np.sin(2 * np.pi * 60 * np.arange(len(y)) / FS)   # mains hum: all the way through
+    return y + rng.normal(0, 10 ** (noise_db / 20), len(y))
+
+
+def test_report_tone_level_and_thd():
+    r = R.report(tone_with(h3_dbc=-20), FS)
+    assert len(r.sounds) == 1
+    s = r.sounds[0]
+    assert abs(s.hz - 1500) < 20
+    assert abs(s.rms - (-23.0)) < 0.5          # a 0.1 sine: -20 dBFS peak, -23 rms
+    assert abs(s.thd - 10.0) < 1.0             # one harmonic 20 dB down: 10 %, above the voice band too
+
+
+def test_report_hum_notched():
+    clean = R.report(tone_with(), FS)
+    hummy = R.report(tone_with(hum_amp=0.05), FS)
+    assert hummy.mains == [60] and clean.mains == []
+    assert abs(hummy.sounds[0].rms - clean.sounds[0].rms) < 0.2
+    assert hummy.floor < -60                   # the hum is out of the floor
+
+
+def test_report_click_and_steady_line():
+    x = tone_with()
+    x[int(0.25 * FS)] += 0.5                   # a click in the lead-in
+    t = np.arange(len(x)) / FS
+    x += 0.001 * np.sin(2 * np.pi * 780 * t)   # a steady whine, -63 dBFS
+    r = R.report(x, FS)
+    assert any(abs(t0 - 0.25) < 0.01 for t0, _ in r.pops)
+    assert any(abs(f - 780) < 8 for f, _, _ in r.spurs)
+
+
+def test_report_gain_against_the_source():
+    rng = np.random.default_rng(3)
+    src = np.concatenate([np.zeros(FS // 2)] + [rng.normal(0, 0.1, FS // 4) * np.hanning(FS // 4) if k % 2 else
+                                                np.zeros(FS // 8) for k in range(16)])
+    rec = np.concatenate([np.zeros(FS), 10 ** (-12 / 20) * src, np.zeros(FS)]) + rng.normal(0, 1e-4, len(src) + 2 * FS)
+    r = R.report(rec, FS, ref=(src, FS))
+    assert abs(r.ref["start_s"] - 1.0) < 0.03
+    assert abs(r.ref["loud_gain"] - (-12.0)) < 0.5
+    assert abs(r.ref["word_gain"] - (-12.0)) < 0.5 and not r.ref["odd_words"]
+
+
+def test_report_one_bad_word_listed_not_counted():
+    rng = np.random.default_rng(3)
+    src = np.concatenate([np.zeros(FS // 2)] + [rng.normal(0, 0.1, FS // 4) * np.hanning(FS // 4) if k % 2 else
+                                                np.zeros(FS // 8) for k in range(16)])
+    rec = np.concatenate([np.zeros(FS), 10 ** (-12 / 20) * src, np.zeros(FS)]) + rng.normal(0, 1e-4, len(src) + 2 * FS)
+    a = FS + FS // 2 + 3 * (FS // 4 + FS // 8) // 2      # inside the second word: a garbled frame, 10 dB louder
+    rec[a:a + FS // 10] *= 3.16
+    r = R.report(rec, FS, ref=(src, FS))
+    assert abs(r.ref["word_gain"] - (-12.0)) < 0.5
+    assert len(r.ref["odd_words"]) == 1, r.ref["odd_words"]
+
+
+def room(s=4.0, seed=5, lines=((60, 0.02), (180, 0.002)), noise_db=-80):
+    """A room: mains hum and its third harmonic over a little noise"""
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(s * FS)) / FS
+    return sum(a * np.sin(2 * np.pi * hz * t + hz) for hz, a in lines) + rng.normal(0, 10 ** (noise_db / 20), len(t))
+
+
+def test_report_room_learned():
+    amb = R.learn_ambient(room(), FS)
+    hz = [h for h, _ in amb["lines"]]
+    assert any(abs(h - 60) <= 1 for h in hz) and any(abs(h - 180) <= 1 for h in hz), amb["lines"]
+    assert len(hz) == 2, amb["lines"]
+    assert amb["floor"] < -70
+
+
+def test_report_room_notched_radio_buzz_kept():
+    amb = R.learn_ambient(room(), FS)
+    x = tone_with(s=1.5) + room(2.5, seed=6)
+    t = np.arange(len(x)) / FS
+    buzz = sum(0.003 * np.sin(2 * np.pi * k * 120 * t) for k in (3, 4, 5))   # the radio's 120 Hz family, -50 dBFS
+    clean = R.report(x, FS, ambient=amb)
+    r = R.report(x + buzz, FS, ambient=amb)
+    assert not clean.room["radio"], clean.room
+    assert any(abs(h - 60) <= 2 for h in r.room["notched"])
+    assert {round(h / 120) for h, _, _ in r.room["radio"]} >= {3, 4, 5}, r.room
+    assert abs(clean.sounds[0].rms - (-23.0)) < 0.3
+    assert r.floor > clean.floor + 20                  # the buzz stays in the floor: the radio's, not the room's
+
+
+def test_report_room_hum_louder_on_the_radio():
+    amb = R.learn_ambient(room(), FS)
+    r = R.report(room(3.0, seed=7, lines=((60, 0.1), (180, 0.002))), FS, ambient=amb)
+    assert not any(abs(h - 60) <= 2 for h in r.room["notched"]), r.room
+    assert any(abs(h - 60) <= 2 and d > 10 for h, _, d in r.room["radio"]), r.room
+    assert any(abs(h - 180) <= 2 for h in r.room["notched"])
+
+
+def test_report_room_buzz_on_a_carrier():
+    """An FM carrier with a buzz, between silences: the buzz is a sound against the silence, still the radio's"""
+    amb = R.learn_ambient(room(), FS)
+    x = room(4.0, seed=8)
+    t = np.arange(len(x)) / FS
+    on = (t > 1.0) & (t < 3.0)
+    x[on] += sum(0.003 * np.sin(2 * np.pi * k * 120 * t[on]) for k in (4, 5, 7))
+    r = R.report(x, FS, ambient=amb)
+    assert {round(h / 120) for h, _, _ in r.room["radio"]} >= {4, 5, 7}, r.room
+
+
+def speechlike(seed=4, words=12):
+    """Words of shaped noise, each with its own spectrum (two of the match bands loud), with gaps"""
+    rng = np.random.default_rng(seed)
+    out = [np.zeros(FS // 2)]
+    f = np.fft.rfftfreq(FS // 4, 1 / FS)
+    for _ in range(words):
+        shape = np.full(len(f), 0.05)
+        for lo, hi in rng.choice(np.array(R.MATCH_BANDS), 2, replace=False):
+            shape[(f >= lo) & (f < hi)] = 1.0
+        w = np.fft.irfft(np.fft.rfft(rng.normal(0, 1, FS // 4)) * shape, FS // 4)
+        out += [0.1 * w / np.sqrt(np.mean(w ** 2)) * np.hanning(FS // 4), np.zeros(FS // 8)]
+    return np.concatenate(out)
+
+
+def test_report_frames_matched_bad_ones_out():
+    rng = np.random.default_rng(9)
+    src = speechlike()
+    delay = FS + 37                                    # 1 s and 2.3 ms
+    rec = np.concatenate([np.zeros(delay), 10 ** (-12 / 20) * src, np.zeros(FS)])
+    rec += rng.normal(0, 1e-4, len(rec))
+    w2 = delay + FS // 2 + 2 * (FS // 4 + FS // 8) + FS // 16      # inside the third word
+    w5 = delay + FS // 2 + 5 * (FS // 4 + FS // 8) + FS // 16      # inside the sixth
+    rec[w2:w2 + int(0.06 * FS)] = 0                                # a missing frame: silence
+    rec[w5:w5 + int(0.06 * FS)] = rng.normal(0, 0.05, int(0.06 * FS))   # a garbled one: other spectrum, louder
+    r = R.report(rec, FS, ref=(src, FS))
+    m = r.ref["match"]
+    assert abs(m["lag_s"] - delay / FS) < 0.002, m["lag_s"]
+    assert abs(m["gain"] - (-12.0)) < 0.3, m
+    found = [t for t, _, _, _ in m["bad"]]
+    for at in (w2 / FS, w5 / FS):
+        assert any(abs(t - at) < 0.04 for t in found), (at, m["bad"])
+    assert m["match_pct"] > 85
+
+
+def test_report_frames_coloring_not_bad():
+    """A steady tilt (a speaker's response) is coloring, not bad frames"""
+    src = speechlike(seed=5)
+    X = np.fft.rfft(src)
+    f = np.fft.rfftfreq(len(src), 1 / FS)
+    tilt = np.where(f < 1200, 1.0, 0.5)                # the top two bands 6 dB down
+    rec = np.concatenate([np.zeros(FS), 0.25 * np.fft.irfft(X * tilt, len(src)), np.zeros(FS // 2)])
+    rec += np.random.default_rng(2).normal(0, 1e-4, len(rec))
+    m = R.report(rec, FS, ref=(src, FS)).ref["match"]
+    assert m["match_pct"] > 95 and not m["bad"], m
+    assert m["coloring"][3] < m["coloring"][0] - 4

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // A factory calibration curve: values measured at a few frequencies, linear in between. Every radio's calibration
 // reader uses it for PA drive, front-end tuning and the like; what differs between radios is only the rounding and what
-// happens past the last point, so those are flags.
+// happens past the last point, so those are flags. A volume potentiometer's taper is one too (volume_pot.c).
 //
 // Inline on purpose: each reader calls it from one place with constant flags, so the compiler keeps only the paths
 // that reader uses (the rounding and its 64-bit floor cost an STM32 build about 100 bytes as a shared function).

@@ -17,6 +17,11 @@
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "unknown"
 #endif
+// The commit's time as YYYYMMDDhhmmss UTC (the Makefile, from RFOUNDRY_GIT_TIME), not __DATE__/__TIME__: those would
+// make two builds of one commit differ (gotchas 13.4). Empty without git
+#ifndef RFOUNDRY_GIT_STAMP
+#define RFOUNDRY_GIT_STAMP ""
+#endif
 
 #define NAK		0x2D	// '-': "error", and also the normal reply to every C command
 #define CHUNK		64u
@@ -194,12 +199,8 @@ void cps_openfw_vfo_written(uint32_t addr, const uint8_t *data, uint32_t now_ms)
 
 static void radio_info(void)
 {
-	static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
 	uint8_t r[3 + INFO_LEN];
 	uint8_t *p = &r[3];
-	const char *d = __DATE__;	// "Mmm dd yyyy"
-	const char *t = __TIME__;	// "hh:mm:ss"
-	int m = 1;
 
 	memset(r, 0, sizeof(r));
 	r[0] = 'R';
@@ -208,20 +209,7 @@ static void radio_info(void)
 	put32le(&p[0], 3);
 	put32le(&p[4], board.cps != NULL && board.cps->radio_type != NULL ? board.cps->radio_type() : 6);
 	strncpy((char *)&p[8], RFOUNDRY_GIT, 15);
-	for (int i = 0; i < 12; i++) {
-		if (strncmp(&months[3 * i], d, 3) == 0) {
-			m = i + 1;
-		}
-	}
-	char *b = (char *)&p[24];
-	memcpy(b, &d[7], 4);
-	b[4] = (char)('0' + m / 10);
-	b[5] = (char)('0' + m % 10);
-	b[6] = d[4] == ' ' ? '0' : d[4];
-	b[7] = d[5];
-	memcpy(&b[8], &t[0], 2);
-	memcpy(&b[10], &t[3], 2);
-	memcpy(&b[12], &t[6], 2);
+	strncpy((char *)&p[24], RFOUNDRY_GIT_STAMP, 15);
 	// Flash part id: 0x40 << 8 | log2(size), as the W25Q JEDEC capacity code
 	uint32_t size = flash_size(), code = 0;
 	while (code < 31 && (1u << code) < size) {
