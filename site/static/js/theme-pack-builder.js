@@ -311,7 +311,8 @@ async function loadRadioModels() {
 		radioSelect.replaceChildren(...radioModels.map((radio) => {
 			const option = document.createElement("option");
 			option.value = radio.id;
-			option.textContent = `${radio.name} — ${radio.display}`;
+			option.textContent = radio.model || radio.name;
+			option.title = `${radio.name} — ${radio.display}`;
 			return option;
 		}));
 		const initial = radioModels.find((radio) => radio.id === "dm32") || radioModels[0];
