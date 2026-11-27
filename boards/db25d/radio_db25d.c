@@ -676,6 +676,24 @@ static bool tx_tone_key(bool down)
 	return true;
 }
 
+// The squelch's reading (squelch_db25d.h): the signal strength against the calibration page's thresholds, and on an
+// FD6818 its noise and glitch limits too. Without usable thresholds, the chip's noise reading as before
+static uint8_t sql_noise(int16_t rssi_dbm)
+{
+	uint8_t raw = (uint8_t)(last_noise_raw & 0x7Fu);
+	bool fd = db25d_main_is_fd6818();
+	int16_t open_dbm[DB25D_SQL_LEVELS];
+	if (!db25d_cal_squelch_open_dbm(rx_hz, fd, open_dbm)) {
+		return raw;
+	}
+	uint8_t n = db25d_sql_noise(open_dbm, rssi_dbm);
+	if (fd && n < DB25D_SQL_OPEN_L1 &&
+	    !db25d_sql_fd6818_carrier(raw, db25d_main_glitch(), rssi_dbm, rx_bw == RADIO_BW_25K)) {
+		n = DB25D_SQL_OPEN_L1;	// no carrier by the chip's own limits: closed at every level, not a fast close
+	}
+	return n;
+}
+
 static void status(radio_status_t *st)
 {
 	if (!supported) {
@@ -697,7 +715,7 @@ static void status(radio_status_t *st)
 	// At the main chip's input: the front end's gain isn't taken out yet (needs the calibration page). Both chip
 	// kinds read RSSI as half dB with a 160 dB offset
 	st->rssi_dbm = bk4819_rssi_dbm(last_rssi_raw);
-	st->noise = (uint8_t)(last_noise_raw & 0x7Fu);
+	st->noise = sql_noise(st->rssi_dbm);
 	st->carrier = false;
 	st->tone_ok = db25d_main_tone_heard(last_css_raw, rx_tone.type);
 }

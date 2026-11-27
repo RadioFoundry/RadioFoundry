@@ -41,6 +41,8 @@ void db25d_main_af(db25d_af_t af);
 void db25d_main_af_gain(uint8_t gain);	// 0..15
 // Status registers: RSSI (0x67), noise (0x65), sub-audio flags (0x0C)
 void db25d_main_status(uint16_t *r67, uint16_t *r65, uint16_t *r0c);
+bool db25d_main_is_fd6818(void);		// an FD6818 or 0x7813 main chip (the D4x and D6x batches)
+uint16_t db25d_main_glitch(void);		// register 0x6A, low byte
 
 // FM transmit: words written while still receiving, then the tune into TX, the end back to RX on the TX frequency
 void db25d_main_tx_prepare(uint8_t type, uint16_t value, uint32_t hz, radio_bw_t bw);

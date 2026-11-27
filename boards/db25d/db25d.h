@@ -4,6 +4,8 @@
 #ifndef DB25D_H
 #define DB25D_H
 
+#include "squelch_db25d.h"
+
 #include <stdint.h>
 #include <stdbool.h>
 #include "board.h"
@@ -80,6 +82,9 @@ bool db25d_cal_tx_plan(uint32_t hz, bool high, uint8_t drive_pct, db25d_tx_plan_
 uint16_t db25d_apc_level(uint16_t target, uint16_t step);
 // Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
 uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
+// The open threshold in dBm at the main chip for levels 1..9, rising with the level. False without a page or with entries
+// that aren't thresholds (squelch_db25d.h)
+bool db25d_cal_squelch_open_dbm(uint32_t hz, bool fd6818, int16_t open_dbm[DB25D_SQL_LEVELS]);
 
 // --- DMR burst timing (hardware-db25d.md 4.5; the arithmetic is platform/hrc7000/dmr_rfburst_timing.h) ---
 // The PA's point (pa_us, the key-up rule's) comes after the TX on sequence: the main chip's tune and the LO off end

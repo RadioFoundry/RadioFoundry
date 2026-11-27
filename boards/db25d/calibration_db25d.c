@@ -220,3 +220,22 @@ uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level)
 	}
 	return at(hz, OFF_SQUELCH)[1 + 18u * seg + 2u * (level - 1u)];
 }
+
+bool db25d_cal_squelch_open_dbm(uint32_t hz, bool fd6818, int16_t open_dbm[DB25D_SQL_LEVELS])
+{
+	if (!valid) {
+		return false;
+	}
+	for (uint8_t n = 1; n <= DB25D_SQL_LEVELS; n++) {
+		uint8_t v = db25d_cal_squelch_db(hz, n);
+		if (v == 0 || v == 0xFFu) {
+			return false;	// an empty entry
+		}
+		// The FD6818's register takes 2 x (169 - v), the BK4819's 2 x (160 - v): it opens 9 dB higher
+		open_dbm[n - 1] = (int16_t)((fd6818 ? 9 : 0) - (int16_t)v);
+		if (n > 1 && open_dbm[n - 1] < open_dbm[n - 2]) {
+			return false;	// a page whose tighter level opens on less signal: not thresholds
+		}
+	}
+	return true;
+}

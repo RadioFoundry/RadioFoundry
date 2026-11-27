@@ -30,6 +30,8 @@
 #define REG_ID		0x00
 #define REG_PAGE	0x7F		// the FD6818 family's page select: page 0 before the reset
 
+#define DB25D_REG_GLITCH	0x6Au	// glitch counter, the FD6818's squelch reads its low byte (hardware-db25d.md 6.4)
+
 typedef enum { CHIP_NONE, CHIP_BK4819, CHIP_FD6818, CHIP_7813, CHIP_AT1141 } chip_t;
 
 static rfbus_3w_t bus_main, bus_lo;
@@ -248,6 +250,16 @@ void db25d_main_status(uint16_t *r67, uint16_t *r65, uint16_t *r0c)
 	*r67 = rfbus_read(&bus_main.bus, BK4819_REG_RSSI);
 	*r65 = rfbus_read(&bus_main.bus, BK4819_REG_NOISE);
 	*r0c = rfbus_read(&bus_main.bus, BK4819_REG_CSS_STATUS);
+}
+
+bool db25d_main_is_fd6818(void)
+{
+	return main_chip == CHIP_FD6818 || main_chip == CHIP_7813;
+}
+
+uint16_t db25d_main_glitch(void)
+{
+	return (uint16_t)(rfbus_read(&bus_main.bus, DB25D_REG_GLITCH) & 0xFFu);
 }
 
 void db25d_main_tx_prepare(uint8_t type, uint16_t value, uint32_t hz, radio_bw_t bw)
