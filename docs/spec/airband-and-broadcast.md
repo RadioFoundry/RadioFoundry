@@ -1,5 +1,4 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Air band AM receive and broadcast FM receive
 

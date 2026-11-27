@@ -1,5 +1,4 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Everyday radio features
 
