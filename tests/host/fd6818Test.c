@@ -218,6 +218,29 @@ static void test_helpers(void)
 	CHECK(fd6818_sql_carrier(0xFF08, 0, 100, false));
 }
 
+// The debug link's CHIP_REG on an rfbus chip (rfbus_chip_reg): one frame per access, 0x00-0x7F, 16 bits, no write to
+// a paged chip's page select, nothing on the wire for a refusal
+static void test_chip_reg(void)
+{
+	reset_chip();
+	rfbus_t *b = bus();
+	chip.regs[0x67] = 0x0123;
+	uint32_t v = 0;
+	CHECK(rfbus_chip_reg(b, 0x67, &v, false, true) && v == 0x0123 && chip.n == 0);
+	v = 0xBFF1;
+	CHECK(rfbus_chip_reg(b, 0x30, &v, true, true) && v == 0xBFF1);
+	CHECK(chip.n == 1 && chip.log[0].reg == 0x30 && chip.log[0].val == 0xBFF1 && chip.protocol_errors == 0);
+	v = 1;
+	CHECK(!rfbus_chip_reg(b, RFBUS_REG_PAGE, &v, true, true) && chip.n == 1);	// paged: refused
+	CHECK(rfbus_chip_reg(b, RFBUS_REG_PAGE, &v, false, true));			// a read is fine
+	v = 0x10000;
+	CHECK(!rfbus_chip_reg(b, 0x30, &v, true, false) && chip.n == 1);
+	v = 0;
+	CHECK(!rfbus_chip_reg(b, 0x80, &v, false, false) && !rfbus_chip_reg(NULL, 0x30, &v, false, false));
+	CHECK(rfbus_chip_reg(b, RFBUS_REG_PAGE, &v, true, false) && chip.n == 2);	// a chip without pages
+	CHECK(chip.crit_depth == 0);
+}
+
 static void test_frames(void)
 {
 	fd6818_t dev;
@@ -821,6 +844,7 @@ int main(void)
 	test_helpers();
 	test_rssi_cal();
 	test_frames();
+	test_chip_reg();
 	test_sequences();
 	test_rx_tones();
 	test_dmr_tone_off();

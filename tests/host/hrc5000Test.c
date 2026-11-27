@@ -164,6 +164,29 @@ static void test_chip(void)
 	CHECK(last_write(0, 0x14) == 0x56 && last_write(0, 0x15) == 0x34 && last_write(0, 0x16) == 0x12);
 }
 
+// The debug link's CHIP_REG (hrc_chip_reg): pages 1 and 4 only, one byte; a refusal puts nothing on the wire
+static void test_chip_reg(void)
+{
+	hrc5000_t c5;
+	hrc5000_attach(&c5, &bus, false);
+	nx = 0;
+	uint32_t v = 0x08;
+	CHECK(hrc_chip_reg(&c5.hrc, HRC_PAGE_AUX, 0x52, &v, true) && count_writes(1, 0x52) == 1 && count_reads(1, 0x52) == 1);
+	v = 0;
+	CHECK(hrc_chip_reg(&c5.hrc, HRC_PAGE_SYS, 0x10, &v, false) && count_reads(0, 0x10) == 1);	// page 4 = 0 here
+	int n = nx;
+	v = 0;
+	CHECK(!hrc_chip_reg(&c5.hrc, HRC_PAGE_DATA, 0x00, &v, false));		// the FIFOs: a read would drain them
+	CHECK(!hrc_chip_reg(&c5.hrc, HRC_PAGE_VOCODER, 0x00, &v, false));
+	CHECK(!hrc_chip_reg(&c5.hrc, 0, 0x10, &v, false));
+	v = 0x100;
+	CHECK(!hrc_chip_reg(&c5.hrc, HRC_PAGE_SYS, 0x37, &v, true));
+	CHECK(nx == n);
+	hrc_t none = { 0 };
+	v = 0;
+	CHECK(!hrc_chip_reg(&none, HRC_PAGE_SYS, 0x10, &v, false));		// not attached
+}
+
 // --- The TX lead for listening between bursts (4:0x12) ---
 
 static void test_tx_lead(void)
@@ -1529,6 +1552,7 @@ static void test_bs_direct_answer_dwell(void)
 int main(void)
 {
 	test_chip();
+	test_chip_reg();
 	test_tx_lead();
 	test_modes();
 	test_engine();
