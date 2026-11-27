@@ -1,4 +1,0 @@
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The RadioFoundry Authors
-# Keep hosted and image-based CI on the same coverage parser.
-gcovr==8.8

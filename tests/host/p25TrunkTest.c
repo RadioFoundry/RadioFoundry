@@ -2253,9 +2253,6 @@ static void testZoneScan(void)
 	CHECK(f.view.state == P25_FOLLOW_VOICE && f.view.tg == 100 && !f.pending.valid, "selected group wins pending grant");
 	retune(&f);
 	unit_duid(&f, P25_DUID_TDU);
-#if CONFIG_P25_ALIAS
-	run_ms(&f, P25_FOLLOW_ALIAS_HEADER_MS);
-#endif
 	retune(&f);
 	f.hold_tg = 0;
 	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 200, 123);
@@ -2268,18 +2265,12 @@ static void testZoneScan(void)
 	run_ms(&f, 100);
 	CHECK(f.view.tg == 200 && ntunes == tuned, "priority never interrupts an active call");
 	unit_duid(&f, P25_DUID_TDU);
-#if CONFIG_P25_ALIAS
-	run_ms(&f, P25_FOLLOW_ALIAS_HEADER_MS);
-#endif
 	retune(&f);
 	CHECK(f.hold_tg == 200, "nonpriority reply hold established");
 	p25_follow_tsbk(&f, b, NAC, now_ms);
 	CHECK(f.view.tg == 100 && f.view.state == P25_FOLLOW_VOICE, "priority bypasses another group's reply hold");
 	retune(&f);
 	unit_duid(&f, P25_DUID_TDU);
-#if CONFIG_P25_ALIAS
-	run_ms(&f, P25_FOLLOW_ALIAS_HEADER_MS);
-#endif
 	retune(&f);
 	f.hold_tg = 0;
 	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 200, 123);
