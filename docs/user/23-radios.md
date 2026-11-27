@@ -744,6 +744,14 @@ A programming cable can hold the line low by itself. Then the flash starts whene
 
 ## TYT MD-9600
 
+Airband AM reception is included when its audio prerequisites are built. Enable **Settings > Advanced > RX past
+bands** to tune 118–136 MHz; the setting starts off. Airband channels show AM and remain receive-only, even with
+an in-band transmit offset. Audio plays through the speaker without a computer connection. Use squelch zero for
+weak signals; nonzero squelch allows scanning but can miss weak AM because it measures FM noise. Monitor overrides
+squelch. The voice filter reduces hiss outside the speech band without a signal-level gate. Sensitivity below the
+rated band is unmeasured. See the [hardware notes](../spec/hardware-md9600.md#airband-am-reception).
+
+
 Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **In testing.** One image serves every board revision. V1-V3 boards
 (original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx)
 boards have not. On one V4A/V5 (V26.xx) radio DMR transmit drops out ([#750](https://github.com/RadioFoundry/RadioFoundry/issues/750)),

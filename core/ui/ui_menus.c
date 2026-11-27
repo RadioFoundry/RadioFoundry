@@ -1390,7 +1390,7 @@ static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 	} else if (ch->kind != CODEPLUG_KIND_NONE) {
 		sb_str(&wb, codeplug_kind_name(ch->kind));	// another kind (docs/spec/channel-modes.md): its short name
 	} else {
-		sb_str(&wb, ch->mode == RADIO_MODE_FM && radio_am_channel(ch) ? "AM" : ui_mode_name(ch->mode));
+		sb_str(&wb, ch->mode == RADIO_MODE_FM && radio_am_display_channel(ch) ? "AM" : ui_mode_name(ch->mode));
 	}
 #if CONFIG_DMR_TRUNK
 	bool usable;

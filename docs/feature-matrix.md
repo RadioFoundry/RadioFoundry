@@ -50,7 +50,7 @@ is `tools/bringup.py list --radio <id>`.
 | `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ | ✕ |
-| `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written | not recorded |
+| `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `p25` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `p25_trunk` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `nxdn` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
@@ -168,6 +168,7 @@ is `tools/bringup.py list --radio <id>`.
 | `air_raw` | off | off | off | off | off | off | off | off |
 | `debuglink_dmrip` | off | off | off | off | off | off | off | off |
 | `audio_probe` | not written | off | not written | not written | not written | off | off | not written |
+| `am_envelope` | not written | not written | not written | not written | not written | not written | not recorded | not written |
 <!-- end generated -->
 
 What the records don't hold yet: limits and known problems from the bring-up pages.
@@ -273,7 +274,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `SIG_TONES` | ● | ● | ● | ● | ○ | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● | ✕ |
-| `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |
+| `RX_EXT` | ● | ● | ● | ● | … | ● | ● | ● |
+| `AM_ENVELOPE` | … | … | … | … | … | … | ● | … |
 | `VOX` | … | ● | ● | … | ● | ● | ● | … |
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -324,6 +326,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Receiver battery saver | `BATTERY_SAVE` | 272 | 228 |  |
 | Frequency trim, Settings > Advanced | `REF_TRIM` | 2,012 | 2,356 | The hook on each radio, the page and the setting |
 | Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM |
+| Air band AM receive from the receiver envelope | `AM_ENVELOPE` | — | — | Experimental receive-only AM audio from a board-provided RSSI envelope; needs `FM`, `DMR` and `RX_EXT`. See [am-envelope.md](spec/am-envelope.md) |
 | Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
 | Receive past the rated bands, Settings > Advanced | `RX_EXT` | 560 | — | Receive only, FM, off by default; ranges from each receiver chip's documents. MD-380: no receiver range in its chip documents |
 | DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 377,332 | 275,716 | Includes every DMR feature and everything on IP over DMR |

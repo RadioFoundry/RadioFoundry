@@ -111,13 +111,14 @@ uint16_t md9600_adc3_qt(void);
 extern const hal_afsk_t md9600_afsk;
 
 // FM receive audio on the PCM stream's input (c6000_md9600.c): a host audio session hears the receiver (NET_USRP)
-#define MD9600_FM_RX_TAP	(CONFIG_DMR && CONFIG_NET_USRP)
+#define MD9600_FM_RX_TAP	(CONFIG_DMR && (CONFIG_NET_USRP || CONFIG_AM_ENVELOPE))
 // The discriminator capture (disc_md9600.c): PC3 on ADC3 at MD9600_DISC_RATE_HZ into a ring each reader keeps its own
 // tail on, running while a reader wants it; ADC3 is the capture's meanwhile. Radio task
 #define MD9600_DISC		(MD9600_FM_RX_TAP || (CONFIG_APRS_AFSK && CONFIG_APRS_RX))
 #define MD9600_DISC_RATE_HZ	((72000000u / 8u / 492u + 1u) / 2u)	// 9146 Hz
 #define MD9600_DISC_RING	1024u					// 112 ms, a power of two
 enum { MD9600_DISC_APRS = 1u << 0, MD9600_DISC_STREAM = 1u << 1 };
+void md9600_disc_envelope(bool on); // radio task: select RSSI only for the experimental airband
 void md9600_disc_start(uint8_t user);
 void md9600_disc_stop(uint8_t user);
 bool md9600_disc_running(void);

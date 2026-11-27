@@ -473,6 +473,9 @@ static const hal_vocoder_t vocoder = { .options = v_options };
 // A receiver that does AM (the "am" token): radio_am_channel() reads only that rx_am is there
 static bool r_rx_am(uint32_t hz, radio_bw_t bw) { (void)hz; (void)bw; return true; }
 static const hal_radio_t am_radio = { .rx_am = r_rx_am };
+static bool envelope_range_on;
+static const band_t envelope_bands[] = { {136000000u,174000000u,true}, {400000000u,480000000u,true}, {118000000u,135999999u,false} };
+static const hal_audio_tap_t envelope_tap = { .caps = AUDIO_TAP_RX_ENVELOPE };
 
 // The support info on About (docs/spec/support-info.md): an STM32F4, a small image to hash, a DMR and an RF chip
 static bool s_chip(hal_chip_t *c)
@@ -2665,6 +2668,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.gps = NULL;
 	sim_gps = SIM_GPS_NONE;
 	board.bands = bands;
+	board.rx_ext_count = 0;
+	board.rx_ext_on = NULL;
 	board.band_count = sizeof bands / sizeof bands[0];
 	power.supply_mv = NULL;
 	board.variant_mismatch = NULL;
@@ -2751,6 +2756,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.p25.talk = 1;
 #endif
 	board.radio = NULL;
+	board.audio_tap = NULL;
 	ref_trim = false;
 	knob_radio = false;
 	vol_held = false;
@@ -3857,6 +3863,15 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
 		soft_volume = true;
 		advance(200);
+		return true;
+	}
+	if (strcmp(t, "envelope") == 0) {
+		board.audio_tap = &envelope_tap;
+		board.bands = envelope_bands;
+		board.band_count = sizeof envelope_bands / sizeof envelope_bands[0];
+		board.rx_ext_count = 1;
+		board.rx_ext_on = &envelope_range_on;
+		envelope_range_on = true;
 		return true;
 	}
 	if (strcmp(t, "am") == 0) {		// this radio receives air band AM (CAP_AM_RX), until the next reset

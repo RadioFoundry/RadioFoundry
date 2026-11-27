@@ -16,7 +16,7 @@
 #include "hal_audio.h"
 
 struct spk_aux_core {
-	// The stream wrapped around the step; NULL with the audio mux (CONFIG_NET_USRP, CONFIG_APRS_RX), whose own
+	// The stream wrapped around the step; NULL with the audio mux (NET_USRP, APRS_RX or AM_ENVELOPE), whose own
 	// wrapper calls block and reset
 	const hal_audio_t *(*wrap)(const hal_audio_t *hw);
 	// After the users filled spk: moves the block to the second output while that is active, with the power

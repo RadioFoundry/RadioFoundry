@@ -91,7 +91,7 @@ static void count(bool ok)
 static uint8_t cal_gain(uint16_t uhf_row, uint16_t vhf_row, uint32_t hz)
 {
 	uint8_t band;
-	if (!md9600_band_of(hz, &band)) {
+	if (!md9600_rx_band_of(hz, &band)) {
 		return SAFE_GAIN;
 	}
 	uint32_t lo = band == MD9600_UHF ? 400000000u : 136000000u;
@@ -109,7 +109,7 @@ static void ref_offset(uint32_t hz)
 {
 	uint8_t band = MD9600_UHF;
 	int8_t off = 0;
-	(void)md9600_band_of(hz, &band);
+	(void)md9600_rx_band_of(hz, &band);
 	if (!md9600_cal_ref_tune(band == MD9600_UHF, &off)) {
 		off = 0;
 	}
@@ -452,7 +452,7 @@ void md9600_c6000_init(void)
 static bool iq_swap(uint32_t hz)
 {
 	uint8_t band = MD9600_UHF;
-	(void)md9600_band_of(hz, &band);
+	(void)md9600_rx_band_of(hz, &band);
 	return band == MD9600_VHF;
 }
 #endif
@@ -488,7 +488,7 @@ void md9600_c6000_mode(bool dmr, uint32_t hz)
 void md9600_c6000_retune(uint32_t hz)
 {
 	uint8_t band = MD9600_UHF;
-	(void)md9600_band_of(hz, &band);
+	(void)md9600_rx_band_of(hz, &band);
 	band_vhf = band == MD9600_VHF;	// rx() has switched U_V_AF_SW to it
 	if (!diag.up) {
 		return;
@@ -682,6 +682,9 @@ const hal_audio_tap_t md9600_audio_tap = {
 	.caps = AUDIO_TAP_DMR
 #if MD9600_FM_RX_TAP
 		| AUDIO_TAP_FM_RX
+#if CONFIG_AM_ENVELOPE
+		| AUDIO_TAP_RX_ENVELOPE
+#endif
 #endif
 #if MD9600_FM_TX_INJECT
 		| AUDIO_TAP_FM_TX

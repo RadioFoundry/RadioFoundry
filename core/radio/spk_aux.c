@@ -82,7 +82,7 @@ void spk_aux_block(const hal_spk_aux_t *aux, int16_t *spk)
 	}
 }
 
-#if !(CONFIG_NET_USRP || CONFIG_APRS_RX)
+#if !(CONFIG_NET_USRP || CONFIG_APRS_RX || CONFIG_AM_ENVELOPE)
 // The wrapped stream: its start installs the trampoline below around the user's callback, its stop ends any sound.
 // With the audio mux (core/usbaudio/audio_mux.c) the mux's own block step calls spk_aux_block instead: one wrapper
 static const hal_audio_t *hw;

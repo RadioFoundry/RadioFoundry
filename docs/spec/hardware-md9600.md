@@ -3,6 +3,28 @@
 
 # TYT MD-9600 / Retevis RT90 hardware (mobile)
 
+## Airband AM reception
+
+The MD-9600 implements `CONFIG_RX_EXT` for 118.000000–135.999999 MHz. Enable **Settings > Advanced > RX past
+bands** to receive there; the setting is off by default. The band table and the synthesizer planner share this
+runtime gate. Transmit stays limited to 136–174 and 400–480 MHz, including on split channels whose receive
+frequency is outside those bands. Normal-band transmit retains its existing revision, calibration and settings checks.
+
+`CONFIG_AM_ENVELOPE` is built by default when FM, DMR PCM and the receive extension are available. On airband
+selections, ADC3 samples PA0 (VHF RSSI, IN0) instead of PC3 (FM discriminator, IN13). The existing DMA path produces
+about 9146 samples/s, removes DC and resamples to 8 kHz. Voice-filtered PCM plays through the HR_C6000 without a
+network client. Outside airband, capture returns to the discriminator. Source changes restart capture and clear old
+ring samples. The volume knob works. See [am-envelope.md](am-envelope.md) for filtering, squelch and AM labels.
+
+Receive audio routing, RSSI/noise status and modem bookkeeping use the receive classifier so a previous UHF channel
+cannot remain selected below 136 MHz. The factory front-end tuning curve clamps below its first 136 MHz calibration
+point. Sensitivity and PLL lock below the rated band have not been measured. RSSI filtering, logarithmic response
+and AGC can limit audio fidelity; IF gain and AGC registers are unchanged. Intelligible speech and local speaker
+playback were checked on V1–V3/HW V2.1 in a combined integration build. V4/V5 are host-tested only.
+
+Build example: `make BOARD=md9600 CONFIG_NET_USRP=n CONFIG_DEBUGLINK=n MD9600_REV_DEFAULT=v1v3 BUILD=build/envelope`.
+No debug link, network stream or stub loader is required by the feature. Native `CAP_AM_RX` is not advertised.
+
 The TYT MD-9600 and the Retevis RT90 are one dual-band mobile radio: an STM32F405VGT6 MCU, an HR_C6000 DMR baseband
 and codec chip, **two complete RF chains (one VHF, one UHF)**, each with its own synthesizer, its own RX and TX VCOs,
 its own IF receiver chip and its own PA supply switch, a 49.95 MHz first IF, a 128 x 64 monochrome LCD (ST7567) on

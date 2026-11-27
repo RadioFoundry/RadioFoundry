@@ -216,7 +216,7 @@ static void pane_fill(uint8_t i)
 	if (radio_listen_band(ch.rx_hz))
 		ch.mode = RADIO_MODE_FM;	// the radio core receives FM (or AM) there, whatever the record says
 	p->mode = shown_mode(&ch);
-	p->am = p->mode == RADIO_MODE_FM && radio_am_channel(&ch);	// as the receiver hears it (Home's mode word)
+	p->am = p->mode == RADIO_MODE_FM && radio_am_display_channel(&ch);	// Home's mode word, including envelope diagnostics
 	p->rx_hz = ch.rx_hz;
 	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN)
 		return;	// no tone or slot: the engine's own squelch (the channel's settings say which)
@@ -1361,7 +1361,7 @@ static void pick_item(uint16_t i, ui_item_t *it)
 	sb_freq(&b, ch.rx_hz);
 	sb_chr(&b, ' ');
 	uint8_t mode = shown_mode(&ch);
-	sb_str(&b, mode == RADIO_MODE_FM && radio_am_channel(&ch) ? "AM" : ui_mode_name(mode));
+	sb_str(&b, mode == RADIO_MODE_FM && radio_am_display_channel(&ch) ? "AM" : ui_mode_name(mode));
 	sb_str(&b, TEXT_ALT_NEXT);
 	sb_freq(&b, ch.rx_hz);
 	sb_str(&b, TEXT_ALT_CLOSE);

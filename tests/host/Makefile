@@ -63,12 +63,18 @@ IPGW    := ipGatewayTest.c $(CORE)/dmr/ipGateway.c $(DATA)
 
 # The speaker's second output (core/radio/spk_aux.c)
 spkAuxTest: spkAuxTest.c $(CORE)/radio/spk_aux.c $(CORE)/radio/spk_aux.h $(ROOT)/hal/hal_audio.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=0 -DCONFIG_APRS_RX=0 -o $@ spkAuxTest.c \
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=0 -DCONFIG_APRS_RX=0 -DCONFIG_AM_ENVELOPE=0 -o $@ spkAuxTest.c \
 	      $(CORE)/radio/spk_aux.c
 # ... with the audio mux, whose wrapper runs the step instead of spk_aux's own
 spkAuxTestMux: spkAuxTest.c $(CORE)/radio/spk_aux.c $(CORE)/radio/spk_aux.h $(CORE)/usbaudio/audio_mux.c $(ROOT)/hal/hal_audio.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=1 -DSPK_AUX_MUX -o $@ spkAuxTest.c \
 	      $(CORE)/radio/spk_aux.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
+
+# AM alone also uses the mux, including the second speaker output without network audio.
+TESTS += spkAuxTestEnvelope
+spkAuxTestEnvelope: spkAuxTest.c $(CORE)/radio/spk_aux.c $(CORE)/radio/spk_aux.h $(CORE)/usbaudio/audio_mux.c $(ROOT)/hal/hal_audio.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=0 -DCONFIG_APRS_RX=0 -DCONFIG_AM_ENVELOPE=1 -DSPK_AUX_MUX -o $@ spkAuxTest.c \
+	      $(CORE)/radio/spk_aux.c $(CORE)/usbaudio/audio_mux.c
 
 ipGatewayTest: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -o $@ $(IPGW)
@@ -247,6 +253,7 @@ aprsTest: aprsTest.c $(APRSLIB) $(NMEALIB) $(wildcard $(CORE)/aprs/*.h)
 run: $(TESTS)
 	./spkAuxTest
 	./spkAuxTestMux
+	./spkAuxTestEnvelope
 	./dmrFecTest
 	./dmrSoftBptcTest
 	./dmrSoftCombTest
@@ -328,6 +335,9 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
            $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_keyrun.c \
            $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c
 
+# These state-machine fixtures omit the PCM capture service; envelope audio has separate tests.
+radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprsDmr: CFLAGS += -DCONFIG_AM_ENVELOPE=0
+
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
@@ -404,13 +414,13 @@ RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplu
 
 # CONFIG_NET_USRP without the gateway: only the radio core's half (host audio PTT, the shared stream) is tested here;
 # the network half is usrpNetTest
-radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h)
+radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -o $@ $(RFTEST) -lm
 
 # The same without CONFIG_DUAL_WATCH: only the debug link's dual watch, two channels of one zone, ended by PTT
 TESTS   += radioFeaturesTestNoDual
-radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h)
+radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -DCONFIG_DUAL_WATCH=0 -o $@ $(RFTEST) -lm
 
@@ -688,7 +698,7 @@ $(error tools/i18n.py --gen failed (above))
 endif
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
 UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c \
-           $(CORE)/dmr/trunk/t3_sys.c
+           $(CORE)/dmr/trunk/t3_sys.c $(CORE)/radio/radio_am.c
 TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
@@ -727,7 +737,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
 UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
-           $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
+           $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
            $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -759,6 +769,17 @@ uiFlowTestSatellite: uiFlowTest.c $(UIDEPS)
 UI_LANG_FLAG := $(if $(UI_LANG),-DCONFIG_LANG_$(shell echo '$(UI_LANG)' | tr a-z A-Z)=1)
 uiSim: uiSim.c $(UIDEPS) $(CJK)
 	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -DCONFIG_SATELLITE_TLE=1 -o $@ uiSim.c $(UIAPP) $(CJK) -lz
+
+TESTS += uiSimEnvelope
+uiSimEnvelope: uiSim.c $(UIDEPS) $(CJK)
+	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -DCONFIG_SATELLITE_TLE=1 -DCONFIG_AM_ENVELOPE=1 -o $@ uiSim.c $(UIAPP) $(CJK) -lz
+
+run: run-envelope-ui
+.PHONY: run-envelope-ui
+run-envelope-ui: uiSimEnvelope
+	./uiSimEnvelope --geom 128x64 --map P --script 'envelope dlvfo:133475000 fmrx expect:shows=AM expect:hides=FM'
+	./uiSimEnvelope --geom 128x64 --map P --script 'envelope dlvfo:145500000 fmrx expect:shows=FM expect:hides=AM'
+	./uiSimEnvelope --geom 128x64 --map K --script 'envelope dlvfo:133475000 quick 7 expect:shows=VFO_AM expect:hides=VFO_FM'
 
 # The beep reel (tools/beep_reel.py). BEEP_DIR picks the beep.c and beep.h to build with, so CI can build the base
 # commit's beeps for a before and after comparison. We copy that beep.h into out/beep/radio/ and put out/beep first on
@@ -1758,7 +1779,7 @@ run-t3replay: t3ReplayTest
 UAUDIO  := usrpTest.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c
 TESTS   += usrpTest
 
-usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
+usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ $(UAUDIO) -lm
 
 # The shared PCM stream and USRP on the network address (core/usbaudio/audio_mux.c, usrp_net.c) against fake
@@ -1766,14 +1787,32 @@ usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
 UNET    := usrpNetTest.c $(CORE)/usbaudio/usrp_net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/debuglink/dl_fmt.c
 TESTS   += usrpNetTest
+TESTS   += envelopeMonitorTest envelopeMonitorTestStandalone
+TESTS   += envelopeLabelTest envelopeLabelTestOff
 
-usrpNetTest: $(UNET) $(wildcard $(CORE)/usbaudio/*.h)
+envelopeLabelTest: envelopeLabelTest.c $(CORE)/radio/radio_am.c
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=1 -o $@ $^
+
+envelopeLabelTestOff: envelopeLabelTest.c $(CORE)/radio/radio_am.c
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=0 -o $@ $^
+
+envelopeMonitorTestStandalone: envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=1 -DCONFIG_NET_USRP=0 -o $@ envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c -lm
+
+envelopeMonitorTest: envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=1 -DCONFIG_NET_USRP=1 -o $@ envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c -lm
+
+usrpNetTest: $(UNET) $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=1 -o $@ $(UNET) -lm
 
 run: run-usbaudio
-run-usbaudio: usrpTest usrpNetTest
+run-usbaudio: usrpTest usrpNetTest envelopeMonitorTest envelopeMonitorTestStandalone envelopeLabelTest envelopeLabelTestOff
 	./usrpTest
 	./usrpNetTest
+	./envelopeMonitorTest
+	./envelopeMonitorTestStandalone
+	./envelopeLabelTest
+	./envelopeLabelTestOff
 .PHONY: run-usbaudio
 
 # The minimal TCP (core/net/tcp.c) against a scripted peer; tshark checks the segments it wrote to tcpTest.pcap

@@ -11,6 +11,7 @@
 #include "rfseq_md9600.h"
 #include "md9600.h"
 #include "config.h"
+#include "board.h"
 
 #ifndef CONFIG_MD9600_TX
 #define CONFIG_MD9600_TX	0
@@ -1221,6 +1222,32 @@ static void test_hwopt(void)
 
 int main(void)
 {
+	board_rx_ext_set(true);
+#if CONFIG_RX_EXT
+	// Every built revision: receive below 136 MHz, but neither a normal TX request nor a direct PA request keys.
+	const uint32_t air[] = { 118000000u, 118800000u, 119500000u, 124100000u, 124800000u, 134950000u, 135999999u };
+	for (int r = MD9600_REV_V1V3; r < MD9600_REV_COUNT; r++) {
+		if (!md9600_rev_built((md9600_rev_t)r)) {
+			continue;
+		}
+		for (unsigned i = 0; i < sizeof(air) / sizeof(air[0]); i++) {
+			fresh((md9600_rev_t)r, true);
+			CHECK(md9600_rf_rx(&rf, air[i], true) == MD9600_RF_OK);
+			CHECK(rf.lo_hz == air[i] + MD9600_IF_HZ && pa_off_now());
+			reset_log();
+			CHECK(md9600_rf_tx(&rf, air[i], true, 0) == (CONFIG_MD9600_TX ? MD9600_RF_E_BAND : MD9600_RF_E_TX_BUILD));
+			CHECK(md9600_rf_tx(&rf, 146520000u, true, 0) == (CONFIG_MD9600_TX ? MD9600_RF_E_BAND : MD9600_RF_E_TX_BUILD));
+			CHECK(md9600_rf_tx(&rf, 446000000u, true, 0) == (CONFIG_MD9600_TX ? MD9600_RF_E_BAND : MD9600_RF_E_TX_BUILD));
+			CHECK(md9600_rf_pa(&rf, true) != MD9600_RF_OK);
+			CHECK(md9600_rf_pa_burst(&rf, true) != MD9600_RF_OK);
+			CHECK(count(EV_PLL, -1) == 0 && pa_off_now());
+			// Leaving the experimental channel must release its band restriction.
+			CHECK(md9600_rf_rx(&rf, 145110000u, false) == MD9600_RF_OK);
+			CHECK(md9600_rf_tx_check(&rf, 144510000u, 0) ==
+			      (CONFIG_MD9600_TX ? MD9600_RF_OK : MD9600_RF_E_TX_BUILD));
+		}
+	}
+#endif
 	test_init();
 	test_power_up();
 	test_rx();

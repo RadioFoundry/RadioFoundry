@@ -139,6 +139,7 @@ static void test_wrap(void)
 	CHECK(spk_aux_stream(NULL) == NULL);
 #else
 	(void)plain;
+	CHECK(spk_aux_core.wrap == NULL); // the mux is the sole stream wrapper
 #endif
 	const hal_audio_t *w = WRAP(&board);
 	wrapped_stream = w;

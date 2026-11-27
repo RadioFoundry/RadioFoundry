@@ -315,6 +315,12 @@ md9600_rf_err_t md9600_rf_tx_check(const md9600_rf_t *rf, uint32_t hz, uint8_t p
 	if (!md9600_band_of(hz, &band)) {
 		return MD9600_RF_E_BAND;
 	}
+#if CONFIG_RX_EXT
+	// An out-of-band receive channel stays RX-only even with an in-band TX offset.
+	if (rf->rx_valid && !md9600_band_of(rf->rx_hz, &band)) {
+		return MD9600_RF_E_BAND;
+	}
+#endif
 	uint16_t apc;
 	const md9600_rf_ops_t *o = rf->ops;
 	if (o->apc == NULL || !o->apc(o->ctx, hz, power, &apc) || apc == 0) {

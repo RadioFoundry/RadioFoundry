@@ -46,7 +46,7 @@
 #include "p25/p25Voice.h"
 #endif
 #endif
-#if CONFIG_NET_USRP || CONFIG_APRS_RX
+#if CONFIG_NET_USRP || CONFIG_APRS_RX || CONFIG_AM_ENVELOPE
 #include "usbaudio/audio_mux.h"	// the PCM stream shared with a host audio session and APRS
 #endif
 #if CONFIG_DMR_DATA_CORE
@@ -816,6 +816,10 @@ static void outputs(radio_sm_t *sm)
 		sm->audio_out = (int8_t)spk;
 		board.radio->audio(spk);
 	}
+#if CONFIG_AM_ENVELOPE
+	audio_mux_envelope_monitor(spk && !tx && radio_am_display_channel(&sm->view.ch) &&
+		board.audio_tap != NULL && (board.audio_tap->caps & AUDIO_TAP_RX_ENVELOPE) != 0);
+#endif
 	if (rx_open_change && !green) {
 		sm->rx_open_out = 0;
 		board.radio->rx_open(false);
@@ -1552,8 +1556,8 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (sm->set.tx_inhibit || (!trunk && !tx_limit_allows(ch->tx_hz))) {
 		return TXDENY_INHIBIT;		// the test TX limit denies PTT as the inhibit does
 	}
-#if CONFIG_AM_RX
-	if (sm->view.am || radio_am_tx_refused(ch->tx_hz)) {
+#if CONFIG_AM_RX || CONFIG_AM_ENVELOPE
+	if (radio_am_display_channel(ch) || radio_am_tx_refused(ch->tx_hz)) {
 		return TXDENY_AM;	// the air band is receive only, whatever the codeplug says
 	}
 #endif
@@ -8467,7 +8471,7 @@ static void host_audio_watch(radio_sm_t *sm, uint32_t now_ms)
 // second output while the stream's can't be heard (spk_aux.h), shared with a host audio session
 static const hal_audio_t *pcm_audio(void)
 {
-#if CONFIG_NET_USRP || CONFIG_APRS_RX
+#if CONFIG_NET_USRP || CONFIG_APRS_RX || CONFIG_AM_ENVELOPE
 	return audio_mux_wrap(board.audio);	// the mux runs the second output's step itself
 #else
 	return spk_aux_stream(board.audio);
@@ -9917,7 +9921,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_VIBRATE
 	vibe_service(now_ms, board.power != NULL ? board.power->vibrate : NULL);
 #endif
-#if CONFIG_NET_USRP || CONFIG_APRS_RX
+#if CONFIG_NET_USRP || CONFIG_APRS_RX || CONFIG_AM_ENVELOPE
 	audio_mux_service(now_ms);	// the stream for a host audio session or APRS (after the beep: it may have stopped it)
 #endif
 #if CONFIG_NET_USRP

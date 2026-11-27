@@ -5,6 +5,7 @@
 #include <string.h>
 #include "board.h"
 #include "ui_screens.h"
+#include "radio/radio_am.h"
 #include "fmt.h"
 #include "i18n.h"
 #include "ui_svc.h"
@@ -305,7 +306,7 @@ static const char *mode_word(const radio_view_t *v)
 	if (v->ch.kind != CODEPLUG_KIND_NONE) {
 		return codeplug_kind_name(v->ch.kind);
 	}
-	return v->ch.mode == RADIO_MODE_FM && v->am ? "AM" : ui_mode_name(v->ch.mode);
+	return v->ch.mode == RADIO_MODE_FM && (v->am || radio_am_display_channel(&v->ch)) ? "AM" : ui_mode_name(v->ch.mode);
 }
 
 #if CONFIG_DUAL_WATCH
@@ -1247,11 +1248,12 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 #endif
-	if (v->am || v->bcast) {
+	bool display_am = v->am || radio_am_display_channel(&v->ch);
+	if (display_am || v->bcast) {
 		// No tone, width or power here: the receiver is fixed. The air band squelch is real, the broadcast one isn't used
-		x = gfx_text(f, x, y, v->am ? TR(HOME_CHIP_AIR_BAND_AM, "Air Band AM") :
+		x = gfx_text(f, x, y, display_am ? TR(HOME_CHIP_AIR_BAND_AM, "Air Band AM") :
 			TR(HOME_CHIP_BROADCAST_FM, "Broadcast FM"), ui_col.fg) + f->w;
-		if (v->am) {
+		if (display_am) {
 			sb_init(&b, buf, sizeof buf);
 			sb_str(&b, "SQ");
 			sb_u32(&b, v->squelch, 1);

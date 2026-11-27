@@ -92,3 +92,5 @@ endif
 ifneq ($(RT10_DMR_MIC_DB),)
 MCU_DEFS += -DRT10_DMR_MIC_DB=$(RT10_DMR_MIC_DB)u
 endif
+
+BOARD_NOT_WRITTEN += AM_ENVELOPE	# no RSSI-envelope capture implementation
