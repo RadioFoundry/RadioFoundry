@@ -41,3 +41,9 @@ lib two_way_long_needle 0
 # Floating point conversions (%e %f %g) only: RadioFoundry formats with %d and %s (snprintf in core/dmr). Without them the
 # C-SKY newlib's snprintf needs about 0.6 KB, with them 2 KB
 lib _dtoa_r 0
+
+# The flat FM transmit interrupt (platform/hrc7000/fm_flat_tx.c) pulls samples from D-STAR's modulator, and the modulator
+# pulls bits and voice frames through pointers of its own (core/dstar/dstar_engine.c, core/radio/radio_dstar.c)
+call fill core/radio/radio_dstar.c:tx_pull
+ptr pull core/dstar/dstar_engine.c:pull_bit core/radio/radio_dstar.c:dots_bit
+ptr pull core/dstar/dstar_engine.c:silence_until_stop core/radio/radio_dstar.c:voice_pull

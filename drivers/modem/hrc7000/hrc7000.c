@@ -221,6 +221,31 @@ void hrc7000_fm_rx_audio_irq(hrc7000_t *d, bool on)
 	hrc7000_wr(d, C7_SYS_INTERP_MASK, on ? (m | C7_SYS_FM_RX) : (m & ~C7_SYS_FM_RX));
 }
 
+void hrc7000_fm_tx_audio_irq(hrc7000_t *d, bool on)
+{
+	uint32_t m = hrc7000_rd(d, C7_SYS_INTERP_MASK);
+	hrc7000_wr(d, C7_SYS_INTERP_MASK, on ? (m | C7_SYS_FM_TX) : (m & ~C7_SYS_FM_TX));
+}
+
+// Clear and set again rather than save and restore: the driver keeps no copy of FM_BANDWIDTH (it would cost RAM in
+// every build), and the next FM set-up writes the whole register anyway (hrc7000_fm_rx, hrc7000_fm_tx)
+static void fm_bw_bits(hrc7000_t *d, uint32_t clr, bool flat)
+{
+	uint32_t bw = hrc7000_rd(d, C7_FM_BANDWIDTH);
+	hrc7000_wr(d, C7_FM_BANDWIDTH, flat ? (bw & ~clr) : (bw | clr));
+}
+
+void hrc7000_fm_flat_tx(hrc7000_t *d, uint32_t clr, bool on)
+{
+	fm_bw_bits(d, clr, on);
+	hrc7000_audio_bits(d, on ? C7_AUDIO_TX_RAM : 0, on ? 0 : C7_AUDIO_TX_RAM);
+}
+
+void hrc7000_fm_flat_rx(hrc7000_t *d, uint32_t clr, bool on)
+{
+	fm_bw_bits(d, clr, on);
+}
+
 void hrc7000_codec_mute(hrc7000_t *d, bool mic_muted, bool lineout_muted)
 {
 	uint8_t adc = hrc7000_codec_rd(d, C7_CODEC_CR_ADC), dac = hrc7000_codec_rd(d, C7_CODEC_CR_DAC);

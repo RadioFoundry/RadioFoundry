@@ -122,6 +122,9 @@ def pytest_addoption(parser):
                 help="MHz: test_am_rx, the AM test frequency in the air band (108-137) the bench board sends full-carrier "
                      "AM on and the radio's VFO receives; the bench transmits on it: a cabled setup unless the frequency "
                      "is approved for the air; no default")
+    g.addoption("--dstar-call", default=None,
+                help="test_dstar: the callsign a person's D-STAR radio sends (MY) when test_dstar_rx_from_radio asks "
+                     "for an over; the radio is on a D-STAR channel on that radio's frequency; no default")
     g.addoption("--no-gps", action="store_true",
                 help="the radio has no GPS module fitted (a board that takes one, such as a variant without it): "
                      "test_gps_nmea skips instead of failing")

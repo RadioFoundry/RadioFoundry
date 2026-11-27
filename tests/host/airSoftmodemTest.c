@@ -11,6 +11,7 @@
 
 #include "air/air_softmodem.h"
 #include "air/air_syms.h"
+#include "air/air_tx_ring.h"
 #include "p25/p25.h"
 
 static int failures, checks;
@@ -684,6 +685,46 @@ static void testHole(void)
 	CHECK(out_gap_chunks == 3 && out_nsync == 6, "reset: gaps %u syncs %u", out_gap_chunks, out_nsync);
 }
 
+// The transmit tap's queue (air_tx_ring.h): what is written comes out in order across the wrap, a write takes no more
+// than the room, and a reader ahead of the writer holds the last sample instead of dropping to zero
+static void testTxRing(void)
+{
+	static air_tx_ring_t r;
+	int16_t in[700], out[700];
+	uint16_t at = 0, pulled = 0;
+	int bad = 0;
+
+	air_tx_ring_reset(&r);
+	CHECK(air_tx_ring_space(&r) == AIR_TX_RING, "empty: all room");
+	for (int i = 0; i < 700; i++)
+		in[i] = (int16_t)(i * 37 - 9000);
+	CHECK(air_tx_ring_write(&r, in, 700) == AIR_TX_RING, "a write takes the room it has");
+	at = AIR_TX_RING;
+	// Pull and write in steps that don't divide the ring, so the indexes wrap mid-step
+	for (int k = 0; k < 40; k++) {
+		int16_t o[96];
+		air_tx_ring_pull(&r, o, 96);
+		for (int i = 0; i < 96; i++)
+			bad += o[i] != (int16_t)(((pulled + i) % 700) * 37 - 9000);
+		pulled = (uint16_t)(pulled + 96);
+		uint16_t w = air_tx_ring_write(&r, &in[at % 700], (uint16_t)(700 - at % 700 < 96 ? 700 - at % 700 : 96));
+		at = (uint16_t)(at + w);
+	}
+	CHECK(bad == 0 && r.dry == 0, "%d samples out of order, %u held", bad, (unsigned)r.dry);
+	// Dry: the reader runs past the writer and holds the last sample
+	air_tx_ring_reset(&r);
+	air_tx_ring_write(&r, in, 10);
+	air_tx_ring_pull(&r, out, 30);
+	CHECK(memcmp(out, in, 10 * sizeof out[0]) == 0, "the queued samples first");
+	bad = 0;
+	for (int i = 10; i < 30; i++)
+		bad += out[i] != in[9];
+	CHECK(bad == 0 && r.dry == 20, "the last held while dry (%d wrong, %u held)", bad, (unsigned)r.dry);
+	air_tx_ring_write(&r, &in[10], 5);
+	air_tx_ring_pull(&r, out, 5);
+	CHECK(memcmp(out, &in[10], 5 * sizeof out[0]) == 0, "and the writer picked up again");
+}
+
 int main(void)
 {
 	testFit();
@@ -694,6 +735,7 @@ int main(void)
 	testShapes();
 	testCall();
 	testHole();
+	testTxRing();
 	printf("airSoftmodemTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
 }

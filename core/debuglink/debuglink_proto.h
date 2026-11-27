@@ -42,6 +42,8 @@ enum {
 	DL_CMD_SATELLITE	= 0x26,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE, 3.30)
 	DL_CMD_DETOUR		= 0x27,	// temporary settings a deadline reverts (CONFIG_DEBUGLINK_DMRIP; dl_dmrip.h, 7.4)
 	DL_CMD_DMRIP		= 0x28,	// the debug link over the air: status, key (CONFIG_DEBUGLINK_DMRIP; 7.5)
+	DL_CMD_DSTAR		= 0x29,	// D-STAR: the flat paths' calibration, test signals, UR, station (CONFIG_DSTAR;
+					// debuglink_dstar.c, 3.31)
 };
 
 // DL_CMD_DMRIP operations (first payload byte; docs/spec/debuglink.md 7.5)
@@ -115,6 +117,25 @@ enum {
 	DL_SAT_OP_PROFILE_STAGE_CHUNK,	// transaction ID u16, total u8, offset u8, count u8, then profile records
 	DL_SAT_OP_SYNC_CHANNELS_STATUS	// -> satellite_channels_sync_status_t
 };
+
+// DL_CMD_DSTAR operations (first payload byte; docs/spec/debuglink.md 3.31). u16 / u32 little endian
+enum {
+	DL_DSTAR_OP_CAL		= 0,	// field u8 (DL_DSTAR_CAL_*), value i32 -> none: stored in the settings, in force at once
+	DL_DSTAR_OP_TEST	= 1,	// kind u8 (radio_dstar_test_t), hz u16, level u8 (% of 1 kHz deviation) -> none; BUSY on air
+	DL_DSTAR_OP_UR		= 2,	// mode u8 (radio_dstar_ur_t), up to 7 characters (the reflector and module) -> none
+	DL_DSTAR_OP_STATION	= 3,	// field u8 (DL_DSTAR_ST_*), text -> none; empty text: the codeplug's again
+	DL_DSTAR_OP_KNOB	= 4,	// index u8, value i32 -> none: a board knob (the view's dstar.knob.* names, in order)
+	DL_DSTAR_OP_RESET	= 5,	// none -> none: the voice path's counters zeroed
+};
+// DL_DSTAR_OP_CAL fields: -1 is the board's own value for the polarities and the high-passes
+enum {
+	DL_DSTAR_CAL_TX_1KHZ	= 0,	// the sample value for 1 kHz deviation, 0 = the board's
+	DL_DSTAR_CAL_TX_INVERT	= 1,	// 0, 1 or -1
+	DL_DSTAR_CAL_RX_INVERT	= 2,
+	DL_DSTAR_CAL_TX_HPF	= 3,	// Hz, 0 = flat, -1
+	DL_DSTAR_CAL_RX_HPF	= 4,
+};
+enum { DL_DSTAR_ST_MY = 0, DL_DSTAR_ST_SUFFIX = 1, DL_DSTAR_ST_MSG = 2 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)
 enum {

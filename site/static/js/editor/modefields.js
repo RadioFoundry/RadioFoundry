@@ -5,7 +5,8 @@
 //
 // Field types: "int" (min..max; blank: the field's blank value, or "any" (null) with any), "hex" (the same in hex),
 // "freq" (MHz to Hz; zero: blank is 0), "bool", "select" (options: [value, label or i18n key]), "list" (whole numbers
-// split on spaces or commas, at most count), "hexbytes" (bytes octets in hex, or blank), "text".
+// split on spaces or commas, at most count), "hexbytes" (bytes octets in hex, or blank), "text" (trimmed, unless the
+// spec's keep(raw) says what to keep).
 // A select whose options(r) read other fields of the record (a key list from the channel's system) sets dynamic: the
 // form then rebuilds its list as those fields change, instead of keeping the one built when the form opened.
 
@@ -43,7 +44,8 @@ export function parseSpec(spec, raw, t, r = {}) {
 		return { value: xs };
 	}
 	default:
-		return { value: s };
+		// a field whose spaces mean something (a D-STAR UR's "       I") says what it keeps of the text as typed
+		return { value: spec.keep ? spec.keep(String(raw ?? "")) : s };
 	}
 }
 

@@ -961,6 +961,11 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 		if ((list & C7_SYS_FM_RX) != 0 && e->fm_rx != NULL) {
 			e->fm_rx();
 		}
+#if defined(CONFIG_FM_FLAT) && CONFIG_FM_FLAT
+		if ((list & C7_SYS_FM_TX) != 0 && e->fm_tx != NULL) {
+			e->fm_tx();
+		}
+#endif
 		if (!e->running) {
 			continue;
 		}

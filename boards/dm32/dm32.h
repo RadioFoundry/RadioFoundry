@@ -52,6 +52,29 @@ void dm32_bcast_audio(bool on);	// the broadcast receiver's audio path (CONFIG_B
 // TX tone's sidetone (radio_dm32.c amp())
 uint8_t dm32_amp_users(void);
 
+#if CONFIG_FM_FLAT
+#include "hal_audio_tap.h"
+// --- Flat paths for a data modem (flat_dm32.c, radio_dm32.c; hardware-dm32.md 9.3) ---
+
+// The bench's settings for them, the debug link's knobs (flat_dm32.c). Taken at the next fm_tx_inject, receive tune
+// or speaker change, not at once
+typedef struct {
+	uint16_t rf_tx_2b, rf_rx_2b;	// FD6818 0x2B on the flat transmit and receive paths
+	uint8_t tx_bw_clr, rx_bw_clr;	// HR_C7000 FM_BANDWIDTH bits cleared (subsets of HRC7000_FM_FLAT_TX_CLR / _RX_CLR)
+	uint32_t dev_coef;		// HR_C7000 FM_DEV_COEF on the flat transmit path, 0 = FM transmit's
+	bool fm_play;			// HR_C7000 FM playback (AUDIO_CONTROL b6) on during flat receive
+	bool tx_other_half;		// fill the TX RAM half FM_ADDR_SW doesn't name
+} dm32_flat_bench_t;
+extern dm32_flat_bench_t dm32_flat_bench;
+extern const hal_audio_tap_t dm32_audio_tap;
+// The route switches (radio_dm32.c), radio task: hal_audio_tap_t fm_tx_inject (NULL = the microphone again) and
+// fm_rx_flat_start / stop
+bool dm32_flat_tx(audio_tap_pull_t pull);
+bool dm32_flat_rx_start(void);
+void dm32_flat_rx_stop(void);
+bool dm32_flat_rx_on(void);
+#endif
+
 // --- Diagnostics (diag_dm32.c) ---
 typedef struct {
 	uint16_t rssi_raw, noise_raw;	// FD6818 0x67 / 0x65 from the last status poll

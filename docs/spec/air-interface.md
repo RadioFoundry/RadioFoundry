@@ -152,8 +152,27 @@ Between syncs the timing, level and offset hold. Two crystal clocks do not move 
 a mode whose syncs recur gets every frame on fresh timing. Chunks say `AIR_CHUNK_FREE_RUN` when no sync was seen
 within the profile's spacing, and `AIR_CHUNK_GAP` after a hole in the samples (the modem starts over).
 
-Cost: 3.3 KB of code and about 370 bytes of state, which the provider places. No transmit half is written: a
-provider with a tap for receive only sends through its chip.
+Cost: 3.3 KB of code and about 370 bytes of state, which the provider places.
+
+### 6.1 The transmitter
+
+`air_softmodem_tx` turns symbols into samples for a transmit tap: each symbol's level times the profile's frequency
+pulse at the tap's rate (8 to 96 kHz), summed. The pulse written is the Gaussian at BT 0.5, a 193-point table over
+three symbols, interpolated; a profile of another shape doesn't fit (`air_softmodem_tx_fit`), and a provider sends it
+through its chip. It needs the tap's scale (`tx_counts_per_khz`): the outer level goes out at the profile's deviation,
+negated when the tap says `tx_invert`. D-STAR's GMSK modulator runs on it ([dstar-modem.md](dstar-modem.md) 2.2).
+No provider sends a session's chunks through it yet.
+
+### 6.2 Transmit taps
+
+A board's transmit tap queues what `tx_write` gives it and plays it to the modulator, holding the last sample when the
+queue runs dry; `tx_latency_ms` is how long a sample written takes to reach the air, so the caller keys that much
+longer after the last one. `air_tx_ring.h` is the queue a board can use: single producer, single consumer, 64 ms at
+8 kHz.
+
+On the HR_C7000 radios the transmit tap is the TX RAM in FM transmit ([modem-hrc7000.md](modem-hrc7000.md) 8.6), on a
+board whose glue has a flat FM transmit route (`hrc_dmr_board_t.flat_tap`): the route D-STAR sends through. Its scale,
+polarity, high-pass and latency are the route's calibration (`audio_tap_flat_cal_t`), read again at each `tx_start`.
 
 The work is per filtered sample, 24,000 a second at 4800 symbols, so that path decides the load. Its rules are in
 `core/dsp/fxp.h`, with the kernels the signal code shares (the interpolator's dot product, exact scaling in 32-bit

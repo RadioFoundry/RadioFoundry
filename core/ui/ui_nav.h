@@ -46,6 +46,8 @@ typedef enum {
 	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
 	SCR_SATELLITE_TEXT,		// one 69-character TLE line
 	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
+	SCR_DSTAR,			// D-STAR: UR and its shortcuts, the station (ui_dstar.c)
+	SCR_DSTAR_TEXT,			// its text editor (a reflector, MY, the suffix, the message)
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
@@ -165,6 +167,10 @@ void ui_scan_skip(void);	// a side key set to Scan skip: skip the channel that s
 void ui_open_caller_actions(void);
 // A list row's number key ('1'..'9', '0')
 void item_num_set(ui_item_t *it, uint16_t n);
+// The text editor (the keypad's letters) on target, at most max characters, done called once the text is kept
+// (ui_menus.c; D-STAR's fields). A radio built without any text entry says so instead
+void ui_text_field(char *target, uint8_t max, void (*done)(void));
+
 
 #if CONFIG_DUAL_WATCH
 // Dual watch (ui_dual.c, docs/ux/dual-watch.md)

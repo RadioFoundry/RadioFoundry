@@ -194,7 +194,7 @@ fxpTest: fxpTest.c $(CORE)/dsp/fxp.h
 
 # The soft modem's receiver on a modeled tap, alone and under the framer and the P25 receive hooks
 TESTS   += airSoftmodemTest
-airSoftmodemTest: airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem.h $(CORE)/dsp/fxp.h $(CORE)/air/air_framer.c $(P25) $(FEC) $(ROOT)/hal/hal_baseband.h
+airSoftmodemTest: airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem.h $(CORE)/air/air_tx_ring.h $(CORE)/dsp/fxp.h $(CORE)/air/air_framer.c $(P25) $(FEC) $(ROOT)/hal/hal_baseband.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_framer.c $(P25) $(FEC) -lm
 
 airFramerTest: airFramerTest.c $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(CORE)/air/air_syms.h $(ROOT)/hal/hal_air.h
@@ -309,7 +309,8 @@ clean:
 .PHONY: all run clean
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
-CORE_HAL := -I$(ROOT)/hal -Wshadow
+# D-STAR channels (core/radio/radio_dstar.c) are radioDstarTest's: these build the radio core without them
+CORE_HAL := -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=0
 TESTS   += radioCoreTest inputTest switchFollowTest quadratureTest serialmicTest
 
 # A Tier III trunked system on the radio (radio_sm.c's trunk block): the engine and what it reads PDUs with
@@ -744,7 +745,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_dstar.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
            $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
@@ -1283,6 +1284,12 @@ hrc7000BsTest: hrc7000BsTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal
 hrc7000DmrTestSplit: hrc7000DmrTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_HOTSPOT_SPLIT=1 -o $@ hrc7000DmrTest.c $(HRC7BS)
 
+# The HR_C7000 flat FM paths: the TX RAM half writer, the FM TX interrupt's dispatch (built with its hook) and the
+# flat route's bits (modem-hrc7000.md 8.6)
+TESTS   += hrc7000FmTxTest
+hrc7000FmTxTest: hrc7000FmTxTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=1 -DCONFIG_FM_FLAT=1 -o $@ hrc7000FmTxTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/fec/dmrSoftComb.c
+
 # The RDA5807M broadcast receiver driver and the bit-banged I2C master, on a simulated chip (airband-and-broadcast.md 4)
 TESTS   += rda5807mTest
 RDA     := $(ROOT)/drivers/bcast/rda5807m
@@ -1302,9 +1309,10 @@ baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROO
 
 run: run-drivers
 run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest chswitchTest plugPttTest hrc7000DmrTest hrc7000AirTest baofengCalTest rda5807mTest \
-             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
+             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit hrc7000FmTxTest
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
+	./hrc7000FmTxTest
 	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
@@ -1489,14 +1497,19 @@ endif
 
 # The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write
 STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c
-TESTS   += settingsTest
+TESTS   += settingsTest settingsNoDstarTest
 
 settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_RADIO_DETOUR=1 -o $@ settingsTest.c $(STORE)
 
+# The same without D-STAR, whose station and flat-path calibration are in settings_t only in builds with it
+settingsNoDstarTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_RADIO_DETOUR=1 -DCONFIG_DSTAR=0 -o $@ settingsTest.c $(STORE)
+
 run: run-settings
-run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
+run-settings: settingsTest settingsNoDstarTest spiNorTest spiNandTest nandSectorsTest
 	./settingsTest
+	./settingsNoDstarTest
 	./spiNorTest
 	./spiNandTest
 	./nandSectorsTest
@@ -1631,6 +1644,23 @@ run: run-nxdncp
 run-nxdncp: nxdnCodeplugTest
 	./nxdnCodeplugTest
 .PHONY: run-nxdncp
+# D-STAR in the codeplug (core/dstar/dstar_codeplug.c): the shared vectors, the field filter, a channel's fields from
+# its tag, the radio-wide record, the editor's writer; built with CONFIG_DSTAR off as well, where only the registry and
+# the parked channel are checked
+TESTS   += dstarCodeplugTest dstarCodeplugOffTest
+DSTARCP := $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/dstar/dstar_codeplug.c
+
+dstarCodeplugTest: dstarCodeplugTest.c $(DSTARCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dstar/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DSTAR=1 -o $@ dstarCodeplugTest.c $(DSTARCP)
+
+dstarCodeplugOffTest: dstarCodeplugTest.c $(DSTARCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dstar/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DSTAR=0 -o $@ dstarCodeplugTest.c $(DSTARCP)
+
+run: run-dstarcp
+run-dstarcp: dstarCodeplugTest dstarCodeplugOffTest
+	./dstarCodeplugTest
+	./dstarCodeplugOffTest
+.PHONY: run-dstarcp
 
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits
@@ -1933,6 +1963,47 @@ run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest 
 	./mbeExactOptsTest | tail -1
 	./mbeExactOptsSplitTest | tail -1
 .PHONY: run-mbe-halves
+
+# D-STAR DV (core/dstar, docs/spec/dstar-modem.md): the header coding against tools/dstar_ref.py's vectors, the soft
+# Viterbi decoder, slow data, whole transmissions through the deframer
+TESTS   += dstarTest
+DSTARFR := $(CORE)/dstar/dstar_fec.c $(CORE)/dstar/dstar_frame.c $(CORE)/fec/conv.c
+
+dstarTest: dstarTest.c $(DSTARFR) $(wildcard $(CORE)/dstar/*.h) $(CORE)/fec/conv.h ../vectors/dstar.txt
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarTest.c $(DSTARFR)
+
+# The GMSK modem on a simulated radio link (noise, offset, clock error, high-passed paths) and the engine
+TESTS   += dstarModemTest
+DSTARMD := $(DSTARFR) $(CORE)/dstar/dstar_gmsk.c $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_air.c \
+	   $(CORE)/air/air_softmodem_tx.c $(CORE)/air/air_softmodem.c
+
+dstarModemTest: dstarModemTest.c $(DSTARMD) $(wildcard $(CORE)/dstar/*.h $(CORE)/air/*.h)
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarModemTest.c $(DSTARMD) -lm
+
+# D-STAR in the radio core (core/radio/radio_dstar.c): whole overs through the engine and the 2400 bit/s MBE codec
+# (core/mbe) on a fake board's flat paths and audio stream, UR's choices, no codec RAM, the bench's calibration and test
+# signals, the counters' reset. The module is built through radioDstarSeam.c, which lets the test run the audio task in
+# the middle of the reset
+TESTS   += radioDstarTest
+DSTARRC := $(CORE)/dstar/dstar_fec.c $(CORE)/dstar/dstar_frame.c $(MBE) $(MBE2400) $(FEC) radioDstarSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/dstar/dstar_gmsk.c \
+	   $(CORE)/dstar/dstar_air.c $(CORE)/air/air_softmodem_tx.c \
+	   $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_codeplug.c
+radioDstarTest: radioDstarTest.c $(DSTARRC) $(CORE)/radio/radio_dstar.c $(wildcard $(CORE)/dstar/*.h $(CORE)/radio/radio_dstar.h) \
+                $(wildcard $(CORE)/mbe/*.h) $(ROOT)/hal/hal_audio_tap.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DSTAR=1 -DCONFIG_MBE2400=1 -o $@ radioDstarTest.c $(DSTARRC) -lm
+
+run: run-dstar
+run-dstar: dstarTest dstarModemTest radioDstarTest
+	./dstarTest
+	./dstarModemTest
+	./radioDstarTest
+ifneq ($(PYTHON),)
+	$(PYTHON) -B $(ROOT)/tools/dstar_ref.py --self-test
+	$(PYTHON) -B $(ROOT)/tools/dstar_bench.py --self-test
+	@$(PYTHON) -B $(ROOT)/tools/dstar_ref.py vectors | cmp -s - ../vectors/dstar.txt || \
+		{ echo "tests/vectors/dstar.txt differs from tools/dstar_ref.py vectors"; exit 1; }
+endif
+.PHONY: run-dstar
 
 # Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and a run-boards:: rule
 # that builds and runs them. Sources stay in the board directory; the binaries are built here like the rest

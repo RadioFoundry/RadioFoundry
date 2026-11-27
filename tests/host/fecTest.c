@@ -1051,6 +1051,70 @@ static void test_conv(void)
 	CHECK(bad_soft * 2 < bad_hard);
 }
 
+// The same code at K = 3 (D-STAR's header, G1 = 1 + D + D^2, G2 = 1 + D^2: the length follows from the polynomials),
+// and the decoder fed by a function: the soft values in reverse order behind it give what the array in order gives,
+// in the decisions' smaller packing (a nibble a step)
+typedef struct {
+	const int8_t *soft;
+	uint16_t n;
+} rev_soft_t;
+
+static int8_t rev_soft(const void *ctx, uint16_t i)
+{
+	const rev_soft_t *r = ctx;
+
+	return r->soft[r->n - 1u - i];
+}
+
+static void test_conv_k3(void)
+{
+	static const fec_conv_code_t code = { 0x07, 0x05 };
+	uint8_t in[16], enc[32], out[16], o2[16];
+	int8_t soft[256], back[256];
+	uint16_t dec[128];
+	uint8_t dec_fn[FEC_CONV_DEC_BYTES(3, 128)];
+
+	CHECK(sizeof dec_fn == 64);
+	for (unsigned rep = 0; rep < 300; rep++) {
+		unsigned n = 20 + rep % 100;		// tail bits included
+		uint8_t u[132] = { 0 };
+
+		memset(in, 0, sizeof in);
+		for (unsigned i = 0; i + 2 < n; i++) {
+			u[i + 2] = (uint8_t)(conv_rand() & 1);
+			in[i >> 3] |= (uint8_t)(u[i + 2] << (7 - (i & 7)));
+		}
+		fec_conv_encode(&code, in, (uint16_t)n, enc);
+		for (unsigned i = 0; i < n; i++) {
+			CHECK(cbit(enc, 2 * i) == (u[i + 2] ^ u[i + 1] ^ u[i]));
+			CHECK(cbit(enc, 2 * i + 1) == (u[i + 2] ^ u[i]));
+		}
+		// soft values of several sizes, a few of them wrong (and less sure) and a few erased, spread out enough for
+		// K = 3 to correct
+		unsigned wrong = 0;
+		for (unsigned i = 0; i < 2 * n; i++) {
+			int v = 4 + (int)(conv_rand() % 4u);
+
+			if (i % 23 == 11 && rep % 3) {
+				v = -1 - (int)(conv_rand() % 3u);
+				wrong++;
+			}
+			if (i % 31 == 5 && rep % 2)
+				v = 0;
+			soft[i] = (int8_t)(cbit(enc, i) ? v : -v);
+			back[2 * n - 1 - i] = soft[i];
+		}
+		memset(out, 0, sizeof out);	// the decoder writes n bits, the compare reads whole bytes
+		memset(o2, 0, sizeof o2);
+		int e = fec_conv_decode(&code, soft, (uint16_t)n, dec, out);
+		rev_soft_t r = { back, (uint16_t)(2 * n) };
+		int e2 = fec_conv_decode_fn(&code, rev_soft, &r, (uint16_t)n, dec_fn, o2);
+
+		CHECK(e == (int)wrong && e2 == e);
+		CHECK(memcmp(out, in, (n + 7) / 8) == 0 && memcmp(o2, in, (n + 7) / 8) == 0);
+	}
+}
+
 int main(void)
 {
 	test_gf();
@@ -1060,6 +1124,7 @@ int main(void)
 	test_bch();
 	test_trellis();
 	test_conv();
+	test_conv_k3();
 	printf("fecTest: %d checks, %d failed\n", g_checks, g_fail);
 	return g_fail ? 1 : 0;
 }

@@ -57,6 +57,7 @@ BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 # mode can't be reached by the web pages
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
+BOARD_NOT_WRITTEN += DSTAR	# no flat FM paths in board.audio_tap (docs/spec/dstar-modem.md 1.1)
 
 # Chinese needs a 16x16 glyph for every character it draws (core/ui/cjk_font_data.c): the translation face plus a
 # reviewed list of Chinese names and repeater words is about 27 KB, and this 464 KB region is already 99 % full

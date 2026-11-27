@@ -10,6 +10,7 @@
 #include "radio/radio.h"
 #include "font.h"
 #include "gfx.h"
+#include "fmt.h"
 #include "config.h"
 #include "fmt.h"
 #if CONFIG_HOTSPOT
@@ -212,6 +213,11 @@ void ui_draw_hint(const char *text, bool toast);
 void ui_draw_bottom(const ui_state_t *s, const char *hint);
 // The banner, if one is up, over the lower part of the screen
 void ui_draw_banner(const ui_state_t *s);
+
+#if CONFIG_DSTAR
+// What UR is, for Home's talk line and D-STAR's Send to row (ui_dstar.c): longer adds "next over" / "for now"
+void ui_dstar_ur_text(const radio_dstar_view_t *d, sbuf_t *b, bool longer);
+#endif
 
 // One row of a list screen
 #define UI_ITEM_DIM	0x01u	// not available here (shown, explained on SELECT)

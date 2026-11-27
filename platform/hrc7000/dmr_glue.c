@@ -27,6 +27,10 @@
 #include "audio_pcm.h"
 #if CONFIG_AIR
 #include "modem/hrc7000/hrc7000_air.h"
+#if CONFIG_FM_FLAT
+#include "air/air_tx_ring.h"
+static void tx_attach(void);
+#endif
 #endif
 #include "hal_time.h"
 #include "FreeRTOS.h"
@@ -177,9 +181,16 @@ static void isr_pa_timer(void)
 	}
 }
 
+// FM transmit audio uses the system interrupt outside DMR too, as receive audio does (fm_flat_tx.c)
+#if CONFIG_FM_FLAT
+#define FM_TX_HOOKED	(eng.fm_tx != NULL)
+#else
+#define FM_TX_HOOKED	false
+#endif
+
 static void irqs_enable(bool on)
 {
-	hrc_irq_enable(IRQ_MODEM_SYS, on || eng.fm_rx != NULL);	// FM receive audio uses it outside DMR too
+	hrc_irq_enable(IRQ_MODEM_SYS, on || eng.fm_rx != NULL || FM_TX_HOOKED);	// FM audio uses it outside DMR too
 	hrc_irq_enable(IRQ_MODEM_TS_TX, on);
 	hrc_irq_enable(IRQ_MODEM_TS_RX, on);
 	hrc_irq_enable(IRQ_MODEM_RF_TX, on);
@@ -314,6 +325,9 @@ HRC_FLASHFUNC void hrc_dmr_board_init(hrc7000_t *modem, const hrc_dmr_board_t *h
 	if (hooks->burst != NULL) {
 		hrc_rfburst_init(modem, hooks->burst);
 	}
+#if CONFIG_AIR && CONFIG_FM_FLAT
+	tx_attach();
+#endif
 	if (task == NULL) {
 		xTaskCreate(dmr_task, "dmr", DMR_TASK_STACK, NULL, DMR_TASK_PRIORITY, &task);
 	}
@@ -359,9 +373,27 @@ bool hrc_dmr_fm_rx_hook(void (*fn)(void))
 	uint32_t s = hrc_irq_save();
 	eng.fm_rx = fn;
 	hrc_irq_restore(s);
-	hrc_irq_enable(IRQ_MODEM_SYS, active || fn != NULL);
+	hrc_irq_enable(IRQ_MODEM_SYS, active || fn != NULL || FM_TX_HOOKED);
 	return true;
 }
+
+#if CONFIG_FM_FLAT
+// Task level, so in flash: this file is otherwise placed in RAM whole
+HRC_FLASHFUNC bool hrc_dmr_fm_tx_hook(void (*fn)(void))
+{
+	// The flat transmit and an air session (hrc7000_air.c) both take the system interrupt and the TX RAM: one at a
+	// time, as the FM receive hook above. A session opens only in DMR and the flat paths run in FM, so the radio core
+	// never asks for both; refusing keeps a wrong order from corrupting either
+	if (fn != NULL && AIR_ON()) {
+		return false;
+	}
+	uint32_t s = hrc_irq_save();
+	eng.fm_tx = fn;
+	hrc_irq_restore(s);
+	hrc_irq_enable(IRQ_MODEM_SYS, active || fn != NULL || eng.fm_rx != NULL);
+	return true;
+}
+#endif
 
 bool hrc_dmr_tx_end(void)
 {
@@ -545,8 +577,8 @@ const hal_dmr_modem_t hrc_dmr = {
 // The chip from the halted engine to the session or the tap: the engine's queues become their memory
 HRC_FLASHFUNC static bool air_take(void)
 {
-	if (!active || air_on || hrc7000_dmr_is_transmitting(&eng) || eng.fm_rx != NULL) {
-		return false;	// not in DMR, a DMR transmission, or FM receive audio (APRS) holds the copy interrupt
+	if (!active || air_on || hrc7000_dmr_is_transmitting(&eng) || eng.fm_rx != NULL || FM_TX_HOOKED) {
+		return false;	// not in DMR, a DMR transmission, or FM audio (APRS, a flat path) holds the interrupt
 	}
 	hrc7000_dmr_halt(&eng);
 	lock(NULL);
@@ -699,13 +731,77 @@ HRC_FLASHFUNC static void tap_stop(void)
 
 HRC_FLASHFUNC static uint32_t tap_time(void) { return air_on ? hrc7000_air_tap_time(AIR) : hrc_micros(); }
 
-// The receive copy on the RF chip's DMR output (modem-hrc7000.md 10.1); no transmit path from the MCU
-const hal_baseband_t hrc_baseband = {
+// Receive: the copy on the RF chip's DMR output (modem-hrc7000.md 10.1). Transmit: on a board with a flat FM route,
+// the TX RAM (8.6), filled from a queue the caller writes (tap_tx_*); otherwise none
+hal_baseband_t hrc_baseband = {
 	.rx_rate_hz = HRC7000_AIR_RATE_HZ, .rx_channels = 1, .rx_lo_hz = HRC7000_AIR_RX_LO_HZ,
 	.rx_hi_hz = HRC7000_AIR_RX_HI_HZ, .rx_counts_per_khz = 0, .rx_start = tap_start, .rx_read = tap_read,
 	.rx_stop = tap_stop, .tx_start = NULL, .tx_write = NULL, .tx_stop = NULL, .now_us = air_now_us,
 	.rx_time_us = tap_time,
 };
+
+#if CONFIG_FM_FLAT
+// The transmit tap: the caller's samples queue here and the FM TX interrupt pulls each TX RAM half from it through the
+// board's route (its hal_audio_tap_t.fm_tx_inject, the one D-STAR's flat path uses). 1 KB, only in builds with a flat
+// path (D-STAR's)
+static air_tx_ring_t tx_ring;
+static bool tx_on;
+
+static HRC_RAMFUNC void tx_pull(int16_t *pcm, uint16_t n)
+{
+	air_tx_ring_pull(&tx_ring, pcm, n);
+}
+
+// The board's calibration of the route into the tap's fields: the scale, the polarity and what its buffers delay
+HRC_FLASHFUNC static void tx_cal(void)
+{
+	const audio_tap_flat_cal_t *c = brd->flat_tap->flat_cal != NULL ? brd->flat_tap->flat_cal() : NULL;
+	hrc_baseband.tx_counts_per_khz = c != NULL && c->tx_1khz > 0 ? (uint16_t)c->tx_1khz : 0;
+	hrc_baseband.tx_invert = c != NULL && c->tx_invert;
+	hrc_baseband.tx_latency_ms = c != NULL ? c->tx_latency_ms : 0;
+	hrc_baseband.tx_lo_hz = c != NULL ? c->tx_hpf_hz : 0;
+}
+
+// In FM transmit, as fm_tx_inject: the queue starts empty (the first halves hold 0, the carrier's center)
+HRC_FLASHFUNC static bool tap_tx_start(void)
+{
+	if (tx_on) {
+		return false;
+	}
+	air_tx_ring_reset(&tx_ring);
+	tx_cal();
+	tx_on = brd->flat_tap->fm_tx_inject(tx_pull, AUDIO_TAP_FLAT);
+	return tx_on;
+}
+
+HRC_FLASHFUNC static uint16_t tap_tx_write(const int16_t *buf, uint16_t n)
+{
+	return tx_on ? air_tx_ring_write(&tx_ring, buf, n) : 0;
+}
+
+HRC_FLASHFUNC static void tap_tx_stop(void)
+{
+	if (tx_on) {
+		brd->flat_tap->fm_tx_inject(NULL, AUDIO_TAP_FLAT);
+		tx_on = false;
+	}
+}
+
+// From hrc_dmr_board_init: the transmit half when the board has the route
+HRC_FLASHFUNC static void tx_attach(void)
+{
+	const hal_audio_tap_t *t = brd->flat_tap;
+	if (t == NULL || (t->caps & AUDIO_TAP_FM_TX_FLAT) == 0 || t->fm_tx_inject == NULL) {
+		return;
+	}
+	hrc_baseband.tx_rate_hz = HRC7000_FM_RX_RATE;	// the TX RAM plays at the FM audio rate, 8 kHz
+	hrc_baseband.tx_hi_hz = HRC7000_FM_RX_RATE / 2u;	// the samples' own limit: the modulator's response is unmeasured
+	tx_cal();
+	hrc_baseband.tx_start = tap_tx_start;
+	hrc_baseband.tx_write = tap_tx_write;
+	hrc_baseband.tx_stop = tap_tx_stop;
+}
+#endif
 
 HRC_FLASHFUNC void hrc_air_stats(hrc7000_air_stats_t *st)
 {

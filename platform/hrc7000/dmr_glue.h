@@ -12,6 +12,9 @@
 #include "hal_dmr_modem.h"
 #include "modem/hrc7000/hrc7000.h"
 #include "dmr_rfburst.h"
+#if CONFIG_FM_FLAT
+#include "hal_audio_tap.h"
+#endif
 
 typedef struct {
 	// The board's per-burst TX on and TX off sequences (dmr_rfburst.h): the glue runs them on the RF-burst task, timed
@@ -35,6 +38,11 @@ typedef struct {
 	// The air interface provider (hrc_air) has been checked on air on this board, receive and transmit: its fits lose
 	// AIR_FIT_UNTESTED
 	bool air_verified;
+#if CONFIG_FM_FLAT
+	// The board's flat FM transmit route through the TX RAM (fm_flat_tx.c with its RF chip's part, AUDIO_TAP_FM_TX_FLAT)
+	// and its calibration: hrc_baseband's transmit half sends through it. NULL: no transmit half
+	const hal_audio_tap_t *flat_tap;
+#endif
 } hrc_dmr_board_t;
 
 #if CONFIG_DMR
@@ -51,6 +59,11 @@ void hrc_dmr_tx_drop(void);
 // FM receive audio (fm_rx_audio.c): fn runs from the modem's system interrupt for each half the modem fills; NULL
 // stops it. The system interrupt stays on for it outside DMR
 bool hrc_dmr_fm_rx_hook(void (*fn)(void));
+#if CONFIG_FM_FLAT
+// FM transmit audio (fm_flat_tx.c): fn runs from the same interrupt for each TX RAM half the modem asks for, NULL
+// stops it
+bool hrc_dmr_fm_tx_hook(void (*fn)(void));
+#endif
 
 extern const hal_dmr_modem_t hrc_dmr;
 
@@ -58,10 +71,13 @@ extern const hal_dmr_modem_t hrc_dmr;
 #include "hal_air.h"
 #include "hal_baseband.h"
 #include "modem/hrc7000/hrc7000_air.h"
-// The air interface provider and the receive tap (modem-hrc7000.md 10): board.air and board.baseband. Each needs the
-// radio in DMR (set_mode) and takes the chip from the slot engine until close / rx_stop
+// The air interface provider and the sample taps (modem-hrc7000.md 10): board.air and board.baseband. The provider
+// and the receive tap need the radio in DMR (set_mode) and take the chip from the slot engine until close / rx_stop.
+// The transmit tap, on a board with a flat FM transmit route (hrc_dmr_board_t.flat_tap), is the TX RAM in FM transmit:
+// between hal_radio_t.tx() and tx_off(), as the route's fm_tx_inject. Not const: its transmit half and calibration
+// come from the board at hrc_dmr_board_init, and the calibration again at each tx_start
 extern const hal_air_t hrc_air;
-extern const hal_baseband_t hrc_baseband;
+extern hal_baseband_t hrc_baseband;
 // The counters of the session or tap open now (zero when none)
 void hrc_air_stats(hrc7000_air_stats_t *st);
 #endif
@@ -83,6 +99,7 @@ static inline bool hrc_dmr_tx_end(void) { return false; }
 static inline bool hrc_dmr_tx_active(void) { return false; }
 static inline void hrc_dmr_tx_drop(void) {}
 static inline bool hrc_dmr_fm_rx_hook(void (*fn)(void)) { (void)fn; return false; }
+static inline bool hrc_dmr_fm_tx_hook(void (*fn)(void)) { (void)fn; return false; }
 #endif
 
 #endif

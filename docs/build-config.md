@@ -78,6 +78,17 @@ make BOARD=<id> VARIANT=commercial       # build/<id>-commercial/
 Each variant file starts with `## title:` and `## summary:` lines, and the comment above each switch says why it is
 left out; the site shows both. The lists are a draft for the project lead to settle.
 
+**A feature a variant makes room for.** A variant never turns a switch on, so a feature that fits only once a variant
+has freed RAM or flash is turned on by the board, in its `config.mk`, on the switch whose room it takes rather than on
+the variant's name: `ifeq ($(CONFIG_X),n)` then `CONFIG_Y ?= y`. The variant's file is read before the board's, and a
+command line value before both, so the test sees what the build will be; in the default build `CONFIG_X` isn't set
+yet and the feature stays at its default. A build made by hand with `CONFIG_X=n` gets the feature too, which is the
+point: what decides it is the room, not the preset. If ci's maximal configuration (every switch on) then doesn't fit,
+the board's `MAXIMAL_VARS` turns the room-maker off there, so the feature is still built in ci. `CONFIG_DSTAR` is the
+first (a board turns it on where the IP gateway is left out; [feature-matrix.md](feature-matrix.md)). The alternatives
+were a variant that turns a switch on, which would make variants order-dependent and break "only off", and a test of
+`VARIANT`, which ties a board to a preset's name and misses hand-made builds.
+
 The firmware version (`RFOUNDRY_GIT`) is the commit plus `-dirty` when the tree differs from it (tracked changes, or
 untracked sources in the built directories). The release name (`RFOUNDRY_RELEASE`, for example `v26.11`) is the
 release tag on that commit, empty for a dirty tree or an untagged commit; `make RELEASE=<tag>` sets it and `RELEASE=`
@@ -144,13 +155,14 @@ below are for an STM32F4 radio.
 | `CONFIG_P25_TRUNK` | = P25 | P25 trunked: the codec of its systems and channels (`docs/spec/p25-codeplug.md` 3), the control channel's signaling decoded, its control channel hunted and held, voice channel grants for the chosen talk groups followed, and where the system allows transmit: registration, affiliation, voice requests and transmit on the granted channel (`docs/spec/p25-trunking.md`). The radio core runs it on a trunked channel. Host tested, and run on a radio against a control channel the SDR bench plays, not on a live system. Needs P25 |
 | `CONFIG_NXDN` | = DMR | NXDN conventional voice at 4800 and 9600 bit/s (`docs/spec/nxdn.md`): the frame codec, receive, the call layer and its engine, and the air interface under them. The radio core's NXDN mode (the VFO's mode tile, a temporary mode change, the debug link), RAM settings, the home screen; NXDN conventional channels in the codeplug (`docs/spec/nxdn-codeplug.md`); voice through the DMR side's vocoder path. Needs `DMR`. With P25 on and no lending vocoder it shares P25's engine memory |
 | `CONFIG_NXDN_SCRAMBLER` | = NXDN | 15-bit NXDN Scrambler for conventional voice calls. Needs `NXDN`. |
-| `CONFIG_MBE2400` | n | the 2400 bit/s MBE voice codec, compatible with D-STAR's voice frames (`core/mbe/mbe2400.h`, `docs/spec/mbe-2400.md`): the encoder, the decoder and the frame's FEC on the MBE core. No mode uses the codec yet |
+| `CONFIG_MBE2400` | n | the 2400 bit/s MBE voice codec, compatible with D-STAR's voice frames (`core/mbe/mbe2400.h`, `docs/spec/mbe-2400.md`): the encoder, the decoder and the frame's FEC on the MBE core. D-STAR's voice: on with `CONFIG_DSTAR` |
 | `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs P25 or NXDN (an air-framed mode) and DEBUGLINK |
 | `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX) and Standalone SFR (the repeater and user roles of a channel, `docs/spec/sfr.md`) |
 | `CONFIG_SFR_CWID` | = SFR | the standalone SFR repeater's periodic CW ID: the callsign from the radio name in Morse, in FM on the channel (`sfr.md` 4). Off: the setting isn't offered |
 | `CONFIG_SFR_DUALPATH_RX` | = SFR | the SFR user receive mode "Dual-path RX": a voice frame whose FEC failed is taken from the other copy of the call. Off: the mode isn't offered |
 | `CONFIG_AM_RX` | = `CONFIG_FM` | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, the board's AM squelch value, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. Off on boards whose receiver has no AM (`BOARD_UNSUPPORTED`) |
 | `CONFIG_BCAST_FM` | y | broadcast FM receive: an FM channel or the VFO in the range of a second receiver chip (`hal_bcast.h`) plays on it, transmit there refused, the FM broadcast step setting (`core/radio/radio_bcast.c`, the board's tuner glue; `docs/spec/airband-and-broadcast.md` 4). Off on boards without one |
+| `CONFIG_DSTAR` | n | D-STAR DV (`core/dstar`, `core/radio/radio_dstar.c`, `docs/spec/dstar-modem.md`): the GMSK modem, the DV framing (header coding, voice and slow data frames, late entry), the D-STAR channel kind (`docs/spec/dstar-codeplug.md`), its screens and debug link command, on a board's flat FM audio taps (`AUDIO_TAP_FM_TX_FLAT`, `AUDIO_TAP_FM_RX_RAW`); its voice is the 2400 bit/s MBE codec, which it turns on (`CONFIG_MBE2400`). Needs FM. Off by default; a board whose glue runs it turns it on where it fits (Variants, "A feature a variant makes room for"), the others list it as not written. About 29 KB flash and 2.5 KB RAM on an HR_C7000 radio with P25 (whose MBE core the codec shares); the codec's 4 KB of memory is borrowed from the DMR vocoder (`docs/spec/dstar-modem.md` 1.3) |
 | `CONFIG_RX_EXT` | y (n on a radio whose chip documents give no range) | receive past the band table: the board's receive-only range, switched on in Settings > Advanced ([radio-features.md](spec/radio-features.md) 6.2) |
 | `CONFIG_USB` | y (n on a radio without a USB data connector) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (y on a radio whose host port is a UART) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB |

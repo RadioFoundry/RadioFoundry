@@ -37,7 +37,8 @@ bool radio_nxdn_fits(void);
 	X(2, P25, "P25", CODEPLUG_RUNS_P25)	/* P25 conventional: the radio core runs it (core/radio/radio_p25.c) */ \
 	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK && CODEPLUG_RUNS_P25)	/* P25 trunked, receive only (radio_p25.c) */ \
 	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN)	/* NXDN conventional: the radio core runs it (core/radio/radio_nxdn.c) */ \
-	X(5, DMR_AES, "AES", CONFIG_DMR_AES)
+	X(5, DMR_AES, "AES", CONFIG_DMR_AES) \
+	X(6, DSTAR, "DV", CONFIG_DSTAR)	/* D-STAR DV: plain ASCII short name, every radio font has it */
 
 // System types: the first byte of a system record
 #define CODEPLUG_SYSTEM_TYPES(X) \
@@ -55,9 +56,10 @@ bool radio_nxdn_fits(void);
 #endif
 
 // Whether this build reads the mode-scoped record families (codeplug_records.h): the OR of the build conditions of the
-// modes that use them: P25 and NXDN read their radio-wide records, Tier III its systems. A test defines it 1
+// modes that use them: P25 and NXDN read their radio-wide records, Tier III its systems, D-STAR its station. A test
+// defines it 1
 #ifndef CODEPLUG_MODE_RECORDS
-#define CODEPLUG_MODE_RECORDS	(CONFIG_P25 || CONFIG_NXDN || CONFIG_DMR_TRUNK || CONFIG_DMR_AES)
+#define CODEPLUG_MODE_RECORDS	(CONFIG_P25 || CONFIG_NXDN || CONFIG_DMR_TRUNK || CONFIG_DMR_AES || CONFIG_DSTAR)
 #endif
 
 #define CODEPLUG_KIND_ENUM(id, token, name, built)	CODEPLUG_KIND_##token = id,
