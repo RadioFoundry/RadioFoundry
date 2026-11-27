@@ -20,6 +20,8 @@
 //                       rxaend / rxbend its end
 //   tune:a|b            dual watch: the receiver moves to channel A or B (a call there holds it)
 //   spectrumrx:<bin>,<dBm>  a quiet sweep with one carrier, followed by its tuned confirmation
+//   hop:a|b             the same just before the next key, with no UI pass between: the key reads the view as the
+//                       radio left it
 //   busy:a|b|none       dual watch: the radio's mark for a signal found on A / B in the wait after a call
 //   dlpos:<n>           another task (the debug link) asks the radio for position n of the zone
 //   dldual:<n>          the debug link's scan dual: the radio watches the channel it is on (A) and position n
@@ -33,8 +35,10 @@
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
-//   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
-//                       1 finding the system, 2 on the control channel, 3 following talk group tg
+//   p25t:<state>[,<tg>[,<reg>[,<tx>[,<why>]]]]  the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds),
+//                       its follower in state 1 finding the system, 2 on the control channel, 3 following talk group
+//                       tg; reg the registration state (p25_reg_t, 8 blocked); tx 1 turns the transmit side on; why
+//                       a PTT the radio just refused, for that reason (RADIO_TRUNK_WHY_*, 11 blocked)
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
@@ -1251,6 +1255,9 @@ static const char *contact_name(uint32_t id, bool group)
 // ---------------- the radio core ----------------
 
 static radio_view_t view;
+#if CONFIG_SPECTRUM
+static spectrum_t spectrum;
+#endif
 static uint32_t serial;
 #if CONFIG_SATELLITE_TLE
 static radio_satellite_view_t satellite_view;
@@ -1319,6 +1326,10 @@ uint32_t radio_view_serial(void) { return serial; }
 static int32_t sim_step;	// UI_SET_VFO_STEP: 0 auto (the width's), else 10 Hz units
 static void changed(void)
 {
+#if CONFIG_SPECTRUM
+	if (spectrum.active || view.spectrum.active)
+		spectrum_read(&spectrum, &view.spectrum);
+#endif
 	view.vfo_step_hz = sim_step == 833 ? 8333u : sim_step > 0 ? (uint32_t)sim_step * 10u :
 			   view.ch.bw == RADIO_BW_25K ? 25000u : 12500u;
 	view.vfo_step_auto = sim_step == 0;
@@ -1490,7 +1501,7 @@ static const band_t *spectrum_band(uint32_t hz)
 
 void ui_svc_spectrum(uint8_t cmd, int32_t value)
 {
-	spectrum_t *s = &view.spectrum;
+	spectrum_t *s = &spectrum;
 	bool adjusted = false;
 	if (cmd == SPECTRUM_STOP) {
 		s->active = false;
@@ -2170,6 +2181,8 @@ bool ui_svc_scan_skip(void) { radio_req_channel_step(1); return true; }
 // keys act on it); `tune:a` / `tune:b` move it to a channel, as the alternating receiver does when a call holds it
 // Each channel keeps its changes for now while the receiver is on the other (as radio_sm.c's dual_keep)
 static uint8_t sim_at = 0xFF;		// the pane the receiver is on
+static int8_t hop_next = -1;		// hop:a|b: the pane the receiver moves to just before the next key (-1: none)
+static void sim_tune(int pane);
 static radio_view_t sim_keep[2];
 static uint32_t sim_keep_target[2];
 static bool sim_keep_ok[2];
@@ -2765,6 +2778,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
 #if CONFIG_SPECTRUM
+	memset(&spectrum, 0, sizeof spectrum);
 	memset(&spectrum_preferences, 0, sizeof spectrum_preferences);
 	spectrum_preferences.step = 12500;
 	spectrum_preferences.bins = 129;
@@ -2906,6 +2920,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_DUAL_B, 0);
 	memset(sim_dual, 0, sizeof sim_dual);
 	sim_at = 0xFF;
+	hop_next = -1;
 	sim_keep_ok[0] = sim_keep_ok[1] = false;
 #endif
 	memset(&crash_sim, 0, sizeof crash_sim);
@@ -3005,6 +3020,10 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		}
 		input_event_t ev = { a, (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
 		advance(lng ? LONG_MS : PRESS_MS / 2);
+		if (hop_next >= 0) {	// the radio moved while the UI task waited: the view it reads first (ui.c)
+			sim_tune(hop_next);
+			hop_next = -1;
+		}
 		ui_app_key(&ev);
 		advance(PRESS_MS / 2);
 		return true;
@@ -3168,7 +3187,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "spec_active") == 0) snprintf(got, sizeof got, "%u", view.spectrum.active);
 	else if (strcmp(key, "spec_bins") == 0) snprintf(got, sizeof got, "%u", view.spectrum.bins);
 	else if (strcmp(key, "spec_center") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.spectrum.center_hz);
-	else if (strcmp(key, "spec_tuner") == 0) snprintf(got, sizeof got, "%u", (unsigned)spectrum_frequency(&view.spectrum, view.spectrum.tuner));
+	else if (strcmp(key, "spec_tuner") == 0) snprintf(got, sizeof got, "%u", (unsigned)spectrum_view_frequency(&view.spectrum, view.spectrum.tuner));
 	else if (strcmp(key, "spec_dwell") == 0) snprintf(got, sizeof got, "%u", view.spectrum.dwell_ms);
 	else if (strcmp(key, "spec_auto") == 0) snprintf(got, sizeof got, "%u", view.spectrum.auto_peak);
 	else if (strcmp(key, "spec_squelch") == 0) snprintf(got, sizeof got, "%d", (int)view.spectrum.squelch_dbm);
@@ -3548,7 +3567,7 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "spectrumrx") == 0) {
 		unsigned bin;
 		int dbm;
-		spectrum_t *s = &view.spectrum;
+		spectrum_t *s = &spectrum;
 		if (!s->active || arg == NULL || sscanf(arg, "%u,%d", &bin, &dbm) != 2 || bin >= s->bins ||
 		    dbm < -160 || dbm > 0) {
 			snprintf(err, len, "bad %s", t);
@@ -3574,6 +3593,10 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "tune") == 0 && arg != NULL && (arg[0] == 'a' || arg[0] == 'b')) {	// dual watch: the receiver
 		sim_tune(arg[0] == 'b');							// on A or B
 		advance(100);
+		return true;
+	}
+	if (strcmp(t, "hop") == 0 && arg != NULL && (arg[0] == 'a' || arg[0] == 'b')) {	// the same, just before the
+		hop_next = arg[0] == 'b';	// next key: the UI reads the view the radio left, with no pass between (ui.c)
 		return true;
 	}
 	if (strcmp(t, "busy") == 0 && arg != NULL) {	// dual watch: the looks in the wait found a signal there
@@ -3684,17 +3707,24 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 #if CONFIG_P25_TRUNK
 	if (strcmp(t, "p25t") == 0) {
-		unsigned st = 0, tg = 0;
-		if (arg == NULL || sscanf(arg, "%u,%u", &st, &tg) < 1 || st > RADIO_P25_TRUNK_VOICE) {
+		unsigned st = 0, tg = 0, reg = 0, tx = 0, why = 0;
+		if (arg == NULL || sscanf(arg, "%u,%u,%u,%u,%u", &st, &tg, &reg, &tx, &why) < 1 ||
+		    st > RADIO_P25_TRUNK_VOICE) {
 			snprintf(err, len, "bad %s", t);
 			return false;
 		}
 		view.ch.mode = RADIO_MODE_P25;
 		view.ch.kind = CODEPLUG_KIND_P25_TRUNK;
 		view.ch.rx_only = true;
-		view.p25.flags = RADIO_P25_ON;
+		view.p25.flags = RADIO_P25_ON | (tx ? RADIO_P25_TRUNK_TX : 0);
 		view.p25.trunk = (uint8_t)st;
+		view.p25.treg = (uint8_t)reg;
 		view.p25.dst = tg;
+		if (why) {
+			view.state = RS_TX_DENIED;
+			view.tx_deny = TXDENY_TRUNK;
+			view.p25.twhy = (uint8_t)why;
+		}
 		changed();
 		advance(100);
 		return true;
@@ -3969,6 +3999,15 @@ static bool run_token(char *t, char *err, size_t len)
 			view.volume = level;
 			view.volume_src = soft_volume ? RVOL_SOFT : t[0] == 'k' ? RVOL_KNOB : RVOL_OVERRIDE;
 		}
+		changed();
+		step();
+		return true;
+	}
+	if (strcmp(t, "knobpos") == 0 && arg != NULL) {
+		// A knob the MCU reads on a radio that can't set the level: only the position, volume_src RVOL_NONE
+		view.volume_knob = (int8_t)atoi(arg);
+		view.volume = -1;
+		view.volume_src = RVOL_NONE;
 		changed();
 		step();
 		return true;

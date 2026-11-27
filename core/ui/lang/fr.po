@@ -4783,11 +4783,6 @@ msgid "Finding system"
 msgstr "Recherche système"
 
 #: core/ui/ui_screens.c
-msgctxt "HOME_STATE_P25T_BLOCKED"
-msgid "Blocked system"
-msgstr "Système bloqué"
-
-#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "Attente"
@@ -4979,8 +4974,8 @@ msgstr "Canal voix inutilisable"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
-msgid "Blocked system: no TX"
-msgstr "Système bloqué : pas de TX"
+msgid "RX-only system: no TX"
+msgstr "Système en RX seule : pas de TX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"
@@ -5773,14 +5768,14 @@ msgid "Dwell time"
 msgstr "Temps de pause"
 
 #: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_HASH_KEY"
-msgid "# key"
-msgstr "Touche #"
-
-#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_STAR_KEY"
 msgid "* key"
 msgstr "Touche *"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_HASH_KEY"
+msgid "# key"
+msgstr "Touche #"
 
 #: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_CENTER"

@@ -32,7 +32,7 @@ RXSEEN  := $(CORE)/fec/rx_seen.c
 TSHARK  ?= $(firstword $(wildcard /Applications/Wireshark*.app/Contents/MacOS/tshark) $(shell command -v tshark))
 
 TESTS   := dmrFecTest dmrSoftBptcTest dmrSoftCombTest sfrTest dmrDataTest dmrDataServiceTest hotspotDataTest hotspotUplinkTest dmrPrivacyTest \
-           ipGatewayTest ipGatewayTest16 ipGatewayTestShared ipGatewayTestAir440
+           ipGatewayTest ipGatewayTest16 ipGatewayTestShared ipGatewayTestAir440 spkAuxTest spkAuxTestMux
 
 all: run
 
@@ -60,6 +60,15 @@ hotspotUplinkTest: hotspotUplinkTest.c $(CORE)/hotspot/hotspotUplink.c $(CORE)/h
 	$(CC) $(CFLAGS) -o $@ hotspotUplinkTest.c $(CORE)/hotspot/hotspotUplink.c
 
 IPGW    := ipGatewayTest.c $(CORE)/dmr/ipGateway.c $(DATA)
+
+# The speaker's second output (core/radio/spk_aux.c)
+spkAuxTest: spkAuxTest.c $(CORE)/radio/spk_aux.c $(CORE)/radio/spk_aux.h $(ROOT)/hal/hal_audio.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=0 -DCONFIG_APRS_RX=0 -o $@ spkAuxTest.c \
+	      $(CORE)/radio/spk_aux.c
+# ... with the audio mux, whose wrapper runs the step instead of spk_aux's own
+spkAuxTestMux: spkAuxTest.c $(CORE)/radio/spk_aux.c $(CORE)/radio/spk_aux.h $(CORE)/usbaudio/audio_mux.c $(ROOT)/hal/hal_audio.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=1 -DSPK_AUX_MUX -o $@ spkAuxTest.c \
+	      $(CORE)/radio/spk_aux.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
 
 ipGatewayTest: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -o $@ $(IPGW)
@@ -236,6 +245,8 @@ aprsTest: aprsTest.c $(APRSLIB) $(NMEALIB) $(wildcard $(CORE)/aprs/*.h)
 	$(CC) $(CFLAGS) -o $@ aprsTest.c $(APRSLIB) $(NMEALIB) -lm
 
 run: $(TESTS)
+	./spkAuxTest
+	./spkAuxTestMux
 	./dmrFecTest
 	./dmrSoftBptcTest
 	./dmrSoftCombTest
@@ -299,7 +310,7 @@ T3RADIO := $(CORE)/radio/radio_trunk.c $(CORE)/radio/radio_trunk_cp.c $(CORE)/co
            $(CORE)/dmr/trunk/t3_ms.c $(CORE)/dmr/trunk/t3_pdu.c $(CORE)/dmr/trunk/t3_sys.c \
            $(CORE)/dmr/trunk/t3_plan.c sim/codeplug_copy_stub.c $(RXSEEN)
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
-RFEAT   := $(CORE)/radio/spectrum.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/sigtone.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
+RFEAT   := $(CORE)/radio/spectrum.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/spk_aux.c $(CORE)/radio/sigtone.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
            $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/radio/pa_keyup.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c $(T3RADIO)
@@ -403,6 +414,12 @@ radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CO
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -DCONFIG_DUAL_WATCH=0 -o $@ $(RFTEST) -lm
 
+# A volume potentiometer read on an ADC, as a position
+TESTS   += volumePotTest
+
+volumePotTest: volumePotTest.c $(CORE)/radio/volume_pot.c $(CORE)/radio/volume_pot.h $(CORE)/radio/cal_curve.h
+	$(CC) $(CFLAGS) -o $@ volumePotTest.c $(CORE)/radio/volume_pot.c
+
 # The volume knob power switch read from the battery sense line
 TESTS   += powerSwitchTest
 
@@ -425,7 +442,7 @@ roamTest: $(ROAMT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h
 TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
-APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/spectrum.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/sigtone.c \
+APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/spectrum.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/spk_aux.c $(CORE)/radio/sigtone.c \
            $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
@@ -493,7 +510,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 
 run: run-core
 run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
-          rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
+          rx2LinkTest keyassignTest volumePotTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
@@ -515,6 +532,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T
 	./resampleTest
 	./rx2LinkTest
 	./keyassignTest
+	./volumePotTest
 	./powerSwitchTest
 	./powerKeyTest
 	./boardBandTest
@@ -1393,7 +1411,7 @@ HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/ho
            $(CORE)/dmr/dmrAirQueue.c \
            $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/debuglink/dl_fmt.c $(DATA) $(FRAME)
 HLNET_OFF := -DCONFIG_NET_KISS=0 -DCONFIG_NET_HTTP=0 -DCONFIG_NET_RIGCTL=0 -DCONFIG_NET_APRSIS=0 -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 \
-             -DCONFIG_NET_USRP=0 -DCONFIG_NET_RADIO_UDP=0
+             -DCONFIG_NET_USRP=0
 TESTS   += hostlinkNetTest
 
 hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_netif.h
@@ -1645,7 +1663,7 @@ CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug
 TESTS   += cpsTest
 
 cpsTest: cpsTest.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsTest.c $(CPS)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DRFOUNDRY_GIT_STAMP='"20261125093007"' -o $@ cpsTest.c $(CPS)
 
 run: run-cps
 run-cps: cpsTest
@@ -1783,7 +1801,7 @@ endif
 # The TCP services (core/net) through the real gateway and TCP, against a scripted TCP peer and fakes of the APRS
 # engine and the radio core; tshark checks netSvcTest.pcap
 NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
-           $(CORE)/net/http.c $(CORE)/net/radio_udp.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c $(CORE)/net/webctl.c $(CORE)/net/ws.c \
+           $(CORE)/net/http.c $(CORE)/net/radio_ctl.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c $(CORE)/net/webctl.c $(CORE)/net/ws.c \
            $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += netSvcTest
 

@@ -128,13 +128,13 @@ def test_spectrum_shortcut_assignments(radio):
             radio.press(key)
         radio.wait_for(lambda v: v.get("ui.screen") == "spectrum-settings" and v.get("spectrum.active") == "1",
                        sections=("link", "channel"), what="spectrum settings")
-        for _ in range(7):
+        for _ in range(8):
             radio.press("down")
         for _ in range(4):
             if radio.view(["channel"])["spectrum.hash_key"] == "auto_peak":
                 break
             radio.press("ok")
-        radio.press("down")
+        radio.press("up")
         for _ in range(4):
             if radio.view(["channel"])["spectrum.star_key"] == "filter":
                 break

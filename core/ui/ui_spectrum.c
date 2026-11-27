@@ -9,7 +9,7 @@
 #include "radio/radio_bands.h"
 
 enum { FIELD_CENTER, FIELD_SQUELCH, FIELD_STEP, FIELD_BANDWIDTH, FIELD_DWELL, FIELD_FILTER, FIELD_AUTO,
-	FIELD_CENTER_TUNER, FIELD_HASH_KEY, FIELD_STAR_KEY, FIELD_COUNT };
+	FIELD_CENTER_TUNER, FIELD_STAR_KEY, FIELD_HASH_KEY, FIELD_COUNT };
 static uint8_t selected, length;
 static bool editing, stepping;
 static int32_t stepped_value;
@@ -71,7 +71,7 @@ static const char *choice_name(unsigned field)
 
 static void value_text(sbuf_t *b, unsigned field)
 {
-	const spectrum_t *s = &ui_view()->spectrum;
+	const spectrum_view_t *s = &ui_view()->spectrum;
 	bool spin = editing && stepping && selected == field;
 	if (editing && !stepping && selected == field) {
 		if (field == FIELD_SQUELCH && (length == 0 || strspn(digits, "0") != length))
@@ -107,7 +107,7 @@ static void value_text(sbuf_t *b, unsigned field)
 
 static void spectrum_draw(void)
 {
-	const spectrum_t *s = &ui_view()->spectrum;
+	const spectrum_view_t *s = &ui_view()->spectrum;
 	const font_t *f = ui_layout.tiny;
 	bool compact = gfx_height() < 100;
 	gfx_clear(ui_col.bg);
@@ -125,7 +125,7 @@ static void spectrum_draw(void)
 	sb_init(&b, text, sizeof text);
 	value_text(&b, FIELD_CENTER);
 	sb_init(&b, tuner, sizeof tuner);
-	frequency_text(&b, spectrum_frequency(s, s->tuner));
+	frequency_text(&b, spectrum_view_frequency(s, s->tuner));
 	int number_width = gfx_text_width(f, text) + gfx_text_width(f, tuner) + 5;
 	int unit_width = gfx_text_width(f, " MHz");
 	if (number_width + 2 * unit_width <= gfx_width())
@@ -139,13 +139,13 @@ static void spectrum_draw(void)
 	gfx_text(f, gfx_width() - gfx_text_width(f, tuner), y, tuner, ui_col.dim);
 	y += f->h + (compact ? 1 : 3);
 
-	unsigned peak = spectrum_strongest(s);
-	if (spectrum_peak_level(s, peak) != SPECTRUM_EMPTY) {
+	unsigned peak = spectrum_view_strongest(s);
+	if (spectrum_view_peak_level(s, peak) != SPECTRUM_EMPTY) {
 		sb_init(&b, text, sizeof text);
 		sb_str(&b, TR(SPECTRUM_LABEL_PEAK, "Peak "));
-		frequency_text(&b, spectrum_frequency(s, peak));
+		frequency_text(&b, spectrum_view_frequency(s, peak));
 		sb_chr(&b, ' ');
-		sb_i32(&b, spectrum_level_dbm(spectrum_peak_level(s, peak)));
+		sb_i32(&b, spectrum_level_dbm(spectrum_view_peak_level(s, peak)));
 		if (gfx_text_width(f, text) + gfx_text_width(f, " dBm") <= gfx_width()) sb_str(&b, " dBm");
 		gfx_text(f, 0, y, text, ui_col.dim);
 		y += f->h + (compact ? 1 : 2);
@@ -164,7 +164,7 @@ static void spectrum_draw(void)
 				int ly = level_y(spectrum_level_dbm(s->level[i]), y, bottom);
 				gfx_vline(x, ly, bottom - ly + 1, ui_col.rx);
 			}
-			uint8_t level = spectrum_peak_level(s, i);
+			uint8_t level = spectrum_view_peak_level(s, i);
 			if (level != SPECTRUM_EMPTY)
 				gfx_pixel(x, level_y(spectrum_level_dbm(level), y, bottom), ui_col.warn);
 		}
@@ -185,13 +185,13 @@ static void spectrum_draw(void)
 			gfx_hline(x - d, bottom + d, 2 * d + 1, ui_col.fg);
 	}
 	sb_init(&b, text, sizeof text);
-	frequency_text(&b, spectrum_frequency(s, 0));
+	frequency_text(&b, spectrum_view_frequency(s, 0));
 	gfx_text(f, left, bottom + 4, text, ui_col.dim);
 	sb_init(&b, text, sizeof text);
-	frequency_text(&b, spectrum_frequency(s, s->bins - 1));
+	frequency_text(&b, spectrum_view_frequency(s, s->bins - 1));
 	gfx_text(f, right - gfx_text_width(f, text), bottom + 4, text, ui_col.dim);
 	if (!compact)
-			ui_draw_bottom_font(&ui_st, editing ? TR(SPECTRUM_HINT_ENTRY, "Digits  # .  OK save  Back") :
+		ui_draw_bottom_font(&ui_st, editing ? TR(SPECTRUM_HINT_ENTRY, "Digits  # .  OK save  Back") :
 				(board.caps & CAP_KEYPAD) ? TR(SPECTRUM_HINT_MAIN, "OK settings  Type freq  Back") :
 				TR(SPECTRUM_HINT_NO_KEYPAD, "OK settings  Back"), f);
 	ui_draw_banner(&ui_st);
@@ -223,7 +223,7 @@ static bool save_entry(void)
 			for (; decimals < 3; decimals++) hz *= 10;
 			if (hz < 1000 || hz > 100000) return false;
 			value = (uint32_t)hz;
-			const spectrum_t *s = &ui_view()->spectrum;
+			const spectrum_view_t *s = &ui_view()->spectrum;
 			if ((uint64_t)value * (s->bins - 1) > (uint64_t)s->hi_hz - s->lo_hz) return false;
 		} else if (selected == FIELD_DWELL) {
 			if (value < SPECTRUM_SETTLE_MS || value > SPECTRUM_DWELL_MAX_MS) return false;
@@ -243,14 +243,14 @@ static void begin_entry(unsigned field)
 	stepping = !(board.caps & CAP_KEYPAD);
 	length = 0;
 	digits[0] = 0;
-	const spectrum_t *s = &ui_view()->spectrum;
+	const spectrum_view_t *s = &ui_view()->spectrum;
 	stepped_value = field == FIELD_CENTER ? (int32_t)s->center_hz : field == FIELD_STEP ? (int32_t)s->step_hz :
 		field == FIELD_DWELL ? s->dwell_ms : s->squelch_dbm;
 }
 
 static int32_t step_center(int32_t value, int steps)
 {
-	const spectrum_t *s = &ui_view()->spectrum;
+	const spectrum_view_t *s = &ui_view()->spectrum;
 	uint64_t span = (uint64_t)s->step_hz * (s->bins - 1u);
 	int64_t next = (int64_t)value + (int64_t)steps * s->step_hz;
 	int64_t best = steps > 0 ? INT64_MAX : INT64_MIN;
@@ -281,7 +281,7 @@ static bool entry_key(const input_event_t *ev)
 			int32_t lo = selected == FIELD_SQUELCH ? -160 : selected == FIELD_STEP ? 1000 : (int32_t)SPECTRUM_SETTLE_MS;
 			int32_t hi = selected == FIELD_SQUELCH ? 0 : selected == FIELD_STEP ? 100000 : (int32_t)SPECTRUM_DWELL_MAX_MS;
 			if (selected == FIELD_STEP) {
-				const spectrum_t *s = &ui_view()->spectrum;
+				const spectrum_view_t *s = &ui_view()->spectrum;
 				uint32_t fit = (s->hi_hz - s->lo_hz) / (s->bins - 1u) / 10u * 10u;
 				if (fit < (uint32_t)hi) hi = (int32_t)fit;
 			}
@@ -317,7 +317,7 @@ static bool entry_key(const input_event_t *ev)
 
 static void change_choice(unsigned field, bool feedback)
 {
-	const spectrum_t *s = &ui_view()->spectrum;
+	const spectrum_view_t *s = &ui_view()->spectrum;
 	uint8_t cmd;
 	int32_t value;
 	if (field == FIELD_BANDWIDTH) {
@@ -407,7 +407,7 @@ static void settings_item(uint16_t i, ui_item_t *it)
 		TRN(SPECTRUM_ROW_BANDWIDTH, "Bandwidth"), TRN(SPECTRUM_ROW_DWELL, "Dwell time"),
 		TRN(SPECTRUM_ROW_FILTER, "Filter"), TRN(SPECTRUM_ROW_AUTO_PEAK, "Auto peak"),
 		TRN(SPECTRUM_ROW_CENTER_TUNER, "Center tuner"),
-		TRN(SPECTRUM_ROW_HASH_KEY, "# key"), TRN(SPECTRUM_ROW_STAR_KEY, "* key"),
+		TRN(SPECTRUM_ROW_STAR_KEY, "* key"), TRN(SPECTRUM_ROW_HASH_KEY, "# key"),
 		TRN(SPECTRUM_ROW_CENTER, "Center") };
 	if (i >= settings_count()) return;
 	str_copy(it->label, sizeof it->label, tr(labels[i]));
@@ -428,7 +428,7 @@ static void settings_select(uint16_t i, bool hold)
 {
 	if (hold || i >= settings_count()) return;
 	unsigned field = settings_field(i);
-	const spectrum_t *s = &ui_view()->spectrum;
+	const spectrum_view_t *s = &ui_view()->spectrum;
 	if (field == FIELD_HASH_KEY || field == FIELD_STAR_KEY) {
 		ui_svc_spectrum(field == FIELD_HASH_KEY ? SPECTRUM_HASH_KEY : SPECTRUM_STAR_KEY,
 			((field == FIELD_HASH_KEY ? s->hash_key : s->star_key) + 1u) % SPECTRUM_KEY_COUNT);

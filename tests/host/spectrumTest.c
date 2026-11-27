@@ -7,6 +7,43 @@
 static unsigned failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %d: %s\n", __LINE__, #c); } } while (0)
 
+static void test_view_snapshot(void)
+{
+	spectrum_t s;
+	spectrum_view_t v;
+	// Several tasks retain a view. History storage must not grow with that number of readers.
+	CHECK(sizeof v < 3u * SPECTRUM_BINS);
+	CHECK(spectrum_start(&s, 446000000, 400000000, 480000000, 12500, 65, 0));
+	CHECK(spectrum_adjust(&s, SPECTRUM_DWELL, 50, 0));
+	CHECK(spectrum_adjust(&s, SPECTRUM_FILTER, 1, 0));
+	CHECK(spectrum_adjust(&s, SPECTRUM_SCALE, -20, 0));
+	CHECK(spectrum_adjust(&s, SPECTRUM_CENTER_TUNER, 1, 0));
+	CHECK(spectrum_adjust(&s, SPECTRUM_HASH_KEY, SPECTRUM_KEY_FILTER, 0));
+	CHECK(spectrum_adjust(&s, SPECTRUM_STAR_KEY, SPECTRUM_KEY_AUTO_PEAK, 0));
+	CHECK(spectrum_sample(&s, -55, 10));
+	spectrum_read(&s, &v);
+	CHECK(v.active == s.active && v.listening == s.listening && v.audio_open == s.audio_open);
+	CHECK(v.auto_peak == s.auto_peak && v.narrow == s.narrow && v.center_tuner == s.center_tuner);
+	CHECK(v.index == s.index && v.tuner == s.tuner && v.bins == s.bins && v.sweeps == s.sweeps);
+	CHECK(v.scale_db == s.scale_db && v.dwell_ms == s.dwell_ms && v.squelch_dbm == s.squelch_dbm);
+	CHECK(v.center_hz == s.center_hz && v.step_hz == s.step_hz && v.lo_hz == s.lo_hz && v.hi_hz == s.hi_hz);
+	CHECK(v.hash_key == s.hash_key && v.star_key == s.star_key);
+	CHECK(memcmp(v.level, s.level, sizeof v.level) == 0);
+	for (unsigned i = 0; i < SPECTRUM_BINS; i++) {
+		CHECK(spectrum_view_peak_level(&v, i) == spectrum_peak_level(&s, i));
+		if (i < s.bins) CHECK(spectrum_view_frequency(&v, i) == spectrum_frequency(&s, i));
+	}
+	CHECK(spectrum_view_strongest(&v) == spectrum_strongest(&s));
+	// A reader's saved snapshot must stay unchanged while the engine ages out an old carrier.
+	CHECK(spectrum_sample(&s, -100, 6010));
+	CHECK(spectrum_level_dbm(v.peak[v.tuner]) == -55);
+	spectrum_read(&s, &v);
+	CHECK(spectrum_level_dbm(v.peak[s.bins / 2u]) == -100);
+	s.active = false;
+	spectrum_read(&s, &v);
+	CHECK(!v.active);
+}
+
 static void test_key_assignments(void)
 {
 	spectrum_t s;
@@ -165,6 +202,7 @@ static void test_center_tuner(void)
 
 int main(void)
 {
+	test_view_snapshot();
 	test_key_assignments();
 	test_edge_pan();
 	test_center_tuner();

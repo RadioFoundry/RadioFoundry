@@ -4344,6 +4344,36 @@ static void test_sig_dmr_end_gate(void)
 	board.audio = saved;
 }
 
+// The DMR mic gate holds a beep's echo off the air unless the board's audio path drops the speaker audio while DMR is
+// on air (speaker_blocked). CAP_BEEP_NOT_ON_AIR alone doesn't lift it: that board's speaker may only be quiet in TX
+static void test_dmr_mic_gate_board(void)
+{
+	static const hal_audio_t gated = { .start = a_start, .stop = a_stop, .speaker_pcm = a_pcm, .speaker_blocked = a_blocked };
+	const hal_audio_t *saved = board.audio;
+	uint32_t caps = board.caps;
+	start();
+	ambe_voice_mic_gate_t gate = ambeVoiceMicGate();
+	CHECK(gate != NULL);
+	if (gate == NULL) {
+		return;
+	}
+	int16_t blk[AUDIO_BLOCK_SAMPLES] = { 0 };
+	beep_play(BEEP_KEY, 50, true);
+	CHECK(beep_mix(blk));
+	CHECK(beep_mix(blk));
+	CHECK(beep_mic_echo());		// the beep's echo: muted
+	CHECK(gate());
+	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	CHECK(gate());			// a speaker only quiet in DMR TX: still muted
+	board.audio = &gated;
+	CHECK(!gate());			// the speaker audio is dropped on air: nothing to hear
+	board.audio = saved;
+	board.caps = caps;
+	for (int i = 0; i < 50 && (beep_mix(blk) || beep_mic_echo()); i++) {
+	}
+	CHECK(!beep_mic_echo());
+}
+
 // Signaling tones on air in DMR: the start tone is the first voice of the transmission, the end tone goes after the last
 // and holds the over open until the call stack has it all (the mic in this test is silent: a block that isn't is a tone)
 static void set_sig_dmr_begin_air_blip(radio_settings_t *s)
@@ -4873,6 +4903,7 @@ int main(void)
 	test_sig_fm();
 	test_sig_dmr();
 	test_sig_dmr_end_gate();
+	test_dmr_mic_gate_board();
 	test_sig_dmr_air();
 	test_tone_keys();
 	test_dmr_short_press_wake();

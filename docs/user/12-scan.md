@@ -239,8 +239,8 @@ Press **OK** outside frequency entry for **Spectrum Settings**. **Up / Down** ch
 | Filter | OK switches **Wide (25 kHz)** / **Narrow (12.5 kHz)**. Wide by default. It applies to scanning and listening. |
 | Auto peak | OK cycles **After sweep** (default) / **Immediate** / **Off**. |
 | Center tuner | OK switches **Off** (default) / **On**. On keeps the tuner centered and moves the window with Left / Right or the knob. |
-| # key | OK cycles the action for #. Default **Bandwidth**. |
 | * key | OK cycles the action for *. Default **Center tuner**. |
+| # key | OK cycles the action for #. Default **Bandwidth**. |
 
 Back in an editor deletes, then cancels. Back in the menu returns to the running graph. The menu leaves reception
 and scanning running. Back on the graph closes the analyzer; long Back returns Home from either screen.

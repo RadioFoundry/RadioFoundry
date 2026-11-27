@@ -196,12 +196,12 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	// The SFR bytes A and B as stored (sfr.h; 0,0 = none); dmr.sfr_role is the role in force
 	dl_text(t, "ch.sfr=%u,%u\n", c->sfr_flag1 ? c->sfr_a : 0u, c->sfr_flag1 ? c->sfr_b : 0u);
 #if CONFIG_SPECTRUM
-	const spectrum_t *s = &v->spectrum;
+	const spectrum_view_t *s = &v->spectrum;
 	dl_text(t, "spectrum.active=%u\nspectrum.listening=%u\nspectrum.audio=%u\nspectrum.center_hz=%u\nspectrum.step_hz=%u\n"
 		"spectrum.index=%u\nspectrum.tuner_hz=%u\nspectrum.squelch=%d\nspectrum.sweeps=%u\n", s->active,
 		s->listening, s->audio_open, (unsigned)s->center_hz, (unsigned)s->step_hz, s->index,
-		(unsigned)spectrum_frequency(s, s->tuner), (int)s->squelch_dbm, (unsigned)s->sweeps);
-	dl_text(t, "spectrum.threshold_dbm=%d\n", (int)spectrum_threshold_dbm(s));
+		(unsigned)spectrum_view_frequency(s, s->tuner), (int)s->squelch_dbm, (unsigned)s->sweeps);
+	dl_text(t, "spectrum.threshold_dbm=%d\n", (int)s->squelch_dbm);
 	dl_text(t, "spectrum.am=%u\n", s->active && v->am);
 	dl_text(t, "spectrum.bins=%u\n", s->bins);
 	dl_text(t, "spectrum.dwell_ms=%u\nspectrum.auto_peak=%u\nspectrum.scale_db=%d\n", s->dwell_ms,
@@ -212,10 +212,10 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "spectrum.center_tuner=%u\n", s->center_tuner);
 	static const char *const key_actions[] = { "bandwidth", "auto_peak", "filter", "center_tuner" };
 	dl_text(t, "spectrum.hash_key=%s\nspectrum.star_key=%s\n", key_actions[s->hash_key], key_actions[s->star_key]);
-	unsigned peak = spectrum_strongest(s);
-	uint8_t level = spectrum_peak_level(s, peak);
+	unsigned peak = spectrum_view_strongest(s);
+	uint8_t level = spectrum_view_peak_level(s, peak);
 	dl_text(t, "spectrum.peak_hz=%u\nspectrum.peak_dbm=%d\n",
-		level == SPECTRUM_EMPTY ? 0u : (unsigned)spectrum_frequency(s, peak), (int)spectrum_level_dbm(level));
+		level == SPECTRUM_EMPTY ? 0u : (unsigned)spectrum_view_frequency(s, peak), (int)spectrum_level_dbm(level));
 #endif
 }
 

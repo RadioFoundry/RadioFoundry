@@ -233,7 +233,9 @@ static void test_info(void)
 	CHECK(out_len == 3 + 46 && out[0] == 'R' && out[2] == 46);
 	CHECK(out[3] == 3 && out[4] == 0 && out[7] == 8);	// struct version 3, radio type 8
 	CHECK(out[3 + 40] == 0x15 && out[3 + 41] == 0x40);	// 2 MB: capacity code 0x15
-	CHECK(out[3 + 24] == '2' && out[3 + 24 + 13] >= '0');	// build date YYYYMMDDhhmmss
+	// Build date: the commit's time the Makefile passes (RFOUNDRY_GIT_STAMP, set for this test), NUL padded to 16;
+	// never the compiler's __DATE__/__TIME__, which would make every build of a commit differ
+	CHECK(memcmp(&out[3 + 24], "20261125093007\0\0", 16) == 0);
 	// Area 5 (MCU ROM) and 10 (security registers); 6, 7, 8 refused
 	uint8_t b[64];
 	rom[100] = 0x5A;

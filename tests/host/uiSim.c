@@ -48,7 +48,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "spectrum_captured", "ok 6 up ok spectrumrx:72,-65" },
 	{ "spectrum_edit", "ok 6 0 4 3 8 2 5" },
 	{ "spectrum_settings", "ok 6 0 ok" },
-	{ "spectrum_shortcuts", "ok 6 0 ok up up ok ok down ok" },
+	{ "spectrum_shortcuts", "ok 6 0 ok up ok ok up ok" },
 	{ "spectrum_settings_keys", "keypad:0 ok 6 0 ok ok up" },
 	{ "spectrum_center_keys", "keypad:0 ok 6 0 ok up ok enc+" },
 	{ "spectrum_immediate", "ok 6 0 ok up up up up ok" },

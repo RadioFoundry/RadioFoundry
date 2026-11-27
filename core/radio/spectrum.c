@@ -308,4 +308,43 @@ unsigned spectrum_strongest(const spectrum_t *s)
 	}
 	return best;
 }
+void spectrum_read(const spectrum_t *s, spectrum_view_t *v)
+{
+	v->active = s->active;
+	v->listening = s->listening;
+	v->audio_open = s->audio_open;
+	v->auto_peak = s->auto_peak;
+	v->narrow = s->narrow;
+	v->center_tuner = s->center_tuner;
+	v->index = s->index;
+	v->tuner = s->tuner;
+	v->bins = s->bins;
+	v->scale_db = s->scale_db;
+	v->dwell_ms = s->dwell_ms;
+	v->squelch_dbm = s->squelch_dbm;
+	v->center_hz = s->center_hz;
+	v->step_hz = s->step_hz;
+	v->lo_hz = s->lo_hz;
+	v->hi_hz = s->hi_hz;
+	v->sweeps = s->sweeps;
+	v->hash_key = s->hash_key;
+	v->star_key = s->star_key;
+	memcpy(v->level, s->level, sizeof v->level);
+	for (unsigned i = 0; i < SPECTRUM_BINS; i++)
+		v->peak[i] = spectrum_peak_level(s, i);
+}
+
+uint32_t spectrum_view_frequency(const spectrum_view_t *v, unsigned bin)
+{
+	return v->center_hz - v->step_hz * (v->bins / 2u) + v->step_hz * bin;
+}
+
+unsigned spectrum_view_strongest(const spectrum_view_t *v)
+{
+	unsigned best = 0;
+	for (unsigned i = 1; i < v->bins; i++)
+		if (v->peak[i] != SPECTRUM_EMPTY && (v->peak[best] == SPECTRUM_EMPTY || v->peak[i] > v->peak[best]))
+			best = i;
+	return best;
+}
 #endif

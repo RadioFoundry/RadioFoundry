@@ -535,7 +535,7 @@ static void test_spectrum_am(void)
 	spectrum_cmd(SPECTRUM_CENTER_TUNER, 0);
 	// The lower edge takes AM precedence over the broadcast receiver's inclusive upper bound.
 	spectrum_cmd(SPECTRUM_CENTER, 108000000);
-	CHECK(hw.am && sm.view.am && spectrum_frequency(&sm.view.spectrum, 0) == 108000000);
+	CHECK(hw.am && sm.view.am && spectrum_view_frequency(&sm.view.spectrum, 0) == 108000000);
 	spectrum_cmd(SPECTRUM_CENTER, 100100000);
 	CHECK(hw.am && sm.view.am && sm.view.spectrum.center_hz != 100100000 && !bc.on);
 	spectrum_cmd(SPECTRUM_STOP, 0);

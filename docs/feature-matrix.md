@@ -132,7 +132,6 @@ is `tools/bringup.py list --radio <id>`.
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
-| `net_radio_udp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `net_usrp` | not written | not recorded | not written | not written | not recorded | not recorded | pass, needs re-run | not written |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
@@ -228,7 +227,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_HTTP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ● | ○ |
-| `NET_RADIO_UDP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_APRSIS` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_USRP` | … | ● | … | … | ● | ● | ● | … |
@@ -328,7 +326,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | FM VOX | `VOX` | 352 | 356 |  |
 | Receiver battery saver | `BATTERY_SAVE` | 272 | 228 |  |
 | Frequency trim, Settings > Advanced | `REF_TRIM` | 2,012 | 2,356 | The hook on each radio, the page and the setting |
-| Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM; DM-32 board glue not written yet, so nothing runs |
+| Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM |
 | Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
 | Receive past the rated bands, Settings > Advanced | `RX_EXT` | 560 | — | Receive only, FM, off by default; ranges from each receiver chip's documents. MD-380: no receiver range in its chip documents |
 | DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 377,332 | 275,716 | Includes every DMR feature and everything on IP over DMR |
@@ -358,7 +356,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Volume bar when a knob the MCU reads turns (#354) | `VOLUME_BAR` | 520 | 492 | Shows only on a radio with such a knob. Off, the volume screen keeps the segment drawing it now shares (about 90 bytes) |
 | Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,468 | 2,224 | Up to 9 keys |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 25,640 | 24,204 |  |
-| Spectrum analyzer and listening tuner | `SPECTRUM` | — | — | Needs `FM`. Receive-only RSSI sweep, recent peaks and FM/air-band AM listening ([spectrum.md](spec/spectrum.md)). Measured on DM-32UV: 12,288 B flash and 5,032 B RAM with the default build. |
+| Spectrum analyzer and listening tuner | `SPECTRUM` | 11,316 | — | Needs `FM`. Receive-only RSSI sweep, recent peaks and FM/air-band AM listening ([spectrum.md](spec/spectrum.md)). Default minus `SPECTRUM=n`: 1,552 B RAM on DM-1701; 12,660 B flash and 2,680 B RAM on DM-32UV. History stays in the radio task; view copies carry aggregated peaks only. |
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 20,876 | 20,640 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). |
 | Beeps and alert tones | `BEEP` | 8,036 | 2,700 |  |
 | Signaling tone chains (Settings > Signaling tones) | `SIG_TONES` | 5,340 | 5,748* | Needs `BEEP` |
@@ -416,8 +414,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | KISS over TCP, port 8001 | `NET_KISS` | 776 | 664 |  |
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 20,304 | 19,548 |  |
 | HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | 12,616 | Negative: saves flash, nearly all of it on web control's files. MD-380: web control follows this switch ([hardware-md380.md](spec/hardware-md380.md) 19) |
-| Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 12,944 | 12,788 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
-| Zone and channel control over UDP, port 4191: where the radio is, select and step, change notices | `NET_RADIO_UDP` | 2,364 | 2,412 | 112-120 B RAM; needs no TCP or HTTP; DM-32UV 2,392 ([tcp-services.md](spec/tcp-services.md) 8) |
+| Web control: the front panel page, keys, status and receive audio over `/ws`; zone and channel select and step, the board GPS's fix | `NET_WEBCTL` | 14,908 | 14,732 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,856 | 3,872 |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 3,112 | 3,660 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). Off where the host link is the programming cable at 115200 baud (about 11.5 KB/s): received audio alone needs about 17.6 KB/s |
 | APRS-IS client | `NET_APRSIS` | 2,824 | 2,816 | Needs NAT on the host |
@@ -475,6 +472,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Default | 704,632 | 575,736 |
 | Maximal (every compatible switch on) | 733,604 | 631,656 |
 | FM only, minimal | 240,436 | 213,428 |
+
+With Spectrum enabled, the maximal configurations on DM-1701 and MD-UV380 leave Italian off alongside French
+and Chinese to fit their 720 KB app regions. Separate `italian` and `chinese` CI builds keep Spectrum and Spanish
+on, and leave satellite tracking off for those language variants. Owners can still select these switches.
 
 Link time optimization is on by default on both radios. On the DM-1701 `LTO_3P=1` would take another 3 KB or so off
 by optimizing the third-party code too.

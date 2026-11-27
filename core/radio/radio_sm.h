@@ -202,9 +202,9 @@ typedef enum {
 #if CONFIG_RADIO_DETOUR
 	RREQ_DETOUR,		// a detour: arg RADIO_DETOUR_MARK (arg2: backstop ms) or _RETURN
 #endif
-	// New request types go above
-
 	RREQ_SPECTRUM,		// arg: spectrum command; arg2: command value
+
+	// New request types go above
 	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)
 } radio_req_type_t;
 
@@ -293,6 +293,9 @@ typedef struct {
 
 typedef struct {
 	radio_view_t view;
+#if CONFIG_SPECTRUM
+	spectrum_t spectrum;
+#endif
 	uint32_t serial;		// bumped on every visible change
 
 	zone_t zone;			// the current zone's channel list

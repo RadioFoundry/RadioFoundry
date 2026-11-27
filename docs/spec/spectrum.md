@@ -126,8 +126,8 @@ OK outside entry opens **Spectrum Settings** (`screen=spectrum-settings`), a sta
 | Filter | Toggle | Wide (25 kHz, default) / Narrow (12.5 kHz) |
 | Auto peak | Cycle | After sweep (default) / Immediate / Off |
 | Center tuner | Toggle | Off (default) / On |
-| # key | Cycle the assigned action | Bandwidth (default) / Auto peak / Filter / Center tuner |
 | * key | Cycle the assigned action | Bandwidth / Auto peak / Filter / Center tuner (default) |
+| # key | Cycle the assigned action | Bandwidth (default) / Auto peak / Filter / Center tuner |
 
 Up/down navigate that menu. Squelch entry accepts magnitude 0..160 and adds a minus to every nonzero value, including while editing. Zero displays as `0 dBm`, never `-0 dBm`. Numeric values outside their ranges are refused, never wrapped. Back in an editor
 deletes, then cancels; Back in the menu returns to the running graph. Long Back closes both. Global quick settings
@@ -209,7 +209,8 @@ GET_VIEW `channel` exposes `spectrum.active`, `listening`, `audio`, `center_hz`,
 `spectrumTest` covers geometry, timing, dwell, full-sweep selection and confirmation, immediate capture and resume,
 Auto off, squelch, audio hold,
 expiry, settings retention, centered panning with preserved history, band limits, free-tuner edge panning, temporary automatic captures with center return, manual interruption and
-time wrap. `radioCoreTest` covers ownership, retuning, PTT inhibition, audio continuity
+time wrap. View snapshots carry current readings and aggregated peaks; the five history buckets remain in the radio task.
+The snapshot tests check peak aggregation, expiry and independence from subsequent samples. `radioCoreTest` covers ownership, retuning, PTT inhibition, audio continuity
 under configuration edits, restoration, reboot preferences and dual-watch pause/resume (A/B, another zone, a VFO,
 changes for now, failed retunes and explicit stops), completed and stalled beep streams, delayed beeps, and both
 orders of receiver ownership with a diagnostic detour. `radioFeaturesTest` also covers pausing/restoring a second

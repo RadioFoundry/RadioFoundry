@@ -23,7 +23,7 @@ enum { SPECTRUM_AUTO_OFF, SPECTRUM_AUTO_SWEEP, SPECTRUM_AUTO_IMMEDIATE, SPECTRUM
 enum { SPECTRUM_KEY_BANDWIDTH, SPECTRUM_KEY_AUTO_PEAK, SPECTRUM_KEY_FILTER, SPECTRUM_KEY_CENTER_TUNER,
 	SPECTRUM_KEY_COUNT };
 
-// One narrowband RSSI reading per bin, not an FFT. The radio task owns this; other tasks read its view copy.
+// One narrowband RSSI reading per bin, not an FFT. Owned only by the radio task.
 typedef struct {
 	bool active, listening, audio_open;
 	uint8_t auto_peak;	// SPECTRUM_AUTO_*
@@ -37,6 +37,20 @@ typedef struct {
 	uint8_t level[SPECTRUM_BINS], peak[SPECTRUM_PEAK_BUCKETS][SPECTRUM_BINS]; // dBm + 160; 255 means unread
 	uint8_t hash_key, star_key;	// use the former tail padding; SPECTRUM_KEY_*
 } spectrum_t;
+
+// Read-only snapshot: keep the five history buckets in the radio task, not in every UI/host view copy.
+typedef struct {
+	bool active, listening, audio_open;
+	uint8_t auto_peak;
+	bool narrow, center_tuner;
+	uint8_t index, tuner, bins;
+	int8_t scale_db;
+	uint16_t dwell_ms;
+	int16_t squelch_dbm;
+	uint32_t center_hz, step_hz, lo_hz, hi_hz, sweeps;
+	uint8_t level[SPECTRUM_BINS], peak[SPECTRUM_BINS];
+	uint8_t hash_key, star_key;
+} spectrum_view_t;
 
 _Static_assert(SPECTRUM_BINS <= UINT8_MAX && SPECTRUM_BINS % 2 == 1, "spectrum bin indices fit and have a center");
 _Static_assert(SPECTRUM_KEY_COUNT == 4, "settings key actions occupy two bits each");
@@ -55,5 +69,13 @@ bool spectrum_sample(spectrum_t *s, int16_t dbm, uint32_t now);
 bool spectrum_adjust(spectrum_t *s, uint8_t cmd, int32_t value, uint32_t now);
 unsigned spectrum_strongest(const spectrum_t *s);
 uint8_t spectrum_peak_level(const spectrum_t *s, unsigned bin);
+
+void spectrum_read(const spectrum_t *s, spectrum_view_t *v);
+uint32_t spectrum_view_frequency(const spectrum_view_t *v, unsigned bin);
+unsigned spectrum_view_strongest(const spectrum_view_t *v);
+static inline uint8_t spectrum_view_peak_level(const spectrum_view_t *v, unsigned bin)
+{
+	return bin < v->bins ? v->peak[bin] : SPECTRUM_EMPTY;
+}
 
 #endif

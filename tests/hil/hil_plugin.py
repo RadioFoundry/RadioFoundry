@@ -114,13 +114,19 @@ def restore_radio(request):
     with every transmission blocked unless marked radio_tx (Radio.tx_gate). A radio_tx test is blocked again after it,
     so nothing between tests (module fixtures, a module without the radio's serial link) can transmit."""
     # test_tcp_services.py's module fixture "net" has the radio on the network (its serial link closed) for the whole
-    # module and puts it back on serial itself: nothing to snapshot over serial then; so does test_radio_udp.py's
-    # "udp_ctl", whose test puts the radio back where it was. test_ppp_link.py's "ppp" has PPP on the serial port, which
+    # module and puts it back on serial itself: nothing to snapshot over serial then; so does test_webctl_ctl.py's
+    # "ws", whose test puts the radio back where it was. test_ppp_link.py's "ppp" has PPP on the serial port, which
     # a debug link frame there would end (ppp.md 4); its tests change nothing
-    if "radio" not in request.fixturenames or any(f in request.fixturenames for f in ("net", "udp_ctl", "ppp")):
+    if "radio" not in request.fixturenames or any(f in request.fixturenames for f in ("net", "ws", "ppp")):
         yield
         return
     r = request.getfixturevalue("radio")
+    if getattr(r.link, "air", False):
+        # Over the air the radio refuses every write (debuglink.md 7.3), so a test can only change it in a detour,
+        # which the radio puts back itself: nothing to snapshot, and each read would be a burst on the channel
+        r.tx_gate(False)
+        yield
+        return
     may_transmit = "radio_tx" in request.keywords
     r.tx_gate(may_transmit)
     snap = r.snapshot()
