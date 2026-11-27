@@ -1434,10 +1434,11 @@ static uint32_t band_wrap(uint32_t hz, int dir)
 static void vfo_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 {
 	step_update(sm);
-#if CONFIG_AM_RX
-	int64_t hz = radio_am_step(sm->view.ch.rx_hz, dir, sm->view.vfo_step_hz);	// the 8.33 kHz grid kept exact
-#else
 	int64_t hz = (int64_t)sm->view.ch.rx_hz + (int64_t)dir * sm->view.vfo_step_hz;
+#if CONFIG_AM_RX
+	if (sm->view.vfo_step_hz == RADIO_AM_STEP_833) {
+		hz = radio_am_step_833(sm->view.ch.rx_hz, dir);	// the 8.33 kHz grid kept exact
+	}
 #endif
 #if CONFIG_BCAST_FM
 	if (sm->view.bcast) {
@@ -8859,7 +8860,6 @@ static void vfo_tx_request(radio_sm_t *sm, const radio_req_t *req, bool busy)
 #endif
 }
 
-#if CONFIG_AM_RX
 static void vfo_step_size_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
 	if ((req->arg == 0 || (req->arg >= 1000 && req->arg <= 1000000)) && (uint32_t)req->arg != sm->vfo_step_set) {
@@ -8870,7 +8870,6 @@ static void vfo_step_size_request(radio_sm_t *sm, const radio_req_t *req, uint32
 		changed(sm);
 	}
 }
-#endif
 
 static void ptt_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
@@ -9380,9 +9379,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 	case RREQ_VFO_SET: vfo_set_request(sm, req, busy, now_ms); break;
 	case RREQ_VFO_TX: vfo_tx_request(sm, req, busy); break;
-#if CONFIG_AM_RX
 	case RREQ_VFO_STEP_SIZE: vfo_step_size_request(sm, req, now_ms); break;
-#endif
 	case RREQ_PTT: ptt_request(sm, req, now_ms); break;
 	case RREQ_MONITOR: monitor_request(sm, req, now_ms); break;
 	case RREQ_POWER: power_request(sm, req); break;
