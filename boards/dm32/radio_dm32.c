@@ -763,8 +763,8 @@ uint8_t dm32_amp_users(void)
 }
 
 // Set-up B's 0x28 receive gate: open while the squelch is open or APRS listens. The APRS demodulator needs the FM
-// audio with the squelch closed too, and with Mute APRS audio on the speaker never opens on the APRS frequency at all
-// (speaker_source). Closed in transmit. Worked out from the state at each change, and again after every FM tune: the
+// audio with the squelch closed too, and with Mute APRS audio on the core holds audio() off on the APRS frequency
+// (radio_sm.c, aprs_mute_hz). Closed in transmit. Worked out from the state at each change, and again after every FM tune: the
 // first FM tune after DMR finds the DMR table's closed word (the FM table doesn't write 0x28), and the tune after a
 // transmission finds the gate closed
 static void rx_gate(void)
