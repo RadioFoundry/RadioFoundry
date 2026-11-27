@@ -174,38 +174,10 @@ void imbe_pack(imbe_state_t *s, int b0, mbe_params_t *p, uint8_t out[IMBE_BYTES]
 // --- speech to frames ---
 
 #define B0_UNVOICED	100	// the pitch code of a frame with no pitch: 32 harmonics, a band every 94 Hz
-#define B0_SEARCH	3	// pitch codes tried to each side of the time-domain estimate (1.5 samples of period)
-#define B0_STAY		150	// mismatch (Q15) a code must gain for each step away from that estimate: at long periods the
-				// spectrum hardly tells neighbors apart and the time-domain estimate is the better one
-#define PERIODIC_MIN	(-2700)	// log2 Q11 (0.4): a normalized autocorrelation under this is no pitch ...
-#define PERIODIC_START	(-1300)	// ... and (0.64) under this none begins: after a frame with no voiced band, noise and
-				// hum now and then reach the lower mark, and a voiced band there is a buzz in a pause.
-				// Speech is above it from its first frame (99.6 % of voiced frames on the test talkers)
 
-#define OCTAVE_GAIN	500	// mismatch (Q15) half the period may be worse by and still win
-
-// The pitch code nearest a period (quarter samples: period = (b0 + 39.5) / 2 samples) or the neighbor of it the
-// spectrum fits best, and that code's mismatch
-static int near_code(const int32_t *buf, int period4, int *b0)
-{
-	int c = (period4 - 79 + 1) >> 1, best = 0x7FFFFFFF, mis_at = 32768;
-
-	*b0 = (int)fxp_clamp(c, 0, IMBE_W0_STEPS - 1);
-	for (int t = c - B0_SEARCH; t <= c + B0_SEARCH; t++) {
-		int mis, cost;
-
-		if (t < 0 || t >= IMBE_W0_STEPS)
-			continue;
-		mis = mbe_est_mismatch(buf, imbe_q_w0(t));
-		cost = mis + B0_STAY * (t > c ? t - c : c - t);
-		if (cost < best) {
-			best = cost;
-			mis_at = mis;
-			*b0 = t;
-		}
-	}
-	return mis_at;
-}
+// the code nearest a period in quarter samples: the period is (b0 + 39.5) / 2 samples
+static int code_of(int period4) { return (period4 - 79 + 1) >> 1; }
+static const mbe_grid_t grid = { code_of, imbe_q_w0, IMBE_W0_STEPS, 79 };
 
 void imbe_enc_init(const imbe_enc_mem_t *m)
 {
@@ -217,7 +189,7 @@ void imbe_enc_frame(const imbe_enc_mem_t *m, const int16_t pcm[MBE_FRAME_LEN], u
 {
 	mbe_params_t *p = m->p;
 	mbe_est_t e;
-	int b0 = B0_UNVOICED, K;
+	int b0, K;
 
 	mbe_est_frame(m->est, pcm, m->buf, &e);
 	if (e.zero) {
@@ -227,24 +199,9 @@ void imbe_enc_frame(const imbe_enc_mem_t *m, const int16_t pcm[MBE_FRAME_LEN], u
 		m->est->vprev = 0;
 		return;
 	}
-	if (e.period4 && e.periodic >= (m->est->vprev ? PERIODIC_MIN : PERIODIC_START)) {
-		int mis = near_code(m->buf, e.period4, &b0);
-
-		// half the period, when the spectrum fits it as well. The search above works on whole samples at 4 kHz,
-		// where a short period that falls between two of them scores under its double, which falls on one. In
-		// the spectrum the two differ plainly: at the right pitch a harmonic sits in every band, at half the
-		// period only when the voice really is that high (else every second harmonic is left unexplained)
-		if (e.period4 >= 2 * 79) {
-			int b2, mis2 = near_code(m->buf, e.period4 >> 1, &b2);
-
-			if (mis2 <= mis + OCTAVE_GAIN) {
-				b0 = b2;
-				e.period4 >>= 1;
-			}
-		}
-	} else {
-		e.period4 = 0;
-	}
+	b0 = mbe_est_pitch(m->est, m->buf, &e, &grid);
+	if (b0 < 0)
+		b0 = B0_UNVOICED;
 	memset(p, 0, sizeof *p);
 	p->w0 = imbe_q_w0(b0);
 	p->L = (int16_t)imbe_pitch_harmonics(b0);

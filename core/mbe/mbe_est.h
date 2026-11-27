@@ -40,8 +40,36 @@ void mbe_est_frame(mbe_est_state_t *s, const int16_t pcm[MBE_FRAME_LEN], int32_t
 // How badly harmonics at the fundamental w0 (mbe_params_t.w0) fit the spectrum below about 3 kHz: the share of the
 // energy they leave unexplained, Q15 (0: all harmonic). For choosing between pitch values close to e->period4
 int mbe_est_mismatch(const int32_t *buf, uint32_t w0);
-// The parameters at p->w0 for p->L harmonics: p->v (bands of `per` harmonics, the K-th taking the rest) and p->a, the
-// log2 amplitudes in PCM units as mbe_synth_frame takes them. Remembers the voicing for the next frame's decisions
-void mbe_est_params(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per, int K);
+// The parameters at p->w0 for p->L harmonics: p->v, by K bands, and p->a, the log2 amplitudes in PCM units as
+// mbe_synth_frame takes them (unvoiced ones as p->flags says: MBE_UV_DENSITY). A band is `per` harmonics, or with per
+// 0 wb wide (as w0) from 0 Hz; the K-th takes the harmonics above (K at most 16). Remembers the voicing for the next
+// frame's decisions
+void mbe_est_bands(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per, uint32_t wb,
+		   int K);
+static inline void mbe_est_params(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p, int per,
+				  int K)
+{
+	mbe_est_bands(s, buf, e, p, per, 0, K);
+}
+static inline void mbe_est_params_hz(mbe_est_state_t *s, const int32_t *buf, const mbe_est_t *e, mbe_params_t *p,
+				     int hz, int K)
+{
+	// 2^32 / 8000 = 536870.912 a Hz, exact for whole kHz (1 kHz = 2^29, the edge the dequantizers test)
+	mbe_est_bands(s, buf, e, p, 0, (uint32_t)hz * 536870u + (uint32_t)hz * 912u / 1000u, K);
+}
+
+// A front end's pitch codes
+typedef struct {
+	int (*code)(int period4);	// the code nearest a period in quarter samples (may be outside 0..n - 1)
+	uint32_t (*w0)(int code);	// a code's fundamental, as mbe_params_t.w0
+	int16_t n;			// codes 0..n - 1
+	int16_t min_period4;		// the shortest period a code stands for, quarter samples
+} mbe_grid_t;
+
+// The pitch code of the frame mbe_est_frame described in e and left in buf: the code nearest e->period4, or a
+// neighbor of it the spectrum fits better, or the one of half the period when the spectrum fits that as well. Returns
+// -1 for a frame with no pitch (not periodic enough; a frame after one without voiced bands needs more), with
+// e->period4 set to 0; e->period4 is halved when half the period won
+int mbe_est_pitch(const mbe_est_state_t *s, const int32_t *buf, mbe_est_t *e, const mbe_grid_t *g);
 
 #endif
