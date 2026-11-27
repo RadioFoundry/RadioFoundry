@@ -47,13 +47,15 @@ static void pa_lines_off(const md9600_rf_ops_t *o)
 	set(o, MD9600_LN_T5_V, false);
 }
 
-// Both receivers and both C5 supplies are powered together; the RX VCOs selected
-static void receivers_on(const md9600_rf_ops_t *o)
+// Keep the unused AK2365A receiver off during digital receive, including between TX bursts.
+// Detection and FM need both receivers; C5 supplies and RX VCOs stay on in every case.
+static void receivers_on(const md9600_rf_ops_t *o, const md9600_rev_desc_t *d, md9600_band_t band, bool dmr)
 {
+	bool both = !dmr || d == NULL || !d->if_chip;
 	pa_lines_off(o);
 	set(o, MD9600_LN_POWER, true);
-	set(o, MD9600_LN_R5_U, true);
-	set(o, MD9600_LN_R5_V, true);
+	set(o, MD9600_LN_R5_U, both || band == MD9600_UHF);
+	set(o, MD9600_LN_R5_V, both || band == MD9600_VHF);
 	set(o, MD9600_LN_C5_U, true);
 	set(o, MD9600_LN_C5_V, true);
 	set(o, MD9600_LN_VCO_U, true);
@@ -204,7 +206,7 @@ md9600_rf_err_t md9600_rf_power_up(md9600_rf_t *rf)
 	if (rf->desc == NULL) {
 		return fail(rf, MD9600_RF_E_REV);
 	}
-	receivers_on(o);
+	receivers_on(o, rf->desc, rf->desc->vhf_tune_at_power_on ? MD9600_VHF : rf->band, rf->dmr);
 	if (rf->desc->if_chip) {
 		// The AK2365A needs a hardware reset after its supply comes up
 		set(o, MD9600_LN_IF_RST, false);
@@ -266,7 +268,7 @@ md9600_rf_err_t md9600_rf_rx(md9600_rf_t *rf, uint32_t hz, bool wide)
 	rf->rx_wide = wide;
 
 	// Supplies and the RX VCOs before the words, so the loop locks onto the VCO it will use
-	receivers_on(o);
+	receivers_on(o, rf->desc, p.band, rf->dmr);
 	md9600_rf_err_t e = pll_program(o, rf->desc, &p);
 	if (e != MD9600_RF_OK) {
 		md9600_rf_pa_safe(rf);
@@ -537,7 +539,7 @@ md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf)
 		return fail(rf, MD9600_RF_E_BAND);
 	}
 	md9600_rf_pa_safe(rf);
-	receivers_on(o);
+	receivers_on(o, rf->desc, p.band, rf->dmr);
 	md9600_rf_err_t e = pll_words(o, rf->desc, &p, false, false);
 	if (e != MD9600_RF_OK) {
 		return fail(rf, e);
@@ -577,7 +579,7 @@ void md9600_rf_tx_off(md9600_rf_t *rf)
 	if (rf->rx_valid) {
 		(void)md9600_rf_rx(rf, rf->rx_hz, rf->rx_wide);
 	} else {
-		receivers_on(rf->ops);
+		receivers_on(rf->ops, rf->desc, rf->band, rf->dmr);
 		rf->state = MD9600_RF_RX;
 	}
 }
@@ -590,7 +592,7 @@ md9600_rev_t md9600_rf_probe(const md9600_rf_ops_t *o, uint32_t hz, uint16_t thr
 	uint16_t level[MD9600_REV_COUNT];
 	uint8_t n = 0;
 	o->dac(o->ctx, MD9600_DAC_APC_TUNE_V, 0);
-	receivers_on(o);
+	receivers_on(o, NULL, MD9600_UHF, false);
 	wait_us(o, MD9600_PROBE_SETTLE_US);
 	uint16_t base = o->noise(o->ctx, MD9600_UHF);
 	for (int r = MD9600_REV_COUNT - 1; r > MD9600_REV_UNKNOWN; r--) {
@@ -628,7 +630,7 @@ md9600_if_t md9600_rf_if_detect(const md9600_rf_ops_t *o)
 	}
 	uint16_t r[2][2][MD9600_IF_PATTERNS] = { 0 };
 	bool ok = true;
-	receivers_on(o);
+	receivers_on(o, NULL, MD9600_UHF, false);
 	wait_us(o, MD9600_RX_SETTLE_US);	// the AK2365A runs from the receiver supply
 	// The reset low pulse (at least 1 us) from the pulls alone: on V5 nobody knows what PE15 reaches
 	o->if_rst_pull(o->ctx, false);
