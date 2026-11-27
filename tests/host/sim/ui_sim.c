@@ -49,6 +49,7 @@
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
 //   pttlocked:on|off    turns Settings > Key lock > PTT when locked on or off
 //   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
+//   large:on|off        turns Settings > Display > Large text on or off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
@@ -2995,6 +2996,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "privacy") == 0) snprintf(got, sizeof got, "%u", view.dmr.privacy);
 	else if (strcmp(key, "encbadge") == 0) snprintf(got, sizeof got, "%u", ui_home_badge_drawn());	// the type badge
 	else if (strcmp(key, "padlock") == 0) snprintf(got, sizeof got, "%u", ui_home_encrypted(&view));	// Home's padlock
+	else if (strcmp(key, "encmark") == 0)	// the badge or the padlock drawn
+		snprintf(got, sizeof got, "%u", ui_home_badge_drawn() || ui_home_lock_drawn());
 	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", view.dmr.hear_all_latch);
 	else if (strcmp(key, "vox") == 0) snprintf(got, sizeof got, "%u", view.vox_on);
 	else if (strcmp(key, "focusid") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.focus_id);
@@ -3203,6 +3206,17 @@ static bool run_token(char *t, char *err, size_t len)
 		}
 		ui_svc_setting_set(UI_SET_HINTS, on);
 		ui_apply_setting(UI_SET_HINTS, on);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "large") == 0 && arg != NULL) {	// Settings > Display > Large text
+		bool on = strcmp(arg, "on") == 0;
+		if (!on && strcmp(arg, "off") != 0) {
+			snprintf(err, len, "large: expected on or off, got %s", arg);
+			return false;
+		}
+		ui_svc_setting_set(UI_SET_LARGE_TEXT, on);
+		ui_apply_setting(UI_SET_LARGE_TEXT, on);
 		advance(200);
 		return true;
 	}

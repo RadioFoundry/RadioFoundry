@@ -924,7 +924,12 @@ static const flow_t flows[] = {
 	// The top bar says DMR on an AES channel, as with basic privacy: the badge names the encryption
 	{ "S top bar: an AES channel says DMR", "aeschan", "", "word=DMR", 0, false },
 	{ "S top bar: an AES channel without a key says DMR", "aeschan0", "", "word=DMR", 0, false },
+	// Large text: the top bar says DMR there too, so the name's line has the mark (the badge, or the padlock where
+	// the badge has no room: enc_large_checks)
+	{ "S large text: an AES channel has the mark", "aeschan large:on", "", "screen=home word=DMR encmark=1", 0, false },
+	{ "S large text: an AES channel without a key has none", "aeschan0 large:on", "", "encmark=0", 0, false },
 #endif
+	{ "S large text: a clear channel has no mark", "large:on", "", "encmark=0", 0, false },
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY
 	// Basic privacy on (the Quick tile, the 1-255 key 123)
 	{ "S encryption type: BP8", "ok 7 4 ok down ok 1 2 3 ok long:back", "quick 6 back",
@@ -932,6 +937,8 @@ static const flow_t flows[] = {
 	// The other scheme, the 16-bit key: key 123
 	{ "S encryption type: BP16", "ok 7 4 ok ok down ok 1 2 3 ok long:back", "quick 6 back",
 	  "set31=2 privacy=1 screen=home shows=BP16 hides=BP8 encbadge=1 padlock=1", 3, false },
+	{ "S large text: basic privacy has the mark", "ok 7 4 ok down ok 1 2 3 ok long:back large:on", "quick 6 back",
+	  "privacy=1 screen=home encmark=1", 3, false },
 	{ "S privacy key typed", "", "ok 7 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
 	{ "S privacy key out of range", "ok 7 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
 	{ "S privacy key needs a type", "ok 7 4 down", "ok", "toast=Pick_a_key", 1, false },
@@ -2043,6 +2050,50 @@ static void enc_badge_fallback_checks(void)
 }
 #endif
 
+#if CONFIG_DMR_AES
+// Large-text Home on an AES channel and with basic privacy, at every display class, ordinary and 16-character names:
+// the badge under the name or the padlock on the name's line, one of the two. Both must be seen across the classes
+static void enc_large_checks(void)
+{
+	static const struct { const char *script, *name; } setups[] = {
+		{ "aeschan large:on", "AES256" },
+		{ "worst aeschan large:on", "AES256" },
+#if CONFIG_DMR_PRIVACY
+		{ "ok 7 4 ok down ok 1 2 3 ok long:back large:on quick 6 back", "BP8" },
+		{ "worst ok 7 4 ok down ok 1 2 3 ok long:back large:on quick 6 back", "BP8" },
+#endif
+	};
+	char err[300];
+	int badges = 0, locks = 0;
+	for (int g = 0; g < sim_geom_count; g++) {
+		for (unsigned i = 0; i < sizeof setups / sizeof setups[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			bool ok = sim_run(setups[i].script, err, sizeof err) && sim_run("expect:screen=home", err, sizeof err);
+			if (ok && ui_home_badge_drawn() == ui_home_lock_drawn()) {
+				snprintf(err, sizeof err, "badge %d, padlock %d: one of the two", ui_home_badge_drawn(),
+					 ui_home_lock_drawn());
+				ok = false;
+			}
+			if (ok && ui_home_badge_drawn()) {
+				char want[32];
+				snprintf(want, sizeof want, "expect:shows=%s", setups[i].name);
+				ok = sim_run(want, err, sizeof err);
+			}
+			badges += ui_home_badge_drawn();
+			locks += ui_home_lock_drawn();
+			if (!ok) {
+				printf("FAIL large text encryption mark [%s] %s: %s\n", sim_geoms[g].name, setups[i].script, err);
+				fails++;
+			}
+		}
+	}
+	if (badges == 0 || locks == 0) {
+		printf("FAIL large text encryption mark: %d badges, %d padlocks (both expected)\n", badges, locks);
+		fails++;
+	}
+}
+#endif
+
 // A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
 // warning, and no Battery saver or Low battery warning in the lists. With a
 // battery they are all there
@@ -2472,6 +2523,9 @@ int main(void)
 	call_screen_checks();
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY
 	enc_badge_fallback_checks();
+#endif
+#if CONFIG_DMR_AES
+	enc_large_checks();
 #endif
 #if CONFIG_DMR_TRUNK
 	t3_other_checks();

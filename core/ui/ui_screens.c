@@ -1137,9 +1137,10 @@ static const char *enc_badge_text(const radio_view_t *v)
 }
 
 static bool home_badge_drawn;	// this frame's name line has the type badge (the chips line then leaves the type out)
+static bool home_lock_drawn;	// this frame's name line has the padlock
 
-// The type badge: the text in the background color on a filled block of the privacy color, its bottom on the name's
-// baseline. Returns its width
+// The type badge: the text in the background color on a filled block of the privacy color, its bottom on base (the
+// name's baseline on normal Home). Returns its width
 static int draw_enc_badge(const font_t *f, int x, int base, const char *text)
 {
 	int w = gfx_text_width(f, text) + 4, h = f->ascent + 3;
@@ -1149,6 +1150,7 @@ static int draw_enc_badge(const font_t *f, int x, int base, const char *text)
 }
 
 bool ui_home_badge_drawn(void) { return home_badge_drawn; }
+bool ui_home_lock_drawn(void) { return home_lock_drawn; }
 
 // The padlock's width for a height (draw_padlock's choice)
 static int padlock_width(int h)
@@ -1255,6 +1257,7 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		draw_enc_badge(L->small, w - badge_w, base, badge);	// right aligned, the name keeps its place
 	else if (lock)
 		draw_padlock(w - padlock_width(lock_h), base - lock_h, lock_h, ui_col.priv);
+	home_lock_drawn = lock && !home_badge_drawn;
 	if (v->temporary)
 		gfx_text(L->medium, x, base - L->medium->ascent, GLYPH_DOT, ui_col.warn);
 }
@@ -2566,9 +2569,9 @@ static const char *home_hint(const radio_view_t *v, const ui_state_t *s)
 	return s->home_hint != NULL ? s->home_hint : TR(HOME_HINT_MENU_QUICK, "OK Menu  * Quick");
 }
 
-// The largest font no taller than room in which text fits the width (at least the medium font), trying each of the
+// The largest font no taller than room in which text fits width (at least the medium font), trying each of the
 // text's alternates (font.h) from the longest; out gets the form chosen
-static const font_t *large_font(const char *text, int room, char *out, size_t cap)
+static const font_t *large_font(const char *text, int room, int width, char *out, size_t cap)
 {
 	const ui_layout_t *L = &ui_layout;
 	const font_t *fonts[] = { font_largest, L->large, L->medium };
@@ -2576,7 +2579,7 @@ static const font_t *large_font(const char *text, int room, char *out, size_t ca
 	for (int level = 0; more; level++) {
 		gfx_text_alt(text, level, out, cap, &more);
 		for (unsigned i = 0; i < sizeof fonts / sizeof fonts[0]; i++)
-			if (fonts[i]->h <= room && gfx_text_width(fonts[i], out) <= gfx_width())
+			if (fonts[i]->h <= room && gfx_text_width(fonts[i], out) <= width)
 				return fonts[i];
 	}
 	return L->medium;	// out: the shortest form, shortened when drawn
@@ -2598,9 +2601,24 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 		sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
 	else
 		sb_str(&b, v->ch.name);
-	const font_t *f = large_font(buf, room, form, sizeof form);
-	gfx_text_fit(f, form, w, fit, sizeof fit);
+	// An encrypted channel, as on normal Home: the type badge (in the medium font) under the name where the name's
+	// line leaves room for it, else a padlock at the right end of the name's line
+	const char *badge = v->vfo ? NULL : enc_badge_text(v);
+	int lock_h = L->medium->ascent, badge_h = L->medium->ascent + 3;
+	const font_t *f = large_font(buf, room, w, form, sizeof form);
+	int nw = w;
+	home_badge_drawn = badge != NULL && f->h + 1 + badge_h <= room;
+	home_lock_drawn = badge != NULL && !home_badge_drawn;
+	if (home_lock_drawn) {
+		nw = w - padlock_width(lock_h) - L->medium->w / 2;
+		f = large_font(buf, room, nw, form, sizeof form);
+	}
+	gfx_text_fit(f, form, nw, fit, sizeof fit);
 	gfx_text(f, 0, y, fit, tx ? ui_col.tx : ui_col.fg);
+	if (home_badge_drawn)
+		draw_enc_badge(L->medium, 0, y + f->h + badge_h, badge);
+	else if (home_lock_drawn)
+		draw_padlock(w - padlock_width(lock_h), y + f->ascent - lock_h, lock_h, ui_col.priv);
 	y += room;
 	sb_init(&b, buf, sizeof buf);
 #if CONFIG_DMR
@@ -2623,7 +2641,7 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 		sb_chr(&b, ' ');
 		sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
 	}
-	f = large_font(buf, room, form, sizeof form);
+	f = large_font(buf, room, w, form, sizeof form);
 	gfx_text_fit(f, form, w, fit, sizeof fit);
 	gfx_text(f, 0, y, fit, v->state == RS_TX ? ui_col.tx : v->state == RS_RX ? ui_col.rx : ui_col.fg);
 }
@@ -3019,7 +3037,7 @@ static void dual_large(const radio_view_t *v, const ui_state_t *s)
 			sb_str(&b, name);
 		} else
 			sb_str(&b, p->name);
-		const font_t *f = large_font(buf, room, form, sizeof form);
+		const font_t *f = large_font(buf, room, w, form, sizeof form);
 		if (gfx_text_width(f, form) + (d->sel == i ? f->w / 3 + 2 : 0) > w) {
 			const font_t *smaller[] = { L->large, L->medium, L->small };
 			for (unsigned k = 0; k < sizeof smaller / sizeof smaller[0]; k++) {

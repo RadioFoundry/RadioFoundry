@@ -248,6 +248,12 @@ static const struct { const char *name, *script; } audit_extra[] = {
 	{ "settings_power", "ok 7 7" DOWN12 },
 	{ "settings_keys", "ok 7 8" DOWN12 },
 	{ "settings_my_radio", "ok 7 0" DOWN12 },
+#if CONFIG_DMR_AES
+	{ "home_large_text_aes", "aeschan large:on" },	// the badge under the name, or the padlock on its line
+#endif
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+	{ "home_large_text_privacy", "ok 7 4 ok down ok 1 2 3 ok long:back large:on quick 6 back" },
+#endif
 	{ "settings_signaling", "ok 7 up up ok" DOWN12 },
 	{ "settings_advanced", "ok 7 up ok" DOWN12 },
 	{ "about_scrolled", "ok 7 up ok ok" DOWN12 DOWN12 },
@@ -291,6 +297,9 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_contact_actions", "ok 1 ctx" },
 	{ "w_find", "2 7" },
 	{ "w_find_number", "1 6 7 7 6 4 1 5" },
+#if CONFIG_DMR_AES
+	{ "w_large_text_aes", "aeschan large:on" },
+#endif
 	{ "w_channels", "ok 4" },
 	{ "w_zone", "ok 4 ctx" },
 	{ "w_zone_end", "ok 4 ctx up" },
