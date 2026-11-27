@@ -260,19 +260,26 @@ typedef struct {
 	// DMR AES: the end of the MI positions reserved for our overs (dmrAesSeq_t, dmr-voice.md 5.1; appended: an older
 	// record reads 0, no position yet). A restart starts here, past every position sent
 	uint32_t aes_mi_res;
-	// D-STAR (CONFIG_DSTAR; docs/spec/dstar-codeplug.md; appended, 40 bytes, so an older record reads none): the station set on the radio, over the codeplug's D-STAR record
-	// (all spaces or NULs = the codeplug's; an older record reads that way). The suffix and message go with MY: set on
-	// the radio, they replace the codeplug's too
+	// Only in builds that use them, so a radio without D-STAR keeps its RAM (each copy of settings_t, several on task
+	// stacks): last, appended (an older record reads none), and before them goes any field every build has, with the
+	// layout number changed (settings-store.md 3)
+#if CONFIG_DSTAR
+	// D-STAR (docs/spec/dstar-codeplug.md): the station set on the radio, over the codeplug's D-STAR record (all
+	// spaces or NULs = the codeplug's; an older record reads that way). The suffix and message go with MY: set on the
+	// radio, they replace the codeplug's too. 32 bytes
 	char dstar_my[8];		// MY callsign as on air, space padded
 	char dstar_suffix[4];
 	char dstar_msg[20];		// the slow data message
+#endif
+#if CONFIG_FM_FLAT
 	// The flat FM paths' calibration (hal_audio_tap.h audio_tap_flat_cal_t) set by the bench over the board's own
-	// (docs/testing/dstar-bench.md; 0 = the board's, so an older record changes nothing)
+	// (docs/testing/dstar-bench.md; 0 = the board's, so an older record changes nothing). 8 bytes
 	uint16_t flat_tx_hpf;		// the transmit path's high-pass to restore, Hz + 1 (1 = flat)
 	uint16_t flat_rx_hpf;		// the receive path's
 	int16_t flat_tx_1khz;		// the sample value for 1 kHz deviation
 	uint8_t flat_flags;		// SETTINGS_FLAT_* bits
 	uint8_t reserved12[1];		// 0; keeps settings_t a multiple of 4 with no tail padding
+#endif
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
