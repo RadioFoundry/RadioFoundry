@@ -887,6 +887,14 @@ static void testRooms(void)
 	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DX && wx_got.connected && !strcmp(wx_got.room_id, "26001") &&
 	      !strcmp(wx_got.room_name, "XX-REFLECTOR"), "gateway status '13': connected %d room '%s' '%s'",
 	      wx_got.connected, wx_got.room_id, wx_got.room_name);
+	// ... and "10": the connect failed (no such room), out of any room, whatever the ID field holds
+	d[2] = 0x41;
+	put_text(d + 34, "10", 2);
+	len = reply_end(d, 127);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DISCONNECT && !wx_got.connected && wx_got.room_id[0] == '\0',
+	      "gateway '10': kind %u connected %d", wx_got.kind, wx_got.connected);
 
 	// A commercial repeater's node (the layout of an off-air recording, names changed): status 0x52 with 18 bytes
 	// before the node's ID, in a room

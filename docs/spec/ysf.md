@@ -399,7 +399,7 @@ reply up to a few seconds later:
 
 | Reply | Bytes 1-4 | Fields |
 |---|---|---|
-| Status, connect, disconnect | `5D 52 5F 26` (status), `5D 42 5F 26` (connect and disconnect): a commercial repeater's node | [5..22] not read; from [23]: the node's ID (5), its callsign (10), its name (14), the link state, the room's ID (5), its name (16). The state is `12` with no room, `15` in a room on a commercial node, `13` on a hotspot gateway linked to a reflector: any state but `12` with a room ID in digits counts as in a room |
+| Status, connect, disconnect | `5D 52 5F 26` (status), `5D 42 5F 26` (connect and disconnect): a commercial repeater's node | [5..22] not read; from [23]: the node's ID (5), its callsign (10), its name (14), the link state, the room's ID (5), its name (16). The state is `12` with no room, `15` in a room on a commercial node, `13` on a hotspot gateway linked to a reflector, and `10` on a gateway when a connect failed (no such room; it is then out of any room): `13` and `15` count as in a room |
 | The same, shorter | `5D 51 5F 26`, `5D 41 5F 26` | the same fields from [5] |
 | Room list, search | `5D 46 5F 26` | [7..11] the node's ID, [12..21] its callsign, [22] `1` for a search's result, [23..24] rooms on the page, [25..27] in all (a search: the matches); from [29], 50 bytes a room: [1..5] its ID, [6..21] its name, [22..24] its users. A node may pad the page to 20 with blank entries: the page ends at the first entry without an ID, and at the count. Whether it is a search's result is taken from the command sent |
 
