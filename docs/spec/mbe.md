@@ -103,6 +103,6 @@ front end sets rho and the value at harmonic 0.
 | Test | What |
 |---|---|
 | `tests/host/mbeTest.c` | the synthesis and the full-rate decoder against golden vectors; silence, concealment, a stream's own concealment policy, levels, extreme inputs |
-| `tests/host/mbeExactTest.c` | the full-rate encoder and decoder sample for sample against fixed CRCs (speech, random frames, channel errors), with and without the halfword multiplies |
+| `tests/host/mbeExactTest.c` | the full-rate encoder and decoder sample for sample against fixed CRCs (speech, random frames, channel errors), with and without the halfword multiplies. Built again with the per-frame options (`CONFIG_MBE_OPTS`): the full-rate CRCs stay the same, and the 2400 bit/s codec's own CRCs hold both ways |
 | `tests/host/imbeEncTest.c` | the full-rate quantizer against its dequantizer; the estimator on made-up signals |
-| `tests/host/mbe2400Test.c` | the 2400 bit/s front end ([mbe-2400.md](mbe-2400.md) 6); the density and regenerated-phase options |
+| `tests/host/mbe2400Test.c` | the 2400 bit/s front end ([mbe-2400.md](mbe-2400.md) 6); the density option; the regenerated phases against 1.2's formula and against a resonator's own phases; parameters no front end makes |

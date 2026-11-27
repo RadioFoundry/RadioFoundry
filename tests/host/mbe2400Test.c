@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The 2400 bit/s MBE front end (core/mbe/mbe2400.h, docs/spec/mbe-2400.md): the frame's bit map, FEC and interleave
-// restated from the spec, the quantizer against the dequantizer, frames that play as silence, concealment, and the
-// test voice set through the encoder and the decoder (spectral distance and level against the input). Built with
-// -fsanitize=address,undefined by the host test run.
+// restated from the spec, the quantizer against the dequantizer, frames that play as silence, concealment sequences,
+// random frames and wild parameters through the decoder, the core's options against what they are defined to do (the
+// regenerated phases against a resonator's own), and the test voice set through the encoder and the decoder
+// (spectral distance and level against the input, clean and with bit errors). CI runs this under
+// -fsanitize=address,undefined too (make SANITIZE=1).
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -192,7 +194,7 @@ static void test_whitening(void)
 	}
 }
 
-// pitch codes: the fundamental falls 1.49 % a step from 409 Hz; harmonics stay under 4 kHz
+// pitch codes: the fundamental falls 1.47 % a step from 409 Hz; harmonics stay under 4 kHz
 static void test_pitch(void)
 {
 	for (int b0 = 0; b0 < MBE2400_PITCHES; b0++) {
@@ -564,7 +566,7 @@ static void test_voice(const char *set)
 	}
 	n = (long)(frames * MBE_FRAME_LEN);
 	out = calloc((size_t)n, 2);
-	for (int ber = 0; ber <= 2; ber += 2) {
+	for (int ber = 0; ber <= 5; ber += ber ? 3 : 2) {
 		int bad = 0;
 
 		rig_init(r);
@@ -584,9 +586,16 @@ static void test_voice(const char *set)
 		       bad);
 		if (!ber) {
 			CHECK(dist < 6.0, "%s: band distance %.2f dB", set, dist);
-			CHECK(fabs(level) < 6, "%s: level %+.1f dB", set, level);
-		} else {
+			CHECK(fabs(level) < 1.5, "%s: level %+.1f dB", set, level);
+			CHECK(memcmp(&r->es, &r->ds, sizeof r->es) == 0, "%s: the two ends' prediction differs", set);
+		} else if (ber == 2) {
 			CHECK(dist < 6.5, "%s at 2 %% bit errors: band distance %.2f dB", set, dist);
+			CHECK(fabs(level) < 1.5, "%s at 2 %% bit errors: level %+.1f dB", set, level);
+		} else {
+			// frames are lost here (the first word fails), repeated and muted: still speech, and no louder
+			CHECK(bad > 0, "%s at 5 %% bit errors: no bad frame", set);
+			CHECK(dist < 7.5, "%s at 5 %% bit errors: band distance %.2f dB", set, dist);
+			CHECK(level < 3 && level > -6, "%s at 5 %% bit errors: level %+.1f dB", set, level);
 		}
 	}
 	free(in);
@@ -626,6 +635,308 @@ static void test_concealment(void)
 	free(r);
 }
 
+static double frame_rms(const int16_t *x)
+{
+	double e = 0;
+
+	for (int i = 0; i < MBE_FRAME_LEN; i++)
+		e += (double)x[i] * x[i];
+	return sqrt(e / MBE_FRAME_LEN);
+}
+
+// a steady two-harmonic tone through the encoder and the decoder; the last frame sent is left in fr
+static void play_tone(rig_t *r, int frames, uint8_t fr[MBE2400_BYTES], int16_t pcm[MBE_FRAME_LEN])
+{
+	int16_t tone[MBE_FRAME_LEN];
+
+	for (int f = 0; f < frames; f++) {
+		for (int i = 0; i < MBE_FRAME_LEN; i++)
+			tone[i] = (int16_t)(6000 * sin(2 * M_PI * 150 * (f * MBE_FRAME_LEN + i) / 8000.0) +
+					    3000 * sin(2 * M_PI * 450 * (f * MBE_FRAME_LEN + i) / 8000.0));
+		mbe2400_enc_frame(&r->e, tone, fr);
+		mbe2400_dec_frame(&r->d, fr, NULL, pcm);
+	}
+}
+
+// Concealment at the edges: before any good frame, across a short gap, after a frame that plays as silence, and by
+// what the FEC found (which frames count as bad). The prediction is held through the repeats and dropped after them
+static void test_conceal_sequences(void)
+{
+	rig_t *r = malloc(sizeof *r);
+	mbe2400_state_t fresh, held;
+	int16_t pcm[MBE_FRAME_LEN];
+	uint8_t fr[MBE2400_BYTES], bad[MBE2400_BYTES], e;
+	uint16_t b[MBE2400_FIELDS] = { 60, 15, 40, 100, 50, 3, 4, 5, 6 };
+	double lvl, rep[3];
+
+	mbe2400_state_reset(&fresh);
+	// nothing to repeat yet: silent from the first lost frame, the count as ever
+	rig_init(r);
+	for (int f = 0; f < 6; f++) {
+		int run = mbe2400_dec_frame(&r->d, NULL, &e, pcm);
+
+		CHECK(run == (f < 4 ? f + 1 : 4) && e == 0xFF, "lost frame %d at the start: run %d errs %02x", f, run, e);
+		CHECK(frame_rms(pcm) == 0, "lost frame %d at the start plays at %.1f", f, frame_rms(pcm));
+	}
+	// a gap of two: 1 dB a repeat, the prediction held, and the next good frame resumes at once
+	play_tone(r, 30, fr, pcm);
+	lvl = frame_rms(pcm);
+	held = r->ds;
+	for (int f = 0; f < 3; f++) {
+		CHECK(mbe2400_dec_frame(&r->d, NULL, NULL, pcm) == f + 1, "repeat %d", f + 1);
+		rep[f] = frame_rms(pcm);
+		CHECK(memcmp(&r->ds, &held, sizeof held) == 0, "repeat %d changed the prediction", f + 1);
+	}
+	// a frame's level moves from the last frame's to its own, so each is half a step behind: 0.5, 1.5, 2.5 dB down
+	for (int f = 0; f < 3; f++) {
+		CHECK(fabs(20 * log10(lvl / rep[f]) - (f + 0.5)) < 0.4, "repeat %d is %.2f dB under the tone, want %.1f", f + 1,
+		      20 * log10(lvl / rep[f]), f + 0.5);
+	}
+	CHECK(mbe2400_dec_frame(&r->d, fr, NULL, pcm) == 0 && frame_rms(pcm) > rep[2], "the frame after a gap");
+	// past the repeats: silent, the prediction dropped
+	for (int f = 0; f < 5; f++)
+		mbe2400_dec_frame(&r->d, NULL, NULL, pcm);
+	CHECK(frame_rms(pcm) < 20, "the fifth lost frame plays at %.1f", frame_rms(pcm));
+	CHECK(memcmp(&r->ds, &fresh, sizeof fresh) == 0, "the prediction is kept past the repeats");
+
+	// a frame that plays as silence is a good frame: what is repeated after it is silence, not the speech before
+	play_tone(r, 30, fr, pcm);
+	b[0] = 126;
+	mbe2400_frame_pack(b, bad);
+	CHECK(mbe2400_dec_frame(&r->d, bad, &e, pcm) == 0 && e == 0, "a frame of another kind: errs %02x", e);
+	CHECK(memcmp(&r->ds, &fresh, sizeof fresh) == 0, "a frame of another kind keeps the prediction");
+	mbe2400_dec_frame(&r->d, NULL, NULL, pcm);	// the tone's tail fades through the frame of silence
+	CHECK(mbe2400_dec_frame(&r->d, NULL, NULL, pcm) == 2 && frame_rms(pcm) < 20, "speech repeated after a silent frame: %.1f",
+	      frame_rms(pcm));
+
+	// what the FEC found: the first word failed, or it took three corrections and the second word failed: bad. The
+	// second word failed alone: used
+	for (int c = 0; c < 3; c++) {
+		static const uint8_t NERR[3][2] = { { 4, 0 }, { 3, 4 }, { 2, 4 } };
+		int run;
+
+		rig_init(r);
+		play_tone(r, 30, fr, pcm);
+		held = r->ds;
+		memcpy(bad, fr, sizeof bad);
+		for (int w = 0; w < 2; w++)
+			for (int k = 0; k < NERR[c][w]; k++)
+				flip(bad, AIR[w][5 * k + c]);
+		run = mbe2400_dec_frame(&r->d, bad, &e, pcm);
+		// (with the first word failed the second is descrambled by a wrong seed: its count says nothing)
+		CHECK(MBE2400_ERRS_C0(e) == NERR[c][0] && (!c || MBE2400_ERRS_C1(e) == NERR[c][1]), "case %d: errs %02x", c, e);
+		CHECK(run == (c < 2), "case %d: run %d", c, run);
+		CHECK((memcmp(&r->ds, &held, sizeof held) == 0) == (c < 2), "case %d: the prediction %s", c,
+		      c < 2 ? "moved on a bad frame" : "did not move on a used frame");
+	}
+	free(r);
+}
+
+// Random bytes, lost frames, loud frames, silence and frames of another kind in any order: the
+// count of bad frames follows what the FEC found, the state stays a frame's, and silence plays as silence after it all
+static void test_random_frames(void)
+{
+	rig_t *r = malloc(sizeof *r);
+	int16_t pcm[MBE_FRAME_LEN];
+	int wrong = 0, state = 0, used = 0, lost = 0, peak = 0;
+
+	rig_init(r);
+	rng_state = 0xF00D;
+	for (int n = 0; n < 12000; n++) {
+		uint8_t fr[MBE2400_BYTES], e = 0;
+		uint16_t b[MBE2400_FIELDS];
+		uint32_t kind = rnd() % 16;
+		int run, was = r->ms.run;
+
+		for (int i = 0; i < MBE2400_BYTES; i++)
+			fr[i] = (uint8_t)rnd();
+		if (kind >= 10 && kind < 14) {
+			random_fields(b);
+			if (kind == 10)
+				b[0] = (uint16_t)(126 + (rnd() & 1));
+			if (kind == 11)
+				b[2] = 63;		// the loudest gain, frame after frame
+			mbe2400_frame_pack(b, fr);
+			if (kind == 12)
+				memcpy(fr, mbe2400_silence, sizeof fr);
+		}
+		run = mbe2400_dec_frame(&r->d, kind < 14 ? fr : NULL, &e, pcm);
+		if (kind >= 14 || MBE2400_ERRS_BAD(e)) {
+			wrong += run != (was < 4 ? was + 1 : 4) || (kind >= 14) != (e == 0xFF);
+			lost++;
+		} else {
+			wrong += run != 0;
+			used++;
+		}
+		state += r->ds.q.L < 9 || r->ds.q.L > MBE_MAXL || r->prev.L < 0 || r->prev.L > MBE_MAXL ||
+			 r->prev.w0 < 0x00400000u || r->prev.w0 > 0x1FFFFFFFu;
+	}
+	CHECK(wrong == 0, "%d of 12000 frames with the wrong count of bad frames", wrong);
+	CHECK(state == 0, "%d of 12000 frames left a state out of range", state);
+	CHECK(used > 4000 && lost > 4000, "%d frames used, %d lost: the mix is off", used, lost);
+	for (int f = 0; f < 12; f++) {
+		mbe2400_dec_frame(&r->d, mbe2400_silence, NULL, pcm);
+		if (f >= 6)
+			for (int i = 0; i < MBE_FRAME_LEN; i++)
+				peak = abs(pcm[i]) > peak ? abs(pcm[i]) : peak;
+	}
+	CHECK(peak < 300, "silence after random frames plays at a peak of %d", peak);
+	free(r);
+}
+
+// Parameters no front end makes, straight into the synthesis with the options on and any concealment policy: the
+// frame kept is always one the synthesis can play
+static void test_wild_params(void)
+{
+	static const mbe_conceal_t POL[] = { { 0, 0 }, { 3, 340 }, { 32767, 32767 }, { -1, -32768 }, { 1, -2048 } };
+	rig_t *r = malloc(sizeof *r);
+	int16_t pcm[MBE_FRAME_LEN];
+	int state = 0;
+
+	rig_init(r);
+	rng_state = 0xBAD5EED;
+	for (int n = 0; n < 4000; n++) {
+		mbe_params_t p;
+		uint32_t k = rnd();
+		int run;
+
+		for (size_t i = 0; i < sizeof p; i++)
+			((uint8_t *)&p)[i] = (uint8_t)rnd();
+		p.L = (int16_t)(k % 4 == 0 ? (int)(rnd() % 400) - 100 : 1 + (int)(rnd() % MBE_MAXL));
+		if (k & 16)
+			p.w0 >>= rnd() % 12;
+		for (int l = 0; l < MBE_MAXL; l++) {
+			if ((k & 32) && l % 3)
+				p.a[l] = MBE_A_SILENT;
+			if (k & 64)
+				p.a[l] = (int16_t)(32767 - (int)(rnd() % 3000));
+			if (k & 128)
+				p.v[l] &= 1;
+		}
+		run = mbe_synth_conceal(&r->d.mbe, (k >> 8) % 6 ? &POL[(k >> 8) % 6 - 1] : NULL, (k >> 12) % 9 ? &p : NULL,
+					(k >> 16) % 3 == 0, pcm);
+		state += run < 0 || r->prev.L < 0 || r->prev.L > MBE_MAXL || r->prev.w0 < 0x00400000u ||
+			 r->prev.w0 > 0x1FFFFFFFu;
+	}
+	CHECK(state == 0, "%d of 4000 frames left a state out of range", state);
+	free(r);
+}
+
+// What the encoder makes of signals at the edges of its input: full-scale noise, a full-scale square wave, DC, single
+// clicks and a hum under its pitch range. Every frame is a valid one a receiver decodes without corrections, and the
+// receiver's prediction stays the encoder's
+static void test_encoder_extremes(void)
+{
+	rig_t *r = malloc(sizeof *r);
+	int16_t x[MBE_FRAME_LEN], pcm[MBE_FRAME_LEN];
+	int bad = 0;
+
+	rig_init(r);
+	rng_state = 0xE0E0;
+	for (int f = 0; f < 240; f++) {
+		uint8_t fr[MBE2400_BYTES], e;
+		uint16_t b[MBE2400_FIELDS];
+		int kind = f / 40;
+
+		for (int i = 0; i < MBE_FRAME_LEN; i++) {
+			int t = f * MBE_FRAME_LEN + i;
+
+			x[i] = kind == 0 ? (int16_t)rnd() : kind == 1 ? (t / 20 % 2 ? 32767 : -32768) : kind == 2 ? 32767 :
+			       kind == 3 ? (t % 800 == 0 ? -32768 : 0) : kind == 4 ? (int16_t)(20000 * sin(2 * M_PI * 30 * t / 8000.0)) :
+			       (int16_t)(rnd() % 3) - 1;
+		}
+		mbe2400_enc_frame(&r->e, x, fr);
+		e = mbe2400_frame_unpack(fr, b);
+		bad += e != 0 || b[0] >= MBE2400_PITCHES || (b[8] & 1);
+		mbe2400_dec_frame(&r->d, fr, NULL, pcm);
+		bad += memcmp(&r->es, &r->ds, sizeof r->es) != 0;
+	}
+	CHECK(bad == 0, "%d of 240 frames not valid or not tracked by the receiver", bad);
+	free(r);
+}
+
+// Steady signals come back at their level and stay there: a spectrum of two harmonics over deep gaps, one tone, and
+// a full set of harmonics. (The shape codebooks cannot follow the first two; the gain code makes up the energy.)
+static void test_steady_levels(void)
+{
+	rig_t *r = malloc(sizeof *r);
+
+	for (int kind = 0; kind < 3; kind++) {
+		double si = 0, so = 0, lo = 1e9, hi = 0;
+
+		rig_init(r);
+		for (int f = 0; f < 80; f++) {
+			int16_t x[MBE_FRAME_LEN], pcm[MBE_FRAME_LEN];
+			uint8_t fr[MBE2400_BYTES];
+
+			for (int i = 0; i < MBE_FRAME_LEN; i++) {
+				double t = (f * MBE_FRAME_LEN + i) / 8000.0, v = 0;
+
+				if (kind == 0)
+					v = 6000 * sin(2 * M_PI * 150 * t) + 3000 * sin(2 * M_PI * 450 * t);
+				else if (kind == 1)
+					v = 6000 * sin(2 * M_PI * 1000 * t);
+				else
+					for (int l = 1; l <= 20; l++)
+						v += 4000.0 / l * cos(2 * M_PI * 120 * l * t + 0.7 * l * l);
+				x[i] = (int16_t)v;
+			}
+			mbe2400_enc_frame(&r->e, x, fr);
+			mbe2400_dec_frame(&r->d, fr, NULL, pcm);
+			if (f >= 30) {
+				double v = frame_rms(pcm);
+
+				si += frame_rms(x) * frame_rms(x);
+				so += v * v;
+				lo = v < lo ? v : lo;
+				hi = v > hi ? v : hi;
+			}
+		}
+		printf("# steady signal %d: level %+.2f dB, frames within %.2f dB\n", kind, 10 * log10(so / si), 20 * log10(hi / lo));
+		CHECK(fabs(10 * log10(so / si)) < 1.0, "steady signal %d plays %+.2f dB off", kind, 10 * log10(so / si));
+		CHECK(20 * log10(hi / lo) < (kind == 2 ? 2.5 : 1.0), "steady signal %d: frame levels %.2f dB apart", kind,
+		      20 * log10(hi / lo));
+	}
+	free(r);
+}
+
+// The encoder's pitch code for harmonic signals across its range: the code whose fundamental is nearest (the grid
+// starts at code 1's 2^-4.3118 of the sample rate, code 0 a step above), all four bands voiced
+static void test_encoder_pitch(void)
+{
+	static const uint8_t CODES[] = { 2, 15, 40, 70, 100, 122 };
+	rig_t *r = malloc(sizeof *r);
+
+	for (size_t c = 0; c < sizeof CODES; c++) {
+		double f0 = mbe2400_w0(CODES[c]) / 4294967296.0;
+		int16_t x[MBE_FRAME_LEN];
+		uint8_t fr[MBE2400_BYTES];
+		uint16_t b[MBE2400_FIELDS] = { 0 };
+		int off = 0, unv = 0;
+
+		rig_init(r);
+		for (int f = 0; f < 14; f++) {
+			for (int i = 0; i < MBE_FRAME_LEN; i++) {
+				double v = 0;
+
+				for (int l = 1; l * f0 < 0.45; l++)
+					v += cos(2 * M_PI * l * f0 * (f * MBE_FRAME_LEN + i) + 0.7 * l * l) / sqrt(l);
+				x[i] = (int16_t)(1500 * v);
+			}
+			mbe2400_enc_frame(&r->e, x, fr);
+			if (f >= 4) {
+				mbe2400_frame_unpack(fr, b);
+				off += abs(b[0] - CODES[c]) > 1;
+				unv += b[1] != 15;
+			}
+		}
+		CHECK(off == 0, "code %d (%.1f Hz): %d of 10 frames coded more than a step off (last %d)", CODES[c], f0 * 8000, off,
+		      b[0]);
+		CHECK(unv == 0, "code %d: %d of 10 frames not all voiced (last b1 %d)", CODES[c], unv, b[1]);
+	}
+	free(r);
+}
+
 // The encoder sends the silence frame for digital silence, and the decoder plays it near silent
 static void test_digital_silence(void)
 {
@@ -661,7 +972,13 @@ int main(void)
 	test_core_options();
 	test_regen_phase();
 	test_concealment();
+	test_conceal_sequences();
+	test_random_frames();
+	test_wild_params();
 	test_digital_silence();
+	test_encoder_extremes();
+	test_steady_levels();
+	test_encoder_pitch();
 	test_voice("test_transmission");
 	test_voice("ten_second_countdown");
 	printf("# %s: %d checks, %d failures\n", failures ? "FAILED" : "PASSED", checks, failures);
