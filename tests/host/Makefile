@@ -322,7 +322,7 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
-		-DCONFIG_SATELLITE_TLE=1 -o $@ $(RCORE) -lm
+		-DCONFIG_SATELLITE_TLE=1 -DCONFIG_ZEROIZE=1 -o $@ $(RCORE) -lm
 
 # The same with the DMR VFO off (CONFIG_VFO_DMR=0): the VFO stays analog and nothing about it changes
 TESTS   += radioCoreTestNoVfoDmr
@@ -718,7 +718,7 @@ UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c 
 ABOUT_H := out/gen/rfoundry_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
 UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
-           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
+           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE -DCONFIG_ZEROIZE=1
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 TESTS   += uiFlowTestSatellite
@@ -1573,7 +1573,7 @@ TESTS   += zeroizeTest
 
 # Built without the __attribute__ override: the test's zeroize_ram_hook takes the weak default's place, as key fill's will
 zeroizeTest: zeroizeTest.c $(ZEROIZE) $(wildcard $(CORE)/zeroize/*.h $(CORE)/codeplug/*.h $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
-	$(CC) -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers -Iout/gen 		-I$(ROOT)/hal -I. -Wshadow -o $@ zeroizeTest.c $(ZEROIZE)
+	$(CC) -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers -Iout/gen 		-I$(ROOT)/hal -I. -Wshadow -DCONFIG_ZEROIZE=1 -o $@ zeroizeTest.c $(ZEROIZE)
 
 run: run-zeroize
 run-zeroize: zeroizeTest

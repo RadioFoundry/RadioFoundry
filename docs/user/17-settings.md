@@ -100,6 +100,10 @@ If the firmware was built without privacy, the Privacy row is dimmed and OK on i
 
 #### Emergency wipe
 
+The emergency wipe is not in the standard firmware: the Wipe code, Wipe what, Wipe confirm, Wipe after and Clear all
+keys rows are only in a firmware built with it (`make BOARD=<radio> CONFIG_ZEROIZE=y`,
+[Build configuration](../build-config.md)).
+
 For a radio that is about to be lost or taken. Set a wipe code first (Settings > Privacy > Wipe code). Then, on Home,
 or on any screen while the keys are locked, type the 4 digits and **#**. With Wipe confirm on, **OK** wipes.
 

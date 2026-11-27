@@ -209,8 +209,9 @@ CONFIG_UI_COLOR ?= y
 # the Settings menu on the radio (off: settings keep their stored values and are set with qdmr; docs/spec/ui.md)
 CONFIG_UI_SETTINGS ?= y
 # emergency wipe: a 4-digit wipe code and # on Home or while locked erases the keys (and by default the codeplug) from
-# the flash and RAM, then restarts (Settings > Privacy; docs/spec/zeroize.md). Needs UI_SETTINGS (the code is set there)
-CONFIG_ZEROIZE ?= $(CONFIG_UI_SETTINGS)
+# the flash and RAM, then restarts (Settings > Privacy; docs/spec/zeroize.md). Needs UI_SETTINGS (the code is set there).
+# Off by default (about 4.3 KB flash): a custom build turns it on with CONFIG_ZEROIZE=y
+CONFIG_ZEROIZE ?= n
 # channel / zone scan, VFO band scan, dual watch, nuisance delete (docs/spec/radio-features.md)
 CONFIG_SCAN ?= y
 # the dual watch screens: two channels on Home, which one PTT uses and which one a call came in on; the radio core's

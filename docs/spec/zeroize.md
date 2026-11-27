@@ -7,7 +7,7 @@ The emergency wipe erases the radio's keys, and by default its codeplug, when th
 `#` on Home or while the keys are locked. It is for a radio about to be lost or taken: the keys stored in it are
 erased from the flash, not marked deleted, and the copies in RAM are zeroed. Then the radio restarts on the built-in
 channels. Status: built and host-tested (`zeroizeTest`, `nandSectorsTest`, the UI flow tests); untested on a radio.
-Switch: `CONFIG_ZEROIZE`.
+Switch: `CONFIG_ZEROIZE`, off by default: a custom build turns it on (`make BOARD=<radio> CONFIG_ZEROIZE=y`).
 
 A wipe only reaches the radio. Codeplug files, backups, the Codeplug Editor's autosave in a computer's browser and
 any other radio still hold the keys. A group whose radio was lost must still change its keys (6).

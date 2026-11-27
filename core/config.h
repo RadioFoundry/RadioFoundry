@@ -232,7 +232,7 @@
 #define CONFIG_UI_SETTINGS		1
 #endif
 #ifndef CONFIG_ZEROIZE
-#define CONFIG_ZEROIZE			CONFIG_UI_SETTINGS
+#define CONFIG_ZEROIZE			0
 #endif
 #ifndef CONFIG_SCAN
 #define CONFIG_SCAN			1
