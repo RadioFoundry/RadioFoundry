@@ -387,7 +387,9 @@ in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), wh
 Tools > APRS (`ui_aprs.c`): the body shows the callsign and frequency, why nothing can be sent (no callsign, no
 frequency, not amateur, no AFSK), the position and its source, the next beacon and the count sent. Rows: Send
 position now, Automatic beacons, Frequency (region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand
-144.575, Japan 144.660, China 144.640, Custom; OK steps to the next. The step after China opens a frequency entry
+144.575, Japan 144.660, China 144.640, Brazil 145.570, Custom; OK steps to the next. Settings store the region's
+number, and Brazil's comes after Custom's (a stored Custom stays Custom), so the row steps by its own order. The step
+after Brazil opens a frequency entry
 on the row, with the VFO's digit rules (`ui_freq_entry_*`, the board's receive bands) in a buffer of its own (quick
 settings can open over the page, and Split types into the VFO's), and the hint "0-9 type  OK set  Back": OK sets the
 typed frequency and Custom; OK with nothing typed keeps the custom frequency set before, or with none steps on to

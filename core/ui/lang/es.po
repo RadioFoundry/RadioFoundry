@@ -853,6 +853,11 @@ msgid "Custom"
 msgstr "Propio"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_VALUE_REGION_BRAZIL"
+msgid "Brazil"
+msgstr "Brasil"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_NO_CALLSIGN"
 msgid "Set your callsign (the radio name) in qdmr."
 msgstr "Define tu indicativo (nombre de radio) en qdmr."

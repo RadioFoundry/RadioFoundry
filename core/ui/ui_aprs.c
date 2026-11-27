@@ -87,7 +87,8 @@ static const tr_id_t pos_names[] = { TRN(VALUE_AUTO, "Auto"), TRX(WORD_GPS, "GPS
 static const tr_id_t region_names[APRS_REGION_COUNT] = { TRN(APRS_VALUE_REGION_N_AMERICA, "N America"),
 	TRN(APRS_VALUE_REGION_EUROPE, "Europe"), TRN(APRS_VALUE_REGION_AUSTRALIA, "Australia"),
 	TRN(APRS_VALUE_REGION_NEW_ZEALAND, "New Zealand"), TRN(APRS_VALUE_REGION_JAPAN, "Japan"),
-	TRN(APRS_VALUE_REGION_CHINA, "China"), TRN(APRS_VALUE_REGION_CUSTOM, "Custom") };
+	TRN(APRS_VALUE_REGION_CHINA, "China"), TRN(APRS_VALUE_REGION_CUSTOM, "Custom"),
+	TRN(APRS_VALUE_REGION_BRAZIL, "Brazil") };
 
 // The radio can send APRS on RF (a board with an AFSK transmit path; some only receive)
 static bool rf_send(void)
@@ -352,12 +353,14 @@ static void aprs_select(uint16_t i, bool hold)
 		if (board.afsk == NULL && !CONFIG_APRS_RX) {
 			return;
 		}
-		if (c.region + 1u == APRS_REGION_CUSTOM) {
+		// The regions in the order shown, Brazil after China (stored after Custom, aprs.h), then the custom entry
+		if (c.region == APRS_REGION_BR) {
 			freq_start();	// the region stays until OK sets the custom frequency
 			ui_dirty();
 			return;
 		}
-		c.region = (uint8_t)((c.region + 1u) % APRS_REGION_COUNT);
+		c.region = c.region == APRS_REGION_CN ? APRS_REGION_BR :
+			c.region >= APRS_REGION_CUSTOM ? APRS_REGION_NA : (uint8_t)(c.region + 1u);
 		break;
 	case AP_POWER:
 		if (!rf_send()) {

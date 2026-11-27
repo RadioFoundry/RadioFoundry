@@ -538,7 +538,7 @@ static void aprs_sim_reset(void)
 }
 bool ui_svc_aprs_view(aprs_view_t *v)
 {
-	static const uint32_t hz[APRS_REGION_COUNT] = { 144390000, 144800000, 145175000, 144575000, 144640000, 144640000, 0 };
+	static const uint32_t hz[APRS_REGION_COUNT] = { 144390000, 144800000, 145175000, 144575000, 144640000, 144640000, 0, 145570000 };
 	memset(v, 0, sizeof *v);
 	if (aprs_sim.off)
 		return false;

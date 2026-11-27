@@ -855,6 +855,11 @@ msgid "Custom"
 msgstr "自定义"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_VALUE_REGION_BRAZIL"
+msgid "Brazil"
+msgstr "巴西"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_NO_CALLSIGN"
 msgid "Set your callsign (the radio name) in qdmr."
 msgstr "请在 qdmr 中设置呼号（电台名）。"
