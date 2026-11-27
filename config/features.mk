@@ -348,10 +348,11 @@ CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 # update staging
 CONFIG_SATELLITE_TLE ?= $(if $(filter y,$(CONFIG_DEBUGLINK)),y,n)
 
-# The hardware real-time clock (hal/hal_rtc.h, docs/spec/radio-features.md 5.6). With DEBUGLINK it can be read and set
-# there (docs/spec/debuglink.md 3.31). Off on a board with no driver for it (BOARD_NOT_WRITTEN) or no clock that keeps
-# time while off (BOARD_UNSUPPORTED)
-CONFIG_RTC ?= y
+# The hardware real-time clock (hal/hal_rtc.h, docs/spec/radio-features.md 5.6). It follows DEBUGLINK, the only thing
+# that reads it so far (docs/spec/debuglink.md 3.31); the next user turns it on by itself. Not a dependency: it can be
+# set either way. Off on a board with no driver for it (BOARD_NOT_WRITTEN) or no clock that keeps time while off
+# (BOARD_UNSUPPORTED)
+CONFIG_RTC ?= $(CONFIG_DEBUGLINK)
 
 
 FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_AES DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
