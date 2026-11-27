@@ -4163,18 +4163,84 @@ static void test_sig_fm(void)
 	req(RREQ_PTT, 0);
 	run(300);
 	board.radio = &fake_radio;
-	// ... and on a board whose DMR beeps can't sound on air too: that limit is the DMR engine's, FM keys no such gate
+	// ... and on a board that can't play the speaker while it transmits (CAP_BEEP_NOT_IN_FM_TX, all four HR_C7000 radios:
+	// the codec's PCM is gated and the amplifier is off in FM TX): the tone plays first, receive-only, and the carrier
+	// follows once it has played out. Nothing more sounds once on air
 	uint32_t caps = board.caps;
-	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	board.caps |= CAP_BEEP_NOT_IN_FM_TX;
 	start();
 	settings(set_sig_begin_local);
 	beep_get_stats(&b0);
+	hw.tx_calls = 0;
 	req(RREQ_PTT, 1);
-	run(50);
+	run(10);
 	beep_get_stats(&b1);
-	CHECK(sm.view.state == RS_TX && b1.played == b0.played + 1);
+	CHECK(sm.ptt && sm.view.state != RS_TX && hw.tx_calls == 0 && b1.played == b0.played + 1);	// the tone, not keyed yet
+	run(300);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && b1.played == b0.played + 1);		// keyed after it, no second tone
 	req(RREQ_PTT, 0);
 	run(100);
+	// Let go during the tone: it never keys and nothing goes on air
+	start();
+	settings(set_sig_begin_local);
+	hw.tx_calls = 0;
+	req(RREQ_PTT, 1);
+	run(10);
+	req(RREQ_PTT, 0);
+	run(400);
+	CHECK(!sm.ptt && sm.view.state != RS_TX && hw.tx_calls == 0 && hw.tx_off_calls == 0);
+	// Speaker + air without a sidetone: the tone first on the speaker, then the same chain on air
+	start();
+	settings(set_sig_begin_both);
+	beep_get_stats(&b0);
+	hw.tx_calls = 0;
+	hw.tone_calls = 0;
+	req(RREQ_PTT, 1);
+	run(10);
+	CHECK(sm.view.state != RS_TX && hw.tx_calls == 0 && hw.tone_calls == 0);
+	run(300);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.tone_calls > 0 && b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(200);
+	// Air only: nothing to play on the speaker, so it keys at once
+	start();
+	settings(set_sig_begin_air);
+	hw.tx_calls = 0;
+	req(RREQ_PTT, 1);
+	run(10);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1);
+	req(RREQ_PTT, 0);
+	run(300);
+	// With a sidetone the on-air copy is the speaker's too: keyed at once, no separate beep
+	hal_radio_t radio_sidetone = fake_radio;
+	radio_sidetone.tx_tone_side = r_tx_tone_side;
+	board.radio = &radio_sidetone;
+	start();
+	settings(set_sig_begin_both);
+	beep_get_stats(&b0);
+	hw.tx_calls = 0;
+	req(RREQ_PTT, 1);
+	run(10);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && b1.played == b0.played);
+	req(RREQ_PTT, 0);
+	run(300);
+	board.radio = &fake_radio;
+	// A radio whose beeps sound in FM TX but not in DMR TX (CAP_BEEP_NOT_ON_AIR alone): no hold, it keys at once and
+	// the tone plays on the speaker as before
+	board.caps = (caps & ~CAP_BEEP_NOT_IN_FM_TX) | CAP_BEEP_NOT_ON_AIR;
+	start();
+	settings(set_sig_begin_local);
+	beep_get_stats(&b0);
+	hw.tx_calls = 0;
+	req(RREQ_PTT, 1);
+	run(10);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(300);
 	board.caps = caps;
 	// ... and not on a no-beep channel
 	start();

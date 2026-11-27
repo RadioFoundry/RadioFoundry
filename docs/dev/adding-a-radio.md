@@ -63,7 +63,7 @@ Look at the boards on your platform for a model (`tools/boards.py list --platfor
 | Field | Fill with |
 |---|---|
 | `name` | The model as shown in About and the hotspot's description |
-| `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT`, `CAP_AM_RX`, `CAP_BCAST_FM`, `CAP_NO_BATTERY` (a mobile on a fixed supply: no battery UI, no battery monitor; leave `battery_mv` and `battery_pct` NULL, and set `hal_power_t.supply_mv` if the radio measures its DC input: [radio-features.md](../spec/radio-features.md), battery) |
+| `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT`, `CAP_AM_RX`, `CAP_BCAST_FM`, `CAP_BEEP_NOT_ON_AIR` (beeps can't sound while DMR transmits), `CAP_BEEP_NOT_IN_FM_TX` (nor while FM transmits: an FM start tone set to the speaker plays before keying), `CAP_NO_BATTERY` (a mobile on a fixed supply: no battery UI, no battery monitor; leave `battery_mv` and `battery_pct` NULL, and set `hal_power_t.supply_mv` if the radio measures its DC input: [radio-features.md](../spec/radio-features.md), battery) |
 | `bands`, `band_count` | Receive ranges, each with `tx` true where transmit is allowed |
 | `power_count`, `power_names`, `power_default` | Power levels as short labels, lowest first, and the default index |
 | `power_bands`, `power_band_count` | Optional: the labels per band, where a level gives a different power on each band (a top level of 45 W on one band, 50 W on the other). Same `power_count` on every band; a frequency in no entry uses `power_names` |

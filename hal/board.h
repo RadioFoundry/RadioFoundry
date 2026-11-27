@@ -52,6 +52,10 @@ enum {
 	// talk permit then plays before the first burst: DMR voice keys after a short hold in which the radio still
 	// receives and the tone sounds (dmr_call_config_t.permit_hold_ms)
 	CAP_BEEP_NOT_ON_AIR = 1u << 8,
+	// Beeps can't sound while the radio transmits FM (the speaker is off, or its audio path is held off the modulator).
+	// An FM start tone set to sound on the speaker then plays before keying: the transmitter keys once it has played
+	// out. Independent of CAP_BEEP_NOT_ON_AIR: a radio can play beeps in FM TX and not in DMR TX
+	CAP_BEEP_NOT_IN_FM_TX = 1u << 9,
 };
 
 // What a hardware identity line names (board_t.hw_line; docs/spec/support-info.md 2)

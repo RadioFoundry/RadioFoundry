@@ -434,6 +434,10 @@ typedef struct {
 	beep_seg_t roger_seg[SIG_STEPS];
 #endif
 #endif
+#if CONFIG_SIG_TONES
+	uint32_t fm_pre_ms;		// FM: PTT is down and the start tone plays on the speaker before keying (fm_start_before_key); its start, 0 = none
+	uint8_t fm_pre_go;		// ptt_down's second pass: 1 = the tone has played (key now), 2 = key without waiting
+#endif
 #if CONFIG_DTMF
 	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down
 	char dtmf_next;			// a digit waiting for the one sounding (or the gap) to end, 0 = none
