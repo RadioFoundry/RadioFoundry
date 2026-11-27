@@ -57,7 +57,7 @@ typedef struct {
 	uint32_t flagged;	// characters the UART flagged (break, framing, parity, overrun), a running count
 	bool keyed;		// the radio is transmitting
 	bool tx_seen;		// the radio has sent on the line
-	uint32_t tx_ms;		// when it last did (same clock)
+	uint32_t tx_ms;		// when it last did (same clock): now while a send is under way
 } shared_ptt_line_t;
 
 enum { SHARED_PTT_UP, SHARED_PTT_LOW, SHARED_PTT_PRESSED, SHARED_PTT_NOISE };

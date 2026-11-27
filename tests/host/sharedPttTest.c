@@ -301,6 +301,25 @@ int main(void)
 	CHECK(press_after(&g2, true, 20406, 22520, 10, 100) == SHARED_PTT_HOLD_MS);
 	tx_seen = false;
 
+	// A long answer of the radio's: the host sends during it, the last host byte comes after the last high read and the
+	// line clamps while the radio is still sending. The port reports a write under way as sending now (tx_ms follows the
+	// clock), so the clamp reads as one after the radio's send: never a press
+	shared_ptt_t w = { 0 };
+	idle(&w, false, 0, 30000, IDLE_FROM_START);
+	tx_seen = true;
+	tx_ms = 30500;		// the write starts
+	CHECK(!gate(&w, false, true, 30490, 30500));
+	for (uint32_t t = 30510; t < 31000; t += 10) {
+		tx_ms = t;	// still writing
+		CHECK(!gate(&w, true, true, 30503, t));
+	}
+	tx_ms = 31000;		// the write ends; the line stays clamped
+	for (uint32_t t = 31010; t < 33100; t += 10) {
+		CHECK(!gate(&w, true, true, 30503, t));
+	}
+	CHECK(shared_ptt_stuck(&w, 33100));
+	tx_seen = false;
+
 	// The clamp lands just after a scan saw the line high: low within the guard of the radio's own send. Never a press
 	shared_ptt_t c = { 0 };
 	idle(&c, false, 0, 2000, IDLE_FROM_START + 400u);
