@@ -226,6 +226,57 @@ static void test_fill_receiver_first_slow_sender(void)
 
 // A radio in the middle: it plays the receiver to S (M1) and the sender to R (M2), with its own keys. It can't make
 // the codes agree but by chance (1 in a million); here they differ, and the users say no
+// The sender's user first (found on air): its first COMMIT goes before the receiver listens and is lost; the repeat
+// gets there, and the fill ends as usual
+static void test_fill_sender_before_receiver(void)
+{
+	uint8_t r[KF_RANDOM_LEN], m[KF_MSG_MAX];
+	uint32_t dst;
+	tamper = NULL;
+	kf_wipe(&R);
+	rnd(r);
+	CHECK(kf_send(&S, S_ID, R_ID, payload_class2, NULL, r, now));
+	CHECK(kf_tx(&S, m, &dst) > 0);		// nobody listens yet
+	rnd(r);
+	kf_listen(&R, R_ID, r, now + 4000u);
+	kf_tick(&S, now + KF_COMMIT_REPEAT_MS);
+	pump(&S, &R);
+	CHECK(S.state == KF_ST_COMPARE && R.state == KF_ST_COMPARE && S.code == R.code);
+	kf_confirm(&S, true, now);
+	kf_confirm(&R, true, now);
+	pump(&S, &R);
+	CHECK(R.state == KF_ST_STORING);
+	kf_wipe(&S);
+	kf_wipe(&R);
+	now += 1000;
+}
+
+// RPUB lost: the sender's repeated COMMIT gets the same RPUB again; another commitment under the same session ID gets
+// nothing
+static void test_rpub_lost(void)
+{
+	uint8_t r[KF_RANDOM_LEN], m[KF_MSG_MAX], c[KF_MSG_MAX], rp[KF_MSG_MAX];
+	uint32_t dst;
+	tamper = NULL;
+	rnd(r);
+	kf_listen(&R, R_ID, r, now);
+	rnd(r);
+	kf_send(&S, S_ID, R_ID, payload_class2, NULL, r, now);
+	int cn = kf_tx(&S, c, &dst);
+	kf_rx(&R, S_ID, c, cn, now);
+	int rn = kf_tx(&R, rp, &dst);		// lost
+	CHECK(R.state == KF_ST_SENT_RPUB && rn > 0);
+	c[KF_HEADER] ^= 0x01;			// a forged commitment: no answer
+	kf_rx(&R, S_ID, c, cn, now);
+	CHECK(kf_tx(&R, m, &dst) == 0 && R.state == KF_ST_SENT_RPUB);
+	kf_tick(&S, now + KF_COMMIT_REPEAT_MS);
+	pump(&S, &R);
+	CHECK(S.state == KF_ST_COMPARE && R.state == KF_ST_COMPARE && S.code == R.code);
+	kf_wipe(&S);
+	kf_wipe(&R);
+	now += 1000;
+}
+
 static void test_middle(void)
 {
 	uint8_t r[KF_RANDOM_LEN];
@@ -354,11 +405,20 @@ static void test_timeouts(void)
 	CHECK(R.state == KF_ST_LISTEN);
 	kf_tick(&R, now + KF_LISTEN_MS);
 	CHECK(R.state == KF_ST_FAILED && R.why == KF_WHY_TIMEOUT && kf_tx(&R, m, &dst) == 0);
-	// Sent COMMIT: 30 s, then ABORT
+	// Sent COMMIT: COMMIT again every 10 s, the same one; 2 min, then ABORT. A send the air didn't take isn't the end
 	rnd(r);
 	kf_send(&S, S_ID, R_ID, payload_class2, NULL, r, now);
-	kf_tx(&S, m, &dst);
-	kf_tick(&S, now + KF_STEP_MS);
+	uint8_t first[KF_MSG_MAX];
+	CHECK(kf_tx(&S, first, &dst) == KF_HEADER + SHA256_LEN && first[1] == KF_COMMIT);
+	kf_send_failed(&S);
+	CHECK(S.state == KF_ST_SENT_COMMIT);
+	kf_tick(&S, now + KF_COMMIT_REPEAT_MS - 1);
+	CHECK(kf_tx(&S, m, &dst) == 0);
+	kf_tick(&S, now + KF_COMMIT_REPEAT_MS);
+	CHECK(kf_tx(&S, m, &dst) == KF_HEADER + SHA256_LEN && memcmp(m, first, KF_HEADER + SHA256_LEN) == 0 && dst == R_ID);
+	kf_tick(&S, now + KF_COMMIT_WAIT_MS - 1);
+	CHECK(S.state == KF_ST_SENT_COMMIT && kf_tx(&S, m, &dst) == KF_HEADER + SHA256_LEN);
+	kf_tick(&S, now + KF_COMMIT_WAIT_MS);
 	CHECK(S.state == KF_ST_FAILED && S.why == KF_WHY_TIMEOUT);
 	CHECK(kf_tx(&S, m, &dst) == KF_HEADER + 1 && m[1] == KF_ABORT && m[KF_HEADER] == KF_WHY_TIMEOUT && dst == R_ID);
 	// Sent RPUB: 30 s
@@ -568,6 +628,8 @@ int main(void)
 	test_fill_class2();
 	test_fill_class1_sender_first();
 	test_fill_receiver_first_slow_sender();
+	test_fill_sender_before_receiver();
+	test_rpub_lost();
 	test_middle();
 	test_tamper();
 	test_replay();

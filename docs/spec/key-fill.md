@@ -169,7 +169,7 @@ DONE carries the check value the receiver computed from the stored key, or zeros
 | State | Who | Waits for | Times out after |
 |---|---|---|---|
 | Listening | R | COMMIT from anyone | 5 min |
-| Sent COMMIT | S | RPUB | 30 s |
+| Sent COMMIT | S | RPUB | 2 min; COMMIT again every 10 s |
 | Sent RPUB | R | SPUB | 30 s |
 | Compare | both | the user's OK or Back | 2 min |
 | Confirmed, waiting | S | READY | 2 min from Compare |
@@ -184,6 +184,12 @@ DONE carries the check value the receiver computed from the stored key, or zeros
 - Either user may answer first: READY waits at S until its user answers, and R waits for KEY as long as S's user
   may take plus a step. R sends READY again every 15 s until KEY comes, so one lost READY doesn't leave S waiting
   until its time-out (found on air with R's user first); S acts on the first READY and drops the rest.
+- Either user may start first, too: S sends the same COMMIT again every 10 s until RPUB comes, for up to 2 min, so a
+  receiver started after the sender, or still filling its pool when the first COMMIT went, still gets one (found on
+  air: a net join failed whenever the net control was started first). A COMMIT the data layer couldn't deliver doesn't
+  end the session; the next repeat tries again. R answers a repeat of its sender's COMMIT (same session ID and
+  commitment) with the same RPUB, so a lost RPUB is recovered the same way; a different commitment under that
+  session ID gets nothing.
 - Only one session at a time. A COMMIT from a third radio during a session gets ABORT "busy".
 - The session ID, the private key and every derived secret are in the session, which lives on the RTOS heap while the
   Key fill screen is open and is wiped (`crypto_wipe`) before it is freed, on every way out. The engine wipes each

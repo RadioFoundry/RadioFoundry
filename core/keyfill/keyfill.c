@@ -213,6 +213,15 @@ void kf_listen(kf_session_t *s, uint32_t own_id, const uint8_t rnd[KF_RANDOM_LEN
 	enter(s, KF_ST_LISTEN, now);
 }
 
+// S: COMMIT, the first time and again every KF_COMMIT_REPEAT_MS until RPUB: the same session ID and commitment
+static void send_commit(kf_session_t *s, uint32_t now)
+{
+	int n = header(s->sid, KF_COMMIT, s->tx);
+	commit_hash(s->own_pub, &s->tx[n]);
+	queue(s, PUB_MSG, s->peer_id);
+	s->again_at = now;
+}
+
 bool kf_send(kf_session_t *s, uint32_t own_id, uint32_t peer_id, kf_payload_fn fn, void *ctx,
 	     const uint8_t rnd[KF_RANDOM_LEN], uint32_t now)
 {
@@ -227,9 +236,7 @@ bool kf_send(kf_session_t *s, uint32_t own_id, uint32_t peer_id, kf_payload_fn f
 	memcpy(s->priv, rnd, X25519_LEN);
 	s->sid = get32(rnd + X25519_LEN);
 	x25519_public(s->own_pub, s->priv, &s->ws);
-	int n = header(s->sid, KF_COMMIT, s->tx);
-	commit_hash(s->own_pub, &s->tx[n]);
-	queue(s, PUB_MSG, peer_id);
+	send_commit(s, now);
 	enter(s, KF_ST_SENT_COMMIT, now);
 	return true;
 }
@@ -271,6 +278,13 @@ void kf_rx(kf_session_t *s, uint32_t src, const uint8_t *m, int len, uint32_t no
 	if (type == KF_COMMIT && s->state != KF_ST_LISTEN) {
 		if (!ours && len == PUB_MSG)
 			busy(s, src, sid);
+		// Our sender's COMMIT again: our RPUB didn't get there. The same RPUB again, for the same commitment only
+		else if (ours && len == PUB_MSG && s->state == KF_ST_SENT_RPUB && s->tx_len == 0 &&
+			 crypto_equal(&m[KF_HEADER], s->commit, SHA256_LEN)) {
+			memcpy(&s->tx[header(s->sid, KF_RPUB, s->tx)], s->own_pub, X25519_LEN);
+			queue(s, PUB_MSG, src);
+			return;
+		}
 		s->stats.dropped++;
 		return;
 	}
@@ -404,6 +418,12 @@ void kf_tick(kf_session_t *s, uint32_t now)
 	switch (s->state) {
 	case KF_ST_LISTEN: until = s->state_at + KF_LISTEN_MS; break;
 	case KF_ST_SENT_COMMIT:
+		until = s->state_at + KF_COMMIT_WAIT_MS;
+		if ((int32_t)(now - until) < 0 && now - s->again_at >= KF_COMMIT_REPEAT_MS && s->tx_len == 0) {
+			send_commit(s, now);
+			return;
+		}
+		break;
 	case KF_ST_SENT_RPUB:
 	case KF_ST_SENT_KEY: until = s->state_at + KF_STEP_MS; break;
 	case KF_ST_COMPARE:
@@ -423,6 +443,9 @@ void kf_tick(kf_session_t *s, uint32_t now)
 
 void kf_send_failed(kf_session_t *s)
 {
+	// A COMMIT the air didn't take (no radio there yet answered it): the next one goes at the repeat
+	if (s->state == KF_ST_SENT_COMMIT)
+		return;
 	if (active(s))
 		fail(s, KF_WHY_SEND, false, s->state_at);
 }

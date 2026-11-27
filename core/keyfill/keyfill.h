@@ -70,6 +70,11 @@ typedef enum {
 #define KF_STEP_MS		30000u
 #define KF_COMPARE_MS		(2u * 60u * 1000u)
 #define KF_READY_REPEAT_MS	15000u	// R sends READY again this often until KEY: a lost READY would stall both sides
+// S waits this long for RPUB, sending COMMIT again every KF_COMMIT_REPEAT_MS: its user may start before the
+// receiver's, and a receiver still getting ready drops a COMMIT (found on air: a net join failed whenever the net
+// control was started first)
+#define KF_COMMIT_WAIT_MS	(2u * 60u * 1000u)
+#define KF_COMMIT_REPEAT_MS	10000u
 
 // The sender's payload, asked for only when KEY is built (5: the key leaves the store as late as it can): its length,
 // at most cap octets into out; 0 or less fails the session
@@ -100,6 +105,7 @@ typedef struct {
 	uint8_t payload_len;
 	uint32_t sid;
 	uint32_t state_at, compare_at;
+	uint32_t again_at;	// S: when COMMIT last went
 	uint32_t tx_dst;
 	kf_payload_fn payload_fn;
 	void *payload_ctx;
