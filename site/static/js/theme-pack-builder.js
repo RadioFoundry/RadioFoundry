@@ -472,8 +472,9 @@ async function loadRadioModels() {
 		if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 		const data = await response.json();
 		radioModels = (Array.isArray(data.radios) ? data.radios : [])
-			.filter((radio) => radio.display && radio.display !== "none" && radio.frame_image &&
-				radio.frame_geometry?.screen_pct && radio.frame_geometry?.aspect)
+			.filter((radio) => /\bcolor\b/i.test(radio.display || "") &&
+				Array.isArray(radio.config?.full) && radio.config.full.includes("UI_COLOR") &&
+				radio.frame_image && radio.frame_geometry?.screen_pct && radio.frame_geometry?.aspect)
 			.sort((a, b) => a.order - b.order);
 		if (!radioModels.length) throw new Error("No supported radios with displays were found.");
 		radioSelect.replaceChildren(...radioModels.map((radio) => {
