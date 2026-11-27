@@ -787,7 +787,9 @@ static void outputs(radio_sm_t *sm)
 	bool bcast = false;
 #if CONFIG_BCAST_FM
 	bcast = sm->view.bcast;
-	bool bcast_play = bcast && !tx && bcast_listening(sm);
+	// A refused PTT silences the station as it closes an FM channel's open squelch (open above), unless a call goes on
+	// playing through it (deny_rx); Monitor still plays it (#1130)
+	bool bcast_play = bcast && !tx && bcast_listening(sm) && (sm->view.state != RS_TX_DENIED || sm->deny_rx);
 	if (sm->bcast_on && sm->bcast_audio_out != (int8_t)((open || bcast_play) && bcast)) {
 		sm->bcast_audio_out = (int8_t)((open || bcast_play) && bcast);
 		board.bcast->audio((open || bcast_play) && bcast);

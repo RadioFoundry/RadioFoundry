@@ -126,7 +126,7 @@ push-pull SCL, no clock stretching).
 |---|---|
 | When | `CONFIG_BCAST_FM`, the board has `CAP_BCAST_FM` and `board.bcast`, and the channel's or the VFO's RX frequency is in the receiver's range, whatever its stored mode (3.1). `view.bcast` says the broadcast receiver plays |
 | Tuning | the receiver is powered and tuned to the nearest point of its grid (`radio_bcast_khz`). Leaving the range powers it off. If the chip doesn't answer, `view.bcast_fault` is set and the radio stays idle |
-| Transmit | refused with `TXDENY_BCAST` whenever `view.bcast`, and for any TX frequency in the range on a radio with the receiver (split channels, DMR channels, the VFO, the hotspot's frequencies) |
+| Transmit | refused with `TXDENY_BCAST` whenever `view.bcast`, and for any TX frequency in the range on a radio with the receiver (split channels, DMR channels, the VFO, the hotspot's frequencies). While PTT is refused the station is silent, as an open squelch closes on a receive-only FM channel; it plays again on release, and Monitor keeps it playing |
 | Squelch | on the receiver's RSSI (about dBuV): noise = 97 - RSSI on the FM noise scale, so level 5 opens above 45 dBuV, 1 above 33, 9 above 57. Set from a receiver without an antenna (2026-10-22): empty frequencies read 22 to 37, stations 50 and up. The signal meter shows RSSI - 107 dBm. Only a scan uses it (to stop on stations): otherwise the state stays RX, the LED stays off (a station isn't a call), the screen shows the level and the audio plays whatever the signal (`bcast_listening()`) |
 | Sub-audio | ignored (`tone_needed()` is false) |
 | Volume | the radio's own volume where it has one (`radio_volume_soft`), mapped onto the receiver's 0-15; a fixed 12 where a knob after the amplifier sets the level |
