@@ -834,7 +834,7 @@ entry.
 | Off, or no valid key | clear |
 | Motorola BP | encrypted: privacy header, algorithm 0 |
 | Anytone BP | no data form: every data list is refused |
-| AES-256 (an AES channel) | no data form yet: every data list is refused |
+| DMR AES-256 channel (`CONFIG_DMR_AES`) | encrypted with the channel's key: privacy header, algorithm 5, its key ID, a new MI (13.4). Without the key, refused |
 
 An AES channel's rule comes from `radio_aes_data_config` (`core/radio/radio_aes.c`), not from the basic privacy key.
 
@@ -848,9 +848,9 @@ blocks to follow):
 | 0 | SAP << 4 \| 0xF |
 | 1 | MFID 0x10 |
 | 2 | algorithm (bits 6-4: 0 BP, 1 RC4, 2 DES, 4 AES-128, 5 AES-256), encrypted 1 (bits 3-0) |
-| 3 | key ID (0 for BP) |
+| 3 | key ID (0 for BP; AES: the traffic key's ID, as in the voice PI header) |
 | 4-5 | 0 |
-| 6-9 | MI, big-endian (0 for BP) |
+| 6-9 | MI, big-endian (0 for BP; AES: 13.4) |
 | 10-11 | CRC-CCITT, mask 0xCC |
 
 We send the real SAP in the first header. On RX a first header with SAP 9 takes the user data's SAP from the privacy
@@ -875,13 +875,38 @@ computed over the ciphertext, so a receiver without the key still checks and ack
   `packet_deny` for packet data, which also gives `TXDENY_DATA_ENCRYPTED` under a blocking scheme) and shows the
   reason as PTT does, so a send that never went out is never shown as "No answer".
 - Confirmed IP sends one preamble fewer with the privacy header, so the air MTU (12.8) still fits in 64 bursts.
-- RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm. Otherwise (no key, an
-  MI-based algorithm) it is dropped and never shown; confirmed data is still acknowledged. A wrong BP key gives
-  garbage that the IP checks drop.
+- RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm (and, for AES, holds its
+  key ID). Otherwise (no key, another algorithm) it is dropped and never shown; confirmed data is still acknowledged.
+  A wrong BP key gives garbage that the IP checks drop.
+- TX with AES: a packet that can't get an MI (no saved reservation yet) or whose key is gone is not built: nothing
+  goes, in the clear or otherwise. The radio core also refuses data there as it refuses PTT (`TXDENY_AES_KEY`,
+  `TXDENY_AES_WAIT`).
 - Counters (debug link section 8): `data.privacy_rx` (decrypted), `data.privacy_rx_dropped`, `data.privacy_tx` (lists
   sent encrypted), `data.privacy_blocked` (lists refused).
 
-### 13.4 Open
+### 13.4 AES data
+
+On a DMR AES-256 channel ([channel-modes.md](channel-modes.md), [dmr-voice.md](dmr-voice.md) 5.1) the channel's
+traffic key covers its packet data as it covers its voice: text messages, positions and every other packet the radio
+builds there.
+
+| Item | Value |
+|---|---|
+| Algorithm | AES-256, privacy header algorithm 5 (`DMR_DATA_ALG_AES256`) |
+| Key | The channel's traffic key; its ID in octet 3. A receiver decrypts with its key of that ID on the channel, else drops the packet |
+| Keystream | OFB: block 1 = AES(K, IV), block n = AES(K, block n-1). Block 1 is not used: blocks 2, 3, ... are XORed over the user data from octet 0, not over the pad octets or the CRC-32. IV = the 128-bit IV of the MI at superframe 0 (`dmrAesIv`: the MI and the next three words of the LFSR). This is how DSD-FME decrypts MOTOTRBO AES data (its keystream from octet 16, none over pad and CRC); checked on air: DSD-FME, given the key, decrypts our text messages to the right IP header and text, and with block 1 used it did not. DSD-FME makes only (user data octets / 16) + 1 keystream blocks, so it leaves the last (length mod 16) octets undecrypted; decrypted with the whole keystream, they are the rest of the text |
+| MI | A new position of the radio's one MI sequence for every packet (`dmrAesDataMi`): used at once, so it is never the start of an over's superframe or another packet's. One position per packet, from the same saved reservation as voice |
+| Confirmed retries | A selective retry sends the first try's blocks again under the first try's MI and header (the receiver keeps that header, 12.3): the same ciphertext, no new keystream |
+| CRCs | As BP: the CRC-32 and CRC-9s over the ciphertext |
+
+A packet is built only when it can be encrypted: without an MI or the key, `dmrDataBuild*` builds nothing
+(`txPrivacy` returns -1), so a failure never sends the data in the clear.
+
+### 13.5 Open
+
+- AES data is checked between our radios and against DSD-FME (13.4), whose AES data decryption follows MOTOTRBO
+  captures. Not yet checked against a commercial radio directly: a stock radio's encrypted text message read by ours
+  would settle it.
 
 - Not yet checked against a commercial portable on air: whether its first header carries SAP 9 or the real SAP, and
   octets 4-5.

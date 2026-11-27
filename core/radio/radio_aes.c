@@ -76,8 +76,20 @@ bool radio_aes_data_config(const channel_t *ch, dmrDataPrivacy_t *out)
 {
 	if (ch->kind != CODEPLUG_KIND_DMR_AES)
 		return false;
+	// AES-256 OFB, a new MI from the radio's sequence for every packet (docs/spec/dmr-data.md 13.4). Without the key no
+	// data packet goes, and none is sent in the clear
 	memset(out, 0, sizeof(*out));
-	out->mode = DMR_DATA_PRIVACY_BLOCK;
+	uint8_t alg, kid;
+	if (!dmrAesTxKey(&channel_keys, &alg, &kid)) {
+		out->mode = DMR_DATA_PRIVACY_BLOCK;
+		return true;
+	}
+	out->mode = DMR_DATA_PRIVACY_ENCRYPT;
+	out->alg = DMR_AES_DATA_ALG;
+	out->keyId = kid;
+	out->crypt = dmrAesDataCrypt;
+	out->newMi = dmrAesDataMi;
+	out->ctx = &channel_keys;
 	return true;
 }
 

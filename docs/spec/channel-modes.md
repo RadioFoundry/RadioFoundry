@@ -163,8 +163,8 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 A conventional AES channel uses the normal DMR frequencies, contact, color code and timeslot. Its base record is receive-only.
 The type 5 system block starts with one identity byte. Provision each traffic key in the traffic-key family with its
 system index, algorithm 0x25, an eight-bit PI key ID in the low byte of the ID field, and exactly 32 key bytes.
-The channel tag parameter block starts with algorithm 0x25 and the PI key ID. Missing keys inhibit PTT. AES applies
-to voice. The editor keeps them in the system's traffic key table (`aesSystem.traffic`, masked until shown, with
+The channel tag parameter block starts with algorithm 0x25 and the PI key ID. Missing keys inhibit PTT and data. AES applies to
+voice and to packet data ([dmr-data.md](dmr-data.md) 13.4). The editor keeps them in the system's traffic key table (`aesSystem.traffic`, masked until shown, with
 **Generate** filling a key from `crypto.getRandomValues()`) and omits traffic keys when saving an image without keys. On the radio the AES key row cycles
 through provisioned system number/key ID pairs and None. Save applies the selection.
 
