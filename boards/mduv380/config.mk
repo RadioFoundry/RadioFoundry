@@ -16,9 +16,8 @@ MAXIMAL_VARS := LTO=1
 # Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
 # (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above); French, off by
 # default, so that the maximal build keeps satellite tracking and still fits the app region; Chinese stays out too
-# (its glyph table does not fit beside the rest); Italian too, once the scan list screens' strings joined the catalogs
-# (every language carries every string, whether or not a build has the screen); scan lists, whose RAM no longer fits
-# beside everything else (the switch builds on its own)
+# (its glyph table does not fit beside the rest); scan lists, whose code no longer fits beside everything else (the
+# switch builds on its own); Italian, which is 1,004 B over the app region with it
 MAXIMAL_SKIP := NET_PPP APRS_IGATE LANG_FR LANG_ZH LANG_DEFAULT_ZH LANG_IT LANG_DEFAULT_IT SCAN_LIST
 
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
