@@ -106,8 +106,10 @@ while the selected channel is quiet the radio goes over to decode the call and c
 On a radio whose volume knob RadioFoundry reads, turning the knob shows the volume at the bottom of the screen (at the
 top on a screen that uses its bottom row, such as Quick settings): a bar of 16 steps and the step number. It goes away 3 s after you stop turning, and the screen under it carries on (a call,
 a menu). It also turns the backlight on. On a radio without a knob, the **Volume** key opens the volume screen
-instead. A radio whose volume control works after the radio chip (`volume.src` none) can't know the level, and shows
-nothing.
+instead. A radio whose volume control works after the radio chip (`volume.src` none) shows the bar only where
+RadioFoundry can read the knob's position. The knob alone sets the loudness there, so **Knob when locked** is not shown
+and a PC can't set the volume. The bar goes down to 0 only where the bottom of the knob's travel is known to be silent;
+otherwise its lowest step is 1.
 
 <img src="../ux/screens/160x128/volume_bar.png" width="200" alt="The volume bar at the bottom of Home after turning the knob">
 
@@ -325,6 +327,11 @@ steps through 100 mW, 1 W and 5 W. The radio refuses to transmit without a valid
 A 2-cell Li-ion pack, with the same percentage curve and the same thresholds as the DM-1701: low below 6.2 V,
 critical below 6.0 V. The voltage scale is assumed, not measured.
 
+### MD-380 speaker and programming cable
+
+The USB programming cable plugs into the speaker and microphone jack. The speaker is off while it is in: unplug it to
+hear the radio.
+
 ### MD-380 power switch
 
 The power switch is on the volume knob. It is believed to switch the supply directly, so RadioFoundry doesn't see the knob
@@ -485,7 +492,11 @@ A 240 x 320 color screen. RadioFoundry uses its full resolution, with smooth (an
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
 - No VOX yet: the board code that reads the microphone level isn't written.
-- Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
+- The microphone reaches the digital voice codec quieter than on other radios (measured 13 dB under another
+  maker's handheld), so DMR adds 12 dB at **Mic gain** 5 and holds a loud voice back rather than letting it distort.
+  **Mic gain** moves it 2 dB a step either way. Not yet checked on air.
+- No audio linking (USRP): its received audio needs about 17.6 KB/s, more than the programming cable's PPP link
+  carries (about 11.5 KB/s).
 - No beeps while transmitting: the radio's beep path would put them on the air. A beep still playing when the
   transmission ends is heard from then on. The DMR talk permit tone is a single short beep played just before the
   radio transmits, while the screen shows ADMITTED ([DMR](09-dmr.md#the-talk-permit-tone)).
@@ -560,10 +571,9 @@ aren't decoded yet, so there are no number keys.
 | Front knob | Channel knob, and **Up** / **Down** in lists |
 | Power key | Press to switch on. Hold 2 s to switch off. Hold P1 while you press it to start the bootloader (the red LED lights and the screen stays blank) |
 
-The microphone's PTT counts once the radio has seen a microphone in the front jack. The radio can run without one and
-doesn't transmit, and a microphone plugged in later works from then on. Unplugging the microphone while the radio is
-on reads as a held PTT: the radio transmits until the [transmit timeout](08-fm.md#transmit-timeout), or with TX
-timeout Off until it is switched off. Switch the radio off before unplugging the microphone.
+The microphone's PTT works with the microphone plugged in before or after the radio is switched on. A PTT held while
+the radio switches on doesn't transmit: release PTT, then press PTT again. Switch the radio off before plugging in or
+unplugging the microphone, since the plug's contacts can key the radio as they slide in or out.
 
 ### DB25-D PRO power and supply
 
@@ -691,6 +701,8 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 - Air band and FM broadcast receive
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
+- No audio linking (USRP): its received audio needs about 17.6 KB/s, more than the programming cable's PPP link
+  carries (about 11.5 KB/s).
 
 ## AnyTone AT-D578UV
 

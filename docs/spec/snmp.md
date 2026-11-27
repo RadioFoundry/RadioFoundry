@@ -29,7 +29,7 @@ Both use UDP port 161 at an address of the radio; the IP gateway's local port ta
 
 | | USB network | RF |
 |---|---|---|
-| Address | the radio's link address (the host's 12.<ID> xor 1) | the radio's own 12.<DMR ID> (in another radio's or a gateway's IP over DMR view) |
+| Address | the radio's link address (12.<DMR ID>, or the fixed link's) | the radio's own 12.<DMR ID> (in another radio's or a gateway's IP over DMR view) |
 | Arrives | in the host link task (`hostlink_net_poll` → `ipGatewayEthernetIn`), only from the host's address | in the radio task: `hostlink_net_packet` takes individual SAP 4 (IPv4/UDP) or SAP 3 (compressed UDP) packets for our ID and port 161 before they would go to the host, whether or not the network link is up; copied into a one-request mailbox (at most 256 bytes) |
 | Answered | at once, up to 548 bytes, waiting up to 50 ms for the USB IN endpoint | by `snmp_agent_poll`, up to 300 bytes, as an IPv4/UDP packet (SAP 4, rate 1/2, 2 preamble CSBKs) through the gateway's air side, which does the listen before talk; given up after 2 s |
 | Limits | GetBulk max-repetitions capped at 32 | capped at 8; at most one answer per second (requests in between are dropped and counted); a second request while one waits is dropped |

@@ -26,6 +26,8 @@ uint16_t p25_block_end_sym(uint8_t k);
 // Block k of a TSDU or a packet: trellis decoded into blk. Returns the code bits corrected (0 clean) when the CRC
 // holds, -1 when it fails (blk is written either way: its last block flag is the best guess there is)
 int p25_block_get(const uint8_t *unit, uint8_t k, uint8_t blk[P25_TSBK_BYTES]);
+// Block k trellis decoded into blk without the block CRC check (a packet's data block): the code bits corrected
+int p25_block_decode(const uint8_t *unit, uint8_t k, uint8_t blk[P25_TSBK_BYTES]);
 // blk (its CRC set) to block k of a unit begun with p25_unit_begin
 void p25_block_put(uint8_t *unit, uint8_t k, const uint8_t blk[P25_TSBK_BYTES]);
 // The CRC of a block's first ten octets; p25_tsbk_seal sets it in octets 10 and 11
@@ -115,7 +117,7 @@ typedef struct {
 			uint8_t lra;
 			uint32_t wacn;
 			uint16_t sysid;
-			uint16_t ch;
+			uint16_t ch;		// the primary control channel (the extended form's channel (T))
 			uint8_t ssc;
 		} net;
 		struct {
@@ -181,14 +183,23 @@ bool p25_isp_parse(const uint8_t blk[P25_TSBK_BYTES], p25_isp_t *m);
 uint16_t p25_isp_unit(uint8_t *unit, uint16_t nac, const uint8_t blk[P25_TSBK_BYTES]);
 
 // The header block of a multi-block trunking packet (a PDU of the alternate or unconfirmed trunking format). False:
-// another packet. The data blocks are not decoded
+// another packet. Explicit network and RFSS status bodies are decoded separately.
 #define P25_PDU_FMT_UMBTC	0x15
 #define P25_PDU_FMT_AMBTC	0x17
 typedef struct {
 	uint8_t format, sap, mfid, blocks, opcode;
 } p25_mbt_t;
+// Validate a one-block AMBTC status body and normalize its receive fields to a sealed TSBK.
+// False for unsupported, truncated, or CRC-invalid packets.
+bool p25_mbt_status(const p25_rx_unit_t *u, uint8_t normalized[P25_TSBK_BYTES]);
 bool p25_mbt_parse(const uint8_t hdr[P25_TSBK_BYTES], p25_mbt_t *h);
 void p25_mbt_make(const p25_mbt_t *h, uint8_t hdr[P25_TSBK_BYTES]);
+// The packet CRC of an unconfirmed packet's n data octets (TIA-102.BAAA-A 6.3.3), sent in its last four octets
+uint32_t p25_packet_crc(const uint8_t *b, unsigned n);
+// The network status broadcast, extended format (TIA-102.AABC-D 6.2.11.2): a header (its CRC already checked) and
+// its one data block to m (kind P25_TSBK_NET). False: another packet, or the packet CRC failed
+bool p25_mbt_net_parse(const uint8_t hdr[P25_TSBK_BYTES], const uint8_t data[P25_TSBK_BYTES], p25_tsbk_t *m);
+void p25_mbt_net_make(const p25_tsbk_t *m, uint8_t hdr[P25_TSBK_BYTES], uint8_t data[P25_TSBK_BYTES]);
 
 // A channel number (identifier in bits 15-12, channel in 11-0) to a receive frequency in Hz, from an identifier's
 // base (Hz) and spacing (x 5 Hz) and its channels per carrier. 0 when it is past 32 bits

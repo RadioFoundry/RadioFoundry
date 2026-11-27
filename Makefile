@@ -54,7 +54,9 @@ endif
 # CONFIG_X ?= n beside it (docs/build-config.md). A command-line CONFIG_X=y still builds it
 $(foreach f,$(sort $(BOARD_UNSUPPORTED) $(BOARD_NOT_WRITTEN)),$(eval CONFIG_$(f) ?= n))
 include config/features.mk
+include platform/third_party.mk
 include platform/$(PLATFORM)/platform.mk
+$(TP_CHECK)
 
 # Hardware build options: hardware versions one image can't serve (a radio sold with UHF and VHF boards). board.mk names
 # them in BUILD_OPTIONS and lists each one's values in <NAME>_VALUES, the default first; board.toml [[build_options]]
@@ -155,6 +157,13 @@ endif
 ifeq ($(CONFIG_DMR)$(CONFIG_AIR),yn)
 APP_SRC += core/fec/rx_seen.c
 endif
+# The 2400 bit/s MBE codec (core/mbe is globbed with the MBE core) only with its own switch; its frame's Golay code
+# from core/fec, which is globbed with the air interface only
+ifneq ($(CONFIG_MBE2400),y)
+APP_SRC := $(filter-out core/mbe/mbe2400%.c,$(APP_SRC))
+else ifneq ($(CONFIG_AIR),y)
+APP_SRC += core/fec/golay.c
+endif
 # The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
 ifneq ($(CONFIG_CPS_FAST),y)
 APP_SRC := $(filter-out core/cps/cps_fast.c core/cps/cps_lz4.c,$(APP_SRC))
@@ -176,6 +185,11 @@ endif
 # Single files of core/dmr, whose other files belong to other features
 ifeq ($(CONFIG_DMR_PRIVACY),y)
 APP_SRC += core/dmr/dmrPrivacy.c
+endif
+ifeq ($(CONFIG_DMR_AES),y)
+APP_SRC += core/dmr/dmrAes.c
+else
+APP_SRC := $(filter-out core/radio/radio_aes.c,$(APP_SRC))
 endif
 # DMR data (SMS, ARS, LRRP, CSBK signaling)
 ifeq ($(CONFIG_DMR_DATA_CORE),y)
@@ -221,8 +235,7 @@ endif
 # UDP services' glue to the gateway; each service's file only with its switch
 NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/net/kiss_tcp.c core/net/rigctld.c \
 	core/net/aprsis.c
-NET_SRC-$(CONFIG_NET_WEBCTL) += core/net/ws.c core/net/webctl.c
-NET_SRC-$(CONFIG_NET_RADIO_UDP) += core/net/net.c core/net/radio_udp.c
+NET_SRC-$(CONFIG_NET_WEBCTL) += core/net/ws.c core/net/webctl.c core/net/radio_ctl.c
 NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
 NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
 NET_SRC-$(CONFIG_TFTP_IDDB) += core/net/tftp_iddb.c
@@ -240,7 +253,7 @@ APP_SRC += core/debuglink/dl_fmt.c
 endif
 endif
 
-INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
+INCLUDES := $(call TP_INCLUDES,-Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC))
 
 # Firmware version: the commit, with -dirty when tracked files differ from it or untracked sources sit in the built
 # directories (both end up in the image). Only the files that use RFOUNDRY_GIT or RFOUNDRY_RELEASE get it, through
@@ -265,9 +278,12 @@ RFOUNDRY_GIT_DIRTY := $(if $(findstring -dirty,$(RFOUNDRY_VERSION)),1,0)
 # every make). Empty without git (a tree copied elsewhere: pass it as RFOUNDRY_GIT_TIME=), and then left out
 RFOUNDRY_GIT_TIME := $(if $(filter unknown,$(GITVERSION)),,$(if $(GITDIRTY),$(shell date +%s),$(shell git log -1 --format=%ct HEAD \
 	2>/dev/null)))
-# Its UTC date, YYYY-MM-DD, for the About page
-RFOUNDRY_GIT_DATE := $(if $(RFOUNDRY_GIT_TIME),$(shell python3 -c 'import sys, time; print(time.strftime("%Y-%m-%d", \
-	time.gmtime(int(sys.argv[1]))))' '$(RFOUNDRY_GIT_TIME)'))
+# Its UTC date, YYYY-MM-DD, for the About page, and date and time, YYYYMMDDhhmmss, for the CPS radio info
+# (docs/spec/open-firmware-cps.md 4). Never __DATE__ or __TIME__ (-Werror=date-time): they'd make each build differ
+RFOUNDRY_GIT_DATES := $(if $(RFOUNDRY_GIT_TIME),$(shell python3 -c 'import sys, time; t = time.gmtime(int(sys.argv[1])); \
+	print(time.strftime("%Y-%m-%d %Y%m%d%H%M%S", t))' '$(RFOUNDRY_GIT_TIME)'))
+RFOUNDRY_GIT_DATE := $(word 1,$(RFOUNDRY_GIT_DATES))
+RFOUNDRY_GIT_STAMP := $(word 2,$(RFOUNDRY_GIT_DATES))
 # The release name the radio shows (splash, About, the debug link's release=): the newest release tag on this commit
 # (tools/release_version.py: vYY.M[.N][bN]), none for a dirty tree or an untagged commit. RELEASE= sets it
 # (tools/release_build.sh passes the tag) and RELEASE= alone leaves it out. RFOUNDRY_GIT stays the commit: the crash
@@ -303,8 +319,9 @@ OPT ?= -Os
 # Every function's frame size and calls, next to each object (or each LTO partition, next to the .elf), for the stack
 # check (make stack-check, tools/stack_check.py). Output files only: the image is the same with or without it
 STACK_INFO := -fcallgraph-info=su
-COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP $(STACK_INFO)
-CFLAGS_APP := $(COMMON) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wshadow -Wdouble-promotion $(DEFS) $(INCLUDES)
+COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP $(STACK_INFO) $(TP_PREFIX_MAP)
+CFLAGS_APP := $(COMMON) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wshadow -Wdouble-promotion -Werror=date-time \
+	$(DEFS) $(INCLUDES)
 CFLAGS_3P := $(COMMON) -std=gnu11 -w $(DEFS) $(INCLUDES)
 # The C library flavor and linker extras come from the platform (platform.mk); these are the arm-none-eabi ones
 LDSPECS ?= --specs=nano.specs --specs=nosys.specs -Wl,--no-warn-rwx-segments
@@ -335,6 +352,11 @@ BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_a
 APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o) $(APP_ASM:%.S=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
 OBJ := $(APP_OBJ) $(TP_OBJ)
+# The text keys each source compiles in this configuration (tools/i18n.py --used): the language tables hold only those
+# keys' strings, so a switch that is off leaves its text out. i18n.c includes the tables, so it is not scanned
+# (tools/i18n.py keeps marks out of it). A build without a language has no tables to fill
+TR_USED := $(if $(strip $(foreach f,$(filter LANG_%,$(FEATURES)),$(call feature_on,$(f)))),\
+	$(patsubst %.c,$(BUILD)/%.tr,$(filter-out core/ui/i18n.c,$(APP_SRC))))
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
@@ -365,34 +387,33 @@ $(if $(filter $(RFOUNDRY_PRESET),full custom $(basename $(notdir $(wildcard conf
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
 # (and a file removed by a recipe would still be in make's cache)
 VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -lE 'RFOUNDRY_(GIT|RELEASE)' $(APP_SRC) 2>/dev/null))
+# Their text-key scans (TR_USED) take the same extra defines: a mark under #ifdef RFOUNDRY_RELEASE counts
+VERSION_TR := $(filter $(VERSION_OBJ:.o=.tr),$(TR_USED))
+BUILD_INFO_TR := $(filter $(BUILD)/core/hostlink/build_info.tr,$(TR_USED))
 ifeq ($(filter clean test print-config print-cc print-unsupported print-not-written print-required print-maximal-skip print-maximal-vars \
 	print-vars,$(MAKECMDGOALS)),)
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
-	rm -f $(OBJ); })
+	rm -f $(OBJ) $(TR_USED); })
 VERSION_STAMP := $(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME) $(RFOUNDRY_GIT_SOURCE) $(RFOUNDRY_GIT_REPO)
 $(shell echo '$(VERSION_STAMP)' | cmp -s - $(BUILD)/version || { echo '$(VERSION_STAMP)' > $(BUILD)/version; \
-	rm -f $(VERSION_OBJ); })
+	rm -f $(VERSION_OBJ) $(VERSION_TR); })
 $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info || { echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' > $(BUILD)/build_info; \
-	rm -f $(BUILD)/core/hostlink/build_info.o; })
+	rm -f $(BUILD)/core/hostlink/build_info.o $(BUILD_INFO_TR); })
 # The About page's authors and third-party list (tools/gen_about.py), and the objects that include it when it changed
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
 # A feature built from third-party code adds its own list
 ABOUT_MORE :=
-ifeq ($(CONFIG_IMBE),y)
+ifeq ($(CONFIG_MBE),y)
 ABOUT_MORE += core/mbe/THIRD_PARTY
 endif
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h $(ABOUT_MORE) | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
-# The language tables (tools/i18n.py, core/ui/lang/*.po) and the text keys every file that includes i18n.h needs
-# (tr_keys.h, rewritten only when a key changed: the dependency files rebuild those); i18n.o is rebuilt when the tables
-# changed. A failure stops the build: the old tables would link without a word
-I18N_GEN := $(shell python3 tools/i18n.py --gen $(BUILD)/gen/lang_tables.h || echo i18n-failed)
-ifneq ($(filter i18n-failed,$(I18N_GEN)),)
-$(error tools/i18n.py --gen failed (above))
-endif
-ifneq ($(filter changed,$(I18N_GEN)),)
-$(shell rm -f $(BUILD)/core/ui/i18n.o)
+# The text keys every file that includes i18n.h needs (tools/i18n.py, tr_keys.h, rewritten only when a key changed:
+# the dependency files rebuild those). A failure stops the build: the old keys would compile without a word. The
+# language tables come after the compile (below)
+ifneq ($(filter i18n-failed,$(shell python3 tools/i18n.py --keys $(BUILD)/gen || echo i18n-failed)),)
+$(error tools/i18n.py --keys failed (above))
 endif
 # The HTTP status server's static files (core/net/http_assets/*, tools/gen_http_assets.py): a table in the gen
 # directory, gzip compressed with CONFIG_NET_HTTP_GZIP; http.o is rebuilt when it changed
@@ -408,12 +429,13 @@ $(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)
 	$(HTTP_ASSETS) | grep -q changed && rm -f $(BUILD)/core/net/http.o)
 endif
 endif
-$(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
-$(BUILD)/core/hostlink/build_info.o: CFLAGS_APP += -DRFOUNDRY_FEATURES_OFF=\"$(RFOUNDRY_OFF)\" -DRFOUNDRY_PRESET=\"$(RFOUNDRY_PRESET)\"
-$(VERSION_OBJ): $(BUILD)/version
-$(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
+$(APP_OBJ) $(TP_OBJ) $(TR_USED): $(BUILD)/flags
+$(BUILD)/core/hostlink/build_info.o $(BUILD_INFO_TR): CFLAGS_APP += -DRFOUNDRY_FEATURES_OFF=\"$(RFOUNDRY_OFF)\" -DRFOUNDRY_PRESET=\"$(RFOUNDRY_PRESET)\"
+$(VERSION_OBJ) $(VERSION_TR): $(BUILD)/version
+$(VERSION_OBJ) $(VERSION_TR): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
 	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\" -DRFOUNDRY_GIT_TIME=$(or $(RFOUNDRY_GIT_TIME),0)u \
-	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\" -DRFOUNDRY_GIT_SOURCE=\"$(RFOUNDRY_GIT_SOURCE)\" \
+	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\" -DRFOUNDRY_GIT_STAMP=\"$(RFOUNDRY_GIT_STAMP)\" \
+	-DRFOUNDRY_GIT_SOURCE=\"$(RFOUNDRY_GIT_SOURCE)\" \
 	-DRFOUNDRY_GIT_REPO=\"$(RFOUNDRY_GIT_REPO)\"
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
@@ -440,6 +462,22 @@ $(filter $(HOT_SRC:%.c=$(BUILD)/%.o),$(APP_OBJ)): CFLAGS_APP += $(OPT_HOT)
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_APP) -c $< -o $@
+# The TR_<KEY> names a source holds once preprocessed with the build's flags, one a line: the marks its switches keep.
+# -g0 leaves the macro definitions out of the output (only what the code expands counts), and the lines from
+# tr_keys.h, which names every key, are skipped. Piped, not written to a file: the output is large. A failed
+# preprocess leaves no file
+$(TR_USED): $(BUILD)/%.tr: %.c
+	@mkdir -p $(dir $@)
+	@{ $(CC) $(CFLAGS_APP) -g0 -E -MF $(@:.tr=.tr.d) -MT $@ $< || echo '#failed'; } | \
+		awk '$$0 == "#failed" { exit 1 } /^# [0-9]+ "/ { gen = ($$3 ~ /tr_keys\.h"$$/); next } \
+		!gen { while (match($$0, /TR_[A-Za-z0-9_]+/)) { seen[substr($$0, RSTART, RLENGTH)] = 1; $$0 = substr($$0, RSTART + RLENGTH) } } \
+		END { for (k in seen) print k }' > $@.tmp && mv $@.tmp $@ || { rm -f $@.tmp; exit 1; }
+# The language tables (core/ui/lang/*.po) with the strings of the keys this build compiles. Written every time a source
+# changed, so i18n.o, which includes them, follows. A failure stops the build
+$(BUILD)/gen/lang_tables.h: $(TR_USED) $(wildcard core/ui/lang/*.po) tools/i18n.py
+	@python3 tools/i18n.py --gen $@ --used $(TR_USED) > /dev/null && touch $@
+$(BUILD)/core/ui/i18n.o: $(BUILD)/gen/lang_tables.h
+# A third-party source missing here comes from RFOUNDRY_THIRD_PARTY through vpath (platform/third_party.mk)
 $(BUILD)/third_party/%.o: third_party/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_3P) -c $< -o $@
@@ -502,5 +540,5 @@ print-vars:
 clean:
 	rm -rf $(BUILD)
 
--include $(OBJ:.o=.d)
+-include $(OBJ:.o=.d) $(TR_USED:.tr=.tr.d)
 endif

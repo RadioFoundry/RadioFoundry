@@ -114,6 +114,11 @@ the project lead, never in public CI).
 - Follow the style of the file you edit. Comments say why, not what.
 - Keep RTOS calls and blocking waits out of the UI's behavior code and the protocol engines, so the host tests can run them.
 - Read the section of [gotchas.md](../spec/gotchas.md) for the subsystem you change.
+- One way to do a thing. When the firmware already has a service for a job, use it or extend it: the web control
+  WebSocket (`/ws`) and the HTTP API for controlling the radio from a computer, `position_*` for the radio's location,
+  the settings store for settings, `dl_text_t` and `sbuf_t` for building text. Don't add a second transport, store,
+  file format or parser for the same job. Before a new transport, API, mode or file format, open an issue and agree on
+  the design. [Architecture](architecture.md) shows where each service lives.
 
 ## Tests
 

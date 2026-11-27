@@ -9,7 +9,8 @@
 // and the line then has to read low on three scans in a row (INF: the pad level is assumed readable while the pin is
 // the UART's). The hand mic's PTT is PTC11, low while held (found on the radio), as the stock firmware reads it.
 // With no mic in the front jack PTC11 rests low from power-on, so it counts only once it has read high, a mic
-// plugged in (drivers/input/plugptt, 3.3).
+// plugged in (drivers/input/plugptt, 3.3). The serial gate arms PTA9 the same way: a line held low from power-on (by a
+// mic or cable, or after reading high while it settled) never keys. A press is a fall from an idle high.
 #include "db25d.h"
 #include "config.h"
 #include "pins.h"
@@ -155,9 +156,9 @@ uint32_t db25d_input_ptt_ignored(void)
 	return ptt_gate.ignored;
 }
 
-bool db25d_input_mic_armed(void)
+uint8_t db25d_input_ptt_armed(void)
 {
-	return mic_ptt.armed;
+	return (uint8_t)((ptt_gate.arm.armed ? 1u : 0u) | (mic_ptt.armed ? 2u : 0u));
 }
 
 void db25d_mic_lines_reset(void)

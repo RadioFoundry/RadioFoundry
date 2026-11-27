@@ -99,6 +99,11 @@ switch = "NXDN_SCRAMBLER"
 spec = "docs/spec/nxdn.md"
 source = ["core/nxdn/nxdn_scramble.c", "core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c"]
 
+[feature.mbe2400]
+switch = "MBE2400"
+spec = "docs/spec/mbe-2400.md"
+source = ["core/mbe", "core/fec/golay.c", "core/fec/golay.h"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
@@ -107,6 +112,11 @@ source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "ha
 [feature.dmr_privacy]
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"
+
+[feature.dmr_aes]
+switch = "DMR_AES"
+spec = "docs/spec/dmr-voice.md"
+manual = "A receiver of another make with the same AES-256 key and key ID plays our over from key-up and when it joins after key-up, simplex and through a repeater (the missing-key refusal is test_dmr_aes.py)"
 
 [feature.dmr_data_privacy]
 requires = "DMR_PRIVACY"
@@ -444,10 +454,6 @@ switch = "NET_WEBCTL"
 spec = "docs/spec/tcp-services.md"
 planned_tests = ["tests/hil/test_webctl.py::test_webctl_keys_ptt_audio"]
 
-[feature.net_radio_udp]
-switch = "NET_RADIO_UDP"
-spec = "docs/spec/tcp-services.md"
-
 [feature.net_rigctl]
 switch = "NET_RIGCTL"
 spec = "docs/spec/tcp-services.md"
@@ -604,6 +610,12 @@ source = ["tools/rfoundry/rfoundry"]
 switch = "AIR_RAW"
 spec = "docs/spec/debuglink.md"
 source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
+
+[feature.debuglink_dmrip]
+switch = "DEBUGLINK_DMRIP"
+spec = "docs/spec/debuglink.md"
+source = ["core/debuglink/debuglink_dmrip.c", "core/debuglink/dl_dmrip.c", "core/debuglink/dl_dmrip.h",
+          "tools/rfoundry/rfoundry/dmrip.py"]
 
 [feature.audio_probe]
 switch = "AUDIO_PROBE"

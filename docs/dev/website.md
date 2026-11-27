@@ -207,6 +207,11 @@ flasher, the Codeplug Editor and the Tools page get their strings from the same 
 reasons) is English at its source; a catalog can override it with `feature.<SWITCH>.title`, `feature.<SWITCH>.help`,
 `variant.<id>.title`, `variant.<id>.summary` or `group.<slug>`.
 
+A page embeds only the keys under the prefixes its builder gives `subset()` in `site/rfoundrysite/build.py`. A module
+several pages import (`flasher/dom.js`, `flasher/link.js`) asks for its own keys, so a page that imports one needs
+those prefixes too, or the visitor sees the key itself (#938). `site/tests/i18n_test.py` follows each page's imports
+and fails when a key written out in a `t()` call is not embedded; a key built from a variable is not checked.
+
 | `languages.json` field | Meaning |
 |---|---|
 | `code` | The URL prefix and `<html lang>`: `es`, `pt-BR` |

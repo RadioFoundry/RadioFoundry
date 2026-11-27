@@ -87,6 +87,8 @@ export const nxdnKind = {
 		// blank: the RX RAN, RAN 1 when that is every RAN
 		ranField("txRan", "editor.nxdn.tx_ran", { blank: (p) => txDefault(p.rxRan) }),
 	],
+	// a transmit key picked: the channel transmits scrambled (Clear: not)
+	encryptsTx: (c, p) => p?.txKeyId != null,
 	validate(c, p, problem) {
 		targetRange(c, problem);
 		if (p?.txKeyId != null && !this.txKeyOptions(c).includes(p.txKeyId))
@@ -126,7 +128,7 @@ export const nxdnSystem = {
 		max: 64,
 		columns: [
 			{ key: "id", label: "editor.nxdn.key_id", type: "int", min: 0, max: RAN_MAX },
-			{ key: "seed", label: "editor.nxdn.seed", type: "int", min: 1, max: SEED_MAX },
+			{ key: "seed", label: "editor.nxdn.seed", type: "int", min: 1, max: SEED_MAX, secret: true },
 		],
 		decode(v) {
 			if (v.length !== 7 || v[1] !== SCRAMBLER) return null;

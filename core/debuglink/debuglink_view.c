@@ -72,7 +72,8 @@ static const char *deny_key(uint8_t d)
 	static const char *const names[] = { "none", "rx_only", "band", "timeout", "no_freq", "mode", "no_codec",
 					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
 					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused", "ceased", "bench",
-					     "trunk", "air_no_tx" };
+					     "trunk", "air_no_tx", "aes_key", "aes_wait", "not_dmr",
+					     "data_encrypted" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 
@@ -90,6 +91,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
 	dl_text(t, "state=%s\n", state_key((uint8_t)v->state));
 	dl_text(t, "tx_deny=%s\n", deny_key(v->tx_deny));
+	dl_text(t, "data_deny=%s\npacket_deny=%s\n", deny_key(v->data_deny), deny_key(v->packet_deny));
 	dl_text(t, "can_tx=%u\n", board_can_tx() ? 1u : 0u);
 	{
 		tx_limit_info_t l;
@@ -168,6 +170,9 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "vfo_step_hz=%u\nvfo_drop=%u\n", (unsigned)v->vfo_step_hz, v->vfo_drop);
 	dl_text(t, "codeplug=%s\n", v->source < 3 ? sources[v->source] : "?");
 	dl_text(t, "hotspot=%u\n", v->hotspot);
+	if (v->hotspot) {
+		dl_text(t, "hs_power=%u\n", v->hs_power);	// the power level the hotspot keys (the host's RF level)
+	}
 	uint32_t handled, dropped;
 	radio_req_stats(&handled, &dropped);
 	dl_text(t, "req_handled=%u\nreq_dropped=%u\nch_read_errors=%u\n", (unsigned)handled, (unsigned)dropped,
@@ -645,7 +650,11 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
 						  "net_link", "cps", "board", "audio", "t3", "t3_svc", "t3_roam", "voice_cap", "t3_msg",
-						  "t3_ra", "p25", "p25_trunk", "nxdn", "sensors" };
+						  "t3_ra", "p25", "p25_trunk", "nxdn", "sensors",
+#if CONFIG_DEBUGLINK_DMRIP
+						  "dmrip",
+#endif
+};
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -786,6 +795,11 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 	case DL_VIEW_NXDN:
 		debuglink_view_nxdn(v, t);
 		break;
+#if CONFIG_DEBUGLINK_DMRIP
+	case DL_VIEW_DMRIP:
+		debuglink_view_dmrip(t);
+		break;
+#endif
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP
 		usrp_net_view(t);

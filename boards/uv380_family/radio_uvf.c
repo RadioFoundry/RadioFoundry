@@ -87,6 +87,8 @@ static struct {
 	// DMR per-burst keying (shared with the modem ISRs)
 	volatile bool dmr_armed;	// tx() in DMR mode: TX frequency and drive known
 	volatile uint32_t dmr_tx_hz;
+	volatile uint16_t dmr_tx_r05;	// AT1846S 0x05 for the TX channel (at1846s_r05)
+	volatile uint16_t rx_r05;	// and for the RX channel: a split channel can need another word
 	volatile uint32_t dmr_drive;
 	volatile bool dmr_uhf;
 	volatile uint32_t rf_tuned_hz;	// what the AT1846S synthesizer holds, 0 unknown
@@ -423,7 +425,8 @@ static bool rf_to_rx(void)
 	if (ok && r.rf_tuned_hz != r.rx_tune_hz) {
 		uint32_t word = at1846s_freq_word(r.rx_tune_hz);
 		r.rf_tuned_hz = 0;
-		ok = rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu)) && rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
+		ok = (r.dmr_tx_r05 == r.rx_r05 || rf_isr_write(0x05, r.rx_r05))	// the RX channel's mode word back
+			&& rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu)) && rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
 		if (ok) {
 			r.rf_tuned_hz = r.rx_tune_hz;
 		}
@@ -471,6 +474,7 @@ static bool rf_key(void)
 	r.keyed_direct = false;
 	r.keyed_n[0]++;
 	bool ok = rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE))
+		&& (r.dmr_tx_r05 == r.rx_r05 || rf_isr_write(0x05, r.dmr_tx_r05))	// the TX channel's mode word
 		&& rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu))
 		&& rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
 	if (ok) {
@@ -667,7 +671,7 @@ static void rf_resync(void)
 		count(hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref));
 	}
 	if (r.rx_valid) {
-		count(at1846s_set_freq(&r.rf, r.rx_tune_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
+		count(at1846s_set_freq(&r.rf, r.rx_tune_hz, r.rx_hz));	// forced writes of 0x30 (idle), 0x05, 0x29, 0x2A
 		r.rf_tuned_hz = r.rx_tune_hz;
 	}
 	count(at1846s_set_state(&r.rf, r.rx_valid ? AT1846S_STATE_RX : AT1846S_STATE_IDLE));	// forced
@@ -790,6 +794,11 @@ static void init(void)
 	uint32_t pwd_ms = hal_millis();
 
 	at1846s_attach(&r.rf, &rf_bus);
+	static at1846s_spur_cfg_t spur = { .step_r05 = AT1846S_R05_26M };	// the family's 26 MHz reference
+	spur.step_hz = uvf_variant.rf_spur_step_hz;
+	spur.spurs = uvf_variant.rf_spurs;
+	spur.spurs_n = uvf_variant.rf_spurs_n;
+	at1846s_set_spurs(&r.rf, &spur);
 	count(at1846s_init(&r.rf));
 
 	while ((uint32_t)(hal_millis() - pwd_ms) < C6000_PWD_WAIT_MS) {
@@ -822,7 +831,7 @@ static uint32_t rx_tune(uint32_t hz)
 static void rx_retune(void)
 {
 	if (r.rx_valid && !r.tx_on && !r.asleep && r.rf_tuned_hz != r.rx_tune_hz) {
-		count(at1846s_set_freq(&r.rf, r.rx_tune_hz));
+		count(at1846s_set_freq(&r.rf, r.rx_tune_hz, r.rx_hz));
 		count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
 		r.rf_tuned_hz = r.rx_tune_hz;
 	}
@@ -953,6 +962,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	tone_restore();
 	inject_stop();
 	r.rx_hz = hz;
+	r.rx_r05 = at1846s_r05(r.rf.spur, hz);
 	r.rx_tune_hz = tune;
 	r.rx_bw = bw;
 	r.rx_tone = rx_tone != NULL ? *rx_tone : (subtone_t){ TONE_NONE, 0 };
@@ -964,7 +974,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
 	count(at1846s_set_mode(&r.rf, r.mode == RADIO_MODE_DMR ? AT1846S_MODE_DMR : AT1846S_MODE_FM));
 	if (!back) {
-		count(at1846s_set_freq(&r.rf, tune));
+		count(at1846s_set_freq(&r.rf, tune, hz));
 	}
 	apply_rx_tone();
 	if (!back) {
@@ -1026,6 +1036,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		int32_t dmr_offset = bw == RADIO_BW_25K ? UVF_TX_OFFSET_HZ_25K : UVF_TX_OFFSET_HZ_12K5;
 		count(hrc_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
 		r.dmr_tx_hz = (uint32_t)((int32_t)hz + dmr_offset);
+		r.dmr_tx_r05 = at1846s_r05(r.rf.spur, hz);
 		r.dmr_drive = drive;
 		r.dmr_uhf = uhf;
 		// The burst's key-up points from the cal table at the TX frequency (radio/pa_keyup.h)
@@ -1069,7 +1080,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
 	count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 	count(at1846s_set_tx_tone(&r.rf, tone, tone_value));
-	count(at1846s_set_freq(&r.rf, (uint32_t)((int32_t)hz + offset)));
+	count(at1846s_set_freq(&r.rf, (uint32_t)((int32_t)hz + offset), hz));
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_FM_TX));
 
 	uvf_backlight_tx(true);	// the TX rate before the PA comes on

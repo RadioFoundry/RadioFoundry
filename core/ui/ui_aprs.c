@@ -4,7 +4,8 @@
 // can be sent) and the everyday choices, one row each: send now, automatic beacons, the frequency (region), the RF
 // power (as the channel, or a level of its own), the digipeater path (the hops), our SSID, the interval, SmartBeaconing, the
 // way out (radio / DMR / both), KISS on the host port, and the stations heard (receive builds). Where the position
-// comes from is the position service's (Settings > Location, ui_position.c). The rest (symbol, comment, digital
+// comes from is the position service's (Settings > Location, ui_position.c). Stepping the frequency onto Custom
+// opens a frequency entry on that row. The rest (symbol, comment, digital
 // destination, iGate, digipeater) is set with qdmr, the debug link or tools/rfoundry_debug.py (aprs.md 11).
 #include <string.h>
 #include "ui_nav.h"
@@ -152,6 +153,78 @@ static const char *aprs_body(void)
 
 static uint16_t aprs_count(void) { return N_ROWS; }
 
+// The custom frequency typed on the Frequency row (aprs.md 10). Its own digits, not the VFO's buffer: quick settings
+// open over this page (Split types into that buffer) and return to it with the entry still open
+static bool freq_typing;
+static char freq_digits[UI_ENTRY_MAX + 1];
+static uint8_t freq_len;
+
+static void freq_start(void)
+{
+	freq_typing = true;
+	freq_len = 0;
+	freq_digits[0] = '\0';
+}
+
+// OK: the typed frequency becomes the custom one. With nothing typed, the custom frequency set before stays, or,
+// with none, the regions go on from the first
+static void freq_done(void)
+{
+	aprs_cfg_t c;
+	ui_svc_aprs_cfg(&c);
+	if (freq_len > 0) {
+		uint32_t hz = ui_freq_entry_hz(freq_digits, freq_len);
+		if (hz == 0) {
+			return;		// the toast says why; still typing
+		}
+		c.freq_hz = hz;
+	}
+	freq_typing = false;
+	c.region = c.freq_hz != 0 ? APRS_REGION_CUSTOM : 0;
+	ui_svc_aprs_set_cfg(&c);
+}
+
+static bool aprs_key(const input_event_t *ev)
+{
+	if (!freq_typing) {
+		return false;
+	}
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	bool digit = ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9;
+	if (digit || ev->action == ACT_SELECT || ev->action == ACT_BACK) {
+		if (digit && press) {
+			(void)ui_freq_entry_digit(freq_digits, &freq_len,
+				(char)('0' + (ev->action - ACT_DIGIT_0)));
+		} else if (ev->action == ACT_SELECT && press) {
+			freq_done();
+		} else if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+			if (freq_len > 0) {
+				freq_digits[--freq_len] = '\0';	// takes the last digit back
+			} else {
+				freq_typing = false;	// leaves the entry, the frequency unchanged
+			}
+		}
+		ui_dirty();
+		return true;	// the other gestures of these keys too: a long Back doesn't leave the page mid-entry
+	}
+	if (press || ev->gesture == GESTURE_REPEAT || ev->action == ACT_ENC_STEP) {
+		freq_typing = false;	// another key (Up, Down, the knob) leaves the entry unchanged and does its own job
+		ui_dirty();
+	}
+	return false;
+}
+
+// An entry left open (Home, a call) is gone when the page opens again
+static void aprs_enter(void)
+{
+	freq_typing = false;
+}
+
+static const char *aprs_hint(void)
+{
+	return freq_typing ? TR(APRS_HINT_TYPING, "0-9 type  OK set  Back") : TR(HINT_0_9_PICK_BACK, "0-9 pick  Back");
+}
+
 static uint8_t interval_index(uint16_t s)
 {
 	for (uint8_t i = 0; i < N_INTERVALS; i++) {
@@ -199,6 +272,15 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 	case AP_FREQ:
 		if (board.afsk == NULL && !CONFIG_APRS_RX) {
 			it->flags |= UI_ITEM_DIM;	// no APRS on RF here
+		} else if (freq_typing) {
+			// What has been typed so far: "145.57_"
+			for (uint8_t k = 0; k < freq_len; k++) {
+				if (k == UI_ENTRY_MHZ) {
+					sb_chr(&b, '.');
+				}
+				sb_chr(&b, freq_digits[k]);
+			}
+			sb_chr(&b, '_');
 		} else if (c.region == APRS_REGION_CUSTOM) {
 			sb_freq(&b, c.freq_hz);
 		} else {
@@ -270,10 +352,12 @@ static void aprs_select(uint16_t i, bool hold)
 		if (board.afsk == NULL && !CONFIG_APRS_RX) {
 			return;
 		}
-		c.region = (uint8_t)((c.region + 1u) % APRS_REGION_COUNT);
-		if (c.region == APRS_REGION_CUSTOM && c.freq_hz == 0) {
-			c.region = 0;	// no custom frequency set (qdmr / debug link): skip it
+		if (c.region + 1u == APRS_REGION_CUSTOM) {
+			freq_start();	// the region stays until OK sets the custom frequency
+			ui_dirty();
+			return;
 		}
+		c.region = (uint8_t)((c.region + 1u) % APRS_REGION_COUNT);
 		break;
 	case AP_POWER:
 		if (!rf_send()) {
@@ -312,9 +396,10 @@ static void aprs_select(uint16_t i, bool hold)
 }
 
 const ui_scr_def_t ui_aprs_screen = {
-	.name = "aprs", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = TRX(WORD_APRS, "APRS"),
-	.hint = TRN(HINT_0_9_PICK_BACK, "0-9 pick  Back"),
-	.count = aprs_count, .item = aprs_item, .select = aprs_select, .body = aprs_body,
+	.name = "aprs", .flags = SF_LIST | SF_NUMBERED | SF_FIELD | SF_HINT_FN, .prefix = TRX(WORD_APRS, "APRS"),
+	.hint_fn = aprs_hint,
+	.count = aprs_count, .item = aprs_item, .select = aprs_select, .key = aprs_key, .enter = aprs_enter,
+	.body = aprs_body,
 };
 
 // --- Stations heard (receive builds) ---

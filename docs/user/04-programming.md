@@ -30,7 +30,7 @@ server: files, the codeplug and your RadioID API key stay on your computer.
    When the radio's DMR ID database would take 20 seconds or more to read (megabytes over the programming cable), the
    editor first says how long and asks whether to read it too. Skip it unless you want
    to edit the database or keep it in a saved file: a write then leaves the radio's database as it is. The
-   **DMR ID Database** tab can read it later.
+   **DMR ID Database** tab can read it later, or remove it without reading it.
 3. Edit the codeplug.
 4. Choose **Write to Radio**. The editor compares the codeplug with the radio's and writes only the bytes that
    changed. It shows how many bytes and about how long it takes, then writes and verifies them. The radio loads the
@@ -44,6 +44,10 @@ APRS goes back to the radio's default: check it before you transmit. A channel's
 nearest new level.
 
 ### Programming several radios
+
+Opening a saved file or draft sends its valid settings area, including its channel modes and trunking systems.
+After reading from a radio, edits on that connection merge only the settings you changed, preserving settings
+changed in the radio's menus. A file without a valid settings area leaves the radio's existing area intact.
 
 To put one codeplug into several radios, write it to each in turn. Before each write the editor checks which radio is
 connected. A radio swapped on the programming cable is read again before anything is written, so the write is
@@ -164,7 +168,8 @@ The NXDN Scrambler is a 15-bit algorithm with 32,767 possible keys. The NXDN sta
 data calls, but RadioFoundry currently supports it for conventional voice calls only. It deters casual listening,
 but does not provide dependable security, and the receiver cannot verify who sent a scrambled call. Use scrambling
 only in licensed services that permit it. Most countries prohibit using codes or ciphers that obscure the meaning of amateur
-radio messages. The Amateur firmware variant disables the NXDN Scrambler.
+radio messages ([Encryption on amateur frequencies](#encryption-on-amateur-frequencies)). The Amateur firmware variant
+disables the NXDN Scrambler.
 
 To use the NXDN scrambler:
 
@@ -182,6 +187,19 @@ does not transmit.
 
 **Show scrambler seeds** reveals the stored values. File exports omit the keys by default. Zone shares omit them
 as well.
+
+#### Encryption on amateur frequencies
+
+Most countries don't allow messages encoded to obscure their meaning on amateur frequencies. In the US the rule is
+47 CFR 97.113(a)(4). Encryption and scrambling belong in licensed services that permit them.
+
+The Codeplug Editor lists a warning under **Problems** for a channel that transmits with an AES key or an NXDN
+scrambler key on a frequency from 144 to 148 MHz, 222 to 225 MHz or 420 to 450 MHz, the edges included. These ranges are the
+common amateur 2 m, 1.25 m and 70 cm allocations. A receive-only channel gets no warning. Basic privacy keys are set on the
+radio, not in the codeplug, so the editor can't check them.
+
+The warning blocks nothing. The codeplug still saves and writes, and the radio doesn't refuse to transmit. Receiving
+encrypted calls is not affected. Each operator is responsible for following the terms of their license.
 
 **P25 Trunking system** (Systems tab, type P25 Trunking). A new system is listen only: set **Transmit** to register and
 transmit.
@@ -269,6 +287,11 @@ Then choose:
 The page previews the records, and shows the database size against the radio's room. **Write ID Database** puts it in
 the codeplug; **Write to Radio** then sends it. **Add as Contacts** adds the users as private-call contacts instead,
 skipping IDs that are already contacts. The editor remembers these choices in the browser.
+
+A database too big for the connected radio is never sent. That happens when it was built with no radio chosen, or comes
+from a file made for a bigger radio. **Write to Radio** then offers **Cut to Fit**: the names with the highest IDs are
+left out, and the editor says how many. **Remove ID Database** clears the database, also one the read skipped or one
+the editor can't read. **Write to Radio** then erases it on the radio, and a new one can be written.
 
 Keep contacts for what you call: your talkgroups and the few people you make private calls to. The codeplug holds at
 most 1024 contacts, and every one is a row in Contacts and the talk target picker. Let the ID database name everyone

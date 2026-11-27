@@ -51,6 +51,22 @@ export function convertIddb(m, fmt, end = Infinity) {
 	return r;
 }
 
+// The model's ID database cut to the records that fit before end, in its own format, each text as long as the longest
+// needs (as convert() does): write()'s answer ({count, dropped}), or null when there is none, it fits already, or read()
+// can't give its records back (format n, other programs' formats): those can only be removed
+export function fitIddb(m, end) {
+	const h = m.iddb;
+	if (!h || (h.format !== "N" && h.format !== "C") || iddb.extent(m.base.bytes) <= end) return null;
+	const img = m.base.clone();
+	const records = iddb.read(img.bytes);
+	const longest = records.reduce((n, r) => Math.max(n, r.text.length), 0);
+	const textLen = iddb.TEXT_LENGTHS.find((n) => n >= longest) || iddb.TEXT_MAX;
+	const res = iddb.write(img, records, { format: h.format, textLen, end, fresh: true });
+	m.base = img;
+	m.iddb = iddb.readHeader(img.bytes);
+	return res;
+}
+
 export function eraseIddb(m) {
 	const img = m.base.clone();
 	iddb.erase(img);

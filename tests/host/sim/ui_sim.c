@@ -6,7 +6,7 @@
 //
 // Script tokens (separated by spaces):
 //   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
-//   powerkey zone+ zone- scankey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
+//   powerkey zone+ zone- scankey skipkey monkey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
@@ -18,6 +18,8 @@
 //   receivers:2         a receiver per dual watch channel; rxa:/rxb:<src>,<dst>,g|p a call on A's / B's own,
 //                       rxaend / rxbend its end
 //   tune:a|b            dual watch: the receiver moves to channel A or B (a call there holds it)
+//   hop:a|b             the same just before the next key, with no UI pass between: the key reads the view as the
+//                       radio left it
 //   busy:a|b|none       dual watch: the radio's mark for a signal found on A / B in the wait after a call
 //   dlpos:<n>           another task (the debug link) asks the radio for position n of the zone
 //   dldual:<n>          the debug link's scan dual: the radio watches the channel it is on (A) and position n
@@ -31,8 +33,10 @@
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
-//   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
-//                       1 finding the system, 2 on the control channel, 3 following talk group tg
+//   p25t:<state>[,<tg>[,<reg>[,<tx>[,<why>]]]]  the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds),
+//                       its follower in state 1 finding the system, 2 on the control channel, 3 following talk group
+//                       tg; reg the registration state (p25_reg_t, 8 blocked); tx 1 turns the transmit side on; why
+//                       a PTT the radio just refused, for that reason (RADIO_TRUNK_WHY_*, 11 blocked)
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
@@ -49,6 +53,9 @@
 //   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
+//   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
+//   datadeny:<d>[,<p>]  why the channel can't send data now: view.data_deny d, packet_deny p (default d), each none,
+//                       aes_key, not_dmr or data_encrypted
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   variant             the board suspects the image is for another hardware version, until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
@@ -2074,6 +2081,8 @@ bool ui_svc_scan_skip(void) { radio_req_channel_step(1); return true; }
 // keys act on it); `tune:a` / `tune:b` move it to a channel, as the alternating receiver does when a call holds it
 // Each channel keeps its changes for now while the receiver is on the other (as radio_sm.c's dual_keep)
 static uint8_t sim_at = 0xFF;		// the pane the receiver is on
+static int8_t hop_next = -1;		// hop:a|b: the pane the receiver moves to just before the next key (-1: none)
+static void sim_tune(int pane);
 static radio_view_t sim_keep[2];
 static uint32_t sim_keep_target[2];
 static bool sim_keep_ok[2];
@@ -2594,6 +2603,7 @@ static void step(void)
 		ui_notify(&ev);
 	}
 	view.hotspot = hotspot_on;
+	view.hs_power = view.power;	// as the radio core with the host's RF level at its default (FF)
 	if (ui_app_tick(&view, now_ms))
 		ui_app_draw();
 	if (tick_hook != NULL)
@@ -2605,6 +2615,30 @@ static void advance(uint32_t ms)
 	for (uint32_t t = 0; t < ms; t += TICK_MS)
 		step();
 }
+
+#if CONFIG_DMR_AES
+static bool sim_aes_keys;	// aeskeys
+
+// The codeplug's AES keys as ui_svc_storage.c steps them: system 3 (index 2), PI key IDs 0 and 7, then none
+void ui_svc_next_aes_key(channel_t *c)
+{
+	static const uint16_t refs[] = { 1, 8 };	// key ID + 1
+	unsigned i = 0;
+
+	if (c->kind == CODEPLUG_KIND_DMR_AES)
+		while (i < 2 && refs[i] <= c->aes_ref)
+			i++;
+	if (!sim_aes_keys || i == 2) {
+		c->kind = CODEPLUG_KIND_NONE;
+		c->system = CODEPLUG_SYSTEM_NONE;
+		c->aes_ref = 0;
+		return;
+	}
+	c->kind = CODEPLUG_KIND_DMR_AES;
+	c->system = 2;
+	c->aes_ref = refs[i];
+}
+#endif
 
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
@@ -2644,6 +2678,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
+#if CONFIG_DMR_AES
+	sim_aes_keys = false;
+#endif
 #if CONFIG_SATELLITE_TLE
 	sim_satellite_predicting = false;
 	sim_satellite_no_passes = false;
@@ -2775,6 +2812,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_DUAL_B, 0);
 	memset(sim_dual, 0, sizeof sim_dual);
 	sim_at = 0xFF;
+	hop_next = -1;
 	sim_keep_ok[0] = sim_keep_ok[1] = false;
 #endif
 	memset(&crash_sim, 0, sizeof crash_sim);
@@ -2797,6 +2835,8 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
 	{ "vfokey", ACT_VFO_TOGGLE },		// a VFO/MR key in the board's key map, or a side key set to VFO/Channel
 	{ "labelkey", ACT_TALK_LABEL },
+	{ "skipkey", ACT_SCAN_SKIP },
+	{ "monkey", ACT_MONITOR_TOGGLE },
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2805,7 +2845,8 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
-	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL)
+	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL ||
+	    action == ACT_SCAN_SKIP || action == ACT_MONITOR_TOGGLE)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -2871,6 +2912,10 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		}
 		input_event_t ev = { a, (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
 		advance(lng ? LONG_MS : PRESS_MS / 2);
+		if (hop_next >= 0) {	// the radio moved while the UI task waited: the view it reads first (ui.c)
+			sim_tune(hop_next);
+			hop_next = -1;
+		}
 		ui_app_key(&ev);
 		advance(PRESS_MS / 2);
 		return true;
@@ -2934,6 +2979,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "temporary") == 0) snprintf(got, sizeof got, "%u", view.temporary);
 	else if (strcmp(key, "writes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.codeplug_writes);
 	else if (strcmp(key, "checks") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.radio_checks);
+	else if (strcmp(key, "alerts") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.call_alerts);
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
 	else if (strcmp(key, "aprs_to") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_aprs_to);
@@ -3043,6 +3089,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "crash_have") == 0) snprintf(got, sizeof got, "%u", crash_sim.have);
 	else if (strcmp(key, "aprs_auto") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.tx_on);
 	else if (strcmp(key, "aprs_region") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.region);
+	else if (strcmp(key, "aprs_freq") == 0) snprintf(got, sizeof got, "%u", (unsigned)aprs_sim.cfg.freq_hz);
 	else if (strcmp(key, "aprs_interval") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.interval_s);
 	else if (strcmp(key, "aprs_smart") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.smart);
 	else if (strcmp(key, "aprs_via") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.via);
@@ -3395,6 +3442,10 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
+	if (strcmp(t, "hop") == 0 && arg != NULL && (arg[0] == 'a' || arg[0] == 'b')) {	// the same, just before the
+		hop_next = arg[0] == 'b';	// next key: the UI reads the view the radio left, with no pass between (ui.c)
+		return true;
+	}
 	if (strcmp(t, "busy") == 0 && arg != NULL) {	// dual watch: the looks in the wait found a signal there
 		view.dual_busy = arg[0] == 'a' ? 1 : arg[0] == 'b' ? 2 : 0;
 		changed();
@@ -3503,17 +3554,24 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 #if CONFIG_P25_TRUNK
 	if (strcmp(t, "p25t") == 0) {
-		unsigned st = 0, tg = 0;
-		if (arg == NULL || sscanf(arg, "%u,%u", &st, &tg) < 1 || st > RADIO_P25_TRUNK_VOICE) {
+		unsigned st = 0, tg = 0, reg = 0, tx = 0, why = 0;
+		if (arg == NULL || sscanf(arg, "%u,%u,%u,%u,%u", &st, &tg, &reg, &tx, &why) < 1 ||
+		    st > RADIO_P25_TRUNK_VOICE) {
 			snprintf(err, len, "bad %s", t);
 			return false;
 		}
 		view.ch.mode = RADIO_MODE_P25;
 		view.ch.kind = CODEPLUG_KIND_P25_TRUNK;
 		view.ch.rx_only = true;
-		view.p25.flags = RADIO_P25_ON;
+		view.p25.flags = RADIO_P25_ON | (tx ? RADIO_P25_TRUNK_TX : 0);
 		view.p25.trunk = (uint8_t)st;
+		view.p25.treg = (uint8_t)reg;
 		view.p25.dst = tg;
+		if (why) {
+			view.state = RS_TX_DENIED;
+			view.tx_deny = TXDENY_TRUNK;
+			view.p25.twhy = (uint8_t)why;
+		}
 		changed();
 		advance(100);
 		return true;
@@ -3673,6 +3731,38 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_DMR_AES
+	if (strcmp(t, "aeskeys") == 0) {
+		sim_aes_keys = true;
+		return true;
+	}
+#endif
+	if (strcmp(t, "datadeny") == 0 && arg != NULL) {
+		static const struct { const char *name; uint8_t code; } codes[] = {
+			{ "none", TXDENY_NONE }, { "aes_key", TXDENY_AES_KEY }, { "not_dmr", TXDENY_NOT_DMR },
+			{ "data_encrypted", TXDENY_DATA_ENCRYPTED },
+		};
+		char *packet = strchr(arg, ',');
+		if (packet != NULL)
+			*packet++ = 0;
+		bool known = false;
+		for (size_t i = 0; i < sizeof codes / sizeof codes[0]; i++) {
+			if (strcmp(arg, codes[i].name) == 0) {
+				view.data_deny = view.packet_deny = codes[i].code;
+				known = true;
+			}
+		}
+		for (size_t i = 0; packet != NULL && i < sizeof codes / sizeof codes[0]; i++) {
+			if (strcmp(packet, codes[i].name) == 0)
+				view.packet_deny = codes[i].code;
+		}
+		if (!known) {
+			snprintf(err, len, "unknown datadeny %s", arg);
+			return false;
+		}
+		changed();
+		return true;
+	}
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
 		return true;
@@ -3763,6 +3853,15 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "knobb") == 0 && arg != NULL) {
 		// A second knob, side B's (hal_power_t.volume_b): its position as the radio core passes it on
 		view.volume_b = (int8_t)atoi(arg);
+		changed();
+		step();
+		return true;
+	}
+	if (strcmp(t, "knobpos") == 0 && arg != NULL) {
+		// A knob the MCU reads on a radio that can't set the level: only the position, volume_src RVOL_NONE
+		view.volume_knob = (int8_t)atoi(arg);
+		view.volume = -1;
+		view.volume_src = RVOL_NONE;
 		changed();
 		step();
 		return true;

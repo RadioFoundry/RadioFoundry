@@ -22,6 +22,7 @@
 #include "codeplug/codeplug_kv.h"	// the settings area fakes
 #include "fuzz.h"
 #include "ui/ui_svc_aprs.h"
+#include "ui/ui_svc.h"
 
 static int failures;
 static int checks;
@@ -56,6 +57,10 @@ static struct {
 
 static uint32_t now;
 uint32_t hal_millis(void) { return now; }	// ui_svc_aprs.c
+
+static ui_event_t last_ev;
+static int n_ev;
+bool ui_notify(const ui_event_t *ev) { last_ev = *ev; n_ev++; return true; }
 static char frames[8][AX25_TNC2_MAX];	// what went out, decoded from the tones
 static int nframes;
 
@@ -278,6 +283,7 @@ codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 static uint32_t cp_serial = 1;
 static char cp_path[2][10];		// the APRS record's path entries
 static uint8_t cp_ssid;			// ... and its SSID
+static uint32_t cp_hz;			// ... and its frequency (0 = none)
 uint32_t codeplug_serial(void) { return cp_serial; }
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }	// no settings area
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
@@ -323,6 +329,7 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
 	strcpy(out->path[0], cp_path[0]);
 	strcpy(out->path[1], cp_path[1]);
 	out->ssid = cp_ssid;
+	out->tx_hz = cp_hz;
 	return true;
 }
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
@@ -344,6 +351,23 @@ bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid)
 	cp_ssid = ssid;
 	cp_ssid_writes++;
 	cp_serial++;
+	return true;
+}
+static unsigned cp_hz_writes;
+static void (*cp_hz_hook)(void);	// once, after a frequency write: what another task does meanwhile
+bool codeplug_set_aprs_freq(uint8_t n, uint32_t hz)
+{
+	if (n != 1) {
+		return false;
+	}
+	cp_hz = hz;
+	cp_hz_writes++;
+	cp_serial++;
+	void (*hook)(void) = cp_hz_hook;
+	cp_hz_hook = NULL;
+	if (hook != NULL) {
+		hook();
+	}
 	return true;
 }
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1])
@@ -417,6 +441,9 @@ static void reset(void)
 	strcpy(cp_path[1], "WIDE2-1");
 	cp_ssid = APRS_SSID_DEFAULT;
 	cp_ssid_writes = 0;
+	cp_hz = 0;
+	cp_hz_writes = 0;
+	cp_hz_hook = NULL;
 	settings_init();
 	radio_sm_init(&sm, now);
 	aprs_set_test_call("");
@@ -1632,9 +1659,10 @@ static void test_codeplug_ssid(void)
 	aprs_get_cfg(&c);
 	aprs_get_view(&v);
 	CHECK(c.ssid == 5 && strcmp(v.call, "Q1TST-5") == 0);
-	// ... and the storage job writes it into the codeplug, leaving the path (unchanged) unwritten
+	// ... and the storage job writes it into the codeplug, leaving the path (unchanged) unwritten. The record had no
+	// frequency: the one in use goes in with it
 	uint32_t ser = cp_serial;
-	CHECK(aprs_to_codeplug() && cp_ssid == 5 && cp_ssid_writes == 1u && cp_serial == ser + 1u);
+	CHECK(aprs_to_codeplug() && cp_ssid == 5 && cp_ssid_writes == 1u && cp_hz == 144390000u && cp_serial == ser + 2u);
 	run(200);
 	aprs_get_cfg(&c);
 	settings_read(&st);
@@ -1654,6 +1682,176 @@ static void test_codeplug_ssid(void)
 	run(200);
 	aprs_get_cfg(&c);
 	CHECK(c.path == APRS_PATH_WIDE2 && c.ssid == 0);
+}
+
+// The page picks Australia, as the UI task does while the storage job runs
+static void pick_australia(void)
+{
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.region = APRS_REGION_AU;
+	aprs_set_cfg(&c, now);
+}
+
+// The APRS frequency lives in the codeplug record too (aprs.md 11): a CPS's new one is taken (a region's becomes that
+// region, any other Custom), the radio's own change isn't taken back and is written into the record
+static void test_codeplug_freq(void)
+{
+	aprs_cfg_t c;
+	aprs_view_t v;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_NA && st.aprs_cp_freq == SETTINGS_APRS_FREQ_EMPTY);	// none in the record: seen
+	cp_hz = 145570000u;			// a CPS writes 145.570 (Brazil)
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 145570000u && aprs_cfg_freq(&c) == 145570000u);
+	CHECK(st.aprs_region == APRS_REGION_CUSTOM && st.aprs_freq_hz == 145570000u);
+	CHECK(st.aprs_cp_freq == settings_aprs_freq_mark(145570000u) && v.block == APRS_OK);
+	CHECK(c.ssid == APRS_SSID_DEFAULT && c.path == APRS_PATH_WIDE1_WIDE2);	// the rest unchanged
+	// The menu picks Europe: the record's unchanged 145.570 doesn't take it back
+	c.region = APRS_REGION_EU;
+	aprs_set_cfg(&c, now);
+	aprs_reload();
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_EU);
+	// ... and the storage job writes Europe's frequency into the record, once
+	CHECK(aprs_to_codeplug() && cp_hz == 144800000u && cp_hz_writes == 1u);
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_EU && st.aprs_cp_freq == settings_aprs_freq_mark(144800000u));
+	CHECK(aprs_to_codeplug() && cp_hz_writes == 1u);	// nothing differs: no write
+	// A region's frequency becomes that region; the custom frequency stays for the next Custom
+	cp_hz = 144390000u;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_NA && c.freq_hz == 145570000u);
+	// One outside the ham bands is taken, and the page says why nothing goes out
+	cp_hz = 151000000u;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 151000000u && v.block == APRS_NOT_AMATEUR);
+	// A record without a frequency leaves ours
+	cp_hz = 0;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 151000000u);
+	// A page change while the job writes the one before (the record holds it, its marker not yet) isn't taken back
+	c.region = APRS_REGION_EU;
+	aprs_set_cfg(&c, now);
+	cp_hz_hook = pick_australia;
+	CHECK(aprs_to_codeplug() && cp_hz == 145175000u);
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_AU && st.aprs_cp_freq == settings_aprs_freq_mark(145175000u));
+}
+
+// The first take after an upgrade (no frequency marker yet) leaves a region picked on the radio alone: the record's
+// frequency may be a revert channel no one meant for APRS. A radio on the default keeps it too
+// (test_codeplug_freq_first_take_default)
+static void test_codeplug_freq_first_take(void)
+{
+	aprs_cfg_t c;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	aprs_get_cfg(&c);
+	c.region = APRS_REGION_EU;		// picked on the radio
+	aprs_set_cfg(&c, now);
+	run(200);
+	settings_t *s = settings_begin();	// settings from before the marker
+	s->aprs_cp_freq = 0;
+	settings_end(now);
+	settings_read(&st);
+	CHECK(st.aprs_stored == 1 && st.aprs_region == APRS_REGION_EU && st.aprs_cp_freq == 0);
+	cp_hz = 145570000u;			// a record from before the marker holds a frequency
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_EU && st.aprs_region == APRS_REGION_EU);
+	CHECK(st.aprs_cp_freq == settings_aprs_freq_mark(145570000u));	// marked as taken: not looked at again
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_EU);
+	cp_hz = 146520000u;			// a later CPS write is taken
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 146520000u);
+}
+
+// The first take on a radio left on the default region with APRS settings of its own keeps N America: such a radio
+// took a stray record frequency and stopped hearing 144.390. A later CPS write is taken
+static void test_codeplug_freq_first_take_default(void)
+{
+	aprs_cfg_t c;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	aprs_get_cfg(&c);
+	c.ssid = 9;				// something else set on the radio: the settings are stored, the region not touched
+	aprs_set_cfg(&c, now);
+	run(200);
+	settings_t *s = settings_begin();	// settings from before the marker
+	s->aprs_cp_freq = 0;
+	settings_end(now);
+	settings_read(&st);
+	CHECK(st.aprs_stored == 1 && st.aprs_region == APRS_REGION_NA && st.aprs_cp_freq == 0);
+	cp_hz = 145570000u;			// ... and a record that holds another frequency
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_NA && aprs_cfg_freq(&c) == 144390000u && st.aprs_region == APRS_REGION_NA);
+	CHECK(st.aprs_cp_freq == settings_aprs_freq_mark(145570000u));
+	cp_hz = 146520000u;			// a later CPS write is taken
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 146520000u);
+}
+
+// The first look on a radio from before the marker: a record's revert channel is marked and left, N America stays; a
+// later CPS write is taken (one outside the ham bands too: the page says why nothing is sent)
+static void test_codeplug_freq_first_take_not_ham(void)
+{
+	aprs_cfg_t c;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	settings_t *s = settings_begin();	// settings from before the marker
+	s->aprs_cp_freq = 0;
+	settings_end(now);
+	cp_hz = 462562500u;			// ... and a record with a revert channel
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.region == APRS_REGION_NA && aprs_cfg_freq(&c) == 144390000u);
+	CHECK(st.aprs_cp_freq == settings_aprs_freq_mark(462562500u));
+	cp_hz = 151000000u;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.region == APRS_REGION_CUSTOM && c.freq_hz == 151000000u);
 }
 
 // The first take after an upgrade (no SSID marker yet) leaves a codeplug SSID of 0 alone: the radio keeps sending
@@ -2028,6 +2226,68 @@ static void test_rx_board_only(void)
 }
 #endif
 
+// ui_svc_aprs_msg_poll: fires UI_EV_APRS_MESSAGE on a new inbound message; does not re-fire for the same message;
+// aprs_view_t carries last_msg_ms and last_msg_from after receipt
+#if CONFIG_APRS_RX
+static void test_msg_poll(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	n_ev = 0;
+
+	// no message yet: poll is silent
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 0);
+
+	// receive a message addressed to us
+	rx_line("Q1ABC-9>APRS,WIDE1-1::Q1TST-7  :Hello poll{51");
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1);
+
+	// first poll after receipt: fires one event with the right callsign and text
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1);
+	CHECK(last_ev.kind == UI_EV_APRS_MESSAGE);
+	CHECK(strcmp(last_ev.name, "Q1ABC-9") == 0);
+	CHECK(strcmp(last_ev.text, "Hello poll") == 0);
+
+	// second poll with the same msg_serial: no new event
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1);
+
+	// the view carries the sender and the timestamp
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.msg_serial == 1);
+	CHECK(v.last_msg_ms != 0);
+	CHECK(strcmp(v.last_msg_from, "Q1ABC-9") == 0);
+
+	// a second message from a different sender: poll fires again with the new message
+	rx_line("Q1XYZ-3>APRS,WIDE1-1::Q1TST-7  :Second message{52");
+	CHECK(wait_start(2, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 2);
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2);
+	CHECK(last_ev.kind == UI_EV_APRS_MESSAGE);
+	// peek(0) is the newest message in the inbox
+	aprs_msg_t m;
+	CHECK(aprs_msg_peek(0, &m));
+	CHECK(strcmp(last_ev.name, m.from) == 0);
+
+	// duplicate of the second message: msg_serial stays the same, poll stays silent
+	rx_line("Q1XYZ-3>APRS,WIDE1-1::Q1TST-7  :Second message{52");
+	run(500);
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2);
+
+	aprs_get_view(&v);
+	CHECK(v.msg_serial == 2);
+}
+#endif
+
 int main(void)
 {
 	test_defaults();
@@ -2056,6 +2316,7 @@ int main(void)
 	test_message_ends_while_blocked();
 #if CONFIG_APRS_RX
 	test_message_rejection();
+	test_msg_poll();
 #endif
 	test_dmr_position();
 	test_gps_setting();
@@ -2065,6 +2326,10 @@ int main(void)
 	test_codeplug_path();
 	test_codeplug_ssid();
 	test_codeplug_ssid_first_zero();
+	test_codeplug_freq();
+	test_codeplug_freq_first_take();
+	test_codeplug_freq_first_take_default();
+	test_codeplug_freq_first_take_not_ham();
 	test_rf_failures();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();

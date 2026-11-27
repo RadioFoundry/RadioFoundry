@@ -226,7 +226,9 @@ state (`modem-hrc7000.md` 3.3). An air session (P25, NXDN) halts the slot engine
 FM copy request there, or the modem's system source left masked at the PIC, leaves receive deaf until the session
 closes (suspected in #923; the masked source measured so, the lost request not reproduced): the session's poll sets
 the copy up again and unmasks the modem sources after 200 ms with no half (`airp.copy_restarts`, the first one's PIC
-words in `airp.copy_lost_regs`). Radios: the HR_C7000 boards; one report.
+words in `airp.copy_lost_regs`). Radios: the HR_C7000 boards; one report. The HR_C6000 boards keep their check for a
+system line left low running under a session, and their copy has the same 200 ms watchdog
+(`modem-hrc6000.md` 10.6).
 
 **2.10 A receiver restart in the middle of a burst.**
 Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot
@@ -461,8 +463,11 @@ A; it is unverified on the HR_C5000 and HR_C7000.
 
 **6.3 ISR-safe contact lookup.** The privacy contact's ID must come from a cache that is safe to read in the modem ISR.
 
-**6.4 PI headers are dropped by the receive path.** MI-based schemes need the modem to send and receive a PI header
-(data type 0); late entry in burst F is an open risk. Research note, privacy feasibility.
+**6.4 PI headers carry the MI.** MI-based schemes need the modem to send and receive a PI header (data type 0). The
+call stack receives them and keeps the algorithm, key ID and MI; such a call plays only through the crypt hook with a
+key for them (dmr-voice.md 5, 5.1). On receive, a call joined late, PI header missed, is not played until the next
+PI header: reading the late-entry MI from the voice bursts is not implemented (#863). Our overs send both
+(dmr-voice.md 5.1); burst F's field needs the modem driver's `set_burst_f`.
 
 ## 7. ARS, TMS, LRRP, UDT
 
@@ -572,7 +577,7 @@ still open (needs a USB capture).
 counted datagrams dropped everything after the eighth. Guard against NDP chain loops by counting NDPs.
 
 **9.5 macOS treats both ends of a /31 as broadcast.** Plain sends to the radio failed (EACCES without SO_BROADCAST). Use a
-/32 host address with an option 121 route to the radio (host xor 1).
+/32 host address with an option 121 route to the radio (the host 13.<DMR ID>, the radio 12.<DMR ID>).
 
 **9.9 STM32 OTG_FS FIFO budget for NCM.** The 0x140-word FIFO RAM needs a split like RX 0x80, TX0 0x30, TX1 0x80 and
 0x10 for the notification endpoint; NCM needs two interfaces and the iMACAddress string (MAC from the MCU unique ID).
@@ -675,7 +680,9 @@ GITVERSION explicitly where there is no .git.
 built-in suffix rules. Build note.
 
 **13.4 Reproducible images.** Pinning the version string and build date made byte-for-byte comparisons of refactors
-possible (build_all --compare). Keep that ability.
+possible (build_all --compare). Keep that ability. A date or time in the image comes from the commit's time
+(`RFOUNDRY_GIT_TIME` and the strings the Makefile makes from it), never `__DATE__` or `__TIME__`: those made two builds
+of one commit differ in size, not just in the date. The firmware builds with `-Werror=date-time`.
 
 **13.5 One hardware version needed main.c unoptimized** in one configuration; one image per board version;
 the wrong build is harmless but deaf.
@@ -691,11 +698,12 @@ error path restarts it; accept any NMEA talker and an 82-character line plus CR 
 
 **13.8 Canceled menu edits must re-apply hardware state** (GPS and USB modes) after restoring the old values.
 
-**13.9 No git stash in a worktree with symlinked submodules.** In an agent worktree whose `third_party/*` are symlinks
-to another checkout, `git stash` (to build a baseline for a size comparison) took the symlinks away for the stash's
+**13.9 No git stash in a worktree with symlinked submodules.** In a worktree whose `third_party/*` are symlinks to
+another checkout, `git stash` (to build a baseline for a size comparison) took the symlinks away for the stash's
 duration: the baseline build failed on `FreeRTOS.h`, and git refuses most operations on the paths ("expected submodule
-path not to be a symbolic link"). The pop put them back. Build a baseline from `git archive HEAD` into a scratch
-directory with its own `third_party` symlinks instead, and delete it afterwards.
+path not to be a symbolic link"). Make worktrees with `tools/worktree.sh` and build with `RFOUNDRY_THIRD_PARTY`
+instead ([building.md](../dev/building.md#worktrees)), and build a baseline in `tools/worktree.sh add <dir> --detach` of the
+base commit.
 
 **13.10 Link order changes LTO code.** `$(wildcard)` returns files in an order that depends on the make: GNU make 4.3
 (CI) sorts it, macOS's make 3.81 doesn't. With LTO the object order on the link line steers partitioning and
@@ -875,12 +883,18 @@ since a grounded line receives nothing. RF that holds a released line steadily l
 as held, and the transmit time-out ends it.
 
 **16.3 PTT on an empty mic jack.**
-Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT
-line has no pull-up the firmware can set, and with nothing in the jack it reads low from power-on, which is a press.
-Rule: on a PTT line that comes through a connector, count a low as a press only once the line has read high since
-start-up, something plugged in (`drivers/input/plugptt`). Pulling the plug while armed still reads as a held press;
-the transmit timeout ends it, and with TX timeout Off nothing does until power-off. Radios: one confirmed. Check every
-radio with a mic jack: power on with the jack empty and watch the raw PTT pin (adding-a-radio.md, bring-up order).
+Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the PTT pin's
+pad pull-up was left off, so with nothing in the jack the line floated and read low from power-on, which is a press. A
+floating line also picks up levels from a cable, and a mic without its own pull-up never reads high, so its PTT never
+keys. Rule: turn on the pad pull-up of every PTT input that comes through a connector, in the board's pin set-up.
+Where a board can't, or as a second guard, count a low as a press only once the line has idled high for 100 ms
+(`drivers/input/plugptt`, which `drivers/input/sharedptt` uses for a line shared with the cable's serial data). Highs
+read while the lines settle at start-up don't count: radios that counted them still keyed at power-on with a mic or a
+cable in (issue #716), since a line that reads high on the first scans and then falls to rest low reads as a press
+held from power-on. A press is a fall from idle high, the edge a pin interrupt sees, never a level found at start-up.
+Without a pull-up, pulling the plug while armed reads as a held press, which only the transmit timeout ends. Radios:
+one confirmed. Check every radio with a mic jack: power on with the jack empty and watch the raw PTT pin
+(adding-a-radio.md, bring-up order).
 
 **16.4 Encoder interrupt lost for good.**
 Symptom: the encoder stopped after a while; every key still worked (RadioFoundry, 2026-10-30). Cause: not found. The
@@ -895,17 +909,21 @@ boards with an interrupt-driven encoder; one confirmed.
 Symptom: on a radio whose PTT shares the host's RX line (16.2), PPP died soon after LCP opened and never came back:
 the radio sent and received nothing, the line read low with the cable unplugged, and only a power cycle cleared it.
 The radio kept running (keys, LEDs, its tasks). Cause: electrical, most likely a latch-up at the pad. When the radio
-starts sending while the host is still sending, the line is clamped low: driving the PTT pin high from the SoC
-didn't lift it, and a full SoC reset by the watchdog didn't release it. PPP isn't needed: debug link requests sent
-back to back, without waiting for the answers, did it within 15 ms. Request and answer in turn (the debug link, CPS)
-never did. Rule: on such a radio a host port write waits until the line has been quiet for a few milliseconds
+starts sending while the host is still sending, the line is clamped low: driving the PTT pin high from the SoC didn't
+lift it, and a full SoC reset by the watchdog didn't release it. PPP isn't needed: debug link requests sent back to
+back, without waiting for the answers, did it within 15 ms. Request and answer in turn (the debug link, CPS) never
+did. Rule: on such a radio a host port write waits until the line has been quiet for a few milliseconds
 (`HRC_HOST_TX_IDLE_MS`, `platform/hrc7000/uart_idle.h`), and PPP, whose host sends at any time, stays off. The wait
-can't stop a host that starts sending during the radio's answer; MMDVM and KISS hosts do that too, unchecked. A latched
-line reads as a held PTT, and a chip reset would start a new press, so a press on the shared line needs the pin to have
-read high since start-up and since the last good byte, and not to have gone low within 20 ms of the radio's own serial
-send (`drivers/input/sharedptt`). The start-up key guard can't catch it: the first scan reports nothing during the
-20 ms hold. A line that stays low that way for 2 s flashes the LEDs red and green fast until a power cycle. Don't
-reproduce it more than needed: a latch-up draws current. Radios: one confirmed.
+can't stop a host that starts sending during the radio's answer; MMDVM and KISS hosts do that too, unchecked. A
+latched line reads as a held PTT, and a chip reset would start a new press, so a press on the shared line needs the
+pin to have idled high since start-up (16.3), read high since the last exchange (a good byte and a send of the radio's
+own, both after the last high read), and not to have gone low within 20 ms of the radio's own serial send
+(`drivers/input/sharedptt`). A good byte alone is no latch: a key's bounce as the contact closes can frame one, and so
+can a hand mic as its key goes down. A first version took any good byte since the last high read for a latch, and on
+radios in the field a mic's PTT then never keyed: nothing for 2 s, then the stuck LEDs. The start-up key guard can't
+catch it: the first scan reports nothing during the 20 ms hold. A line that stays low that way for 2 s flashes the
+LEDs red and green fast until a power cycle. Don't reproduce it more than needed: a latch-up draws current. Radios:
+one confirmed.
 
 **16.6 A programming cable whose adapter stopped sending.**
 Symptom: through one K-type PL2303 cable on macOS a radio never took the boot ROM load and answered no debug link

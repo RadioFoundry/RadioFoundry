@@ -96,17 +96,18 @@ bool codeplug_tag_write(uint16_t number, const char *name, const codeplug_tag_t 
 	return codeplug_kv_set(tag_key(number), v, (uint16_t)(at + len));
 }
 
-bool codeplug_tag_rewrite(uint16_t number, const char *name, const codeplug_tag_t *t, const uint8_t *params, uint16_t len)
+static bool rewrite_checked(uint16_t number, uint16_t check, const char *name, const codeplug_tag_t *t, const uint8_t *params, uint16_t len)
 {
 	uint8_t v[CODEPLUG_TAG_HEAD_MAX + TAG_PARAMS_MAX];
 	codeplug_tag_t old;
 	if (!number_ok(number) || len > TAG_PARAMS_MAX ||
 	    !parse(v, codeplug_kv_get(tag_key(number), v, CODEPLUG_TAG_HEAD_MAX), &old) || old.kind != t->kind ||
-	    old.check != codeplug_name_check(name)) {
+	    old.check != check) {
 		return false;
 	}
 	uint16_t at = codeplug_tag_params_at(&old);
 	v[1] = t->system;
+	wr16(&v[2], codeplug_name_check(name));
 	v[4] = (uint8_t)((old.flags & ~CODEPLUG_TAG_TX) | (t->flags & CODEPLUG_TAG_TX));
 	if (len != 0) {
 		memcpy(&v[at], params, len);
@@ -114,6 +115,11 @@ bool codeplug_tag_rewrite(uint16_t number, const char *name, const codeplug_tag_
 	// From the front: a block longer than this firmware writes keeps its later bytes
 	codeplug_kv_op_t op = { tag_key(number), (uint16_t)((at + len) | CODEPLUG_KV_HEAD), v };
 	return codeplug_kv_write(&op, 1);
+}
+
+bool codeplug_tag_rewrite(uint16_t number, const char *name, const codeplug_tag_t *t, const uint8_t *params, uint16_t len)
+{
+	return rewrite_checked(number, codeplug_name_check(name), name, t, params, len);
 }
 
 bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
@@ -176,6 +182,13 @@ void codeplug_tag_apply(uint16_t number, channel_t *ch)
 	}
 	ch->kind = t.kind;
 	ch->system = t.system;
+#if CONFIG_DMR_AES
+	if (t.kind == CODEPLUG_KIND_DMR_AES) {
+		uint8_t block[CODEPLUG_TAG_HEAD_MAX + 2];
+		ch->aes_ref = codeplug_tag_params(number, ch, block, 2) >= 2 && block[0] == 0x25 ?
+			      (uint16_t)(1u + block[1]) : 0;
+	}
+#endif
 	ch->rx_only = (t.flags & CODEPLUG_TAG_TX) == 0;
 }
 
@@ -203,6 +216,15 @@ uint8_t codeplug_tag_before_write(uint16_t number, const channel_t *ch, bool in_
 
 bool codeplug_tag_after_write(uint16_t number, const channel_t *ch, uint8_t action, const codeplug_tag_t *t)
 {
+#if CONFIG_DMR_AES
+	if (ch->kind == CODEPLUG_KIND_DMR_AES && ch->aes_ref >= 1 && ch->aes_ref <= 256) {
+		codeplug_tag_t aes = { .kind = ch->kind, .system = ch->system, .flags = ch->rx_only ? 0 : CODEPLUG_TAG_TX };
+		uint8_t params[] = { 0x25, (uint8_t)(ch->aes_ref - 1) };
+		if (action == CODEPLUG_TAG_W_FOLLOW)
+			return rewrite_checked(number, t->check, ch->name, &aes, params, sizeof params);
+		return codeplug_tag_write(number, ch->name, &aes, params, sizeof params);
+	}
+#endif
 	if (action == CODEPLUG_TAG_W_REMOVE) {
 		return codeplug_tag_remove(number);
 	}

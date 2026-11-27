@@ -18,7 +18,9 @@ typedef struct {
 	uint16_t (*battery_mv)(void);
 	// Battery percentage 0..100 from the board's own curve
 	uint8_t (*battery_pct)(void);
-	// Volume knob position 0..100, or -1 if volume is not a knob the MCU reads
+	// Volume knob position 0..100, or -1 if the MCU doesn't read a volume knob. On a radio whose volume the firmware
+	// sets (hal_radio_t.volume), -1 must mean there is no knob, every time it is asked. Other radios may also return -1
+	// until the first reading is ready
 	int8_t (*volume)(void);
 	// Optional: a second volume knob's position 0..100, side B's on a radio with a knob per side (the board sets that
 	// side's level itself); NULL when the radio has one. The UI's volume bar shows both (radio_view_t.volume_b)

@@ -8,6 +8,7 @@ into the simulated flash, read back through tools/cps_fast.py and looked up by t
 tools/iddb_write.py as tests/hil/test_iddb.py uses it: a synthetic database of each format put over the one there
 through the fast protocol, looked up, and the backup restored byte for byte. Run by `make -C tests/host`."""
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -110,7 +111,7 @@ def text_of(toks, words):
 def against_radio(sim, dump, want, misses, label, look=None):
     """Read the database back with iddb_read through the fast protocol, and look the records (or those in look) up on
     the radio"""
-    link = cps_fast.open_link(exec_cmd=f"{sim} --image {dump}")
+    link = cps_fast.open_link(exec_cmd=f"{shlex.quote(sim)} --image {shlex.quote(dump)}")
     try:
         cache = {}
 
@@ -146,13 +147,13 @@ def against_radio(sim, dump, want, misses, label, look=None):
 
 def main():
     sim = os.path.join(HERE, "cpsSim")
-    with tempfile.TemporaryDirectory() as d:
+    with tempfile.TemporaryDirectory(prefix="rfoundry cps ") as d:
         dump = os.path.join(d, "flash.bin")
         subprocess.run([sim, "--populate", "--dump", dump], stdin=subprocess.DEVNULL, check=True)
         base = bytearray(open(dump, "rb").read())
 
         # No database
-        link = cps_fast.open_link(exec_cmd=f"{sim} --image {dump}")
+        link = cps_fast.open_link(exec_cmd=f"{shlex.quote(sim)} --image {shlex.quote(dump)}")
         check(link.iddb(9900000) == {"format": "", "records": 0, "found": False, "text": None}, "no database")
         link.close()
 
@@ -183,7 +184,7 @@ def main():
 
         # tools/iddb_write.py as tests/hil/test_iddb.py uses it: the format C database above backed up, a synthetic
         # one of each format put over it and looked up, the backup restored byte for byte
-        link = cps_fast.open_link(exec_cmd=f"{sim} --image {dump}")
+        link = cps_fast.open_link(exec_cmd=f"{shlex.quote(sim)} --image {shlex.quote(dump)}")
         try:
             before = link.iddb()
             recs = iddb_write.synthetic_records()

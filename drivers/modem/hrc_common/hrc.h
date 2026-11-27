@@ -27,6 +27,9 @@ typedef struct {
 // sits on (the HR_C6000: 4, the HR_C5000: 0)
 enum { HRC_PAGE_AUX = 1, HRC_PAGE_DATA = 2, HRC_PAGE_VOCODER = 3, HRC_PAGE_SYS = 4 };
 
+// The system interrupt mask (0x81) in DMR: post access, received data, PHY
+#define HRC_INT_MASK_DMR	0x19u
+
 typedef struct hrc hrc_t;
 
 // What differs between the chips, as far as the shared code is concerned

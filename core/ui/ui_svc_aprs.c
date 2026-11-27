@@ -9,6 +9,7 @@
 #include "board.h"
 #include "storage/storage.h"
 #include "hal_time.h"
+#include <string.h>
 
 bool ui_svc_aprs_view(aprs_view_t *v)
 {
@@ -21,7 +22,8 @@ void ui_svc_aprs_cfg(aprs_cfg_t *c)
 	aprs_get_cfg(c);
 }
 
-// The path and the SSID also live in the codeplug's APRS record (aprs.md 11): written there by the housekeeping task
+// The path, the SSID and the frequency also live in the codeplug's APRS record (aprs.md 11): written there by the
+// housekeeping task
 static void codeplug_job(void *ctx)
 {
 	(void)ctx;
@@ -33,7 +35,7 @@ void ui_svc_aprs_set_cfg(const aprs_cfg_t *c)
 	aprs_cfg_t old;
 	aprs_get_cfg(&old);
 	aprs_set_cfg(c, hal_millis());
-	if (c->path != old.path || c->ssid != old.ssid) {
+	if (c->path != old.path || c->ssid != old.ssid || c->region != old.region || c->freq_hz != old.freq_hz) {
 		(void)storage_job_post(codeplug_job, NULL);	// busy with another job: the codeplug keeps its own
 	}
 }
@@ -55,6 +57,29 @@ bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
 	return read ? aprs_msg(i, out) : aprs_msg_peek(i, out);
 }
 bool ui_svc_aprs_msg_delete(uint8_t i) { return aprs_msg_delete(i); }
+#endif
+
+#if CONFIG_APRS_RX
+void ui_svc_aprs_msg_poll(void)
+{
+	static uint32_t seen;
+	aprs_view_t v;
+	aprs_get_view(&v);
+	if (v.msg_serial == seen)
+		return;
+	seen = v.msg_serial;
+	aprs_msg_t m;
+	if (!aprs_msg_peek(0, &m))
+		return;
+	ui_event_t ev;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = UI_EV_APRS_MESSAGE;
+	strncpy(ev.name, m.from, sizeof ev.name - 1);
+	strncpy(ev.text, m.text, sizeof ev.text - 1);
+	ui_notify(&ev);
+}
+#else
+void ui_svc_aprs_msg_poll(void) { }
 #endif
 
 #if CONFIG_APRS_RX

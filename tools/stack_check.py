@@ -93,6 +93,10 @@ def parse_label(label):
 
 def parse_ci(text, funcs, edges):
     """Add one .ci (VCG) file's nodes and edges. funcs: title -> Func, edges: title -> [(target title, call site)]"""
+    # gcc names a source by the path it was given, the shared copy's for one read from RFOUNDRY_THIRD_PARTY: back to
+    # its tree name, in function locations and call sites alike
+    if SHARED_TP:
+        text = text.replace(SHARED_TP + "/", "third_party/")
     for line in text.splitlines():
         line = line.strip()
         kind = line.split(":", 1)[0]
@@ -494,7 +498,7 @@ class CModel:
 
     def read(self, path):
         try:
-            with open(os.path.join(self.root, path), encoding="utf-8", errors="replace") as fh:
+            with open(src_path(self.root, path), encoding="utf-8", errors="replace") as fh:
                 return fh.read()
         except OSError:
             return None
@@ -946,6 +950,28 @@ class CModel:
             keys.extend(sub_keys)
 
 
+# A worktree may read third_party/ from another checkout (RFOUNDRY_THIRD_PARTY, platform/third_party.mk): a submodule
+# missing here is read there, and its files keep their tree names (third_party/<name>/...) in the report
+SHARED_TP = os.environ.get("RFOUNDRY_THIRD_PARTY", "").rstrip("/")
+
+
+def src_path(root, rel):
+    """Where a source named by its tree path is read: the tree, else the shared third_party/"""
+    p = os.path.join(root, rel)
+    if SHARED_TP and rel.startswith("third_party/") and not os.path.exists(p):
+        q = os.path.join(SHARED_TP, rel[len("third_party/"):])
+        if os.path.exists(q):
+            return q
+    return p
+
+
+def tree_path(path):
+    """A dependency file's path back to its tree name when the build read it from the shared third_party/"""
+    if SHARED_TP and path.startswith(SHARED_TP + "/"):
+        return "third_party/" + path[len(SHARED_TP) + 1:]
+    return path
+
+
 def compiled_sources(build, root):
     """Source files of the objects in a build directory (build/x/core/ui/ui.o or .d -> core/ui/ui.c), and the headers
     their dependency files list"""
@@ -956,13 +982,15 @@ def compiled_sources(build, root):
             if ext not in (".o", ".d"):
                 continue
             rel = os.path.relpath(os.path.join(r, stem + ".c"), build)
-            if os.path.isfile(os.path.join(root, rel)):
+            if os.path.isfile(src_path(root, rel)):
                 srcs.add(rel)
             if ext == ".d":
                 with open(os.path.join(r, fn), encoding="utf-8", errors="replace") as fh:
                     for w in fh.read().replace("\\\n", " ").split():
-                        if w.endswith(".h") and not os.path.isabs(w):
-                            headers.add(os.path.normpath(w))
+                        if w.endswith(".h"):
+                            w = tree_path(w)
+                            if not os.path.isabs(w):
+                                headers.add(os.path.normpath(w))
     return sorted(srcs), sorted(headers)
 
 
@@ -991,7 +1019,8 @@ def preprocessor_macros(cc, cflags, root, path):
     drop = ("-MMD", "-MP", "-MD", "-fstack-usage")
     flags = [f for f in shlex.split(cflags) if f not in drop and not f.startswith("-fcallgraph-info") and
              not f.startswith("-flto")]
-    out = subprocess.run(shlex.split(cc) + flags + ["-E", "-dM", path], cwd=root, capture_output=True, text=True)
+    out = subprocess.run(shlex.split(cc) + flags + ["-E", "-dM", src_path(root, path)], cwd=root, capture_output=True,
+                         text=True)
     if out.returncode != 0:
         raise SystemExit("stack_check: the preprocessor failed on %s:\n%s" % (path, out.stderr[-2000:]))
     macros = {}
@@ -1019,7 +1048,7 @@ def find_tasks(graph, root, files, table, cc, cflags, word):
     seen = {}
     for path in files:
         try:
-            with open(os.path.join(root, path), encoding="utf-8", errors="replace") as fh:
+            with open(src_path(root, path), encoding="utf-8", errors="replace") as fh:
                 t = fh.read()
         except OSError:
             continue
@@ -1058,7 +1087,7 @@ def find_irqs(graph, root, files, registers):
     out, seen = [], set()
     for path in files:
         try:
-            with open(os.path.join(root, path), encoding="utf-8", errors="replace") as fh:
+            with open(src_path(root, path), encoding="utf-8", errors="replace") as fh:
                 t = fh.read()
         except OSError:
             continue

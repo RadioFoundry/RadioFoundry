@@ -69,7 +69,10 @@ stops with `no_storage`, which says so, before anything is read. A read takes th
 (`readIddbHeader`), then the codeplug's regions and the database in one pass, so one progress bar covers it. The
 database's size and the last read's speed (a guess on a radio's first read) give its time: at `IDDB_ASK` (20 s) or
 more the editor asks before reading. A skipped database stays out of the model (its header erased there, kept in `S.conn.image`), so no write
-touches it; the DMR ID Database tab reads it later into the model. A write compares with the
+touches it; the DMR ID Database tab reads it later into the model, or removes it unread (the erased header then goes
+with the next write). It also removes a header `iddb.readHeader` doesn't take (`iddb.unreadable`). A write whose
+database runs past the radio's room (`transport.end`) stops before planning and offers `fitIddb` (cut to fit, its own
+format) or, for a format it can't read back, removal; the write then starts again. A write compares with the
 radio and sends only the changed bytes inside the codeplug's regions, never whole sectors, since a sector can hold the
 radio's own settings (0x6000). It verifies, then ends with `C 5` so the radio reloads the codeplug without a restart.
 

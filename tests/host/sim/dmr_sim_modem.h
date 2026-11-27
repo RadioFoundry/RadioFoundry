@@ -100,6 +100,7 @@ void sim_reset(void);
 void sim_slot(void);
 // Deliver a received burst to the stack
 void sim_rx(const dmr_burst_t *b);
+void sim_rx_at(const dmr_burst_t *b, uint32_t slot);	// with the modem's slot counter for it
 void sim_event(uint8_t kind, int8_t ts);
 // A CACH short LC as a modem reports it: 28 bits and the CRC-8 received (DMR_EV_SHORT_LC)
 void sim_short_lc(uint32_t slc, uint8_t crc);

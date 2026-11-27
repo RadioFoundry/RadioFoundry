@@ -136,6 +136,7 @@ Every screen in every class is in the gallery (`docs/ux/screens/*/home_dual*.png
 | **Left / Right** (DM-1801 Pro, DM-32UV) | Selects A / B (a press; hold is the radio's user function) |
 | **A/B** key | Selects the other channel |
 | Zone keys (Next / Previous zone, the DM-1701's P1 / P2; Up / Down set to Zone in Settings › Keys) | The selected channel goes to the next / previous zone, on its first channel that isn't the other one ("A zone: Simplex"). A zone with no such channel is passed over. From the VFO: the zone the radio was last on. The knob still steps the channel |
+| Up / Down set to Talk target (Settings › Keys) | On a selected DMR channel, the next talk target as on the single Home: its default talkgroup, then its listen list ("Talking to ..."). Nothing to step through, the VFO or another mode: the channel steps as above. The knob still steps the channel |
 | Home zone key | The selected channel goes to the first zone, the same way |
 | **Monitor** (held) | Opens the squelch on the selected channel: the receiver goes there and the watch waits while the key is held. On a DMR channel a press is digital monitor, as without dual watch |
 | **#** | Dual watch actions: **1** Talk on B (or A), **2** Change A, **3** Change B, **4** Caller (the last caller and how long ago; OK opens their actions; dim until a call was heard), **5** Stop, stay on A (or B). Change A and B open the picker |
