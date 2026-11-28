@@ -30,6 +30,27 @@ uint8_t radio_aes_tx_deny(const channel_t *ch)
 	return aes_seq.left == 0 ? TXDENY_AES_WAIT : TXDENY_NONE;
 }
 
+typedef struct {
+	int tx_id;		// the channel's TX key ID, -1 = none
+	uint8_t next;		// the next free slot for another key
+} load_ctx_t;
+
+static bool load_key(uint16_t key_id, const uint8_t *key, int len, void *ctx)
+{
+	load_ctx_t *l = (load_ctx_t *)ctx;
+
+	// The PI header carries 8 bits of key ID: a key past them can't be named by a call
+	if (len != DMR_AES_KEY_BYTES || key_id > 0xFF)
+		return true;
+	if ((int)key_id == l->tx_id) {
+		dmrAesSetKey(&channel_keys, 0, DMR_AES_ALG_AES256, (uint8_t)key_id, key);
+	} else if (l->next < DMR_AES_KEY_SLOTS) {
+		dmrAesSetKey(&channel_keys, l->next++, DMR_AES_ALG_AES256, (uint8_t)key_id, key);
+	}
+	// Full: walk on only while the TX key may be still to come
+	return l->next < DMR_AES_KEY_SLOTS || (l->tx_id >= 0 && channel_keys.keys[0].alg == 0);
+}
+
 bool radio_aes_configure(const channel_t *ch, dmr_call_config_t *cfg)
 {
 	// The call stack refuses an over it can't encrypt, even if it gets past the radio task's TX check.
@@ -44,21 +65,21 @@ bool radio_aes_configure(const channel_t *ch, dmr_call_config_t *cfg)
 	}
 
 	codeplug_system_t sys;
-	uint8_t block[CODEPLUG_SYS_HDR], key[DMR_AES_KEY_BYTES];
-	uint8_t id = (uint8_t)(ch->aes_ref - 1);
+	uint8_t block[CODEPLUG_SYS_HDR];
 	channel_tx_allowed = false;
 	channel_key_ref = 0;
 	channel_key_system = ch->system;
-	dmrAesSetKey(&channel_keys, 0, 0, 0, NULL);
-	if (ch->aes_ref && ch->aes_ref <= 256 && codeplug_system(ch->system, &sys, block, 0) >= 0 &&
-	    sys.type == CODEPLUG_SYSTYPE_DMR_AES &&
-	    codeplug_traffic_key(ch->system, DMR_AES_ALG_AES256, id, key, sizeof key) == sizeof key) {
-		dmrAesSetKey(&channel_keys, 0, DMR_AES_ALG_AES256, id, key);
-		dmrAesSetTx(&channel_keys, 0);
-		channel_key_ref = ch->aes_ref;
-		channel_tx_allowed = (sys.flags & CODEPLUG_SYS_TX) != 0;
+	dmrAesClearKeys(&channel_keys);
+	if (codeplug_system(ch->system, &sys, block, 0) >= 0 && sys.type == CODEPLUG_SYSTYPE_DMR_AES) {
+		// Every AES-256 key of the system: slot 0 for the channel's TX key, the rest heard by the PI header's
+		// key ID
+		load_ctx_t l = { .tx_id = ch->aes_ref && ch->aes_ref <= 256 ? (int)ch->aes_ref - 1 : -1, .next = 1 };
+		codeplug_traffic_keys(ch->system, DMR_AES_ALG_AES256, load_key, &l);
+		if (dmrAesSetTx(&channel_keys, 0)) {
+			channel_key_ref = ch->aes_ref;
+			channel_tx_allowed = (sys.flags & CODEPLUG_SYS_TX) != 0;
+		}
 	}
-	dmrAesWipe(key, sizeof key);
 	channel_keys.seq = &aes_seq;
 	if (!dmrAesHasKeys(&channel_keys))
 		return false;
@@ -110,7 +131,7 @@ void radio_aes_poll(const channel_t *ch, uint32_t own_id, uint32_t now_ms)
 		memset(&chip, 0, sizeof(chip));
 		if (board.system == NULL || board.system->chip == NULL || !board.system->chip(&chip))
 			memset(chip.uid, 0, sizeof(chip.uid));
-		aes_seq.next = dmrAesSeqSeed(channel_keys.keys[0].key, chip.uid, own_id, now_ms);
+		aes_seq.next = dmrAesSeqSeed(channel_keys.keys[0].key, chip.uid, own_id, now_ms);	// the TX key
 	}
 	uint32_t r = dmrAesSeqReserve(&aes_seq);
 	if (r != 0) {

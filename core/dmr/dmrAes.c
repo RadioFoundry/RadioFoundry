@@ -400,9 +400,11 @@ bool dmrAesCallHook(uint8_t ambe27[27], const struct dmr_crypt_pos *pos, bool tx
 	if (st == NULL || pos == NULL || pos->voice_index >= 6 || pos->superframe >= DMR_AES_SF_MAX)
 		return false;
 
-	int8_t slot = dmrAesFindKey(st, pos->alg, pos->key_id);
+	// A heard call may use any key held; our overs only the TX key, never another key of the system
+	int8_t slot = tx ? st->tx_slot : dmrAesFindKey(st, pos->alg, pos->key_id);
 
-	if (slot < 0)
+	if (slot < 0 || st->keys[slot].alg == 0 || st->keys[slot].alg != pos->alg ||
+	    st->keys[slot].key_id != pos->key_id)
 		return false;
 	if (tx) {
 		// Only the over's own MI, and only positions inside the saved reservation (dmrAesSeq_t)

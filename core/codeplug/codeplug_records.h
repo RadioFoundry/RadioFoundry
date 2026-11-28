@@ -99,6 +99,10 @@ int codeplug_target_list(codeplug_ref_t ref, uint8_t kind, codeplug_rec_head_t *
 // The traffic key of system with this algorithm and key id: its octets into key (at most cap); their length, -1 when
 // there is none
 int codeplug_traffic_key(uint8_t system, uint8_t alg, uint16_t key_id, uint8_t *key, uint16_t cap);
+// Each traffic key of system with this algorithm, in the area's order, to fn: its key id, octets (at most 64 shown)
+// and length. fn returns false to stop the walk. The keys seen. The octets are wiped when fn returns: fn copies them
+typedef bool (*codeplug_traffic_fn)(uint16_t key_id, const uint8_t *key, int len, void *ctx);
+int codeplug_traffic_keys(uint8_t system, uint8_t alg, codeplug_traffic_fn fn, void *ctx);
 // A reference from the 4 octets a record stores
 codeplug_ref_t codeplug_ref_at(const uint8_t *p);
 #endif

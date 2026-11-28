@@ -406,6 +406,24 @@ static void put_rec(uint16_t key, uint8_t kind, uint8_t flags, const char *name,
 	CHECK(codeplug_kv_set(key, v, (uint16_t)(CODEPLUG_REC_HDR + len)));
 }
 
+// codeplug_traffic_keys' callback: what it was shown
+static unsigned walk_n, walk_stop;
+static uint16_t walk_id[4];
+static uint8_t walk_first[4];
+static int walk_len[4];
+
+static bool walk_key(uint16_t key_id, const uint8_t *key, int len, void *ctx)
+{
+	(void)ctx;
+	if (walk_n < 4) {
+		walk_id[walk_n] = key_id;
+		walk_first[walk_n] = key[0];
+		walk_len[walk_n] = len;
+	}
+	walk_n++;
+	return walk_stop == 0 || walk_n < walk_stop;
+}
+
 static void test_records(void)
 {
 	fresh();
@@ -465,6 +483,19 @@ static void test_records(void)
 	CHECK(codeplug_traffic_key(3, 0x84, 1, key, sizeof key) == 2 && key[1] == 0xC2);
 	CHECK(codeplug_traffic_key(2, 0x85, 1, key, sizeof key) == -1);
 	CHECK(codeplug_traffic_key(4, 0x84, 1, key, sizeof key) == -1);
+
+	// Every key of a system with an algorithm, in the area's order; the walk stops when asked
+	walk_n = 0;
+	CHECK(codeplug_traffic_keys(2, 0x84, walk_key, NULL) == 2 && walk_n == 2);
+	CHECK(walk_id[0] + walk_id[1] == 3 && walk_first[walk_id[0] == 1 ? 0 : 1] == 0xA1 && walk_len[0] == 4);
+	walk_n = 0;
+	CHECK(codeplug_traffic_keys(3, 0x84, walk_key, NULL) == 1 && walk_id[0] == 1 && walk_len[0] == 2);
+	walk_n = 0;
+	CHECK(codeplug_traffic_keys(2, 0x85, walk_key, NULL) == 0 && walk_n == 0);
+	walk_n = 0;
+	walk_stop = 1;
+	CHECK(codeplug_traffic_keys(2, 0x84, walk_key, NULL) == 1 && walk_n == 1);
+	walk_stop = 0;
 }
 
 static void put_entry(uint8_t n, uint8_t sys, uint8_t cls, uint8_t group, uint8_t flags, const uint8_t *body, uint16_t len)

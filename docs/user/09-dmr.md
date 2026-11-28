@@ -306,10 +306,18 @@ to the radio. Both radios must have the same key bytes and ID. The system and ch
 
 On the handset, open the DMR channel editor and press **OK** on **AES key** to cycle through the provisioned
 system number/key ID pairs. **None** removes channel AES. Save the channel to keep the choice across restarts.
-A protected channel without its key refuses PTT ("AES key or TX disabled"). Text messages and packet data aren't
+The channel transmits with the key you select and plays calls made with any key of its system: the radio picks the
+key by the key ID the call carries. A call with a key ID the system doesn't have shows as "Encrypted: not played".
+A channel holds up to four keys of its system (the one you select always among them); on a system with more, the
+others aren't heard on that channel. A protected channel without its key refuses PTT ("AES key or TX disabled"),
+but still plays the system's other keys. Text messages and packet data aren't
 sent on these channels yet ("Encrypted channels can't send text"), and your GPS position is not sent on them. Radio
 check, call alert and emergency alarms work as on any DMR channel. The editor's image export omits key bytes by
 default. Including keys produces a file that contains the keys.
+
+To change to a new key without a flag day: add the new key to the system with a new key ID beside the old one and
+write it to every radio. Then move each radio's channel to the new key, in any order: radios still on the old key
+and radios on the new one hear each other throughout. When every radio sends on the new key, remove the old one.
 
 For a couple of seconds after power-up, PTT on an AES channel shows "AES: saving, try again": the radio first saves
 where its encryption sequence stands, so it never reuses one after a restart. Press PTT again.

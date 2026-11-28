@@ -1962,6 +1962,52 @@ static void hear_call(bool group, uint32_t dst, uint32_t src, uint8_t cc, int su
 	}
 }
 
+#if CONFIG_DMR_AES
+// A call heard with a PI header (the DMRA layout: algorithm, 0x10, key ID, MI, 3 octets) on channel 4's TG: the
+// voice bursts the call stack didn't play for want of a key
+static uint32_t hear_pi_call(uint32_t src, uint8_t key_id, uint32_t mi)
+{
+	dmr_call_stats_t st;
+	uint8_t lc[9];
+	dmr_lc_t l = { .flco = DMR_FLCO_GROUP_VOICE, .fid = 0x10, .svc = DMR_SVC_PRIVACY, .dst = 201, .src = src };
+	uint8_t info[10] = { 0x25, 0x10, key_id, (uint8_t)(mi >> 24), (uint8_t)(mi >> 16), (uint8_t)(mi >> 8),
+			     (uint8_t)mi };
+	dmr_burst_t b;
+
+	dmr_call_get_stats(&st);
+	uint32_t dropped = st.rx_enc_dropped;
+
+	dmr_lc_pack(&l, lc);
+	for (int h = 0; h < 3; h++) {
+		burst_lc(lc, 2, false);
+		run(60);
+	}
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_PI_HEADER;
+	b.sync = DMR_SYNC_MS;
+	b.cc = 2;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.len = 12;
+	memcpy(b.payload, info, 10);
+	uint16_t crc = (uint16_t)(dmr_crc_ccitt(info, 10) ^ DMR_CRC_MASK_PI);
+	b.payload[10] = (uint8_t)(crc >> 8);
+	b.payload[11] = (uint8_t)crc;
+	sim_rx(&b);
+	run(60);
+	for (int sf = 0; sf < 2; sf++) {
+		for (int i = 0; i < 6; i++) {
+			burst_voice((uint8_t)i, 2, i == 5 ? lc : NULL);
+			run(60);
+		}
+	}
+	burst_lc(lc, 2, true);
+	run(1000);
+	dmr_call_get_stats(&st);
+	return st.rx_enc_dropped - dropped;
+}
+#endif
+
 static void dmr_start(bool codec)
 {
 	setup_codeplug();
@@ -3662,7 +3708,29 @@ static void test_dmr_voice_features(void)
 			mi4 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
 			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
 	CHECK(mi4 == res1 && mi4 != mi3);
+	// Every key of the channel's system plays (#1086): its TX key 0 and key 6, chosen by the PI header's key ID.
+	// Key 7 of another system and key 9 of none don't; our overs keep key 0
+	uint8_t traffic6[CODEPLUG_TRAFFIC_HDR + 32] = { 2, 0x25, 6, 0, 0, 6, 6, 6 };
+	uint8_t traffic7[CODEPLUG_TRAFFIC_HDR + 32] = { 3, 0x25, 7, 0, 0, 7, 7, 7 };
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC + 1, traffic6, sizeof traffic6);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC + 2, traffic7, sizeof traffic7);
+	reload_channel();
+	CHECK(hear_pi_call(9994001, 0, 0x11111111u) == 0);
+	CHECK(hear_pi_call(9994002, 6, 0x22222222u) == 0);
+	CHECK(hear_pi_call(9994003, 7, 0x33333333u) == 12);
+	CHECK(hear_pi_call(9994004, 9, 0x44444444u) == 12);
+	first = sim.air_count;
+	tx_once();
+	pi = false;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			pi = sim.air[i].payload[0] == 0x25 && sim.air[i].payload[2] == 0;
+	CHECK(pi);
+	// Without its TX key the channel still hears the system's others, and refuses PTT
 	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic - 1);
+	reload_channel();
+	CHECK(hear_pi_call(9994005, 6, 0x55555555u) == 0);
+	CHECK(hear_pi_call(9994006, 0, 0x66666666u) == 12);
 	run(50);
 	first = sim.air_count;
 	req(RREQ_PTT, 1);
