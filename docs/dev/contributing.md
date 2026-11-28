@@ -62,6 +62,15 @@ subject: `<Area>: <what changed>`, in the present tense, no trailing period.
   the tests. A change the host tests can't reach (a register write, a board's wiring) says so, covers the logic
   around it with a host test, and adds a HIL test when one can be scripted. Pull requests that change only
   documentation are the only exception.
+- **Size impact.** CI builds every radio's default and maximal configuration and adds a table of the flash and RAM
+  change against `main` to the firmware job's summary (`docs/dev/ci.md`). That table is the one source for the
+  numbers: check it before asking for review. When a radio's default build grows by more than 1 KB of flash or
+  256 bytes of RAM, the description says why and where the bytes go, and names the `CONFIG_` switch that removes them
+  (rule 5 in `AGENTS.md`). Keep both as small as the change allows; RAM is the tighter limit on most radios. For a
+  local look before pushing, compare the link's `Memory region` lines for the radio you tested on with those of
+  `main`. Don't use `size` on the `.elf`: on the HR_C7000 radios it leaves out `.ramfunc` and `.ram_lo` and counts
+  `.modem_bss`, a separate region, so its RAM figure is several KB off. Pull requests that change no firmware have
+  no table to check.
 - `JOBS=8 tools/ci.sh` ending with "all checks passed".
 - One topic. Split unrelated changes into separate pull requests.
 - The filled-in template (`.github/PULL_REQUEST_TEMPLATE.md`).

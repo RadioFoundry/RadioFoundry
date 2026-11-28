@@ -13,6 +13,12 @@ DM-32UV, DM-1701, DM-1801 Pro, DB25-D PRO, MD-380, MD-UV380, MD-9600, RT10
 end generated
 -->
 
+## Size
+
+<!-- CI's firmware job puts the flash and RAM change against main in its summary (contributing.md, "Size impact").
+If a radio's default build grows by more than 1 KB of flash or 256 bytes of RAM, say why and which CONFIG_ switch
+removes it. Otherwise delete this section. -->
+
 ## Testing
 
 | Check | Result |
@@ -38,6 +44,7 @@ end generated
 - [ ] SPDX header on every new file.
 - [ ] `core/` stays radio independent: no board headers, no radio defines.
 - [ ] Code that costs flash is behind a `CONFIG_` switch, and the build is clean with it off.
+- [ ] CI's size table checked; growth over 1 KB of flash or 256 bytes of RAM on a radio is explained above.
 - [ ] Zero warnings in every configuration `tools/ci.sh` builds.
 - [ ] A behavior change updates its spec in `docs/spec/`; if users see it, `docs/user/` too.
 - [ ] A UI change regenerates the gallery and commits only the PNGs it meant to change.
