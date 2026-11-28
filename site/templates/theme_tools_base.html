@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
+<html lang="{{ lang }}" dir="{{ dir }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<meta name="description" content="{{ description }}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Theme Tools">
+<meta property="og:title" content="{{ title }}">
+<meta property="og:description" content="{{ description }}">
+<link rel="stylesheet" href="{{root}}static/css/tokens.css?v={{ assets }}">
+<link rel="stylesheet" href="{{root}}static/css/site.css?v={{ assets }}">
+{{{ styles }}}
+</head>
+<body class="page-theme-tools" data-root="{{root}}">
+<a class="skip" href="#main">{{t nav.skip}}</a>
+<header class="theme-tools-header">
+	<div class="wrap theme-tools-header-inner">
+		<a class="theme-tools-title" href="{{home}}tools/themes/index.html">{{t tools.theme_pack.tools_nav}}</a>
+		<nav class="theme-tools-nav" aria-label="{{t tools.theme_pack.tools_nav}}">
+			<a href="{{home}}tools/themes/index.html">{{t tools.theme_pack.title}}</a>
+			<a href="{{root}}tools/themes/builder.html">{{t tools.theme_pack.builder_nav}}</a>
+		</nav>
+	</div>
+</header>
+<main id="main">
+{{{ content }}}
+</main>
+{{{ scripts }}}
+</body>
+</html>

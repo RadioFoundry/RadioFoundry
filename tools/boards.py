@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 RadioFoundry Theme Pack contributors
 """The board registry: one place for every fact about a radio that isn't the build itself (issue #106).
 
 Sources, each fact in one of them:
@@ -80,12 +81,13 @@ ORIGINAL_VERSION_READS = ("dfu-info",)
 RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' view, generated and committed
 # hal_flash_map_t fields (hal/hal_flash.h). The site reads the open-firmware image's data flash address, the end of the
 # room for it and the DMR ID database, and the TFTP staging area (the codeplug editor); the check reads every area, to
-# keep a stub write test out of them. Satellite map expressions are checked conservatively for the feature-on layout.
+# keep a stub write test out of them. Satellite and theme-pack map expressions are checked conservatively for the
+# feature-on layout.
 # The open-firmware flash image follows the EEPROM image at a fixed offset
 # (docs/spec/cps-fast.md)
 FLASH_MAP_FIELDS = ("settings_addr", "settings_size", "journal_addr", "openfw_eeprom", "openfw_flash", "openfw_end",
                     "calibration_addr", "calibration_size", "native_addr", "native_size", "staging_addr", "staging_size",
-                    "satellite_addr", "satellite_size")
+                    "satellite_addr", "satellite_size", "theme_pack_addr", "theme_pack_size")
 OPENFW_FLASH_OFFSET = 0x20000
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
@@ -791,7 +793,8 @@ class Board:
                             ("calibration", m.get("calibration_addr", 0), m.get("calibration_size", 0)),
                             ("native codeplug", m.get("native_addr", 0), m.get("native_size", 0)),
                             ("staging", m.get("staging_addr", 0), m.get("staging_size", 0)),
-                            ("satellite data", m.get("satellite_addr", 0), m.get("satellite_size", 0))):
+                            ("satellite data", m.get("satellite_addr", 0), m.get("satellite_size", 0)),
+                            ("theme pack", m.get("theme_pack_addr", 0), m.get("theme_pack_size", 0))):
             if n > 0:
                 out.append((lo, lo + n, name))
         return out

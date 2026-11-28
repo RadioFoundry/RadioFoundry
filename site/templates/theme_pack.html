@@ -1,0 +1,21 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
+<section class="wrap section page-head">
+	<h1>{{t tools.theme_pack.title}}</h1>
+	<p class="lead">{{t tools.theme_pack.text}}</p>
+	<p><a class="btn btn-secondary" href="{{root}}tools/themes/builder.html">{{t tools.theme_pack.builder_link}}</a></p>
+</section>
+<section class="wrap section satellite-tle">
+	<div class="tle-source-actions">
+		<label class="btn tle-browse">
+			{{t tools.theme_pack.choose}}
+			<input type="file" id="theme-pack-file" accept=".rftheme,application/octet-stream">
+		</label>
+	</div>
+	<div class="tle-submit-actions">
+		<button class="btn" type="button" id="theme-pack-install" disabled>{{t tools.theme_pack.install}}</button>
+		<button class="btn btn-secondary" type="button" id="theme-pack-remove">{{t tools.theme_pack.remove}}</button>
+	</div>
+	<p id="theme-pack-status" class="small muted" role="status" aria-live="polite">{{t tools.theme_pack.status.pick}}</p>
+</section>

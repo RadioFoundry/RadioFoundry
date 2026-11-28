@@ -1,4 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
 
 # RadioFoundry User Manual
 
@@ -43,6 +45,7 @@ The chapters below name the command line tools as alternatives.
 ### Reference
 
 17. [Settings](17-settings.md): every setting, its default and status
+19. [Theme packs](theme-packs.md): create, save, build, and install palettes
 20. [Troubleshooting](20-troubleshooting.md)
 21. [FAQ](21-faq.md)
 22. [Glossary](22-glossary.md)

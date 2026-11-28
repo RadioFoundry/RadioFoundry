@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 //
 // The open-firmware CPS protocol engine
 // (cps_openfw.h). Requests are assembled from the byte stream: the host link sees no USB packet boundaries, so a
@@ -355,7 +356,10 @@ static bool writable(uint32_t addr, bool *cal)
 	}
 	if (overlaps(addr, STORAGE_SECTOR, m->settings_addr, m->settings_size) ||
 	    overlaps(addr, STORAGE_SECTOR, m->journal_addr, 2u * STORAGE_SECTOR) ||
-	    overlaps(addr, STORAGE_SECTOR, m->native_addr, m->native_size)) {
+	    overlaps(addr, STORAGE_SECTOR, m->native_addr, m->native_size) ||
+	    overlaps(addr, STORAGE_SECTOR, m->staging_addr, m->staging_size) ||
+	    overlaps(addr, STORAGE_SECTOR, m->satellite_addr, m->satellite_size) ||
+	    overlaps(addr, STORAGE_SECTOR, m->theme_pack_addr, m->theme_pack_size)) {
 		return false;
 	}
 	if (m->calibration_size != 0 && overlaps(addr, STORAGE_SECTOR, m->calibration_addr, m->calibration_size)) {

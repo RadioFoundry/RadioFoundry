@@ -1505,6 +1505,20 @@ run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
 TESTS   += satelliteStoreTest
 SAT_STORE := $(CORE)/debuglink/debuglink_satellite.c $(CORE)/satellite/store.c $(CORE)/satellite/orbit.c \
 	$(CORE)/satellite/frequency.c $(CORE)/storage/storage.c sim/sim_flash.c
+TESTS   += themePackTest
+THEME_PACK := $(CORE)/debuglink/debuglink_theme_pack.c $(CORE)/ui/theme_pack.c $(CORE)/storage/storage.c sim/sim_flash.c
+
+# Theme-pack binary validation, bounded DebugLink transfer, and the dedicated flash area (core/ui/theme_pack.c)
+themePackTest: themePackTest.c $(THEME_PACK) $(wildcard $(CORE)/debuglink/*.h $(CORE)/ui/*.h $(CORE)/storage/*.h) \
+		$(ROOT)/hal/board.h $(ROOT)/hal/hal_flash.h sim/sim_flash.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_THEME_PACKS=1 -DCONFIG_DEBUGLINK=1 -DCONFIG_HOSTLINK=1 \
+		-DCONFIG_UI_COLOR=1 -o $@ themePackTest.c $(THEME_PACK)
+
+run: run-theme-packs
+run-theme-packs: themePackTest
+	./themePackTest
+.PHONY: run-theme-packs
+
 TESTS   += satelliteChannelsTest
 TESTS   += satelliteOrbitTest
 TESTS   += satelliteServiceTest

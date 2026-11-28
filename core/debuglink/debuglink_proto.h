@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // The debug link's commands and their operations (docs/spec/debuglink.md 3). The framing, the reply status and the
 // commands the stub entry shares (PING, VERSION, STUB) are in dl_frame.h.
 #ifndef DEBUGLINK_PROTO_H
@@ -42,7 +43,12 @@ enum {
 	DL_CMD_SATELLITE	= 0x26,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE, 3.30)
 	DL_CMD_DETOUR		= 0x27,	// temporary settings a deadline reverts (CONFIG_DEBUGLINK_DMRIP; dl_dmrip.h, 7.4)
 	DL_CMD_DMRIP		= 0x28,	// the debug link over the air: status, key (CONFIG_DEBUGLINK_DMRIP; 7.5)
+	DL_CMD_THEME_PACK	= 0x29,	// data-only UI theme pack transfer (debuglink_theme_pack.c, CONFIG_THEME_PACKS)
 };
+
+// DL_CMD_THEME_PACK operations (first payload byte; docs/spec/theme-packs.md). Transfer data uses sequential offsets.
+enum { DL_THEME_PACK_INFO = 0, DL_THEME_PACK_BEGIN = 1, DL_THEME_PACK_DATA = 2, DL_THEME_PACK_COMMIT = 3,
+	DL_THEME_PACK_REMOVE = 4 };
 
 // DL_CMD_DMRIP operations (first payload byte; docs/spec/debuglink.md 7.5)
 #define DL_DMRIP_OP_STATUS	0u	// -> port u16, key source u8 (0 none, 1 chip UID, 2 set), counters ( 7.5)

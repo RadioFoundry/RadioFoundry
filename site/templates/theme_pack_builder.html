@@ -1,0 +1,101 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
+<section class="wrap section page-head builder-head">
+	<p class="eyebrow"><a href="{{root}}tools/themes/index.html">Theme Packs</a></p>
+	<h1>Theme Pack Builder</h1>
+	<p class="lead">Choose colors for 18 fields, preview your theme, and build packs of up to 10.</p>
+</section>
+
+<section class="wrap section builder-page" id="theme-builder" data-presets="{{root}}data/theme-pack-presets.json?v={{assets}}" data-radios="{{root}}data/radios.json?v={{assets}}" data-radio-root="{{root}}" data-assets="{{assets}}" aria-label="Theme designer">
+	<div class="builder-grid">
+		<section class="builder-card" aria-labelledby="editor-title">
+			<form id="theme-editor" novalidate>
+				<h2 id="editor-title">Create or edit a theme</h2>
+				<div class="editor-toolbar">
+					<div class="editor-name">
+						<label class="pack-name-label" for="theme-name">Theme name <span class="muted">(up to 23 UTF-8 bytes)</span></label>
+						<input id="theme-name" name="theme-name" type="text" maxlength="23" autocomplete="off" required>
+					</div>
+					<div class="editor-actions">
+						<button class="btn" type="submit" id="save-theme">Save theme</button>
+						<button class="btn btn-secondary" type="button" id="new-theme">New theme</button>
+					</div>
+				</div>
+				<p class="small muted">Names are shown in Settings &gt; Display. Use short names so they fit on the radio.</p>
+				<fieldset class="color-fields">
+					<legend>Palette colors</legend>
+					<div id="color-fields-grid" class="color-fields-grid"></div>
+				</fieldset>
+			</form>
+		</section>
+
+		<aside class="builder-preview-column" aria-label="Live theme preview">
+			<section class="builder-card" aria-labelledby="preview-title">
+				<div class="preview-heading">
+					<h2 id="preview-title">Live preview</h2>
+				</div>
+				<div class="preview-controls">
+					<label class="preview-model-control" for="radio-model">
+						<span>Radio model</span>
+						<select id="radio-model" aria-describedby="radio-preview-detail"><option>Loading supported radios…</option></select>
+					</label>
+					<label class="preview-model-control" for="radio-screen-select">
+						<span>Firmware screen</span>
+						<select id="radio-screen-select" aria-describedby="radio-preview-detail" disabled><option>Loading screens…</option></select>
+					</label>
+					<label class="preview-zoom-control" for="preview-zoom">
+						<span>Zoom</span>
+						<input id="preview-zoom" type="range" min="1" max="1.8" step="0.1" value="1.3" aria-label="Radio screen zoom">
+						<output id="preview-zoom-value" for="preview-zoom">130%</output>
+					</label>
+				</div>
+				<p class="radio-preview-detail small muted" id="radio-preview-detail">Loading firmware screen captures…</p>
+				<div id="theme-preview" class="radio-preview" role="img" aria-label="Radio with its firmware display preview">
+					<div class="radio-preview-canvas" id="radio-preview-canvas">
+						<img class="radio-preview-image" id="radio-preview-image" src="" alt="" aria-hidden="true" decoding="async">
+						<canvas class="radio-screen-image" id="radio-screen" aria-hidden="true"></canvas>
+					</div>
+				</div>
+				<p class="radio-preview-note small muted">Each preview uses a screen captured from RadioFoundry’s firmware UI simulator at that model’s display geometry, placed over its radio image. The DM-32UV uses the zoomed reference image so its display fills more of the preview. The model list includes radios with color displays and color theme support.</p>
+			</section>
+		</aside>
+	</div>
+
+	<div class="builder-tools">
+		<section class="builder-card" aria-labelledby="library-title">
+			<div class="library-heading">
+				<div><h2 id="library-title">Theme library</h2></div>
+				<div>
+					<button class="btn btn-secondary" type="button" id="import-json-button">Import theme JSON</button>
+					<input type="file" id="import-json-file" accept="application/json,.json" hidden>
+				</div>
+			</div>
+			<p class="muted">The library contains the four built-in themes. Your saved themes stay in this browser. Built-in themes are already on the radio and do not need to be packed.</p>
+			<div id="theme-library" class="theme-library" aria-live="polite">
+				<p class="muted">Loading the included palettes…</p>
+			</div>
+		</section>
+
+		<section class="builder-card pack-card" aria-labelledby="pack-title">
+			<div class="pack-heading">
+				<div><h2 id="pack-title">Your pack</h2><p id="pack-count" class="small muted">0 of 10 themes</p></div>
+				<button class="btn btn-secondary" type="button" id="clear-pack">Clear pack</button>
+			</div>
+			<label for="pack-name">Download file name</label>
+			<input id="pack-name" type="text" value="my-theme-pack" maxlength="48" autocomplete="off">
+			<ol id="pack-list" class="pack-list"><li class="muted">Add themes from the library.</li></ol>
+			<p id="builder-status" class="notice info" role="status" aria-live="polite">Choose a preset or make a theme, then add it to your pack.</p>
+			<div class="pack-actions">
+				<button class="btn" type="button" id="download-rftheme" disabled>Download radio pack (.rftheme)</button>
+				<button class="btn btn-secondary" type="button" id="download-json" disabled>Download editable JSON</button>
+			</div>
+			<div class="upload-next">
+				<h3>Next: install your pack</h3>
+				<p>Download the <code>.rftheme</code> file, open the uploader, and choose that file there.</p>
+				<a class="btn btn-secondary" href="{{root}}tools/themes/index.html">Open theme pack uploader</a>
+				<p class="small muted">The uploader transfers theme data to the radio; it does not flash firmware.</p>
+			</div>
+		</section>
+	</div>
+</section>

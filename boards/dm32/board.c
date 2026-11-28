@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 RadioFoundry Theme Pack contributors
 // Baofeng DM-32UV: board descriptor, IO mux and reset-time pin levels, key map
 #include "board.h"
 #include "config.h"
@@ -249,6 +250,8 @@ static const hal_flash_map_t flash_map = {
 	.calibration_size = 0,
 	.native_addr = 0xF00000u,
 	.native_size = 0x100000u,
+	.theme_pack_addr = CONFIG_THEME_PACKS ? 0x71D000u : 0u,	// satellite TLE uses this sector otherwise
+	.theme_pack_size = CONFIG_THEME_PACKS ? 0x001000u : 0u,
 };
 static const hrc_flash_cfg_t flash_cfg = {
 	.cs_pin = PIN_FLASH_CS,

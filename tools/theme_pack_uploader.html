@@ -1,0 +1,39 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 RadioFoundry Theme Pack contributors -->
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="light dark">
+	<title>Theme Pack Uploader</title>
+	<link rel="stylesheet" href="../../site/static/css/tokens.css">
+	<link rel="stylesheet" href="../../site/static/css/site.css">
+	<link rel="stylesheet" href="../../site/static/css/theme-pack-pages.css">
+</head>
+<body>
+<header class="theme-tools-header">
+	<div class="wrap theme-tools-header-inner">
+		<a class="theme-tools-title" href="../../tools/theme_pack_builder.html">Theme Tools</a>
+		<nav class="theme-tools-nav" aria-label="Theme tools">
+			<a href="uploader.html">Uploader</a>
+			<a href="../../tools/theme_pack_builder.html">Builder</a>
+		</nav>
+	</div>
+</header>
+<main class="wrap section">
+	<h1>Theme Pack Uploader</h1>
+	<p class="lead">Install a theme pack separately from firmware. After installation, restart the radio and choose a theme in Settings &gt; Display.</p>
+	<p><label class="btn tle-browse">Choose a .rftheme file <input type="file" id="theme-pack-file" accept=".rftheme,application/octet-stream"></label></p>
+	<p>
+		<button class="btn" type="button" id="theme-pack-install" disabled>Install theme pack</button>
+		<button class="btn btn-secondary" type="button" id="theme-pack-remove">Remove installed pack</button>
+	</p>
+	<p id="theme-pack-status" class="small muted" role="status" aria-live="polite">Choose a compiled .rftheme file.</p>
+	<p>Installing or removing a pack updates only the dedicated theme-pack storage area.</p>
+</main>
+<script type="application/json" id="i18n">{"tools.theme_pack.status.invalid":"This is not a valid version 1 theme pack.","tools.theme_pack.status.unsupported":"This radio firmware does not support theme packs.","tools.theme_pack.status.no_serial":"This browser does not support USB serial. Use Chrome or Edge.","tools.theme_pack.status.radio_not_found":"That port did not respond as a compatible radio. Check the radio and cable, then try again.","tools.theme_pack.status.connecting":"Choose and connect the radio over USB/serial…","tools.theme_pack.status.writing":"Writing theme pack to its dedicated flash area…","tools.theme_pack.status.verifying":"Reading back and validating the installed pack…","tools.theme_pack.status.done":"Installed {count} theme(s). Restart the radio, then choose one in Settings > Display.","tools.theme_pack.status.removed":"Removed the theme pack. Restart the radio to use the built-in themes.","tools.theme_pack.status.failed":"Theme pack update failed: {error}","tools.theme_pack.status.port_error":"The browser could not access the radio port. Check the connection, close other serial apps or tabs, and try again.","tools.theme_pack.status.verify_failed":"The radio did not report the installed theme count.","tools.theme_pack.status.ready":"Validated pack with {count} theme(s)."}</script>
+<script type="module" src="../../site/static/js/theme-pack-tool.js"></script>
+</body>
+</html>

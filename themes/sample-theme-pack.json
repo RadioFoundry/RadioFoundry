@@ -1,0 +1,31 @@
+{
+  "_spdx": "SPDX-License-Identifier: MIT",
+  "_copyright": "Copyright (c) 2026 The RadioFoundry Authors; Copyright (c) 2026 RadioFoundry Theme Pack contributors",
+  "format": "rfoundry-theme-pack",
+  "version": 1,
+  "themes": [
+    {
+      "name": "Dark",
+      "colors": {
+        "bg": "#000000",
+        "fg": "#FFFFFF",
+        "dim": "#A8A8A8",
+        "line": "#484848",
+        "tx": "#E02020",
+        "rx": "#28B848",
+        "warn": "#F0A800",
+        "idle": "#606060",
+        "pill_fg": "#FFFFFF",
+        "pill_dark_fg": "#000000",
+        "focus": "#2060C8",
+        "hint_bg": "#202020",
+        "priv": "#408CFF",
+        "idle_fg": "#FFFFFF",
+        "focus_fg": "#FFFFFF",
+        "chnum": "#A8A8A8",
+        "strip_bg": "#D8D8D8",
+        "strip_warn": "#884400"
+      }
+    }
+  ]
+}

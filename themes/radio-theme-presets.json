@@ -1,0 +1,48 @@
+{
+  "_spdx": "SPDX-License-Identifier: MIT",
+  "_copyright": "Copyright (c) 2026 The RadioFoundry Authors; Copyright (c) 2026 RadioFoundry Theme Pack contributors",
+  "format": "rfoundry-theme-pack",
+  "version": 1,
+  "themes": [
+    {
+      "name": "Dark",
+      "colors": {
+        "bg": "#000000", "fg": "#FFFFFF", "dim": "#A8A8A8", "line": "#484848",
+        "tx": "#E02020", "rx": "#28B848", "warn": "#F0A800", "idle": "#606060",
+        "pill_fg": "#FFFFFF", "pill_dark_fg": "#000000", "focus": "#2060C8", "hint_bg": "#202020",
+        "priv": "#408CFF", "idle_fg": "#FFFFFF", "focus_fg": "#FFFFFF", "chnum": "#A8A8A8",
+        "strip_bg": "#D8D8D8", "strip_warn": "#884400"
+      }
+    },
+    {
+      "name": "Light",
+      "colors": {
+        "bg": "#FFFFFF", "fg": "#000000", "dim": "#585858", "line": "#B0B0B0",
+        "tx": "#C80000", "rx": "#008828", "warn": "#B06000", "idle": "#808080",
+        "pill_fg": "#FFFFFF", "pill_dark_fg": "#000000", "focus": "#4080E8", "hint_bg": "#E0E0E0",
+        "priv": "#0048C8", "idle_fg": "#FFFFFF", "focus_fg": "#000000", "chnum": "#585858",
+        "strip_bg": "#D8D8D8", "strip_warn": "#884400"
+      }
+    },
+    {
+      "name": "High contrast",
+      "colors": {
+        "bg": "#000000", "fg": "#FFFFFF", "dim": "#FFFFFF", "line": "#FFFFFF",
+        "tx": "#FF0000", "rx": "#00FF00", "warn": "#FFFF00", "idle": "#FFFFFF",
+        "pill_fg": "#FFFFFF", "pill_dark_fg": "#000000", "focus": "#0000FF", "hint_bg": "#000000",
+        "priv": "#00FFFF", "idle_fg": "#FFFFFF", "focus_fg": "#FFFFFF", "chnum": "#FFFFFF",
+        "strip_bg": "#FFFFFF", "strip_warn": "#884400"
+      }
+    },
+    {
+      "name": "Night (red)",
+      "colors": {
+        "bg": "#000000", "fg": "#FF0000", "dim": "#B00000", "line": "#700000",
+        "tx": "#FF0000", "rx": "#B00000", "warn": "#FF0000", "idle": "#380000",
+        "pill_fg": "#000000", "pill_dark_fg": "#000000", "focus": "#FF0000", "hint_bg": "#380000",
+        "priv": "#B00000", "idle_fg": "#FF0000", "focus_fg": "#000000", "chnum": "#FF0000",
+        "strip_bg": "#FF0000", "strip_warn": "#000000"
+      }
+    }
+  ]
+}
