@@ -381,10 +381,19 @@ for that reason.
 
 The top level follows each radio's own top row. The factory rows differ between radios, so its bound sits well past any
 row seen: the top level stops at 3500 counts. The output is flat long before that (2250 gave 47.1 W), so a radio clamped
-there still makes its top level. A row byte of 0xFF or 0x00 is no value, and a radio whose rows give levels that don't
-rise transmits on no level. RadioFoundry refuses TX without an accepted table. The debug link's `tx_drive` view key
-shows each level's drive. RADIO op 36 sets one transmission's drive ([debuglink.md](debuglink.md)) to any value the DAC
-can give, up to its full scale (4095), past the top level's bound.
+there still makes its top level. A row byte of 0xFF or 0x00 is no value.
+
+The rows are judged where they are used, level by level:
+
+| Level | Refused when |
+|---|---|
+| 0-2 (fixed drives) | the band has no front-end tuning row (no factory calibration for the band) |
+| 3 (25 W) | either row it lies between has no value at one of the two points around the frequency, or it comes out at or under level 2's drive |
+| 4 (top) | the top row has no value at one of the two points around the frequency, or it comes out at or under the highest level below it that transmits |
+
+A bad point elsewhere in the band, or rows that don't rise with the level, refuse nothing by themselves. The debug
+link's `tx_drive` view key shows each level's drive (0 where refused). RADIO op 36 sets one transmission's drive
+([debuglink.md](debuglink.md)) to any value the DAC can give, up to its full scale (4095), past the top level's bound.
 
 ### 5.7 RSSI, noise, squelch
 
@@ -862,7 +871,7 @@ the original firmware sounds the same on this radio is not checked); UHF receive
 | Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`). A host audio session (`NET_USRP`) hears FM from PC3 and DMR from the stream, and transmits FM as PWM on PC8 into the HR_C6000's microphone input (19.9) |
 | GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. Settings > Location > GPS off stops USART1; PA9 stays on (it also powers the mic) |
 | Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
-| Transmit | FM and DMR on UHF and VHF, checked off air into a dummy load (19.8, 19.9; VHF 19.9.1). On in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); it still needs a confirmed revision (19.3) and plausible PA rows. Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
+| Transmit | FM and DMR on UHF and VHF, checked off air into a dummy load (19.8, 19.9; VHF 19.9.1). On in the build (`CONFIG_MD9600_TX`, `CONFIG_MD9600_DMR_TX`); it still needs a confirmed revision (19.3) and PA rows for the level at the frequency (5.6). Sub-audio: CTCSS and DCS from the PWM generator on PC7, with the DCS turn-off tail |
 | Not yet | Transmit power per level (a power meter), split duplex and the two-PLL burst switching (17 #17), the CPS's own command set, update packaging |
 
 ### 19.2 Clock plan and memory map
@@ -1022,7 +1031,7 @@ voltage is the generic `supply_mv` key instead (`hal_power_t.supply_mv`; the div
 | `keys` | the matrix, one hex digit per row K0-K3, bits 0-2 = columns K4-K6, 1 = pressed |
 | `ptt` | 1 while the hand-mic PTT is down |
 | `lo_hz`, `retunes`, `refused` | the synthesizer's last frequency, retunes and refused retunes |
-| `apc`, `cal.pa` | the APC DAC value of the last transmission; the calibrated PA drive per power level (5, 10, 25, 40 W labels) at the receive frequency as `a/b/c/d`, 0 where the calibration refuses it (19.8) |
+| `apc`, `cal.pa` | the APC DAC value of the last transmission; the factory PA rows (5, 10, 25, 40 W labels) at the receive frequency as `a/b/c/d`, each the row byte x 16, 0 where the row has no value at the two points around it (5.6, 19.8) |
 | `pin.power`, `pin.c5`, `pin.r5`, `pin.tx` | output levels: Power_Control; C5 UHF and VHF; R5 UHF and VHF; T5 UHF, T5 VHF and the PA loop enable (`000` in this build) |
 | `rev.ak2365` | the start-up AK2365A read test (19.3): `yes` (V1-V4), `no` (V4A / V5), `unknown` |
 | `adc.noise_u`, `adc.noise_v`, `adc.rssi_u`, `adc.rssi_v`, `adc.mic`, `adc.supply`, `adc.mic_row`, `adc.mic_col` | the ADC1 scan, raw 12-bit (10.3) |
@@ -1158,8 +1167,9 @@ Calibration as the RF code uses it (11.2, all unverified): front-end tuning, PA 
 0x1A0, 25 W 0x190, 40 W 0x10, VHF 9 bytes later), squelch level 1 and level 9 opening thresholds. DAC values and noise
 thresholds are the byte x 16. The noise reading maps linearly onto the core's squelch scale through the two
 thresholds: level 1's maps to 64, level 9's to 40. Without them it is the 12-bit reading / 16. RSSI uses the curves of
-5.7. The diagnostics page shows which row groups each band accepts ("calrf V RPS U RPS"), the sequencer state and
-the last refusal.
+5.7. The diagnostics page shows which row groups look plausible across each whole band ("calrf V RPS U RPS"), the
+sequencer state and the last refusal. A missing `P` means a PA row is blank or doesn't rise at some point of the
+band; the levels near a frequency still transmit unless 5.6 refuses them.
 
 ### 19.9 Other RF-side lines
 

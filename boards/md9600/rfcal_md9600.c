@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 calibration as the RF code uses it (md9600.h; docs/spec/hardware-md9600.md 11, 19.8): the PA drive per power
-// level and the squelch thresholds, on top of the row reader (cal_md9600.h). The layout is unverified, so a row group
-// counts only when it looks plausible: PA drive present at every point and rising with the level, squelch thresholds
-// present and level 1 apart from level 9. Anything else refuses transmit or leaves the noise reading unscaled.
+// level and the squelch thresholds, on top of the row reader (cal_md9600.h). The layout is unverified, so the squelch
+// rows count only when they look plausible: present and level 1 apart from level 9, else the noise reading stays
+// unscaled. The PA rows are judged where they are used: a power level is refused only when the rows it is built from
+// hold no value at the frequency, or it would drive no harder than the level below. A bad point elsewhere in the band,
+// or rows that don't fit the measured shape, once refused every level on the whole band (hardware-md9600.md 5.6).
 #include "md9600.h"
 
 // The factory PA rows, lowest first
@@ -97,7 +99,7 @@ static uint16_t x16(int32_t v)
 bool md9600_cal_pa_row(uint32_t hz, uint8_t row, uint16_t *dac)
 {
 	int32_t v;
-	if (row >= MD9600_FACTORY_PA_ROWS || !pa_ok(band_of_hz(hz)) || !md9600_cal_row(pa_row[row], hz, &v)) {
+	if (row >= MD9600_FACTORY_PA_ROWS || !md9600_cal_row_near(pa_row[row], hz, &v)) {
 		return false;
 	}
 	*dac = x16(v);
@@ -108,36 +110,51 @@ bool md9600_cal_apc(uint32_t hz, uint8_t power, uint16_t *dac)
 {
 	uint8_t band = band_of_hz(hz);
 	const pa_band_t *b = &pa_band[band];
-	uint16_t row[MD9600_FACTORY_PA_ROWS], lv[MD9600_POWER_LEVELS];
-	if (power >= MD9600_POWER_LEVELS) {
-		return false;
+	int32_t v;
+	if (power >= MD9600_POWER_LEVELS || !md9600_cal_row(MD9600_CAL_RX_TUNE, hz, &v)) {
+		return false;	// no factory block for this band: nothing says the radio was calibrated here
 	}
-	for (uint8_t r = 0; r < MD9600_FACTORY_PA_ROWS; r++) {
-		if (!md9600_cal_pa_row(hz, r, &row[r])) {
-			return false;
-		}
+	// The low levels are fixed drives (the output follows the absolute drive there): no PA row is read
+	uint16_t lv = b->low[power < 3u ? power : 2u];
+	if (power < 3u) {
+		*dac = lv;
+		return true;
 	}
-	for (uint8_t l = 0; l < 3u; l++) {
-		lv[l] = b->low[l];
-	}
-	uint8_t r = 0;	// 25 W between the two rows around it (row 0 below it on every radio measured)
+	// 25 W between the two rows around it (row 0 below it on every radio measured)
+	uint8_t r = 0;
 	while (r + 2u < MD9600_FACTORY_PA_ROWS && b->row_dw[r + 1u] < b->mid_dw) {
 		r++;
 	}
-	int32_t span = (int32_t)b->row_dw[r + 1u] - (int32_t)b->row_dw[r];
-	lv[3] = (uint16_t)(row[r] + ((int32_t)row[r + 1u] - row[r]) * ((int32_t)b->mid_dw - b->row_dw[r]) / span);
-	// The top level follows the radio's own top row (the rows differ between radios), up to the most drive we give the
-	// PA: the output is flat well before it (2250 gave 47.1 W), so a row past it gets the most and still transmits
-	uint32_t top = (uint32_t)row[MD9600_FACTORY_PA_ROWS - 1u] + b->top_step;
-	lv[4] = (uint16_t)(top > MD9600_APC_MAX ? MD9600_APC_MAX : top);
-	// A radio whose rows don't fit the measured shape (a level not over the one below) transmits on no level rather
-	// than on a wrong one
-	for (uint8_t l = 1; l < MD9600_POWER_LEVELS; l++) {
-		if (lv[l] <= lv[l - 1u]) {
-			return false;
+	uint16_t lo, hi;
+	bool mid_ok = md9600_cal_pa_row(hz, r, &lo) && md9600_cal_pa_row(hz, (uint8_t)(r + 1u), &hi);
+	if (mid_ok) {
+		int32_t span = (int32_t)b->row_dw[r + 1u] - (int32_t)b->row_dw[r];
+		uint16_t mid = (uint16_t)(lo + ((int32_t)hi - lo) * ((int32_t)b->mid_dw - b->row_dw[r]) / span);
+		mid_ok = mid > lv;	// 25 W under 5 W's drive: rows that don't fit the measured shape
+		if (mid_ok) {
+			lv = mid;
 		}
 	}
-	*dac = lv[power];
+	if (power == 3u) {
+		if (!mid_ok) {
+			return false;
+		}
+		*dac = lv;
+		return true;
+	}
+	// The top level follows the radio's own top row (the rows differ between radios), up to the most drive we give the
+	// PA: the output is flat well before it (2250 gave 47.1 W), so a row past it gets the most and still transmits. It
+	// must drive harder than the highest level under it that transmits
+	uint16_t top;
+	if (!md9600_cal_pa_row(hz, MD9600_FACTORY_PA_ROWS - 1u, &top)) {
+		return false;
+	}
+	uint32_t t = (uint32_t)top + b->top_step;
+	top = (uint16_t)(t > MD9600_APC_MAX ? MD9600_APC_MAX : t);
+	if (top <= lv) {
+		return false;
+	}
+	*dac = top;
 	return true;
 }
 

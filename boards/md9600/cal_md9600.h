@@ -46,6 +46,8 @@ typedef enum {
 
 // The row's value at hz; false when there is no calibration or the row is blank
 bool md9600_cal_row(md9600_cal_row_t row, uint32_t hz, int32_t *value);
+// The same, only when both points it is read between (the two nearest hz) hold a value: neither 0xFF nor 0x00
+bool md9600_cal_row_near(md9600_cal_row_t row, uint32_t hz, int32_t *value);
 // Front-end tuning as a 12-bit DAC value: the row x 16, clamped; mid scale (2048) without calibration
 uint16_t md9600_cal_rx_tune(uint32_t hz);
 // The reference oscillator tune of a band (the HR_C6000's MOD2 offset), the stored byte - 128
