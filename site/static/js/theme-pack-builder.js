@@ -17,6 +17,15 @@ const PREVIEW_SCREENS = [
 const PREVIEW_VARIANTS = [
 	["Dark", ""], ["Light", "__light"], ["High contrast", "__high_contrast"], ["Night (red)", "__night"],
 ];
+const PREVIEW_FRAME_OVERRIDES = {
+	dm32: {
+		image: "static/img/radio-preview.jpg",
+		geometry: {
+			aspect: 342 / 455,
+			screen_pct: { left: 25.7, top: 27.7, width: 48.5, height: 50.8 },
+		},
+	},
+};
 
 const FIELDS = [
 	["bg", "Screen background", "Main background behind menus and screens."],
@@ -439,13 +448,14 @@ async function renderRadioScreen() {
 
 function showRadioPreview(radio) {
 	activeRadio = radio;
-	const geometry = radio.frame_geometry;
+	const frame = PREVIEW_FRAME_OVERRIDES[radio.id];
+	const geometry = frame?.geometry || radio.frame_geometry;
 	activePreviewGeometry = geometry;
 	const screen = geometry.screen_pct;
 	const color = /\bcolor\b/i.test(radio.display) &&
 		(radio.config?.full ? radio.config.full.includes("UI_COLOR") : true);
 	const app = byId("theme-builder");
-	radioFrame.src = `${app.dataset.radioRoot}${radio.frame_image}?v=${encodeURIComponent(app.dataset.assets || "")}`;
+	radioFrame.src = `${app.dataset.radioRoot}${frame?.image || radio.frame_image}?v=${encodeURIComponent(app.dataset.assets || "")}`;
 	radioScreen.style.setProperty("--screen-left", `${screen.left}%`);
 	radioScreen.style.setProperty("--screen-top", `${screen.top}%`);
 	radioScreen.style.setProperty("--screen-width", `${screen.width}%`);
