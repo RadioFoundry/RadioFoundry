@@ -70,6 +70,12 @@
     "DMR"
    ]
   },
+  "home_dmr_heard_list": {
+   "group": "home",
+   "needs": [
+    "DMR"
+   ]
+  },
   "home_vfo": {
    "group": "home",
    "needs": [

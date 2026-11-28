@@ -1945,6 +1945,33 @@ static void t3_other_checks(void)
 }
 #endif
 
+// Home, DMR idle, at every display class: where the activity area has three lines or more it lists the stations heard,
+// newest first (Recent's entries); a smaller area has the last one only, as before. Three stations are heard; a
+// station heard again does not repeat
+static void heard_list_checks(void)
+{
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		bool ok = sim_run("call:9991234,91,g call:9995678,3100,g call:9992222,93,g wait:11000", err, sizeof err);
+		if (ok) {
+			bool list = ui_layout.activity_h / ui_layout.small->h >= 3;
+			// The sim's contacts: 9991234 is Joe, 9995678 Jodi, 9992222 Ann
+			ok = sim_run(list ? "expect:screen=home expect:shows=Ann expect:shows=Jodi expect:shows=Joe" :
+				     "expect:screen=home expect:shows=Ann expect:hides=Joe", err, sizeof err);
+		}
+		if (ok) {	// the first station again: still three rows, not four
+			ok = sim_run("call:9991234,91,g wait:11000", err, sizeof err);
+			if (ok && ui_layout.activity_h / ui_layout.small->h >= 3)
+				ok = sim_run("expect:shows=Joe expect:shows=Jodi expect:shows=Ann", err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL heard list on Home [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+
 // Tools > APRS > Stations heard, at every display class: a station with a position shows how far and which way it is
 // from ours, beside the longest call there is, kept whole. No position of ours, or none of the station's: the row is
 // the call and its age, as before.
@@ -2464,6 +2491,7 @@ int main(void)
 #if CONFIG_DMR_TRUNK
 	t3_other_checks();
 #endif
+	heard_list_checks();
 	heard_checks();
 	station_checks();
 	vfo_split_dmr_checks();

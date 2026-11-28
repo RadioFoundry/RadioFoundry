@@ -5,6 +5,7 @@
 #include <string.h>
 #include "board.h"
 #include "ui_screens.h"
+#include "ui_nav.h"		// the Recent entries, for the Home list of the last calls heard
 #include "fmt.h"
 #include "i18n.h"
 #include "ui_svc.h"
@@ -1945,8 +1946,67 @@ static void draw_t3_other(const radio_view_t *v, int y)
 }
 #endif
 
-// Activity on Home, DMR idle: the last call heard. Two lines where they fit (the caller, then where and when), else
-// one line where the caller's name gives way first: "Joe Smith" / "TG 91, 11s ago", or "Joe Smith  TG 91 11s ago"
+// Activity on Home with room for a list (three lines or more): the last stations heard, newest first, one line each
+// from the Recent screen's entries (calls we made are not listed): the name or ID on the left, where and when on the
+// right: "Joe Smith    TG 91 11s". The newest is in the text color, older ones dim, a call to us in the warning color.
+// Returns false when there is no room or nothing to list, and the caller draws the last call as before
+static bool draw_heard_list(const ui_state_t *s, int y)
+{
+	const font_t *sm = ui_layout.small;
+	int rows = ui_layout.activity_h / sm->h;
+	if (rows < 3)
+		return false;
+	int heard = 0;	// one station is not a list: the last call heard has its own look
+	for (uint8_t i = 0; i < ui_recent_count(); i++) {
+		const ui_recent_t *r = ui_recent_get(i);
+		heard += r != NULL && !r->out;
+	}
+	if (heard < 2)
+		return false;
+	int w = gfx_width();
+	int n = 0;
+	for (uint8_t i = 0; i < ui_recent_count() && n < rows; i++) {
+		const ui_recent_t *r = ui_recent_get(i);
+		if (r == NULL || r->out)
+			continue;
+		char who[CODEPLUG_NAME_LEN + 1], where[32], fit[48];
+		sbuf_t b;
+		sb_init(&b, who, sizeof who);
+		if (r->name[0] != '\0')
+			sb_str(&b, r->name);
+		else
+			sb_u32(&b, r->src, 1);
+		sb_init(&b, where, sizeof where);
+		if (r->group) {
+			sb_str(&b, "TG ");
+			sb_u32(&b, r->dst, 1);
+		} else {
+			sb_str(&b, r->to_us ? TR(CALL_VALUE_TO_YOU, "To you") : TR(VALUE_PRIVATE, "Private"));
+		}
+		sb_chr(&b, ' ');
+		sb_age(&b, s->now_ms - r->ms);
+		color_t c = r->to_us ? ui_col.warn : n == 0 ? ui_col.fg : ui_col.dim;
+		int ry = y + n * sm->h;
+		// The name comes first: where and when take what it leaves, in their shortest form ("TG 3100 14s", 11
+		// characters) at the least and with the name down to 6 characters at the most
+		int room = w - gfx_text_width(sm, who) - sm->w;
+		if (room < 11 * sm->w)
+			room = 11 * sm->w;
+		if (room > w - 7 * sm->w)
+			room = w - 7 * sm->w;
+		gfx_text_fit(sm, where, room, fit, sizeof fit);
+		int ww = gfx_text_width(sm, fit);
+		gfx_text(sm, w - ww, ry, fit, c);
+		gfx_text_fit(sm, who, w - ww - sm->w, fit, sizeof fit);
+		gfx_text(sm, 0, ry, fit, c);
+		n++;
+	}
+	return n > 0;
+}
+
+// Activity on Home, DMR idle: the last calls heard as a list where there is room, else the last call heard. Two lines
+// where they fit (the caller, then where and when), else one line where the caller's name gives way first:
+// "Joe Smith" / "TG 91, 11s ago", or "Joe Smith  TG 91 11s ago"
 static void draw_last_heard(const radio_view_t *v, const ui_state_t *s, int y)
 {
 	const font_t *sm = ui_layout.small;
@@ -1959,6 +2019,8 @@ static void draw_last_heard(const radio_view_t *v, const ui_state_t *s, int y)
 			ui_col.dim);	// centered
 		return;
 	}
+	if (draw_heard_list(s, y))
+		return;
 	sb_init(&b, who, sizeof who);
 	sb_caller(&b, &d->last);
 	sb_init(&b, where, sizeof where);

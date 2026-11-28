@@ -41,6 +41,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "stub_entry", "splash:loader" },	// while the flashing tools have the radio (web flasher)
 	{ "home_dmr", "" },
 	{ "home_dmr_lastheard", "call:9991234,91,g wait:11000" },
+	{ "home_dmr_heard_list", "call:9991234,91,g call:9995678,3100,g call:9992222,93,g wait:11000" },
 	{ "home_reply", "call:9991234,91,g" },
 	{ "home_fm", "down" },
 	{ "home_temporary", "down quick 1 2 up back" },

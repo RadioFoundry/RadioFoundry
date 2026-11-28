@@ -315,6 +315,7 @@
  "screen.contact_edit": "新建联系人",
  "screen.contact_edit_save": "保存新联系人",
  "screen.home_dmr_lastheard": "主页，DMR，最近通话记录",
+ "screen.home_dmr_heard_list": "主页，DMR，最近收到的电台列表",
  "screen.home_dmr": "主页，DMR 信道",
  "screen.home_fm": "主页，FM 信道",
  "screen.home_gps_off": "主屏幕，GPS 已关闭：信号格旁的空心卫星天线",

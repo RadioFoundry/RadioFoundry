@@ -315,6 +315,7 @@
  "screen.contact_edit": "A new contact",
  "screen.contact_edit_save": "Saving a new contact",
  "screen.home_dmr_lastheard": "Home, DMR, last heard",
+ "screen.home_dmr_heard_list": "Home, DMR, list of stations heard",
  "screen.home_dmr": "Home, DMR channel",
  "screen.home_fm": "Home, FM channel",
  "screen.home_gps_off": "Home, GPS off: a hollow dish by the signal bars",

@@ -39,7 +39,11 @@ to the pixel, the board paints the insets when that color changes, and captures 
 240x320i10x5 11, at 128x64 5; the 160 px class shows 5 of them while a wide language is in use, whose lines are 16 px
 high (2.5). The 240 px class keeps 6 px between rows and a separate title row;
 `uiSim --layout` fails a class whose row pitch drops below these. A narrow portrait panel (120x160) keeps the 128 px
-class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
+class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. Home's Activity region, DMR idle, lists the stations heard where it has
+three lines or more: Recent's entries newest first (calls we made are not listed), one line each, the name or ID on the
+left and where and when on the right ("TG 91 11s ago"; the name comes first, so a long one shortens the right side to
+"TG 3100 14s" before it is cut). The newest is in the text color, older ones dim, a call to us in the warning color; as
+many rows as the region has, up to the 12 Recent keeps. A smaller region shows the last caller on two lines
 (name, then "TG 91 11s ago") where it has the rows for them, else one line where the name gives way first; a single
 line ("No calls heard yet") is centered in the region. While a hardware option is pending (`board_hwopt_pending`: one
 the board asks for, or one waiting for a restart) the idle region says so first, in the warning color ("Set: Board
