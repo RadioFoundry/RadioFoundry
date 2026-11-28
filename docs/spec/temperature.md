@@ -8,6 +8,9 @@ in the battery pack, and every MCU's own. A board lists its sensors in `board_t.
 reads them on request (`core/app/temp.c`) for the debug link and SNMP. Which radios have which sensors:
 [feature-matrix.md](../feature-matrix.md) and each radio's hardware page.
 
+The readings are built with `CONFIG_TEMP` ([build-config.md](../build-config.md)), on for the radios whose board lists
+its sensors. Without it the `sensors` view shows `sensor.count=0` and the SNMP table has no rows.
+
 What a board does with a reading itself (running a fan, cutting the TX power back) stays in the board. The core only
 reports.
 

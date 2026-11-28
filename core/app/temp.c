@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include "temp.h"
 
+#if CONFIG_TEMP
+
 bool temp_curve_dc(const temp_point_t *curve, uint8_t len, uint16_t mv, int16_t *dc)
 {
 	if (curve == NULL || len == 0) {
@@ -58,3 +60,5 @@ bool temp_read(const hal_temp_t *t, uint8_t i, temp_reading_t *r)
 	}
 	return true;
 }
+
+#endif

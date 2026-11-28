@@ -4,6 +4,7 @@
 // docs/spec/RFOUNDRY-MIB.txt (the enterprise subtree).
 #include <stddef.h>
 #include <string.h>
+#include "config.h"
 #include "snmp/snmpMib.h"
 #include "dmr/dmrDataService.h"
 
@@ -46,8 +47,10 @@ enum {
 	DA_RX_PACKETS, DA_RX_FOR_US, DA_SMS_RX, DA_SMS_TX, DA_SMS_FAILED, DA_INBOX, DA_UNREAD, DA_ARS,
 	NT_USB, NT_TO_AIR, NT_PACKETS_UP,
 	AG_RF_MANAGER, AG_RF_GAP, AG_RF_ANSWERS, AG_RF_WRITE, AG_USB_TRAPS, AG_RF_CALL_TRAPS, AG_TRAPS_SENT, AG_TRAPS_DROPPED,
+#if CONFIG_TEMP
 	TP_KIND, TP_MV = TP_KIND + SNMP_TEMP_MAX, TP_DC = TP_MV + SNMP_TEMP_MAX, TP_END = TP_DC + SNMP_TEMP_MAX,
 	SE_FAN = TP_END,
+#endif
 	OBJECT_COUNT
 };
 
@@ -129,8 +132,10 @@ static const snmpObject_t objects[OBJECT_COUNT] = {
 	[AG_RF_CALL_TRAPS] = RFOUNDRY(7, 6, INT, W),
 	[AG_TRAPS_SENT] = RFOUNDRY(7, 7, CNT, R),
 	[AG_TRAPS_DROPPED] = RFOUNDRY(7, 8, CNT, R),
+#if CONFIG_TEMP
 	TEMP_COL(TP_KIND, 2), TEMP_COL(TP_MV, 3), TEMP_COL(TP_DC, 4),	// column 1 is the index (not-accessible)
 	[SE_FAN] = RFOUNDRY(9, 2, INT, R),
+#endif
 };
 
 // Where each value comes from: a kind and an offset (into snmpData_t, snmpStats_t, or a small constant)
@@ -205,6 +210,7 @@ static bool get(const snmpMib_t *mib, uint8_t id, snmpValue_t *v)
 	if ((kind & K_DMR) && (d->mode != 1)) {
 		return false;	// DMR only
 	}
+#if CONFIG_TEMP
 	if ((id >= TP_KIND) && (id < TP_END)) {
 		// A row per sensor; a sensor without a mV output or without a temperature now has no cell there
 		uint8_t row = (uint8_t)((id - TP_KIND) % SNMP_TEMP_MAX), col = (uint8_t)((id - TP_KIND) / SNMP_TEMP_MAX);
@@ -221,6 +227,7 @@ static bool get(const snmpMib_t *mib, uint8_t id, snmpValue_t *v)
 		v->num = d->fan;
 		return true;
 	}
+#endif
 	switch (kind & 0x7Fu) {
 	case K_CONST:
 		n = off;

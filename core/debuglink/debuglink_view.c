@@ -579,6 +579,9 @@ static void cps_section(dl_text_t *t)
 // 0.1 degree C, "-" where the board has none
 static void sensors_section(dl_text_t *t)
 {
+#if !CONFIG_TEMP
+	dl_text(t, "sensor.count=0\nfan.on=-\n");	// not read in this build
+#else
 	static const char *const kinds[] = { "?", "pa", "board", "mcu", "battery" };
 	const hal_temp_t *h = board.temp;
 	dl_text(t, "sensor.count=%u\n", h != NULL ? h->count : 0u);
@@ -601,6 +604,7 @@ static void sensors_section(dl_text_t *t)
 	} else {
 		dl_text(t, "fan.on=-\n");
 	}
+#endif
 }
 
 // The board's name and its own keys, each prefixed "board." (bring-up readings a HIL test checks; docs/spec/debuglink.md

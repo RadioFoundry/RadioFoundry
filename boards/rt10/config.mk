@@ -93,3 +93,4 @@ endif
 ifneq ($(RT10_DMR_MIC_DB),)
 MCU_DEFS += -DRT10_DMR_MIC_DB=$(RT10_DMR_MIC_DB)u
 endif
+BOARD_NOT_WRITTEN += TEMP	# the board lists no temperature sensors yet (board_t.temp)

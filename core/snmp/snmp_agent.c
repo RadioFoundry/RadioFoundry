@@ -150,6 +150,7 @@ static void fill(uint32_t now)
 	data.lastGroup = v->dmr.last.group;
 	data.lastMs = v->dmr.last_ms;
 	data.tempCount = 0;
+#if CONFIG_TEMP
 	for (uint8_t i = 0; i < SNMP_TEMP_MAX; i++) {
 		temp_reading_t r;
 
@@ -164,6 +165,9 @@ static void fill(uint32_t now)
 		data.tempCount = (uint8_t)(i + 1u);
 	}
 	data.fan = (board.temp == NULL || board.temp->fan_on == NULL) ? 0 : board.temp->fan_on() ? 1 : 2;
+#else
+	data.fan = 0;
+#endif
 
 	dmrDataStats_t ds;
 

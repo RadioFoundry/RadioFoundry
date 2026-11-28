@@ -6,6 +6,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "config.h"
 #include "hal_temp.h"
 
 typedef struct {
@@ -16,6 +17,7 @@ typedef struct {
 	int16_t dc;		// 0.1 degree C
 } temp_reading_t;
 
+// The readings are built with CONFIG_TEMP; without it a board's sensors aren't read
 // The temperature a curve gives for mv (hal_temp.h: linear between points, the end point's outside); false for a curve
 // of no points
 bool temp_curve_dc(const temp_point_t *curve, uint8_t len, uint16_t mv, int16_t *dc);

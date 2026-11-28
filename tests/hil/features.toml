@@ -235,6 +235,12 @@ hardware = "a Bluetooth module on a UART"
 spec = "docs/spec/radio-features.md"
 source = ["drivers/input/bt_at", "hal/hal_input.h"]
 
+[feature.temp]
+switch = "TEMP"
+hardware = "temperature sensors the board lists"
+spec = "docs/spec/temperature.md"
+source = ["core/app/temp.c", "hal/hal_temp.h"]
+
 [feature.gps]
 switch = "GPS"
 hardware = "a GPS receiver"
