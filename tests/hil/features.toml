@@ -600,6 +600,10 @@ switch = "AIR_RAW"
 spec = "docs/spec/debuglink.md"
 source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
 
+[feature.air_rx_adapt]
+switch = "AIR_RX_ADAPT"
+spec = "docs/spec/air-interface.md"
+source = ["core/air/air_softmodem.c"]
 [feature.debuglink_dmrip]
 switch = "DEBUGLINK_DMRIP"
 spec = "docs/spec/debuglink.md"

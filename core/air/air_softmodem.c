@@ -17,6 +17,9 @@
 
 #include "../dsp/fxp.h"
 #include "air_syms.h"
+#if CONFIG_AIR_RX_ADAPT
+#include "../radio/tones.h"
+#endif
 
 #define SPS		AIR_SOFTMODEM_SPS
 #define LINE		AIR_SOFTMODEM_LINE
@@ -93,6 +96,11 @@ static bool rate_ok(const air_profile_t *p, uint32_t rate_hz, uint16_t *step, ui
 	return true;
 }
 
+#if CONFIG_AIR_RX_ADAPT
+static void adapt_open(air_softmodem_t *m);
+static void adapt_reset(air_softmodem_adapt_t *a, bool tone);
+#endif
+
 uint32_t air_softmodem_rx_fit(const air_profile_t *p, const hal_baseband_t *bb)
 {
 	uint16_t step, den;
@@ -139,6 +147,10 @@ void air_softmodem_rx_reset(air_softmodem_t *m)
 	m->sync_wait = 0;
 	m->gap = true;
 	m->n = 0;
+#if CONFIG_AIR_RX_ADAPT
+	if (m->ad)
+		adapt_reset(m->ad, false);	// the tone is the channel's, not the signal's: it stays
+#endif
 }
 
 bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t rate_hz, uint16_t counts_per_khz,
@@ -197,9 +209,485 @@ bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t 
 				m->gate_mask[i] |= (uint16_t)(1u << j);
 		}
 	}
+#if CONFIG_AIR_RX_ADAPT
+	adapt_open(m);
+#endif
 	air_softmodem_rx_reset(m);
 	return true;
 }
+
+#if CONFIG_AIR_RX_ADAPT
+// ── The adaptive receive options (air-interface.md 6.1): only for a profile that asks, in memory its engine lends ──
+#define EQ_ONE		16384				// a tap of 1
+#define EQ_MID		(AIR_ADAPT_EQ_TAPS / 2)
+#define EQ_MU_SHIFT	6				// the step: 2^-6 of the normalized error
+#define FRESH_SLACK	(2 * AIR_SYNC_SYMS_MAX)
+#define TONE_UNPICKED	0xFF
+#define TONE_BLOCK	6				// frames per tone block: 1.7 Hz bins on a 100 ms frame (neighbors 2.9 Hz apart)
+#define TONE_RATIO	10				// a tone's power over the mean of the others' (its neighbors left out)
+#define TONE_SURE	30				// ... so far over it that one block is enough
+#define NOTCH_Q		20
+#define Q30		(1LL << 30)
+
+// The tones searched are the radio's standard CTCSS list (core/radio/tones.h: Hz x 10, ascending)
+_Static_assert(AIR_ADAPT_TONES == TONES_CTCSS_COUNT, "the tone search's filters, one per standard tone");
+
+static air_softmodem_adapt_t *lent;
+volatile uint8_t air_softmodem_adapt_off;
+static air_softmodem_adapt_view_t adapt_view;
+
+// The cosine of t radians x 2^30, |t| up to a quarter turn, x 2^30
+static int64_t cos_rad(int64_t t)
+{
+	int64_t t2 = (t * t) >> 30, c;		// x^2 <= (pi/2)^2 x 2^30
+
+	// Horner: 1 - x^2/2 (1 - x^2/12 (1 - x^2/30 (1 - x^2/56))). Each factor stays below 2^30, so no product
+	// passes 2^62 (x^4 times x^2 on its own would overflow near a quarter turn)
+	c = Q30 - t2 / 56;
+	c = Q30 - ((t2 * c) >> 30) / 30;
+	c = Q30 - ((t2 * c) >> 30) / 12;
+	return Q30 - ((t2 * c) >> 30) / 2;
+}
+
+// cos of a phase in 1/65536 turn, x 2^30: folded to the first quarter, then the series to x^8 (2.5e-5 off at most),
+// so no floating point and no library cosine are built in
+static int64_t cos_turn(uint32_t ph)
+{
+	int64_t t;
+	int sign = 1;
+
+	ph &= 0xFFFFu;
+	if (ph > 32768u)
+		ph = 65536u - ph;
+	if (ph > 16384u) {
+		ph = 32768u - ph;
+		sign = -1;
+	}
+	t = (int64_t)ph * 102944;		// radians x 2^30: 2 pi x 2^30 / 65536
+	return sign * cos_rad(t);
+}
+
+// A frequency in Hz x 10 at a rate as a phase step in 1/65536 turn
+static uint32_t turn_of(uint32_t dhz, uint32_t rate, uint32_t times)
+{
+	return (uint32_t)(((uint64_t)dhz * times * 65536u) / (10u * rate));
+}
+
+void air_softmodem_lend(air_softmodem_adapt_t *a)
+{
+	lent = a;
+}
+
+void air_softmodem_adapt_get(air_softmodem_adapt_view_t *out)
+{
+	*out = adapt_view;
+}
+
+// The equalizer a pass-through: a new lock owes nothing to the last signal's channel. The tone search and the notch
+// (tone) only when the session opens: the tone a repeater sends belongs to the channel and outlasts every lock, and
+// a strong one costs locks itself, so a search that started over at each never reached its second block, and the
+// notch that would have kept the lock went with it
+static void adapt_reset(air_softmodem_adapt_t *a, bool tone)
+{
+	memset(a->eq_w, 0, sizeof a->eq_w);
+	a->eq_w[EQ_MID] = EQ_ONE;
+	memset(a->eq_past, 0, sizeof a->eq_past);
+	adapt_view.eq_center = EQ_ONE;
+	// The frame before is lost either way (the place in the frame may have moved): nothing is compared against it
+	// until a frame has passed again. What the tone filters summed and the notch stay
+	memset(a->hist, 0xFF, sizeof a->hist);
+	a->at = 0;
+	a->e_ok = false;
+	if (!tone)
+		return;
+	a->ctx = 0;
+	a->e_prev = 0;
+	a->e_mean = 0;
+	memset(a->s1, 0, sizeof a->s1);
+	memset(a->s2, 0, sizeof a->s2);
+	a->n = 0;
+	a->ci1 = a->ci2 = a->cc1 = a->cc2 = 0;
+	a->dn = 0;
+	a->cand = a->sel = TONE_UNPICKED;
+	a->x1 = a->x2 = a->y1 = a->y2 = 0;
+	adapt_view.tone_dhz = 0;
+	memset(a->dcs_avg, 0, sizeof a->dcs_avg);
+	a->dcs_pos = 0;
+	a->dcs_w = 0;
+	a->dcs_off = 0;
+	memset(a->dcs_shape, 0, sizeof a->dcs_shape);
+	a->dcs_words = a->dcs_bad = 0;
+	a->dcs_lock = false;
+	adapt_view.dcs_code = 0;
+	adapt_view.dcs_amp = 0;
+}
+
+// At open: the tones' filter coefficients for this symbol rate and frame, from the profile
+static void adapt_open(air_softmodem_t *m)
+{
+	air_softmodem_adapt_t *a = lent;
+	uint16_t period = sync_spacing(m->p);
+
+	m->ad = NULL;
+	memset(&adapt_view, 0, sizeof adapt_view);
+	if (!a || !m->p->rx_opts)
+		return;
+	memset(a, 0, sizeof *a);
+	a->opts = m->p->rx_opts;
+	a->period = period <= AIR_ADAPT_PERIOD_MAX ? period : 0;
+	if (!a->period)
+		a->opts &= (uint8_t)~AIR_RX_TONE;	// no frame to difference against
+	for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
+		int64_t c = cos_turn(turn_of(tones_ctcss[k], m->p->sym_rate, AIR_ADAPT_DECIM));
+		int64_t gs = AIR_ADAPT_DECIM * Q30;				// the sum's, |sum of e^-jwn|^2 x 2^30
+
+		for (uint8_t j = 1; j < AIR_ADAPT_DECIM; j++)
+			gs += 2 * (AIR_ADAPT_DECIM - j) * cos_turn(turn_of(tones_ctcss[k], m->p->sym_rate, j));
+		gs /= AIR_ADAPT_DECIM * AIR_ADAPT_DECIM;			// x 2^30, 1 at DC
+		gs = (gs * gs) >> 30;						// the CIC is two such sums
+		a->coef[k] = (int16_t)((2 * c + (1 << 17)) >> 18);		// x 4096
+		// The CIC's droop toward the high tones is weighed in, so the tones compete on what the signal holds
+		a->gain[k] = (uint16_t)(((gs >> 18) + 1) ?: 1);
+	}
+	// DCS: 134.4 bit/s, 8 bins a bit: bins a sample x 65536
+	a->dcs_step = (uint32_t)(((uint64_t)1344u * 8u << 16) / (10u * m->rate_hz));
+	adapt_reset(a, true);
+	m->ad = a;
+	adapt_view.opts = a->opts;
+}
+
+// The timing is a sync's, not coasting on an old one
+static bool fresh(const air_softmodem_t *m)
+{
+	return m->since_sync != 0xFFFF && m->since_sync <= (uint32_t)sync_spacing(m->p) + FRESH_SLACK;
+}
+
+static int decide(const air_softmodem_t *m, int32_t v)
+{
+	if (m->p->levels == 2)
+		return v >= 0 ? AIR_SOFT_OUTER : -AIR_SOFT_OUTER;
+	return v >= 2 * AIR_SOFT_OUTER / 3 ? AIR_SOFT_OUTER : v >= 0 ? AIR_SOFT_OUTER / 3 :
+	       v >= -2 * AIR_SOFT_OUTER / 3 ? -AIR_SOFT_OUTER / 3 : -AIR_SOFT_OUTER;
+}
+
+// The tone search's block: the strongest tone, weighted by what the difference does at it, against the rest. A
+// tone that wins two blocks is notched, or one block by far (TONE_SURE; on the recordings without a tone no block
+// passed 9); a block nothing wins clearly leaves the candidate as it was, so a weak block between two wins (a frame
+// lost, the tone's near-harmonic winning one) doesn't start the count over. A neighbor of the one notched takes over
+// only at twice its power
+static void tone_block(air_softmodem_t *m)
+{
+	air_softmodem_adapt_t *a = m->ad;
+	int64_t p[AIR_ADAPT_TONES], sum = 0;
+	uint8_t best = TONE_UNPICKED, nsum = 0;
+
+	for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
+		int64_t s1 = a->s1[k], s2 = a->s2[k];
+		int64_t pw = s1 * s1 + s2 * s2 - ((a->coef[k] * s1) >> 12) * s2;
+
+		p[k] = a->gain[k] && pw > 0 ? (pw << 12) / a->gain[k] : -1;
+		if (p[k] >= 0 && (best == TONE_UNPICKED || p[k] > p[best]))
+			best = k;
+		a->s1[k] = a->s2[k] = 0;
+	}
+	adapt_view.tone_blocks++;
+	if (best == TONE_UNPICKED)
+		return;
+	for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
+		if (p[k] < 0 || k + 1 == best || k == best || k == best + 1)
+			continue;
+		sum += p[k];
+		nsum++;
+	}
+	if (!nsum || p[best] * nsum <= TONE_RATIO * sum)
+		return;		// a weak block: no vote, the candidate stays
+	if (a->cand != best) {
+		// One block is enough for the first pick only, far over the rest and clear of both neighbors: in a first
+		// block the tone's power still spreads into theirs, and once a tone is notched its own power is gone, so a
+		// neighbor would pass both tests on what the notch leaves
+		bool sure = a->sel == TONE_UNPICKED && p[best] * nsum > TONE_SURE * sum
+			    && (best == 0 || p[best] > 4 * p[best - 1])
+			    && (best + 1 == AIR_ADAPT_TONES || p[best] > 4 * p[best + 1]);
+
+		if (!sure) {
+			a->cand = best;
+			return;
+		}
+	}
+	if (best == a->sel)
+		return;
+	// A neighbor of the tone notched never takes over: what the notch leaves of the right tone shows in the
+	// neighbors (a 67.0 Hz tone notched, 69.3 Hz then won blocks at 170 times the rest), and the first pick is kept
+	// off a neighbor by the two blocks it needs, or by the four times over each neighbor of a pick in one
+	if (a->sel != TONE_UNPICKED && (best + 1 == a->sel || best == a->sel + 1))
+		return;
+	// The notch: zeros on the unit circle at the tone, poles just inside (Q 20), unity gain at DC
+	{
+		// The tone in radians a sample x 2^30, exact: a phase step in 1/65536 turn put 69.3 Hz at 69.2 Hz, a
+		// twentieth of the notch's width, and the notch then took 26 dB off the tone where it takes 50
+		int64_t w = (int64_t)tones_ctcss[best] * 6746518852LL / (10 * (int64_t)m->rate_hz);	// 2 pi x 2^30
+		int64_t c = cos_rad(w);
+		int64_t r = Q30 - w / (2 * NOTCH_Q);
+		int64_t a1 = -((2 * r * c) >> 30), a2 = (r * r) >> 30;
+		int64_t g = ((Q30 + a1 + a2) << 30) / (2 * Q30 - 2 * c);
+
+		a->ng = (int32_t)(g >> 16);						// x 2^14
+		a->ndc = (int32_t)((2 * Q30 - 2 * c) >> 10);				// x 2^20
+		a->nda = (int32_t)((2 * Q30 + a1) >> 10);
+		a->ne = (int32_t)((Q30 - a2) >> 10);
+		a->x1 = a->x2 = a->y1 = a->y2 = 0;
+	}
+	a->sel = best;
+	adapt_view.tone_dhz = tones_ctcss[best];
+	adapt_view.tone_picks++;
+}
+
+// One symbol into the search. Its slicing error counts only where the neighborhood (this symbol and the two before)
+// differs from the same place a frame before: what repeats every frame (the sync, a FICH, a transmission of silence)
+// makes a comb at the frame rate, and leaving it out removes the comb at its source, where differencing against the
+// frame before would also cancel every tone near a multiple of the frame rate (100.0 Hz is one). The error used is the
+// middle symbol's, the one its neighborhood centers on; the slow mean comes off first, so the places left out don't
+// make a comb of it. Then a second-order CIC (two sums of AIR_ADAPT_DECIM symbols, one output each AIR_ADAPT_DECIM):
+// CTCSS tones stay under 254 Hz, so the filters run at a quarter of the symbol rate (1200 Hz at 4800 symbols/s), 50
+// updates every 4 symbols, and what folds onto the tones comes from above 940 Hz, held off by more than 20 dB
+_Static_assert(AIR_ADAPT_DECIM == 4, "the CIC's gain out with >> 4: 2 log2(AIR_ADAPT_DECIM)");
+RFOUNDRY_HOT_CODE static void tone_symbol(air_softmodem_t *m, int32_t v, bool fresh_timing)
+{
+	air_softmodem_adapt_t *a = m->ad;
+	int dec = decide(m, v);
+	int32_t err = v - dec, e = err > 127 ? 127 : err < -127 ? -127 : err, x = 0;
+	uint8_t sym = (uint8_t)(dec > 0 ? (dec > AIR_SOFT_OUTER / 2 ? 3 : 2) : (dec < -AIR_SOFT_OUTER / 2 ? 0 : 1));
+	uint8_t was = a->hist[a->at];
+
+	a->ctx = (uint8_t)(((a->ctx << 2) | sym) & 0x3F);
+	a->hist[a->at] = fresh_timing ? (uint8_t)(a->ctx | 0x40) : 0xFF;
+	a->at = (uint16_t)(a->at + 1 == a->period ? 0 : a->at + 1);
+	if (fresh_timing && a->e_ok) {
+		a->e_mean += a->e_prev - (a->e_mean >> 8);		// x 256, a time constant of 256 symbols
+		if (was != 0xFF && was != (uint8_t)(a->ctx | 0x40))
+			x = a->e_prev - (a->e_mean >> 8);
+	}
+	a->e_prev = (int8_t)e;
+	a->e_ok = fresh_timing;
+	a->ci1 += (uint32_t)x;
+	a->ci2 += a->ci1;
+	if (++a->dn >= AIR_ADAPT_DECIM) {
+		// The integrators wrap; the combs' differences are exact all the same. Out of the CIC's gain (4 x 4) again,
+		// |d| <= 254: the filters' sums stay in 32 bits over a block (coef x s1 under 2^31)
+		uint32_t c1 = a->ci2 - a->cc1;
+		int32_t d = (int32_t)(c1 - a->cc2) >> 4;
+
+		a->cc1 = a->ci2;
+		a->cc2 = c1;
+		a->dn = 0;
+		for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
+			int32_t s0 = d + ((a->coef[k] * a->s1[k]) >> 12) - a->s2[k];
+
+			a->s2[k] = a->s1[k];
+			a->s1[k] = s0;
+		}
+	}
+	if (++a->n >= TONE_BLOCK * a->period) {
+		a->n = 0;
+		tone_block(m);
+	}
+}
+
+// ── DCS (AIR_RX_DCS) ──
+// A DCS code is a Golay(23,12) codeword sent over and over at 134.4 bit/s: under the 4FSK, a slow two-level offset
+// whose energy spreads over 0 to 150 Hz, which no notch takes, and which the receiver's level and offset tracking
+// half follows, so the symbols' error doesn't show it either. It shows in the input samples averaged by their place in
+// the word: the word repeats every 171 ms and the 4FSK doesn't, so that average keeps the code's waveform (its level,
+// its edges, its sign) and lets the data and the noise go. Once a word, the average's 23 bits are read (each bit's
+// 8 bins summed, at the bins' offset that gives the most): the code is cyclic, so any word of a code sent over and
+// over is a codeword, whatever its start. A codeword locks, and from then the waveform of the word read (its bits,
+// and the shape of a bit from the average) comes off every input sample; three words running that aren't codewords
+// end it
+#define DCS_AVG_SHIFT	4		// each bin's average: x += (in - x) / 16 a visit (7.4 visits a word at 8 kHz)
+#define DCS_WORDS_MIN	4		// words averaged before the first read
+#define DCS_BAD_MAX	3
+#define DCS_POS_WRAP	((uint32_t)AIR_ADAPT_DCS_BINS << 16)
+
+static bool golay_codeword(uint32_t w, uint32_t g)
+{
+	for (int i = 22; i >= 11; i--)
+		if (w & (1u << i))
+			w ^= g << (i - 11);
+	return (w & 0x7FFu) == 0;
+}
+
+// A word read in either order is a codeword of the code or of its reciprocal; all zeros or all ones are noise
+static bool dcs_codeword(uint32_t w)
+{
+	return w != 0 && w != 0x7FFFFFu && (golay_codeword(w, 0xC75u) || golay_codeword(w, 0xAE3u));
+}
+
+static uint32_t rot23(uint32_t w, unsigned r)
+{
+	return r ? ((w << r) | (w >> (23 - r))) & 0x7FFFFFu : w;
+}
+
+static uint32_t rev23(uint32_t w)
+{
+	uint32_t r = 0;
+
+	for (unsigned i = 0; i < 23; i++)
+		r |= ((w >> i) & 1u) << (22 - i);
+	return r;
+}
+
+// A codeword read off the average names one of the radio's standard DCS codes (tones.h), whatever its start
+static bool dcs_standard(uint32_t code)
+{
+	for (unsigned i = 0; i < TONES_DCS_COUNT; i++)
+		if (tones_dcs[i] == code)
+			return true;
+	return false;
+}
+
+// The code's 9 bits (0x8000: inverted) from a codeword read off the average: the start, order and sign whose data
+// bits end in 100, the code's fixed bits, and that is a standard code (several starts of one word end in 100);
+// 0x7FFF none. Once a lock, not a sample
+static uint16_t dcs_code_of(uint32_t w)
+{
+	for (unsigned inv = 0; inv < 2; inv++) {
+		for (unsigned order = 0; order < 2; order++) {
+			uint32_t w0 = inv ? ~w & 0x7FFFFFu : w;
+
+			if (order)
+				w0 = rev23(w0);
+			for (unsigned r = 0; r < 23; r++) {
+				uint32_t c = rot23(w0, r);
+
+				if (golay_codeword(c, 0xC75u) && ((c >> 20) & 7u) == 4u && dcs_standard((c >> 11) & 0x1FFu))
+					return (uint16_t)(((c >> 11) & 0x1FFu) | (inv ? 0x8000u : 0));
+			}
+		}
+	}
+	return 0x7FFF;
+}
+
+// The waveform off a 1 bit, from the word just read: each place in the bit, the mean over the 23 bits of the bins
+// there, each with its bit's sign. A bin's own average still holds the 4FSK of its last 16 visits, as strong as the
+// code itself; the mean of 23 takes that down almost five times. (Telling the places next to a change of bit apart
+// as well left too few bins in each and did worse on the recordings)
+static void dcs_shape(air_softmodem_adapt_t *a, uint32_t w, unsigned off, int32_t mean)
+{
+	for (unsigned j = 0; j < 8; j++) {
+		int32_t sum = 0;
+
+		for (unsigned k = 0; k < 23; k++) {
+			int32_t d = a->dcs_avg[(off + 8 * k + j) % AIR_ADAPT_DCS_BINS] - mean;
+
+			sum += (w >> k) & 1u ? d : -d;
+		}
+		a->dcs_shape[j] = (int16_t)(sum / 23);
+	}
+	a->dcs_w = w;
+	a->dcs_off = (uint8_t)off;
+}
+
+// Once a word: the average's mean, its bits, a lock taken or kept and its waveform. Not inlined: it runs once a word,
+// and inlined into dcs_sample it would go with it into RAM
+__attribute__((noinline)) static void dcs_word(air_softmodem_adapt_t *a)
+{
+	int32_t mean = 0, best_e = -1, best_amp = 0;
+	uint32_t best_w = 0;
+	unsigned best_off = 0;
+
+	for (unsigned b = 0; b < AIR_ADAPT_DCS_BINS; b++)
+		mean += a->dcs_avg[b];
+	mean /= AIR_ADAPT_DCS_BINS;
+	if (a->dcs_words < DCS_WORDS_MIN) {
+		a->dcs_words++;
+		return;
+	}
+	for (unsigned off = 0; off < 8; off++) {
+		int32_t e = 0;
+		uint32_t w = 0;
+
+		for (unsigned k = 0; k < 23; k++) {
+			int32_t sum = 0;
+
+			for (unsigned j = 0; j < 8; j++)
+				sum += a->dcs_avg[(off + 8 * k + j) % AIR_ADAPT_DCS_BINS] - mean;
+			if (sum > 0)
+				w |= 1u << k;
+			e += sum < 0 ? -sum : sum;
+		}
+		if (e > best_e) {
+			best_e = e;
+			best_w = w;
+			best_off = off;
+			best_amp = e / (23 * 8);
+		}
+	}
+	if (dcs_codeword(best_w)) {
+		a->dcs_bad = 0;
+		if (!a->dcs_lock) {
+			a->dcs_lock = true;
+			adapt_view.dcs_code = dcs_code_of(best_w);
+			adapt_view.dcs_locks++;
+		}
+		dcs_shape(a, best_w, best_off, mean);
+	} else if (a->dcs_lock && ++a->dcs_bad >= DCS_BAD_MAX) {
+		a->dcs_lock = false;
+		adapt_view.dcs_code = 0;
+	}
+	adapt_view.dcs_amp = (uint16_t)best_amp;
+}
+
+// The waveform at bin b: its place in the bit's shape, with the bit's sign
+RFOUNDRY_HOT_CODE static int32_t dcs_at(const air_softmodem_adapt_t *a, uint32_t b)
+{
+	uint32_t rel = b >= a->dcs_off ? b - a->dcs_off : b + AIR_ADAPT_DCS_BINS - a->dcs_off;
+	int32_t v = a->dcs_shape[rel & 7u];
+
+	return (a->dcs_w >> (rel >> 3)) & 1u ? v : -v;
+}
+
+// One input sample: into its bin's average and, locked, the word's waveform off it (between two bins, a straight line: the
+// difference times the place's top 8 bits stays in 32 bits)
+RFOUNDRY_HOT_CODE static int32_t dcs_sample(air_softmodem_adapt_t *a, int32_t x)
+{
+	uint32_t b = a->dcs_pos >> 16, b2 = b + 1u < AIR_ADAPT_DCS_BINS ? b + 1u : 0;
+	int32_t avg = a->dcs_avg[b], y = x;
+
+	if (a->dcs_lock) {
+		int32_t t = dcs_at(a, b);
+
+		y = x - (t + (((dcs_at(a, b2) - t) * (int32_t)((a->dcs_pos >> 8) & 0xFFu)) >> 8));
+	}
+	a->dcs_avg[b] = (int16_t)(avg + ((x - avg) >> DCS_AVG_SHIFT));
+	a->dcs_pos += a->dcs_step;
+	if (a->dcs_pos >= DCS_POS_WRAP) {
+		a->dcs_pos -= DCS_POS_WRAP;
+		dcs_word(a);
+	}
+	return y;
+}
+
+// The notch on one input sample, once a tone is picked. 32 bits, as the rest of the sample path (6), the samples at
+// half scale. Written as differences from a double zero and a double pole at DC: y = g (x - 2 x1 + x2 + (2 - 2 cos w)
+// x1) + 2 y1 - y2 - (2 + a1) y1 + (1 - a2) y2. The small terms keep 20 bits of their own: plain coefficients x 2^14
+// put the zero of a 69.3 Hz notch 0.7 Hz off the tone, a fifth of its width, and it took the tone down by 14 dB
+// only. The small terms are under 0.06 for the highest tone (x 2^20: 63,000), so with the samples under 2^14 no
+// product passes 2^31
+#define NOTCH_HALF	16383
+RFOUNDRY_HOT_CODE static int32_t notch(air_softmodem_adapt_t *a, int32_t x)
+{
+	int32_t xs = x / 2, u, y;
+
+	u = xs - 2 * a->x1 + a->x2 + ((a->ndc * a->x1) >> 20);
+	y = ((a->ng * u) >> 14) + 2 * a->y1 - a->y2 - ((a->nda * a->y1) >> 20) + ((a->ne * a->y2) >> 20);
+	y = y > NOTCH_HALF ? NOTCH_HALF : y < -NOTCH_HALF ? -NOTCH_HALF : y;
+	a->x2 = a->x1;
+	a->x1 = xs;
+	a->y2 = a->y1;
+	a->y1 = y;
+	return 2 * y;
+}
+#endif
 
 static int line_back(const air_softmodem_t *m, unsigned back)
 {
@@ -207,6 +695,67 @@ static int line_back(const air_softmodem_t *m, unsigned back)
 
 	return m->line[at < 0 ? at + LINE : at];
 }
+
+#if CONFIG_AIR_RX_ADAPT
+// Symbol-centered sample `back` samples back, on the symbol's own fraction (as emit takes it), in soft units
+RFOUNDRY_HOT_CODE static int32_t soft_at(const air_softmodem_t *m, unsigned back)
+{
+	int32_t x = line_back(m, back) * 16;
+
+	if (m->sub > 0)
+		x += m->sub * (line_back(m, back - 1u) - line_back(m, back));
+	else if (m->sub < 0)
+		x -= m->sub * (line_back(m, back + 1u) - line_back(m, back));
+	return ((x - m->off / 16) * (int32_t)m->scale) / 4096;
+}
+
+// The equalizer on the symbol whose soft value is v (due samples back): the symbols before it from its own memory,
+// those after it from the line. Decision directed, normalized LMS towards the level decided, only on fresh timing.
+// The center tap stays within 0.7-1.2: free, it has a second resting point near 0.4, where the outer levels fall on
+// the inner ones and every decision holds it there. A side tap past 0.5 is a runaway: back to a pass-through
+RFOUNDRY_HOT_CODE static int32_t equalize(air_softmodem_t *m, int32_t v)
+{
+	air_softmodem_adapt_t *a = m->ad;
+	int32_t x[AIR_ADAPT_EQ_TAPS], y = 0, norm = 64;	// (64: a step that stays small on a weak sample)
+
+	for (unsigned k = 0; k < EQ_MID; k++) {
+		x[EQ_MID - 1 - k] = a->eq_past[k];
+		x[EQ_MID + 1 + k] = soft_at(m, m->due - (k + 1) * SPS);
+	}
+	x[EQ_MID] = v;
+	for (unsigned k = 0; k < AIR_ADAPT_EQ_TAPS; k++) {
+		y += a->eq_w[k] * x[k];
+		norm += x[k] * x[k];
+	}
+	y /= EQ_ONE;
+	if (fresh(m)) {
+		// One divide a symbol: the step x 2^16, then each tap's share (mu x e x x / norm, x 16384)
+		int32_t g = (decide(m, y) - y) * 65536 / norm;
+		bool runaway = false;
+
+		for (unsigned k = 0; k < AIR_ADAPT_EQ_TAPS; k++) {
+			int32_t w = a->eq_w[k] + ((g * x[k]) >> (16 - 14 + EQ_MU_SHIFT));
+
+			if (k != EQ_MID && (w > EQ_ONE / 2 || w < -EQ_ONE / 2))
+				runaway = true;
+			a->eq_w[k] = (int16_t)(w > 32767 ? 32767 : w < -32767 ? -32767 : w);
+		}
+		if (a->eq_w[EQ_MID] < EQ_ONE * 7 / 10)
+			a->eq_w[EQ_MID] = EQ_ONE * 7 / 10;
+		if (a->eq_w[EQ_MID] > EQ_ONE * 12 / 10)
+			a->eq_w[EQ_MID] = EQ_ONE * 12 / 10;
+		if (runaway) {
+			memset(a->eq_w, 0, sizeof a->eq_w);
+			a->eq_w[EQ_MID] = EQ_ONE;
+			adapt_view.eq_resets++;
+		}
+		adapt_view.eq_center = a->eq_w[EQ_MID];
+	}
+	memmove(&a->eq_past[1], &a->eq_past[0], (EQ_MID - 1) * sizeof a->eq_past[0]);
+	a->eq_past[0] = (int16_t)(v > 32767 ? 32767 : v < -32767 ? -32767 : v);
+	return y;
+}
+#endif
 
 static void flush(air_softmodem_t *m)
 {
@@ -247,6 +796,21 @@ static void emit(air_softmodem_t *m, uint32_t t_us)
 	else if (m->sub < 0)
 		x -= m->sub * (line_back(m, m->due + 1u) - line_back(m, m->due));
 	v = ((x - m->off / 16) * (int32_t)m->scale) / 4096;
+#if CONFIG_AIR_RX_ADAPT
+	if (m->ad) {
+		uint8_t on = (uint8_t)(m->ad->opts & ~air_softmodem_adapt_off);
+		int32_t v_in = v;
+
+		adapt_view.opts = on;
+		if (on & AIR_RX_EQ)
+			v = equalize(m, v);
+		// The tone search on the value before the equalizer: adapting on the error, the equalizer follows a low tone
+		// in part and hides it (69.3 Hz took 7 s to find behind it, 2 s without). Syncs and coasting give no error
+		// worth having: zeros, as the frame they leave out
+		if (on & AIR_RX_TONE)
+			tone_symbol(m, v_in, fresh(m));
+	}
+#endif
 	if (v > 127)
 		v = 127;
 	if (v < -127)
@@ -288,6 +852,10 @@ static void commit(air_softmodem_t *m, uint8_t back, uint16_t q_next)
 	uint8_t first = (uint8_t)(back + (s->nsyms - 1) * SPS), d;
 	int8_t sub = 0;
 
+#if CONFIG_AIR_RX_ADAPT
+	if (m->ad && !fresh(m))
+		adapt_reset(m->ad, false);	// a new lock: the equalizer from a pass-through, the tone kept
+#endif
 	// The level far from nominal (a tap of unknown or wrong scale): bring the line and the gain to it, so the
 	// samples keep their resolution and their headroom
 	if (lvl < LVL_NOM * 4 / 5 || lvl > LVL_NOM * 5 / 4) {
@@ -498,7 +1066,14 @@ void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, ui
 	}
 	m->running = true;
 	for (unsigned i = 0; i < n; i++) {
-		int32_t x = samples[i], v = x - (m->dc >> 10);
+		int32_t x = samples[i], v;
+#if CONFIG_AIR_RX_ADAPT
+		if (m->ad && (m->ad->opts & AIR_RX_DCS) && !(air_softmodem_adapt_off & AIR_RX_DCS))
+			x = fxp_sat16(dcs_sample(m->ad, x));
+		if (m->ad && m->ad->sel != TONE_UNPICKED && !(air_softmodem_adapt_off & AIR_RX_TONE))
+			x = fxp_sat16(notch(m->ad, x));
+#endif
+		v = x - (m->dc >> 10);
 		unsigned at = (m->in_at + 1u) & (TAPS - 1u);
 
 		if (!m->locked) {

@@ -146,6 +146,7 @@ below are for an STM32F4 radio.
 | `CONFIG_NXDN_SCRAMBLER` | = NXDN | 15-bit NXDN Scrambler for conventional voice calls. Needs `NXDN`. |
 | `CONFIG_MBE2400` | n | the 2400 bit/s MBE voice codec, compatible with D-STAR's voice frames (`core/mbe/mbe2400.h`, `docs/spec/mbe-2400.md`): the encoder, the decoder and the frame's FEC on the MBE core. No mode uses the codec yet |
 | `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs P25 or NXDN (an air-framed mode) and DEBUGLINK |
+| `CONFIG_AIR_RX_ADAPT` | n | the soft modem's adaptive receive options: an equalizer and a CTCSS / DCS remover that a mode's profile asks for in `rx_opts`, in memory its engine lends (`docs/spec/air-interface.md` 6.1). Off until a mode asks for them; P25 and NXDN don't. Needs P25 or NXDN (an air-framed mode) and `SUBTONE` (the standard tone and code lists) |
 | `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX) and Standalone SFR (the repeater and user roles of a channel, `docs/spec/sfr.md`) |
 | `CONFIG_SFR_CWID` | = SFR | the standalone SFR repeater's periodic CW ID: the callsign from the radio name in Morse, in FM on the channel (`sfr.md` 4). Off: the setting isn't offered |
 | `CONFIG_SFR_DUALPATH_RX` | = SFR | the SFR user receive mode "Dual-path RX": a voice frame whose FEC failed is taken from the other copy of the call. Off: the mode isn't offered |
