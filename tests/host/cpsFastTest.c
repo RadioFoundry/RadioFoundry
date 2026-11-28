@@ -430,7 +430,7 @@ static void test_info_and_reads(void)
 
 	boot(&dm1701_map, true);
 	CHECK(op(CPSF_OP_INFO) == DL_ST_OK && rep_len == 27);
-	CHECK(rep[1] == CPSF_VERSION && rep[2] == 3 && g16(&rep[3]) == BLOCK && rep[5] == CPSF_SUMS_MAX);
+	CHECK(rep[1] == CPSF_VERSION && rep[2] == (CPSF_INFO_STAGING | CPSF_INFO_WRITABLE | CPSF_INFO_PATCH) && g16(&rep[3]) == BLOCK && rep[5] == CPSF_SUMS_MAX);
 	CHECK(rep[6] == CPSF_DATA_MAX && g16(&rep[7]) == CPSF_READ_MAX);
 	CHECK(g32(&rep[9]) == 0x10000u && g32(&rep[13]) == 0x20000u && g32(&rep[17]) == 0x1C0000u && g32(&rep[21]) == 0);
 	CHECK(g16(&rep[25]) == 63);	// 256 KB of staging: the record and 63 slots
@@ -669,7 +669,7 @@ static void test_offset_layout(void)
 	unsigned reqs;
 
 	boot(&offset_map, true);
-	CHECK(op(CPSF_OP_INFO) == DL_ST_OK && rep[2] == 2 && g32(&rep[21]) == 0x200000u && g16(&rep[25]) == 0);
+	CHECK(op(CPSF_OP_INFO) == DL_ST_OK && rep[2] == (CPSF_INFO_WRITABLE | CPSF_INFO_PATCH) && g32(&rep[21]) == 0x200000u && g16(&rep[25]) == 0);
 	CHECK(g32(&rep[13]) == 0x20000u && g32(&rep[17]) == 0x1C0000u);
 	CHECK(begin(CPSF_MODE_STAGED) == DL_ST_REFUSED && refused(CPSF_R_NO_STAGING));
 	CHECK(begin(CPSF_MODE_DIRECT) == DL_ST_OK);
@@ -971,6 +971,312 @@ static void test_settings_area(void)
 	CHECK(memcmp(area - BLOCK, other, BLOCK) == 0);	// the sector before it: written as sent
 }
 
+// --- patch blocks (3.7) ---
+
+// The slow encoder with a dictionary: matches may start anywhere in dict[0..dn) or the bytes of src before ip, as if
+// dict came just before src. The end rules hold for src
+static uint32_t slow_encode_dict(const uint8_t *dict, uint32_t dn, const uint8_t *src, uint32_t n, uint8_t *out)
+{
+	static uint8_t all[2 * BLOCK];
+	memcpy(all, dict, dn);
+	memcpy(all + dn, src, n);
+	uint32_t ip = 0, anchor = 0, k = 0;
+	while (n >= 13 && ip + 12 <= n) {
+		uint32_t best = 0, boff = 0, at = dn + ip;
+		for (uint32_t ref = 0; ref < at; ref++) {
+			uint32_t ml = 0;
+			while (ip + ml < n - 5 && all[ref + ml] == all[at + ml]) {
+				ml++;
+			}
+			if (ml >= 4 && ml > best) {
+				best = ml;
+				boff = at - ref;
+			}
+		}
+		if (best == 0) {
+			ip++;
+			continue;
+		}
+		uint32_t lit = ip - anchor;
+		out[k++] = (uint8_t)(((lit < 15 ? lit : 15) << 4) | (best - 4 < 15 ? best - 4 : 15));
+		if (lit >= 15) {
+			uint32_t v = lit - 15;
+			for (; v >= 255; v -= 255) {
+				out[k++] = 255;
+			}
+			out[k++] = (uint8_t)v;
+		}
+		memcpy(out + k, src + anchor, lit);
+		k += lit;
+		out[k++] = (uint8_t)boff;
+		out[k++] = (uint8_t)(boff >> 8);
+		if (best - 4 >= 15) {
+			uint32_t v = best - 19;
+			for (; v >= 255; v -= 255) {
+				out[k++] = 255;
+			}
+			out[k++] = (uint8_t)v;
+		}
+		ip += best;
+		anchor = ip;
+	}
+	uint32_t lit = n - anchor;
+	out[k++] = (uint8_t)((lit < 15 ? lit : 15) << 4);
+	if (lit >= 15) {
+		uint32_t v = lit - 15;
+		for (; v >= 255; v -= 255) {
+			out[k++] = 255;
+		}
+		out[k++] = (uint8_t)v;
+	}
+	memcpy(out + k, src + anchor, lit);
+	return k + lit;
+}
+
+static const uint8_t *mem_dict;
+static unsigned dict_calls;
+static bool dict_fail;
+
+static bool mem_dict_read(void *ctx, uint32_t pos, uint8_t *dst, uint32_t len)
+{
+	(void)ctx;
+	dict_calls++;
+	if (dict_fail || pos + len > BLOCK) {
+		return false;
+	}
+	memcpy(dst, mem_dict + pos, len);
+	return true;
+}
+
+static bool dict_decodes(const uint8_t *stream, uint32_t n, const uint8_t *dict, const uint8_t *want, uint32_t piece,
+			 cps_lz4_dec_t *d)
+{
+	static uint8_t out[BLOCK];
+	mem_dict = dict;
+	cps_lz4_dec_init(d, out, BLOCK);
+	cps_lz4_dec_dict(d, BLOCK, mem_dict_read, NULL);
+	for (uint32_t off = 0; off < n; off += piece) {
+		uint32_t k = n - off < piece ? n - off : piece;
+		if (!cps_lz4_dec_feed(d, stream + off, k)) {
+			return false;
+		}
+	}
+	return cps_lz4_dec_done(d) && memcmp(out, want, BLOCK) == 0;
+}
+
+// An edit like a database refresh's: a record inserted mid-block (the rest shifts) and a few bytes changed
+static void edit_block(const uint8_t *old, uint8_t *b, unsigned at)
+{
+	memcpy(b, old, at);
+	for (unsigned i = 0; i < 17; i++) {
+		b[at + i] = (uint8_t)rnd();
+	}
+	memcpy(b + at + 17, old + at, BLOCK - at - 17);
+	b[3000] ^= 0x5A;
+	b[3001] ^= 0x33;
+}
+
+static void test_lz4_dict(void)
+{
+	static uint8_t old[BLOCK], b[BLOCK], stream[2 * BLOCK], plain[2 * BLOCK];
+	static const uint32_t pieces[] = { 1, 5, 61, 2 * BLOCK };
+	cps_lz4_dec_t d;
+
+	codeplug_block(old, 73);
+	edit_block(old, b, 1234);
+	uint32_t n = slow_encode_dict(old, BLOCK, b, BLOCK, stream), np = slow_encode(b, BLOCK, plain);
+	CHECK(n < 64 && n * 10 < np);	// the patch is a small fraction of the plain stream
+	for (unsigned i = 0; i < sizeof(pieces) / sizeof(pieces[0]); i++) {
+		dict_calls = 0;
+		CHECK(dict_decodes(stream, n, old, b, pieces[i], &d));
+		CHECK(dict_calls > 0 && dict_calls < 10);	// one read per match that reaches back
+	}
+	// without the dictionary the same stream is corrupt (an offset before the start)
+	CHECK(!stream_decodes(stream, n, b, BLOCK, 61));
+	// a plain stream decodes the same with a dictionary set, and never reads it
+	dict_calls = 0;
+	CHECK(dict_decodes(plain, np, old, b, 61, &d) && dict_calls == 0);
+
+	// a match that starts in the dictionary and runs on into the output: the old block's last 8 bytes, then the
+	// first 8 bytes it gave repeated (an overlapping match of 16 at offset 8)
+	memset(old, 0, BLOCK);
+	memcpy(old + BLOCK - 8, "ABCDEFGH", 8);
+	memset(b, 0, BLOCK);
+	for (unsigned i = 0; i < 16; i++) {
+		b[i] = (uint8_t)"ABCDEFGH"[i % 8];
+	}
+	// token: no literals, match 16 (12 + 4); offset 8; then the rest (4080 zeros) as literals
+	uint32_t k = 0;
+	static uint8_t s3[BLOCK + 64];
+	s3[k++] = 0x0C;
+	s3[k++] = 8;
+	s3[k++] = 0;
+	uint32_t lit = BLOCK - 16;
+	s3[k++] = 0xF0;
+	for (uint32_t v = lit - 15; ; v -= 255) {
+		if (v < 255) {
+			s3[k++] = (uint8_t)v;
+			break;
+		}
+		s3[k++] = 255;
+	}
+	memset(s3 + k, 0, lit);
+	k += lit;
+	dict_calls = 0;
+	CHECK(dict_decodes(s3, k, old, b, 61, &d) && dict_calls == 1);
+	// an offset past the dictionary's start is corrupt
+	s3[1] = 0x10;
+	s3[2] = 0x10;	// 0x1010 = 4112 > 4096
+	CHECK(!dict_decodes(s3, k, old, b, 61, &d) && d.bad && !d.dict_failed);
+	// the dictionary's read failing
+	s3[1] = 8;
+	s3[2] = 0;
+	dict_fail = true;
+	CHECK(!dict_decodes(s3, k, old, b, 61, &d) && d.bad && d.dict_failed);
+	dict_fail = false;
+}
+
+// Send a patch block: BLOCK (format 3, the base's CRC), DATA in pieces, END. base_crc lets a test lie
+static void (*patch_between)(void);	// run between a patch's BLOCK and its DATA
+
+static uint8_t patch_block(uint32_t addr, const uint8_t *old, const uint8_t *data, uint32_t base_crc, unsigned piece,
+			   uint32_t *stream_len)
+{
+	static uint8_t stream[2 * BLOCK];
+	uint8_t r[64];
+	uint32_t n = slow_encode_dict(old, BLOCK, data, BLOCK, stream);
+	if (stream_len != NULL) {
+		*stream_len = n;
+	}
+	r[0] = CPSF_OP_BLOCK;
+	p32(&r[1], addr);
+	r[5] = CPSF_FMT_PATCH;
+	p16(&r[6], n);
+	p32(&r[8], storage_crc32(0, data, BLOCK));
+	p32(&r[12], base_crc);
+	if (call(r, 16) != DL_ST_OK) {
+		return rep[0];
+	}
+	if (patch_between != NULL) {
+		patch_between();
+	}
+	for (uint32_t off = 0; off < n; off += piece) {
+		uint32_t k = n - off < piece ? n - off : piece;
+		r[0] = CPSF_OP_DATA;
+		p16(&r[1], off);
+		memcpy(&r[3], stream + off, k);
+		if (call(r, 3 + k) != DL_ST_OK) {
+			return rep[0];
+		}
+	}
+	return op(CPSF_OP_END);
+}
+
+static void test_patch_write(void)
+{
+	static uint8_t old[BLOCK], b[BLOCK], c[BLOCK];
+	uint32_t n;
+	uint8_t r[64];
+
+	boot(&dm1701_map, true);
+	CHECK(op(CPSF_OP_INFO) == DL_ST_OK && (rep[2] & CPSF_INFO_PATCH) != 0);
+
+	// direct: the old block in place, then a patch of it
+	codeplug_block(old, 60);
+	edit_block(old, b, 777);
+	CHECK(begin(CPSF_MODE_DIRECT) == DL_ST_OK);
+	CHECK(write_block(0x40000, old, 61) == DL_ST_OK);
+	CHECK(patch_block(0x40000, old, b, storage_crc32(0, old, BLOCK), 61, &n) == DL_ST_OK && n < 64);
+	CHECK(memcmp(&sim_flash_data[0x40000], b, BLOCK) == 0);
+	// the same patch again: the block is no longer what it was made against
+	CHECK(patch_block(0x40000, old, b, storage_crc32(0, old, BLOCK), 61, NULL) == DL_ST_REFUSED && refused(CPSF_R_BASE));
+	CHECK(state() == CPSF_ST_OPEN);	// nothing held: a plain block goes in next
+	CHECK(write_block(0x40000, old, 61) == DL_ST_OK && memcmp(&sim_flash_data[0x40000], old, BLOCK) == 0);
+	// a patch of a blank block (its dictionary 0xFF)
+	memset(c, 0xFF, BLOCK);
+	CHECK(patch_block(0x41000, c, b, storage_crc32(0, c, BLOCK), 7, NULL) == DL_ST_OK);
+	CHECK(memcmp(&sim_flash_data[0x41000], b, BLOCK) == 0);
+	// BLOCK's length: 15 bytes for a patch, 11 for the others
+	r[0] = CPSF_OP_BLOCK;
+	p32(&r[1], 0x42000);
+	r[5] = CPSF_FMT_PATCH;
+	p16(&r[6], 10);
+	p32(&r[8], 0);
+	CHECK(call(r, 12) == DL_ST_BAD_ARG);
+	r[5] = CPSF_FMT_LZ4;
+	CHECK(call(r, 16) == DL_ST_BAD_ARG);
+	r[5] = CPSF_FMT_PATCH;
+	p16(&r[6], 0);
+	CHECK(call(r, 16) == DL_ST_BAD_ARG);	// a patch has a stream
+	// the old block unreadable when BLOCK checks it, and when a match reads it
+	sim_flash_bad_read(0x40000, 16);
+	CHECK(patch_block(0x40000, old, b, storage_crc32(0, old, BLOCK), 61, NULL) == DL_ST_REFUSED && refused(CPSF_R_FLASH));
+	sim_flash_bad_read(0, 0);
+	{
+		static uint8_t stream[2 * BLOCK];
+		uint32_t k = slow_encode_dict(old, BLOCK, b, BLOCK, stream);
+		r[0] = CPSF_OP_BLOCK;
+		p32(&r[1], 0x40000);
+		r[5] = CPSF_FMT_PATCH;
+		p16(&r[6], k);
+		p32(&r[8], storage_crc32(0, b, BLOCK));
+		p32(&r[12], storage_crc32(0, old, BLOCK));
+		CHECK(call(r, 16) == DL_ST_OK);
+		sim_flash_bad_read(0x40000, BLOCK);
+		bool flash = false;
+		for (uint32_t off = 0; off < k && !flash; off += 61) {
+			uint32_t m = k - off < 61 ? k - off : 61;
+			r[0] = CPSF_OP_DATA;
+			p16(&r[1], off);
+			memcpy(&r[3], stream + off, m);
+			flash = call(r, 3 + m) == DL_ST_REFUSED;
+		}
+		CHECK(flash && refused(CPSF_R_FLASH) && state() == CPSF_ST_OPEN);
+		sim_flash_bad_read(0, 0);
+	}
+	CHECK(memcmp(&sim_flash_data[0x40000], old, BLOCK) == 0);	// untouched
+	CHECK(op(CPSF_OP_COMMIT) == DL_ST_OK);
+
+	// staged: the base is the stored codeplug, also for a block staged twice in the session
+	CHECK(begin(CPSF_MODE_STAGED) == DL_ST_OK);
+	CHECK(patch_block(0x40000, old, b, storage_crc32(0, old, BLOCK), 61, NULL) == DL_ST_OK);
+	CHECK(memcmp(&sim_flash_data[0x40000], old, BLOCK) == 0);	// staged, not yet in
+	CHECK(patch_block(0x40000, old, b, storage_crc32(0, old, BLOCK), 61, NULL) == DL_ST_OK);
+	CHECK(op(CPSF_OP_COMMIT) == DL_ST_OK && tick_until_done(100));
+	CHECK(memcmp(&sim_flash_data[0x40000], b, BLOCK) == 0);
+}
+
+static void vfo_moves(void)
+{
+	settings_t *st = settings_begin();
+	st->vfo_rx_hz = st->vfo_tx_hz = 446093750u;
+	settings_end(now);
+}
+
+// The VFO changes while a patch of the block it shows in decodes (the dictionary is read as the stream goes): refused
+// as BASE, so the host sends the block whole, not as a corrupt write (CRC) that ends its session
+static void test_patch_vfo_moved(void)
+{
+	static uint8_t old[BLOCK], b[BLOCK];
+	uint8_t fmt;
+	unsigned reqs;
+
+	boot(&dm1701_map, true);
+	settings_t *st = settings_begin();
+	st->vfo_rx_hz = st->vfo_tx_hz = 446006250u;
+	settings_end(now);
+	CHECK(read_block(0x7000, old, &fmt, &reqs));
+	memcpy(b, old, BLOCK);
+	memcpy(&b[0x540], "Patch line one  ", 16);	// boot text line 1, away from VFO A
+	CHECK(begin(CPSF_MODE_DIRECT) == DL_ST_OK);
+	patch_between = vfo_moves;
+	CHECK(patch_block(0x7000, old, b, storage_crc32(0, old, BLOCK), 61, NULL) == DL_ST_REFUSED && refused(CPSF_R_BASE));
+	patch_between = NULL;
+	CHECK(state() == CPSF_ST_OPEN);
+	CHECK(write_block(0x7000, b, 61) == DL_ST_OK);	// whole: written
+	CHECK(op(CPSF_OP_COMMIT) == DL_ST_OK);
+}
+
 int main(void)
 {
 	setvbuf(stdout, NULL, _IONBF, 0);	// the lines before a crash
@@ -983,6 +1289,9 @@ int main(void)
 	test_power_cuts();
 	test_bad_records();
 	test_settings_area();
+	test_lz4_dict();
+	test_patch_write();
+	test_patch_vfo_moved();
 	CHECK(sim_flash_violations() == 0);
 	sim_flash_free();
 	printf("# cpsFastTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

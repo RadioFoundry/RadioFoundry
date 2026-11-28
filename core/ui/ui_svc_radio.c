@@ -312,18 +312,15 @@ uint8_t ui_svc_receivers(void)
 }
 
 // Each pane's own receiver: the main one on the selected pane, the second on the other. False while the second
-// receiver doesn't have its channel (down, or not yet): the screens then show the main receiver alone
-bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out)
+// receiver doesn't have its channel (down, or not yet): the screens then show the main receiver alone. The main
+// receiver's state comes from the UI task's own copy of the view (v), not a fresh one: a second copy here is 700 bytes
+// of RAM, and the UI's is renewed at every view change
+bool ui_svc_dual_rx(const radio_view_t *v, uint8_t pane, ui_dual_rx_t *out)
 {
-	radio_view_t *const v = &ui_svc_view;
 	radio_dual_ref_t ref[2];
 	uint8_t sel, at;
 	memset(out, 0, sizeof(*out));
-	if (board.rx2 == NULL || pane > 1 || !radio_get_dual(ref, &sel, &at)) {
-		return false;
-	}
-	radio_get_view(v);
-	if (!v->rx2) {
+	if (board.rx2 == NULL || pane > 1 || !radio_get_dual(ref, &sel, &at) || !v->rx2) {
 		return false;
 	}
 	if (pane == sel) {

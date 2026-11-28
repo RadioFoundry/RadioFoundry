@@ -6,8 +6,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hal_traits.h"
 
-enum { LED_GREEN, LED_RED };
+// LED_BLUE is sent only to a board with CAP_LED_RGB
+enum { LED_GREEN, LED_RED, LED_BLUE };
 
 typedef struct {
 	void (*init)(void);
@@ -21,6 +23,10 @@ typedef struct {
 	// sets (hal_radio_t.volume), -1 must mean there is no knob, every time it is asked. Other radios may also return -1
 	// until the first reading is ready
 	int8_t (*volume)(void);
+	// Optional: a second volume knob's position 0..100, side B's on a radio with a knob per side (the board sets that
+	// side's level itself); NULL when the radio has one. The UI's volume bar shows both (radio_view_t.volume_b). Read only
+	// where board.mk says BOARD_VOLUME_B := y (hal_traits.h)
+	int8_t (*volume_b)(void);
 	// False once the user has switched the radio off (the core then saves and calls latch(false))
 	bool (*switch_on)(void);
 	void (*led)(uint8_t which, bool on);

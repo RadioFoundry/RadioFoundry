@@ -1,0 +1,60 @@
+{
+ "board": "d578uv",
+ "commit": "15197d3ea0eabf0d96f6f1985700f3567f6dee1a",
+ "date": "2026-11-21T20:06:01Z",
+ "dirty": false,
+ "features": [
+  "aprs_rx"
+ ],
+ "firmware": {
+  "board": "AT-D578UV",
+  "codec": "none",
+  "display": "160x128x4",
+  "features": "FM,SUBTONE,GPS,SATELLITE_TLE,APRS,APRS_AFSK,APRS_RX,APRS_IGATE,USB_NETWORK,VFO,VFO_FM,AM_RX,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SUPPORT_INFO,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "048bfd0e",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-rf": true,
+  "fm-mhz": 446.05
+ },
+ "sources": {
+  "aprs_rx": {
+   "core/usbaudio/audio_mux.c": "3855c4aba9d8b9b85c62d0ca87c1931fd56f4f87",
+   "core/usbaudio/pcm_slip.c": "d512726008073e7b09e8ac10f5ff6a9d540befeb",
+   "docs/spec/aprs.md": "ecb69cf30c66d85dc1c0de03b54e091ca6d0fb15"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "aprs_rx"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_rx_on_air",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "aprs_rx"
+   ],
+   "id": "tests/hil/test_aprs.py::test_aprs_rx_third_party_message",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.1.1",
+  "python": "3.13.5"
+ }
+}

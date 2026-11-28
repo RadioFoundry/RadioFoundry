@@ -305,7 +305,7 @@ static void testFit(void)
 	CHECK(air_softmodem_rx_fit(&p, &bb) != 0, "48 kHz fits");
 	bb.rx_rate_hz = 96000;
 	CHECK(air_softmodem_rx_fit(&p, &bb) == 0, "96 kHz needs a decimator the board must do");
-	CHECK(!air_softmodem_rx_open(&m, &p, 96000, 0, on_chunk, NULL) && air_softmodem_rx_open(&m, &p, 8000, 0, on_chunk, NULL), "open follows the rate");
+	CHECK(!air_softmodem_rx_open(&m, &p, 96000, 0, 0, on_chunk, NULL) && air_softmodem_rx_open(&m, &p, 8000, 0, 0, on_chunk, NULL), "open follows the rate");
 	CHECK(sizeof(air_softmodem_t) <= 400, "state is %zu bytes", sizeof(air_softmodem_t));	// (three 8-byte pointers here)
 }
 
@@ -326,7 +326,7 @@ static void testClean(void)
 			double rms;
 
 			sample_tap(rates[r], phase, 3600, 2000, 0, 0);
-			CHECK(air_softmodem_rx_open(&m, &p, rates[r], 2000, on_chunk, NULL), "open");
+			CHECK(air_softmodem_rx_open(&m, &p, rates[r], 2000, 0, on_chunk, NULL), "open");
 			out_reset();
 			feed(&m, rates[r], 0, tap_n, 256);
 			CHECK(out_nsync == 3, "rate %u phase %u: %u syncs", rates[r], phase, out_nsync);
@@ -378,7 +378,7 @@ static void testLevels(void)
 
 		modulate(&p, t[i].ppm);
 		sample_tap(8000, 11, 3600, t[i].cpk, t[i].off, 0);
-		CHECK(air_softmodem_rx_open(&m, &p, 8000, t[i].told, on_chunk, NULL), "open");
+		CHECK(air_softmodem_rx_open(&m, &p, 8000, t[i].told, 0, on_chunk, NULL), "open");
 		out_reset();
 		feed(&m, 8000, 0, tap_n, t[i].per_call);
 		CHECK(compare(&p, 900, 864, &nerr, &ncmp, &rms), "%s: no sync", t[i].what);
@@ -402,7 +402,7 @@ static void testNoise(void)
 		double rms;
 
 		sample_tap(8000, 17, 3600, 2000, 400, t[i].sigma);
-		air_softmodem_rx_open(&m, &p, 8000, 2000, on_chunk, NULL);
+		air_softmodem_rx_open(&m, &p, 8000, 2000, 0, on_chunk, NULL);
 		out_reset();
 		feed(&m, 8000, 0, tap_n, 256);
 		CHECK(compare(&p, 500, 864, &nerr, &ncmp, &rms), "sigma %.0f: no sync", t[i].sigma);
@@ -412,7 +412,7 @@ static void testNoise(void)
 	}
 	// Nothing but noise, 12 s of it, at every scale the level tracker meets: no sync
 	for (uint8_t k = 0; k < 2; k++) {
-		air_softmodem_rx_open(&m, &p, 8000, k ? 0 : 2000, on_chunk, NULL);
+		air_softmodem_rx_open(&m, &p, 8000, k ? 0 : 2000, 0, on_chunk, NULL);
 		out_reset();
 		for (uint8_t rep = 0; rep < 12; rep++) {
 			for (uint32_t i = 0; i < 8000; i++)
@@ -444,7 +444,7 @@ static void testGate(void)
 				double ref_t[64];
 
 				sample_tap(8000, 5 + i, 3600, known ? 2000 : 700, 400, sigma[i]);
-				CHECK(air_softmodem_rx_open(&m, &p, 8000, known ? 2000 : 0, on_chunk, NULL), "open");
+				CHECK(air_softmodem_rx_open(&m, &p, 8000, known ? 2000 : 0, 0, on_chunk, NULL), "open");
 				CHECK(m.gate_mask[0] != 0, "profile %u has a gate", prof);
 				memset(m.gate_mask, 0, sizeof(m.gate_mask));	// no gate: every sample is fitted
 				out_reset();
@@ -457,7 +457,7 @@ static void testGate(void)
 					ref_at[k] = out_sync[k].at;
 					ref_t[k] = out_sync[k].t_us;
 				}
-				air_softmodem_rx_open(&m, &p, 8000, known ? 2000 : 0, on_chunk, NULL);
+				air_softmodem_rx_open(&m, &p, 8000, known ? 2000 : 0, 0, on_chunk, NULL);
 				out_reset();
 				feed(&m, 8000, 0, tap_n, 256);
 				CHECK(out_n == ref_n && out_nsync == ref_nsync, "profile %u sigma %.0f: %u symbols, %u syncs with the gate, %u, %u without",
@@ -487,7 +487,7 @@ static void testShapes(void)
 	air_stream(&p, 1, 3000, 300, 288);
 	modulate(&p, 0);
 	sample_tap(8000, 5, 3600, 2000, -300, 0);
-	CHECK(air_softmodem_rx_open(&m, &p, 8000, 2000, on_chunk, NULL), "open");
+	CHECK(air_softmodem_rx_open(&m, &p, 8000, 2000, 0, on_chunk, NULL), "open");
 	out_reset();
 	feed(&m, 8000, 0, tap_n, 256);
 	CHECK(compare(&p, 300, 288, &nerr, &ncmp, &rms) && out_sync[0].id == 9, "RRC: sync id %u", out_sync[0].id);
@@ -502,7 +502,7 @@ static void testShapes(void)
 	air_stream(&q, 0, 1500, 200, 192);
 	modulate(&q, 0);
 	sample_tap(8000, 5, 3600, 2000, 100, 0);
-	CHECK(air_softmodem_rx_open(&m, &q, 8000, 2000, on_chunk, NULL), "open 2400");
+	CHECK(air_softmodem_rx_open(&m, &q, 8000, 2000, 0, on_chunk, NULL), "open 2400");
 	out_reset();
 	feed(&m, 8000, 0, tap_n, 256);
 	CHECK(out_nsync == 7, "2400: %u syncs", out_nsync);
@@ -517,7 +517,7 @@ static void testShapes(void)
 	air_stream(&q, 0, 1500, 200, 192);
 	modulate(&q, 0);
 	sample_tap(8000, 5, 3600, 1000, 100, 100);
-	CHECK(air_softmodem_rx_open(&m, &q, 8000, 1000, on_chunk, NULL), "open 2-level");
+	CHECK(air_softmodem_rx_open(&m, &q, 8000, 1000, 0, on_chunk, NULL), "open 2-level");
 	out_reset();
 	feed(&m, 8000, 0, tap_n, 256);
 	CHECK(out_nsync == 7, "2-level: %u syncs", out_nsync);
@@ -622,7 +622,7 @@ static void testCall(void)
 		ngot = nlost = 0;
 		p25_rx_init(&rx, 0x293, on_unit, on_lost, NULL);
 		air_framer_init(&fr, &p25_air_mode, &rx, fbuf, fsoft, P25_UNIT_SYMS_MAX);
-		CHECK(air_softmodem_rx_open(&m, &p, 8000, t[i].told, on_chunk, NULL), "open");
+		CHECK(air_softmodem_rx_open(&m, &p, 8000, t[i].told, 0, on_chunk, NULL), "open");
 		out_reset();
 		out_framer = &fr;
 		for (uint32_t from = 0; from < n; from += 256)
@@ -671,7 +671,7 @@ static void testHole(void)
 	air_stream(&p, 0, 3000, 100, 864);
 	modulate(&p, 0);
 	sample_tap(8000, 0, 3600, 2000, 0, 0);
-	air_softmodem_rx_open(&m, &p, 8000, 2000, on_chunk, NULL);
+	air_softmodem_rx_open(&m, &p, 8000, 2000, 0, on_chunk, NULL);
 	out_reset();
 	feed(&m, 8000, 0, 2048, 256);
 	CHECK(out_gap_chunks == 1 && out_nsync == 2, "before: gaps %u syncs %u", out_gap_chunks, out_nsync);

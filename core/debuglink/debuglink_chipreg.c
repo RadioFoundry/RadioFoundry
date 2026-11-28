@@ -4,6 +4,10 @@
 // without a new build. The board's RF chips through board.chip_reg (the board's chip and page numbers, 8-bit register
 // addresses); the SoC's own 32-bit registers through board.system->reg (chip DL_CHIP_SOC, a 32-bit address inside the
 // platform's register windows). No driver knows about a write: its next set-up of that register overwrites it.
+// With a length byte instead of a value, a read of up to DL_CHIP_REG_BYTES_MAX bytes through board.chip_reg_bytes;
+// with the length's DL_CHIP_REG_WRITE bit set and that many bytes after it, a write of them through the same hook.
+#include <string.h>
+
 #include "board.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -52,6 +56,49 @@ static size_t soc_reg(const uint8_t *req, uint16_t len, uint8_t *out)
 	return answer(out, DL_ST_OK, v);
 }
 
+// chip u8, page u8, register u8, length u8: the register's first bytes as the chip answers them
+static size_t chip_reg_bytes(const uint8_t *req, uint8_t *out, size_t cap)
+{
+	if (!RFOUNDRY_PACKET_MODEM || board.chip_reg_bytes == NULL) {
+		return answer(out, DL_ST_UNAVAILABLE, 0);
+	}
+	uint8_t want = req[3];
+	if (want == 0u || want > DL_CHIP_REG_BYTES_MAX || want > cap - 1u) {
+		return answer(out, DL_ST_BAD_ARG, 0);
+	}
+	int r = board.chip_reg_bytes(req[0], req[1], req[2], NULL, 0, out + 1, want);
+	if (r < 0 || r > want) {
+		return answer(out, DL_ST_BAD_ARG, 0);
+	}
+	out[0] = DL_ST_OK;
+	return 1u + (size_t)r;
+}
+
+// chip u8, page u8, register u8, DL_CHIP_REG_WRITE | n, n bytes: written as they are; the reply has no value
+static size_t chip_write_bytes(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	if (!RFOUNDRY_PACKET_MODEM || board.chip_reg_bytes == NULL) {
+		return answer(out, DL_ST_UNAVAILABLE, 0);
+	}
+	uint8_t n = (uint8_t)(req[3] & ~DL_CHIP_REG_WRITE);
+	if (n == 0u || n > DL_CHIP_REG_WRITE_MAX || len != 4u + n) {
+		return answer(out, DL_ST_BAD_ARG, 0);
+	}
+	// The chip's answer, if it gives more than an acknowledgment (a data memory read), follows the status. The request
+	// is copied first: out may be the buffer req sits in
+	uint8_t data[DL_CHIP_REG_WRITE_MAX];
+	memcpy(data, req + 4, n);
+	uint8_t chip = req[0], page = req[1], reg = req[2];
+	size_t room = cap - 1u > DL_CHIP_REG_BYTES_MAX ? DL_CHIP_REG_BYTES_MAX : cap - 1u;
+	int got = board.chip_reg_bytes(chip, page, reg, data, n, out + 1, (uint8_t)room);
+	if (got < 0) {
+		return answer(out, DL_ST_BAD_ARG, 0);
+	}
+	dlog("debuglink: chip %u page %u reg 0x%02X = %u bytes", chip, page, reg, n);
+	out[0] = DL_ST_OK;
+	return 1u + (size_t)got;
+}
+
 size_t debuglink_cmd_chip_reg(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	if (cap < 5u) {
@@ -59,6 +106,12 @@ size_t debuglink_cmd_chip_reg(const uint8_t *req, uint16_t len, uint8_t *out, si
 	}
 	if (len >= 1u && req[0] == DL_CHIP_SOC) {
 		return soc_reg(req, len, out);
+	}
+	if (len == 4u && (req[3] & DL_CHIP_REG_WRITE) == 0u) {
+		return chip_reg_bytes(req, out, cap);
+	}
+	if (len >= 5u && len != 7u && (req[3] & DL_CHIP_REG_WRITE) != 0u) {
+		return chip_write_bytes(req, len, out, cap);
 	}
 	if (board.chip_reg == NULL) {
 		return answer(out, DL_ST_UNAVAILABLE, 0);

@@ -134,26 +134,51 @@ where the provider needs whole chunks.
 `hal_baseband_t` describes a board's taps: rate (8 kHz or more), band, scale in counts per kHz when known, start,
 read or write, stop, and the sample clock. The isolation rules of section 3 hold while a tap runs.
 
+A receive tap gives the deviation (a flat discriminator) or its derivative: a slope tap (`rx_slope_hz` not 0), whose
+samples rise 6 dB an octave across its band, as an FM chip's demodulator output for a DMR baseband can. Its scale is
+never taken as known: the level is tracked.
+
 `air_softmodem` turns a receive tap into the receive half of a provider, for any 2- or 4-level profile the tap's
 band carries (`air_softmodem_rx_fit`: the band must reach a little past half the symbol rate and, for four levels,
-down to a hundredth of it).
+down to a hundredth of it; on a slope tap a fiftieth, from the tap's low edge or the integrator's corner, whichever
+is higher).
 
 | Step | What |
 |---|---|
+| Integrator | slope taps only. The tap's offset comes off first (an average over 1024 samples, which starts at 16 and doubles, so a signal from the first sample is not lost while it settles), then a leaky sum: it loses 1/2^k a sample, k the power of two that puts the corner nearest `rx_slope_hz` (k = 7 at 16 kHz and 25 Hz: about 20 Hz). The sum is shifted back to 16 bits by the samples a symbol takes |
 | Offset | a slow average of the input is taken off; it holds while a signal is locked |
 | Resampling | a polyphase interpolator (12 phases, 8 taps) to five samples per symbol |
 | Receive filter | an integrate and dump over one symbol for C4FM and square pulses, a shorter one otherwise |
 | Sync fit | the newest symbol-spaced samples are fitted to each pattern (level and offset, least squares). Where the error passes through a minimum under the limit, that sample is a symbol center; a parabola through the neighbors places it between samples |
 | Gate | the fit runs only where a pattern can be: per sample phase the modem keeps one bit per symbol (this sample was above the one a symbol before), and a pattern is fitted when the steps of four levels or more among its last 17 symbols are all there but one. Two missing steps put a fit over the limit whatever the rest does, so the gate changes no output; it removes the fit from all but a few percent of the samples of noise or data |
 | Output | symbols leave from the far end of a delay line 26 symbols long, sampled on the latest sync's timing and scaled by its level and offset, so a sync is sampled on the timing it gave |
+| Two-sided sum | slope taps only. Three quarters of each symbol's value come from both halves of the integral, averaged: the sum up to the symbol, at a corner a 64th of the symbol rate (75 Hz at 4800 symbols a second), and the sum from it to 26 symbols ahead (the delay line holds them), taken off. The noise the integrator lifts below that corner, most of what a slope tap leaves, comes in from two independent halves, and the corner takes it; the signal adds up in both. The other quarter is the line's own sum: it keeps more of the signal's low end, and still holds a symbol whose look-ahead runs past the end of the signal. On recordings of a slope tap this halves the symbol errors |
+| Baseline | slope taps only. The integrator's leak is a high-pass near 20 Hz, which a run of one level sags through. Each symbol's distance from the level it is nearest is averaged over about 4 symbols and taken off the next, which also takes out the slow wander the integrator makes of noise at the bottom of the band |
 | Level | a tap of known scale starts at the profile's deviation. A tap of unknown scale follows the input's average magnitude until the first sync gives the level. The averages start fast and slow down; when a 16-sample average of the magnitude is off the slow one by half or double (a signal after an unmodulated carrier, which leaves the discriminator quiet), both start fast again |
 
 Between syncs the timing, level and offset hold. Two crystal clocks do not move a fifth of a symbol in a second, so
 a mode whose syncs recur gets every frame on fresh timing. Chunks say `AIR_CHUNK_FREE_RUN` when no sync was seen
 within the profile's spacing, and `AIR_CHUNK_GAP` after a hole in the samples (the modem starts over).
 
-Cost: 3.3 KB of code and about 370 bytes of state, which the provider places. No transmit half is written: a
-provider with a tap for receive only sends through its chip.
+Cost: 3.3 KB of code and about 380 bytes of state, which the provider places. No transmit half is written: a
+provider with a tap for receive only sends through its chip, or not at all (below).
+
+### 6.1 A provider on a tap alone
+
+A board with no modem chip to run a session on, only a receive tap, uses `air_tap` (`core/air/air_tap.h`): a
+`hal_air_t` around the soft modem.
+
+| Part | What |
+|---|---|
+| Setup | the board gives the tap, the soft modem's memory, flags added to every fit (`AIR_FIT_UNTESTED` until the tap is checked on air) and an optional lock |
+| Fit | the soft modem's: `AIR_FIT_RX` and `AIR_FIT_SOFT`, never `AIR_FIT_TX`. The engines refuse a transmit (`TXDENY_AIR_NO_TX`), and a trunked system is followed listen-only |
+| Poll | `air_tap_poll`, from a task of the board's, often enough that the tap never fills (every 2 ms is usual): it reads the tap 32 samples at a time and runs the soft modem, so the session's events, the framer and the mode's receive hooks run on that task's stack. A read that does not start where the last ended counts an overrun, and the modem starts over |
+| Lock | held around a poll's work and around open and close, so a close on another task waits for the soft modem to finish |
+| Rule 1 | the board's: the tap's `rx_start` fails unless the raw receive path is kept from the speaker. Rule 2 holds: nothing is sent |
+| Counts | `rx_counts` (reads as `halves`, overruns, chunks) and `rx_load` (time in the soft modem against the time the samples span) |
+
+No RTOS call is made in it, so the host test runs it as the board does. A board with no PCM path to a vocoder gets
+the voice frames to no sink: the engines decode headers, link control and data and drop the voice.
 
 The work is per filtered sample, 24,000 a second at 4800 symbols, so that path decides the load. Its rules are in
 `core/dsp/fxp.h`, with the kernels the signal code shares (the interpolator's dot product, exact scaling in 32-bit
@@ -215,6 +240,7 @@ before anything is queued: `tx_deny=air_no_tx` ("This mode: receive only").
 | `tests/host/fecTest.c` | the shared codes against the standard's matrices |
 | `tests/host/airFramerTest.c` | sync search, levels, head hook, pieces, history, coasting, transmit packing |
 | `tests/host/airSoftmodemTest.c` | the soft modem on a modeled tap: every tap phase, 8 to 48 kHz, scale and offset errors, noise, other pulse shapes, a P25 call end to end; the same output with the gate and with every sample fitted |
+| `tests/host/airTapTest.c` | `air_tap` on a modeled slope tap at 16 kHz (band-limited, differentiated, offset, discriminator and tap noise): P25 and NXDN 4800 symbol error rates, P25 with a slope tap's wander under 150 Hz, a P25 call through the framer, the fit, open, close, restart, a hole in the samples, the lock, a tap of the wrong polarity |
 | `tests/host/fxpTest.c` | the shared fixed-point kernels against wide arithmetic |
 | `tests/host/p25EngineTest.c` | the session under two P25 engines on made-up providers |
 | `tests/host/nxdnEngineTest.c` | the session under two NXDN engines; an NXDN call through the soft modem at 2400 symbols/s |

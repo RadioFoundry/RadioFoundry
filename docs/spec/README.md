@@ -76,6 +76,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [nxdn-codeplug.md](nxdn-codeplug.md) | NXDN conventional channels in the codeplug |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
 | [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
+| [nand-blocks.md](nand-blocks.md) | A large block-mapped device over NAND, for the ID database: copies in address order, 2 bytes of RAM per 128 KB |
 
 ## Codecs
 

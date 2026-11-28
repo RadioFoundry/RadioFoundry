@@ -64,6 +64,12 @@ def pytest_addoption(parser):
     g.addoption("--codeplug-image", default=os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE"),
                 help="the radio's codeplug as a file (env RFOUNDRY_HIL_CODEPLUG_IMAGE): the codeplug_write tests take it "
                      "as the backup instead of reading the radio, and restore and verify it afterwards")
+    g.addoption("--iddb-users", default=os.environ.get("RFOUNDRY_HIL_IDDB_USERS"), metavar="CSV",
+                help="RadioID's user list (user.csv, env RFOUNDRY_HIL_IDDB_USERS): test_iddb_whole_room writes it, "
+                     "each text as the editor's default (callsign, first name, city, state), instead of a synthetic one")
+    g.addoption("--iddb-whole-room", action="store_true",
+                help="run test_iddb_whole_room: the ID database's whole room written and read back (long: about 40 "
+                     "minutes on a radio with a NAND range); with --allow-codeplug-write")
     g.addoption("--firmware-image", default=os.environ.get("RFOUNDRY_HIL_FIRMWARE_IMAGE"),
                 help="the .bin the radio was flashed with (env RFOUNDRY_HIL_FIRMWARE_IMAGE; _install.bin for a board with a "
                      "first stage): test_support_info checks the radio's image hash against its SHA-256")

@@ -23,6 +23,7 @@ CONFIG_GPS ?= n
 # more than the programming cable's 115200 baud PPP link carries (about 11.5 KB/s each way)
 CONFIG_NET_USRP ?= n
 BOARD_UNSUPPORTED += GPS	# no GPS receiver, and no room inside for one (owner, 2026-10-22)
+BOARD_UNSUPPORTED += BT_PTT	# no Bluetooth module: the SoC's UARTs are unused (docs/spec/hardware-dm1801pro.md 4)
 BOARD_UNSUPPORTED += GPS_SKY	# needs the GPS receiver (above)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
 # maximal configuration too

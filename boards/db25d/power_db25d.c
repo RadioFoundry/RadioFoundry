@@ -9,21 +9,16 @@
 #include "db25d.h"
 #include "pins.h"
 #include "platform.h"
+#include "radio/power_key.h"
 
-// The power key is held to switch on, so it only counts once it has been seen released. Held for this many polls
-// (switch_on runs every 100 ms in the start-up task's housekeeping loop: 2 s) it switches the radio off
-#define POWER_OFF_POLLS		20u
-
-static bool key_released;
-static uint16_t held;
+static pwrkey_t power_key;
 
 static void init(void)
 {
 	hrc_adc_init();
 	hrc_pin_out(PIN_POWER_LATCH, true);
 	hrc_pin_in(PIN_POWER_KEY);
-	key_released = false;
-	held = 0;
+	pwrkey_init(&power_key);
 }
 
 static void latch(bool on)
@@ -38,14 +33,7 @@ static int8_t volume(void)
 
 static bool switch_on(void)
 {
-	bool down = !hrc_pin_read(PIN_POWER_KEY);
-	if (!down) {
-		key_released = true;
-		held = 0;
-	} else if (key_released && held < POWER_OFF_POLLS) {
-		held++;
-	}
-	return held < POWER_OFF_POLLS;
+	return pwrkey_on(&power_key, !hrc_pin_read(PIN_POWER_KEY));
 }
 
 static void led(uint8_t which, bool on)

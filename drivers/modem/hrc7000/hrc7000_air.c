@@ -467,7 +467,7 @@ bool hrc7000_air_open(hrc7000_air_t *a, const air_profile_t *p, uint32_t fit, ai
 		return false;
 	}
 	if ((fit & AIR_FIT_RX) != 0
-	    && !air_softmodem_rx_open(a->sm, p, HRC7000_AIR_RATE_HZ, 0, sm_out, a)) {
+	    && !air_softmodem_rx_open(a->sm, p, HRC7000_AIR_RATE_HZ, 0, 0, sm_out, a)) {
 		return false;
 	}
 	lock(a);

@@ -5,7 +5,11 @@
 #include "input/keyassign.h"
 #include <stdio.h>
 #include <string.h>
+// The caps change at run time here (the status LED's colors): defined writable, the core sees it const
+#define board board_as_declared
 #include "board.h"
+#undef board
+extern board_t board;	// what the core's inline helpers read (ref_trim.h): the writable one, defined below
 #include "radio/radio_sm.h"
 #include "codeplug/codeplug_modes.h"
 #if CONFIG_APRS
@@ -72,7 +76,7 @@ static struct {
 	bool keyed;		// between a tx() that keyed and the next tx_off()
 	bool rx_since_tx;	// an rx() since the last tx(): a retune ends a DMR keying (the boards disarm in rx())
 	bool audio;
-	bool led[2];
+	bool led[3];
 	radio_status_t st;
 } hw;
 
@@ -427,15 +431,17 @@ static void air_step1(uint8_t i)
 	}
 }
 
-// 4800 symbols/s (P25, NXDN at 9600 bit/s): everything. 2400 symbols/s (NXDN at 4800 bit/s): what air_fit2400 says
-// for each provider (a provider that transmits a profile only, or receives it only)
+// 4800 symbols/s (P25, NXDN at 9600 bit/s): what air_fit4800 says (everything, or receive only as on a sample tap).
+// 2400 symbols/s (NXDN at 4800 bit/s): what air_fit2400 says for each provider (a provider that transmits a profile
+// only, or receives it only)
+static uint32_t air_fit4800 = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
 static uint32_t air_fit2400[2] = { AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT, AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT };
 static uint32_t air_fit(uint8_t i, const air_profile_t *pr)
 {
 	if (air_nofit) {
 		return 0;
 	}
-	return pr->sym_rate == 4800 ? AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT : pr->sym_rate == 2400 ? air_fit2400[i] : 0;
+	return pr->sym_rate == 4800 ? air_fit4800 : pr->sym_rate == 2400 ? air_fit2400[i] : 0;
 }
 static bool air_open(uint8_t i, air_event_cb_t cb, void *ctx)
 {
@@ -484,11 +490,16 @@ static void air_step(void);	// with the far radio's engine, below
 static bool far_on_air(void) { return false; }
 #endif
 
-const board_t board = {
+// FAKE_MODEM_VOICE: a modem that plays the voice itself (CAP_MODEM_VOICE); that build runs test_modem_voice only
+#ifndef FAKE_MODEM_VOICE
+#define FAKE_MODEM_VOICE	0
+#endif
+
+board_t board = {
 	.name = "fake",
 	.hwopts = fake_hwopts,
 	.hwopt_count = 1,
-	.caps = CAP_GPS,
+	.caps = CAP_GPS | (FAKE_MODEM_VOICE ? CAP_MODEM_VOICE : 0),
 	.gps = &fake_gps,
 	.bands = bands,
 	.band_count = 4,
@@ -4395,6 +4406,15 @@ static void test_ui_dual(void)
 	const ui_dual_ref_t withvfo[2] = { vfo, a };
 	CHECK(ui_svc_dual(withvfo, 0) && sm.view.scan == SCAN_DUAL);
 	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.vfo);
+	// The debug link's watch of the two VFOs (SCAN op 8): VFO A selected, the second VFO as B
+	CHECK(debuglink_radio_feature_op(DL_OP_SCAN, (const uint8_t[]){ 8 }, 1) == DL_ST_OK);
+	{
+		radio_dual_ref_t got[2];
+		uint8_t sel, at;
+		CHECK(sm.view.scan == SCAN_DUAL && radio_get_dual(got, &sel, &at) && sel == 0);
+		CHECK(got[0].vfo && got[0].pos == 0 && got[1].vfo && got[1].pos == 1);
+	}
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.vfo);
 	// Saved while the watch is on B: powers up on the selected A all the same
 	req(RREQ_VFO, 0);
 	req(RREQ_ZONE_POS, 0);
@@ -5896,6 +5916,17 @@ static void test_soft_volume(void)
 	CHECK(vol_last == 0);
 	debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1);
 	run(100);
+	// The override goes out as set even 1 % from the knob's level (knob 20 %, step 3 = 19 %), and the knob's level comes
+	// back exactly when the override is given back
+	vol_knob = 20;
+	run(100);
+	CHECK(vol_last == 20);
+	debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 3 }, 1);
+	run(100);
+	CHECK(vol_last == 19 && sm.view.volume_src == RVOL_OVERRIDE);
+	debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1);
+	run(100);
+	CHECK(vol_last == 20 && sm.view.volume_src == RVOL_KNOB);
 	// No knob: the op stores the step like a UI change; 0xFF gives the default back
 	vol_knob = -1;
 	boot();
@@ -6300,6 +6331,19 @@ static void test_dmr_data_glue(void)
 }
 
 // Receive past the band table: the VFO tunes there only while the extension is on, and it never transmits
+// board.h's band helpers are compiled here against board_as_declared (the writable board above), so the test reads
+// the table itself: the receive-only extension counts only while rx_ext_on
+static bool rx_band_has(uint32_t hz)
+{
+	uint8_t n = rx_ext_on ? board.band_count : (uint8_t)(board.band_count - board.rx_ext_count);
+	for (uint8_t i = 0; i < n; i++) {
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static void test_rx_ext(void)
 {
 	setup_codeplug();
@@ -6309,7 +6353,7 @@ static void test_rx_ext(void)
 	req(RREQ_VFO_SET, 500000000);
 	run(20);
 	CHECK(sm.view.ch.rx_hz != 500000000);	// off: refused like any frequency outside the table
-	board_rx_ext_set(true);
+	rx_ext_on = true;
 	req(RREQ_VFO_SET, 500000000);
 	run(20);
 	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 500000000);
@@ -6318,11 +6362,11 @@ static void test_rx_ext(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == tx0);
 	req(RREQ_PTT, 0);
 	run(20);
-	board_rx_ext_set(false);
-	CHECK(!board_in_band(500000000, false));
+	rx_ext_on = false;
+	CHECK(!rx_band_has(500000000));
 	req(RREQ_RELOAD, 0);	// what turning it off in Settings does: a VFO left past the table returns to a band
 	run(20);
-	CHECK(sm.view.vfo && board_in_band(sm.view.ch.rx_hz, false));
+	CHECK(sm.view.vfo && rx_band_has(sm.view.ch.rx_hz));
 }
 
 // ---- Error paths: the radio refuses to key, a channel without a TX frequency, retuning or scanning while
@@ -6590,6 +6634,24 @@ static void test_fm_rssi_raw(void)
 }
 
 #if CONFIG_SFR
+// A repeater role on an RGB LED is orange while it waits (radio-features.md 5.7); without the flag it stays dark
+static void test_sfr_led(void)
+{
+	for (int rgb = 0; rgb < 2; rgb++) {
+		board.caps = rgb ? board.caps | CAP_LED_RGB : board.caps & ~(uint32_t)CAP_LED_RGB;
+		dmr_start(true);
+		chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+		chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
+		reload_channel();
+		CHECK(sm.sfr_rpt && hw.led[LED_RED] == (rgb != 0) && hw.led[LED_GREEN] == (rgb != 0) && !hw.led[LED_BLUE]);
+		chans[4].sfr_flag1 = 0;
+		chans[4].sfr_a = 0;
+		reload_channel();
+		CHECK(!sm.sfr_rpt && !hw.led[LED_RED] && !hw.led[LED_GREEN]);
+	}
+	board.caps &= ~(uint32_t)CAP_LED_RGB;
+}
+
 // Standalone SFR (docs/spec/sfr.md 4): a channel's SFR role in the codeplug. Repeater: the runner takes the modem
 // instead of the call stack and repeats the inbound slot on the other one. User: the call stack on the inbound slot
 static void test_sfr_roles(void)
@@ -6958,6 +7020,25 @@ static void test_sfr_cwid(void)
 	CHECK(!sm.sfr_rpt);
 }
 #endif
+#endif
+
+#if FAKE_MODEM_VOICE
+// A modem with its own voice: the board's speaker path opens while a call is played, and not for one that isn't
+static void test_modem_voice(void)
+{
+	dmr_start(false);
+	const radio_dmr_view_t *d = &sm.view.dmr;
+	CHECK(d->codec && !hw.audio);
+	hear_call(true, 201, 3101234, 2, 1, false);
+	CHECK(sm.view.state == RS_RX && d->state == RDMR_RX && hw.led[LED_GREEN] && hw.audio);
+	uint8_t lc[9];
+	mk_lc(lc, true, 201, 3101234);
+	burst_lc(lc, 2, true);
+	run(100);
+	CHECK(d->state == RDMR_IDLE && !hw.led[LED_GREEN] && !hw.audio);
+	hear_call(true, 3100, 3107777, 2, 1, false);	// not in the listen list: shown, not played
+	CHECK(d->state == RDMR_RX_OTHER && !hw.audio);
+}
 #endif
 
 // RADIO op 35, the test TX limit (tx_limit.h): flags, a count, the frequencies; bad arguments change nothing
@@ -7379,6 +7460,26 @@ static void test_p25_denied(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
 	req(RREQ_PTT, 0);
 	air_nofit = false;
+
+	// A provider that receives P25 only (a sample tap): the engine runs, PTT is refused before anything is queued
+	air_fit4800 = AIR_FIT_RX | AIR_FIT_SOFT;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running() && fair[0].open);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && fair[0].qn == 0);
+	run(100);
+	CHECK(!fair[0].on && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	run(50);
+	air_fit4800 = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
 #ifdef HAL_VOCODER_LEND_BYTES
 	// ... or the vocoder lends nothing
 	lend_refuse = true;
@@ -8855,6 +8956,48 @@ static void test_nxdn_rx(void)
 	nfar_stop();
 	nxdn_defaults();
 }
+
+#if FAKE_MODEM_VOICE
+// A modem that plays the voice itself and can take frames from the MCU (play hooks): an NXDN call's frames go to it,
+// begun and ended with the call, and the board's speaker path is open while the call plays
+static hal_dmr_modem_t mv_modem;
+static int mv_begins, mv_ends, mv_frames;
+static bool mv_begin(void) { mv_begins++; return true; }
+static void mv_frame(const uint8_t ambe72[9]) { (void)ambe72; mv_frames++; }
+static void mv_end(void) { mv_ends++; }
+
+static void test_modem_voice_nxdn(void)
+{
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+
+	mv_modem = sim_modem;
+	mv_modem.play_begin = mv_begin;
+	mv_modem.play_frame = mv_frame;
+	mv_modem.play_end = mv_end;
+	board.dmr = &mv_modem;
+	CHECK(radio_nxdn_modem_voice());
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && !hw.audio);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio && mv_begins == 0);
+	nfar_next = 0;
+	nfar_begin(true, 1, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(1000);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_NXDN_PLAYED) && hw.led[LED_GREEN] && hw.audio);
+	CHECK(mv_begins == 1 && mv_ends == 0 && mv_frames >= 30);
+	nxdn_engine_tx_stop(&nfar);
+	for (int i = 0; i < 100 && (sm.view.state != RS_IDLE || (v->flags & RADIO_NXDN_RX)); i++)
+		run(5);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio && mv_begins == 1 && mv_ends == 1);
+	board.dmr = &sim_modem;
+	CHECK(!radio_nxdn_modem_voice());	// no play hooks: the DMR side's voice path, as before
+}
+#endif
 
 static void test_nxdn_tx(void)
 {
@@ -11983,6 +12126,14 @@ static void test_detour(void)
 
 int main(void)
 {
+#if FAKE_MODEM_VOICE
+	test_modem_voice();
+#if CONFIG_NXDN
+	test_modem_voice_nxdn();
+#endif
+	printf("# radioCoreTestModemVoice: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
+	return failures != 0;
+#endif
 	test_tx_limit_op();
 	test_startup();
 #if CONFIG_SATELLITE_TLE
@@ -12090,6 +12241,7 @@ int main(void)
 	test_hotspot_session();
 	test_hotspot_cwid();
 #if CONFIG_SFR
+	test_sfr_led();
 	test_sfr_roles();
 #if CONFIG_VFO_DMR
 	test_sfr_vfo();

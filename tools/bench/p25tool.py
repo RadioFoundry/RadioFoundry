@@ -11,7 +11,7 @@ than its sources).
                [--ber P --seed S] [--emergency] [--unpacked]
     p25tool.py decode IN.dibits [--expect EXP.json] [--unpacked | --air-jsonl] [--soft FILE] [--nac 293]
     p25tool.py disc IN.raw --rate HZ [--full HZ | --counts-per-khz N] [--invert] [--bits 8 --shift S] [--skip S]
-               [--meta IN.json] [--expect EXP.json]
+               [--slope-hz HZ] [--meta IN.json] [--expect EXP.json]
     p25tool.py cc OUT.dibits --expect EXP.json [--nac 293] [--wacn A4C21] [--sysid 2F3] [--rfss N] [--site N]
                [--units N] [--ch 1004] [--base HZ] [--spacing HZ] [--tx-offset HZ]
                [--grant TG:CH[:SRC[:SVC]] [--grant-at FIRST[:COUNT[:EVERY]]]] [--reg UNIT[:RV] [--reg-at FIRST[:COUNT[:EVERY]]]]
@@ -415,7 +415,7 @@ def cmd_disc(a):
         args = ["disc", inp, "--rate", int(round(float(rate)))]
         if full:
             args += ["--full", full]
-        lines = run(args + pass_opts(a, ["counts-per-khz", "invert", "bits", "shift", "skip", "nac", "trunk", "inbound"]))
+        lines = run(args + pass_opts(a, ["counts-per-khz", "slope-hz", "invert", "bits", "shift", "skip", "nac", "trunk", "inbound"]))
     return report(lines, a, True)
 
 
@@ -621,6 +621,8 @@ def main(argv=None):
     s.add_argument("--rate", type=float, default=None, help="Hz, 8000 to 48000")
     s.add_argument("--full", type=float, default=None, help="Hz of deviation at full scale")
     s.add_argument("--counts-per-khz", type=float, default=None, help="the tap's scale (16-bit counts)")
+    s.add_argument("--slope-hz", type=int, default=None,
+                   help="the samples are the deviation's derivative: integrate with a leak at about this corner")
     s.add_argument("--invert", action="store_true", help="the discriminator's sense is the other way")
     s.add_argument("--bits", type=int, choices=(8, 16), default=None)
     s.add_argument("--shift", type=int, default=None, help="--bits 8: the shift the tap applied (8)")

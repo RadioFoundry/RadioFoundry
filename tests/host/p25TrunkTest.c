@@ -1962,7 +1962,7 @@ static bool pr_open(const air_profile_t *p, air_event_cb_t cb, void *ctx)
 {
 	prov_cb = cb;
 	prov_ctx = ctx;
-	return air_softmodem_rx_open(&modem, p, RATE, told_cpk, modem_out, NULL);
+	return air_softmodem_rx_open(&modem, p, RATE, told_cpk, 0, modem_out, NULL);
 }
 static void pr_close(void) { prov_cb = NULL; }
 static void pr_restart(void) { air_softmodem_rx_reset(&modem); }

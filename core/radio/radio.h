@@ -232,6 +232,7 @@ typedef struct {
 	radio_dmr_call_t last;
 	uint32_t last_ms;	// hal_millis() of its last burst, 0 = none yet
 	uint32_t underruns;	// TX voice frames sent as silence (diagnostics)
+	bool tx_released;	// a DMR transmission whose PTT is up, running on to its superframe boundary
 } radio_dmr_view_t;
 #endif
 
@@ -457,6 +458,7 @@ typedef struct {
 
 #define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
 #define RADIO_LED_RED		0x02u
+#define RADIO_LED_BLUE		0x04u	// CAP_LED_RGB
 
 typedef struct {
 	radio_state_t state;
@@ -535,6 +537,7 @@ typedef struct {
 	uint8_t volume_step;	// the stored step (0..RADIO_VOLUME_MAX); in force when volume_src is RVOL_SOFT
 	int8_t volume_override;	// the debug link's step in force over the knob (RVOL_OVERRIDE), -1 = none
 	int8_t volume_knob;	// where the volume knob is, 0..100 %, even when it isn't setting the volume; -1 = not read
+	int8_t volume_b;	// a second knob's position 0..100 % (side B, hal_power_t.volume_b), -1 = none
 	// Air band (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or
 	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
 	// squelch's value from the RSSI (radio/radio_am.h)
@@ -551,6 +554,7 @@ typedef struct {
 #if CONFIG_DMR_ROAMING
 	radio_roam_view_t roam;
 #endif
+	bool tx_released;	// FM: PTT is up and the sub-audio tail runs
 #if CONFIG_P25
 	radio_p25_view_t p25;	// P25 conventional (docs/spec/p25.md 7): the call heard, the engine's transmit state
 #endif
@@ -595,6 +599,20 @@ bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_bri
 bool radio_get_satellite_oldest_tle_epoch(uint32_t *epoch);
 uint32_t radio_get_satellite_generation(void);
 #endif
+
+// The view as the screen shows it. After PTT release a DMR call still runs to the end of its superframe, up to about
+// half a second, and FM can send a roger beep and a sub-audio tail. The screen follows the key, so the radio does not
+// look stuck in TX; the LED still shows the RF
+static inline void radio_view_for_screen(radio_view_t *v)
+{
+#if CONFIG_DMR
+	if (v->state == RS_TX && v->ch.mode == RADIO_MODE_DMR && v->dmr.tx_released)
+		v->state = RS_IDLE;
+#endif
+	if (v->state == RS_TX && (v->tx_released || v->roger))
+		v->state = RS_IDLE;
+}
+
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);
 // Just the view's zone index and position and the zone's size (0 while none is loaded), likewise. False while the

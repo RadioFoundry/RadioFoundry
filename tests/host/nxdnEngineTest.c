@@ -716,7 +716,7 @@ static void testSoftModem(void)
 			memset(&sm, 0, sizeof sm);
 			nxdn_call_rx_init(&c, 5, &sm_sink, NULL);
 			air_framer_init(&fr, &nxdn_air_mode, &c.rx, fbuf, fsoft, NXDN_FRAME_SYMS);
-			CHECK(air_softmodem_rx_open(&m, p, 8000, 2000, out_chunk, &fr), "open");
+			CHECK(air_softmodem_rx_open(&m, p, 8000, 2000, 0, out_chunk, &fr), "open");
 			for (uint32_t from = 0; from < n; from += 256)
 				air_softmodem_rx(&m, all + from, (uint16_t)(n - from < 256 ? n - from : 256), 0x10000000u + from * 125u);
 			whole += sm.starts == 1 && !sm.late && sm.voice >= 48 && sm.ends == 1;

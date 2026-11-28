@@ -60,6 +60,10 @@ typedef struct {
 	uint32_t (*crit_enter)(void);	// optional
 	void (*crit_exit)(uint32_t saved);
 	void (*delay_ms)(uint32_t ms);	// init only
+	// No 1 us wait per half bit, only the 1 us after the address (BK4819 class: SCK to 8 MHz, 25 ns high and low,
+	// 1 us from the address's last falling edge to the next rising one). The pin writes alone make each half bit
+	// longer than 25 ns; a bus whose chips or wiring weren't checked at that speed leaves it false
+	bool fast;
 } rfbus_3w_pins_t;
 
 typedef struct {

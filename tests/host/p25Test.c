@@ -466,6 +466,54 @@ static void testCall(void)
 	(void)at;
 }
 
+// A transmitter that holds its carrier a while after the terminator: the receiver, counting on from the terminator,
+// reads a NID of all zeros there (a header of NAC 0, one level throughout). Nothing follows a terminator without a
+// sync of its own
+static void testCarrierAfterTerminator(void)
+{
+	static uint8_t fbuf[P25_UNIT_BYTES_MAX];
+	uint8_t unit[P25_UNIT_BYTES_MAX], hdr[P25_HDR_BYTES], lcraw[P25_LC_BYTES];
+	p25_lc_t lc = { .lcf = P25_LCF_GROUP, .tgid = 1001, .src = 3101276 };
+	air_framer_t fr;
+	p25_rx_t rx;
+
+	fill(hdr, sizeof(hdr));
+	p25_lc_build(&lc, lcraw);
+	air_n = 0;
+	air_noise(333);
+	p25_unit_begin(unit, P25_HDU_SYMS, 0x293, P25_DUID_HDU, P25_SS_UNKNOWN);
+	p25_hdu_put(unit, hdr);
+	air_add(unit, P25_HDU_SYMS);
+	p25_unit_begin(unit, P25_LDU_SYMS, 0x293, P25_DUID_LDU1, P25_SS_UNKNOWN);
+	p25_ldu_lc_put(unit, lcraw);
+	air_add(unit, P25_LDU_SYMS);
+	for (uint8_t t = 0; t < 2; t++) {
+		uint16_t n = t ? P25_TDULC_SYMS : P25_TDU_SYMS;
+
+		p25_unit_begin(unit, n, 0x293, t ? P25_DUID_TDULC : P25_DUID_TDU, P25_SS_UNKNOWN);
+		if (t)
+			p25_tdulc_put(unit, lcraw);
+		air_add(unit, n);
+		// The carrier, unmodulated: one level for 60 ms, then noise
+		for (uint16_t i = 0; i < 288; i++)
+			air[air_n++] = 0;
+		air_noise(400);
+		if (!t) {
+			p25_unit_begin(unit, P25_HDU_SYMS, 0x293, P25_DUID_HDU, P25_SS_UNKNOWN);
+			p25_hdu_put(unit, hdr);
+			air_add(unit, P25_HDU_SYMS);
+		}
+	}
+	ngot = nlost = 0;
+	p25_rx_init(&rx, P25_NAC_ANY, on_unit, on_lost, NULL);
+	air_framer_init(&fr, &p25_air_mode, &rx, fbuf, NULL, P25_UNIT_SYMS_MAX);
+	run(&fr, 100, 0, 0);
+	CHECK(ngot == 5 && got[2].duid == P25_DUID_TDU && got[3].duid == P25_DUID_HDU && got[3].nac == 0x293 &&
+	      got[4].duid == P25_DUID_TDULC, "carrier after the terminators: %u units", ngot);
+	for (uint8_t k = 0; k < ngot; k++)
+		CHECK(got[k].nac == 0x293, "unit %u: NAC %03X", k, got[k].nac);
+}
+
 // ── The call layer: a transmitter's units through the framer to a receiver's call ──
 static struct {
 	uint8_t starts, updates, ends;
@@ -611,6 +659,7 @@ int main(void)
 	testLc();
 	testVoice();
 	testCall();
+	testCarrierAfterTerminator();
 	testCallLayer();
 	printf("p25Test: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;

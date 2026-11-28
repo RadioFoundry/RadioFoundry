@@ -16,6 +16,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
 | [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 boards have not run on a radio, one V4A/V5 report has DMR transmit dropping out (#750), and SFR loses inbound voice frames. |
+| [AnyTone AT-D578UV](#anytone-at-d578uv) | AnyTone AT-D578UV PRO, AnyTone AT-D578UV PLUS | FM, DMR voice, text messages and positions, dual watch, GPS and the flash stub work on the GD32F303 radios. Open: air band AM on a radio with the KTMicro receiver. The AT32 radios take the d578uva test build. |
 | [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio. |
 <!-- end generated -->
 
@@ -95,8 +96,10 @@ DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops
 A and B can be any channel of any zone, or the VFO ([how the core does it](../spec/radio-features.md#21-dual-watch)).
 Nothing about this dual watch has been checked on the air on any radio.
 
-The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware has two receiver chips
-([Anytone hardware notes](../spec/hardware-anytone.md)). RadioFoundry has no board for it, so there is no support.
+The AnyTone AT-D578UV has two receivers. When the other channel is FM, its second receiver stays on it, so dual watch
+hears both channels at once instead of in turn. When it is DMR, the second receiver watches it for a signal, and
+while the selected channel is quiet the radio goes over to decode the call and comes back after it
+([AT-D578UV](#what-the-at-d578uv-lacks-today)).
 
 ## The volume bar
 
@@ -109,6 +112,11 @@ and a PC can't set the volume. The bar goes down to 0 only where the bottom of t
 otherwise its lowest step is 1.
 
 <img src="../ux/screens/160x128/volume_bar.png" width="200" alt="The volume bar at the bottom of Home after turning the knob">
+
+On a radio with a volume knob per side (the AT-D578UV), turning either knob shows two bars: **Vol A** over **Vol B**,
+each with its step, and the side whose knob you turned highlighted.
+
+<img src="../ux/screens/160x128/volume_bar_ab_dual.png" width="200" alt="Vol A over Vol B at the bottom of Home in dual watch, Vol A highlighted">
 
 ## Setting the volume from a PC
 
@@ -612,7 +620,7 @@ python3 tools/cps_client.py --port /dev/ttyUSB1 verify cp.bin
 ```
 
 `test-channels` makes channel 1 an FM channel (12.5 kHz, simplex, no tones), channel 2 a DMR channel on the same
-frequency (color code 1, timeslot 1, talk target group 91), and zone 1 holding both. It replaces those channels,
+frequency (color code 1, timeslot 1, talk target group 91), and zone 1 holding both. With `--repeater MHz` it adds channel 3 to the zone: the same DMR channel as a repeater pair, receiving that frequency and transmitting on `--rx`; a second frequency after `--repeater` adds channel 5 the same way, a second roaming site. With `--watch MHz` it adds channel 4, last in the zone: FM, receive only, on that frequency (a channel off the test frequency for dual watch). `--zone2` adds zone 2, holding channel 1. It replaces those channels,
 the first contact and the first zone and leaves everything else in the file. A DMR channel needs a build with
 `CONFIG_DMR=y` (the default); without it the radio lists only its FM channels. `verify` compares the regions the tool
 transfers. The write replaces whole 4 KB sectors, each in one step: a
@@ -696,6 +704,131 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 - No audio linking (USRP): its received audio needs about 17.6 KB/s, more than the programming cable's PPP link
   carries (about 11.5 KB/s).
 
+## AnyTone AT-D578UV
+
+A mobile radio for 136-174 and 400-480 MHz with a color screen, a front knob, front keys and a hand microphone.
+This section is the radios with a GigaDevice GD32F303 processor; the radios with an AT32 processor take their own
+image ([AT-D578UV (AT32)](#anytone-at-d578uv-at32)). It runs on the radio.
+
+**Which AT-D578UV.** Open the radio's version screen. A radio that shows `GD_Ver` has the GD32F303 and takes the
+`d578uv` image. A radio that shows `AT_Ver` has the AT32 processor and takes the
+`d578uva` test build ([AT-D578UV (AT32)](#anytone-at-d578uv-at32)). Or press
+**Auto-Detect Now** on the installer's build step and connect the radio as it is: on with its original firmware, in
+update mode, or running RadioFoundry. The installer checks the radio's model again just before it writes, and refuses
+the other variant's image.
+
+### Installing on the AT-D578UV
+
+The radio's own update mode takes the image over its USB cable, so the original firmware's loader stays and the original firmware
+can go back the same way ([installing](02-installing.md#radios-installed-through-the-manufacturers-update-mode)). To
+start it, disconnect the radio's power cable, hold **MENU** and **EXIT**, and connect the power cable again while
+still holding them; then connect the USB cable. Switching the radio off and on with its power key while holding the
+keys often doesn't start it. The original
+firmware's other power-on screens, such as its own **UPDATE MODE**, are for fonts and icons, not the firmware: don't
+install from them.
+
+| Task | Web installer | rfoundry |
+|---|---|---|
+| Check the radio, write nothing | **Connect**: the page asks the radio its model | `rfoundry detect --board d578uv` |
+| Install | **Install**, **Connect**, pick your original firmware's `.CDD` (for the DMR chip's boot block), **Install** | `rfoundry flash IMAGE --board d578uv --stock FW.CDD` |
+| Back to the original firmware | **Help**, restore, pick the original firmware's `.CDD`, `.CDI` and `.spi` | `rfoundry restore-stock FW.CDD --board d578uv` |
+
+The installer refuses a radio whose model doesn't match, and an AT32 radio (`AT_Ver`) given this image: it names
+the `d578uva` image instead. The `rfoundry` route has installed on a radio; the web installer hasn't yet.
+
+### AT-D578UV keys
+
+| Front key | Press | Hold |
+|---|---|---|
+| **P1** | **\*** (quick settings) | **Next zone** |
+| **P2** | **#** (actions) | **Talk target** |
+| **P3** | **Monitor** | **Monitor** |
+| **P4** | **A/B** | dual watch on or off |
+| **P5** | **Power level** | emergency (hold 1.5 s) |
+| **P6** | between the channel and the VFO | copy the channel to the VFO |
+| **MENU** | **OK** | lock or unlock the keys (locks from Home) |
+| **EXIT** | **Back** | Home |
+| Knob push | **OK** | scan on or off |
+
+**Settings > Keys** and the codeplug set the press and the hold of **P3** to **P6** and the knob push; the table gives
+the defaults. **Up** and **Down** are the front knob and the microphone's **Up** and **Down**: the knob steps the
+channel, and in a list moves the focus. The two knobs on the left set the volume of channel A (top) and B.
+
+PTT is on the hand microphone. Both kinds work without a setting: the radio tells the keypad microphone from the plain
+one by the messages it sends. (The original firmware's **Hand Type** setting chooses between them.) The keypad
+microphone works on a radio; the plain one is untested.
+
+| Microphone key | Role |
+|---|---|
+| **PTT** | **PTT** |
+| **Up**, **Down** (both microphones) | as the front **Up** and **Down** |
+| **0**-**9** (keypad microphone) | digits |
+| **\*** / **#** | **\*** / **#**, as **P1** / **P2** |
+| **SUBPTT A/B** (beside **PTT**) | **A/B**; held, dual watch on or off |
+| **A** (MENU) | **OK** |
+| **B**, **C** (ZONE) | next zone, previous zone |
+| **D** (EXIT) | **Back** |
+
+In text entry **\*** (**P1** too) types a space, as on AnyTone's own microphones; held, it deletes. The **Key Lock**
+switch on the side has no effect yet. On the keypad microphone, **R/T** shows each side receiving or
+transmitting and **MAIN** the selected side.
+
+A keypad microphone unplugged while the radio is on stops its PTT within 3 seconds.
+
+### What the AT-D578UV lacks today
+
+- DMR voice, text messages, positions, the ID database, talker alias, emergency calls and roaming work on the radio.
+  A text message with a response requested longer than 32 characters is lost: the DMR chip clears part of each
+  data block ([DMR data](../spec/modem-sct.md)).
+- Dual watch hears both channels at once only when the other channel is FM: the second receiver has no DMR decoder.
+  With a DMR channel there it watches for a signal, and while the selected channel is quiet the radio goes over to
+  decode the call and comes back after it.
+- FM transmit, DTMF, VOX and APRS beacons work on the radio.
+- Air band receive (108-137 MHz, AM) needs the KTMicro receiver. Some radios carry an RDA5807 in its place, which
+  has FM broadcast only: on those the air band stays silent
+  ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)). While the air band plays, dual
+  watch pauses: it uses the second receiver's parts. FM broadcast receive (87.5-108 MHz) works; stereo isn't
+  written.
+- A Bluetooth PTT button or Bluetooth hand mic paired with the original firmware keys the radio, and the hand
+  mic's channel keys work too. Pairing and Bluetooth audio aren't written: the microphone and speaker stay the
+  radio's own. The built-in GPS works.
+- For VOX, RadioFoundry reads the microphone's level from the RF
+  chip, and how loud a voice must be to key it may need a different **VOX level** than on other radios.
+- APRS receive is written and untested, but this image leaves it out: it needs more memory than the GD32F303 has
+  left with DMR on. The AT32 image has it. RadioFoundry decodes the receive audio itself and doesn't use
+  the radio's APRS add-on board.
+- The backlight has five levels: **Brightness** picks one per 20 % (10-20 % the dimmest,
+  90-100 % the brightest). By default it dims after 30 s and never goes off (**Backlight Dim/Off** 30s/dim). RadioFoundry doesn't control the status light yet, so its colors don't follow the radio's manual.
+- The hotspot, single frequency repeating, privacy, the USB network and zone sharing are left out: the
+  radio's memory is too small for all of them, and the vocoder runs in the DMR chip, out of the processor's reach.
+- P25 and NXDN ([P25 channels](07-channels-zones-vfo.md#p25-channels), [NXDN
+  channels](07-channels-zones-vfo.md#nxdn-channels)) receive only, with no voice: a call shows on the screen but
+  stays silent, and PTT on a P25 or NXDN channel is refused ("This mode: receive only"). The DMR chip has no P25 or
+  NXDN of its own, so the processor decodes the receive signal itself. Untested on the radio. P25 trunking is left
+  out: it doesn't fit the memory.
+
+## AnyTone AT-D578UV (AT32)
+
+The AT-D578UV with an AT32F435 or AT32F437 processor (version screen `AT_Ver`). The radio around it is the
+same as on the GD32F303 radios, and so is RadioFoundry's code for it: keys, functions and what is missing are as in
+[AnyTone AT-D578UV](#anytone-at-d578uv). Only the image differs, and the AT32 processor's larger memory leaves
+room for what the GD32F303 image leaves out:
+
+- Zone sharing.
+- APRS receive ([Receiving](13-aprs.md#receiving)). The radio decodes the receive audio while you listen on the APRS
+  frequency, whether or not the squelch is open.
+- The USB network ([USB network mode](15-usb-network.md)) with IP over DMR, finding the radio by name, TFTP
+  programming, SNMP and the control station mode. The TCP services (the status page, rig control, KISS over TCP and
+  APRS-IS) don't fit beside them and are left out, and network audio (AllStarLink, DVSwitch) isn't written: the
+  voice stays in the DMR chip.
+
+**The AT32 image is a test build.** No AT32 radio has run RadioFoundry yet. The image is the GD32 build's code set up
+for the AT32F435, and the list above is what the build includes. The web installer and `rfoundry` both show this
+warning before writing. The factory update mode is never written, so a radio that doesn't start can still be put back.
+Please report what works and what doesn't.
+
+An AT32 radio can still get its original firmware back: `rfoundry restore-stock FW.CDD --board d578uva`, where the
+`.CDD` is an AT32 build, or the installer's restore task on the AT-D578UV.
 ## Retevis RT10
 
 A handheld for 902-928 MHz with a 16-position channel knob, two side keys and no display. FM receive with CTCSS
@@ -822,7 +955,6 @@ models it covers.
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
 | Radioddity GD-88 | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | Baofeng DM-36 | In progress ([#607](https://github.com/radiofoundry/radiofoundry/pull/607)). Built on the DM-32UV's platform: FM, the display, keys and programming run; DMR voice on air and power levels open. |
-| Anytone AT-D578UV (mobile) | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
 | TYT MD-2017 / Retevis RT82 | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |
 | BTECH DMR-6X2 PRO | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port. |

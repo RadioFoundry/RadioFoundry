@@ -172,6 +172,8 @@ static void step_update(radio_sm_t *sm)
 	sm->view.vfo_step_auto = sm->vfo_step_set == 0;
 }
 
+#define MODEM_VOICE_TX_AHEAD	2	// bursts queued ahead of the air (dmr_call_config_t.tx_ahead)
+
 static void changed(radio_sm_t *sm)
 {
 	step_update(sm);	// every change that can move the width comes here
@@ -199,7 +201,7 @@ void radio_settings_default(radio_settings_t *s)
 	s->rx_save_idle_s = 10;
 	s->battery_off_s = 0;
 	s->backlight_dim_s = 30;
-	s->backlight_off_s = 120;
+	s->backlight_off_s = board.backlight_dims_only ? 0 : 120;
 	s->reply_s = RADIO_REPLY_CODEPLUG;
 	s->roam_rssi_dbm = -105;	// ROAM_RSSI_DEFAULT
 	s->roam_hyst_db = 6;		// ROAM_HYST_DEFAULT
@@ -699,6 +701,14 @@ static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 		timed = sm->wake_led;
 	}
 #endif
+#if CONFIG_SCAN
+	// Dual watch is a way of listening, not a scan: it runs for as long as the radio is on
+	if ((board.caps & CAP_LED_SCAN_FLASH) != 0 && !*red && !*green &&
+	    (sm->scan.kind == SCAN_ZONE || sm->scan.kind == SCAN_VFO)) {
+		*green = (now / RADIO_LED_SCAN_STEP_MS & 1u) == 0;
+		timed = true;
+	}
+#endif
 	sm->led_timed = timed;
 }
 
@@ -742,28 +752,35 @@ static bool channel_read(uint16_t number, channel_t *ch)
 
 // Speaker and LEDs follow the state; only changes go to the board
 // FM: the board's speaker path follows the squelch (or the monitor). DMR voice goes out as PCM from the vocoder
-// (core/dmr/ambe routes the speaker itself); the green LED shows a call being played
+// (core/dmr/ambe routes the speaker itself), except with a modem that plays the voice itself (CAP_MODEM_VOICE): its
+// voice reaches the speaker through the board's path, open while a call is played. The green LED shows a call played
 static void outputs(radio_sm_t *sm)
 {
 	bool tx = sm->view.state == RS_TX;
 	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot && !parked(&sm->view.ch);
 	bool open = !tx && fm && (sm->view.monitor || sm->view.state == RS_RX || (sm->view.state == RS_TX_DENIED && sm->deny_rx));
 	bool green = open;
+	bool digital_rx = false;
 #if CONFIG_P25
 	if (sm->view.ch.mode == RADIO_MODE_P25 && !tx && sm->view.state == RS_RX &&
 	    (sm->view.p25.flags & RADIO_P25_PLAYED) != 0) {
 		green = true;
+		digital_rx = true;
 	}
 #endif
 #if CONFIG_NXDN
 	if (sm->view.ch.mode == RADIO_MODE_NXDN && !tx && sm->view.state == RS_RX &&
 	    (sm->view.nxdn.flags & RADIO_NXDN_PLAYED) != 0) {
 		green = true;
+		digital_rx = true;
+		open = radio_nxdn_modem_voice();	// the modem's voice reaches the speaker through the board's path
 	}
 #endif
 #if CONFIG_DMR
 	if (!fm && !tx && sm->view.state == RS_RX && sm->view.dmr.state == RDMR_RX) {
 		green = true;
+		digital_rx = true;
+		open = !sm->hotspot && board_modem_voice();
 	}
 	if ((sm->hotspot || sm->sfr_rpt) && board.dmr != NULL && board.dmr->is_transmitting()) {
 		tx = true;
@@ -837,6 +854,20 @@ static void outputs(radio_sm_t *sm)
 		green = false;	// a broadcast station playing isn't a call: the LED stays dark (after dual watch's use above)
 	}
 	led_signals(sm, &red, &green);
+	bool blue = false;
+	if ((board.caps & CAP_LED_RGB) != 0) {
+		blue = digital_rx && green && !red;	// cyan
+#if CONFIG_DMR
+		if (sm->sfr_rpt && !red && !sm->led_timed) {
+			red = green = true;		// orange; red alone while it repeats
+			blue = false;
+		}
+#endif
+		if (sm->blue_out != (int8_t)blue) {
+			sm->blue_out = (int8_t)blue;
+			board.power->led(LED_BLUE, blue);
+		}
+	}
 	if (sm->green_out != (int8_t)green) {
 		sm->green_out = (int8_t)green;
 		board.power->led(LED_GREEN, green);
@@ -845,7 +876,7 @@ static void outputs(radio_sm_t *sm)
 		sm->red_out = (int8_t)red;
 		board.power->led(LED_RED, red);
 	}
-	sm->view.leds = (uint8_t)((green ? RADIO_LED_GREEN : 0u) | (red ? RADIO_LED_RED : 0u));
+	sm->view.leds = (uint8_t)((green ? RADIO_LED_GREEN : 0u) | (red ? RADIO_LED_RED : 0u) | (blue ? RADIO_LED_BLUE : 0u));
 }
 
 static void end_reception(radio_sm_t *sm, uint32_t now_ms)
@@ -1812,15 +1843,24 @@ static bool permit_before_key(const radio_sm_t *sm)
 	return CONFIG_BEEP && (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && permit_local(sm) && !sm->view.ch.no_beep;
 }
 
+// A scan that carries digital monitor from stop to stop (any but dual watch)
+static bool scan_carries_hear_all(const radio_sm_t *sm)
+{
+#if CONFIG_SCAN
+	return scan_on(&sm->scan) && sm->scan.kind != SCAN_DUAL;
+#else
+	(void)sm;
+	return false;
+#endif
+}
+
 // Digital monitor on now: latched on this channel, or carried by a zone or VFO scan started with it on, so every
 // stop hears every talkgroup and a call on any of them holds the scan (#595)
 static bool hear_all_on(const radio_sm_t *sm)
 {
-#if CONFIG_SCAN
-	if (sm->scan_hear_all && scan_on(&sm->scan) && sm->scan.kind != SCAN_DUAL) {
+	if (sm->scan_hear_all && scan_carries_hear_all(sm)) {
 		return true;
 	}
-#endif
 	return sm->hear_all_latch;
 }
 
@@ -1919,6 +1959,8 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.permit_hold_ms = PERMIT_HOLD_MIN_MS;
 		cfg.permit_busy = permit_busy;
 	}
+	if (board_modem_voice())
+		cfg.tx_ahead = MODEM_VOICE_TX_AHEAD;
 #if CONFIG_DMR_TRUNK
 	// A trunked system: both slots on the control channel; on a payload channel the engine chose the call, so it
 	// plays whatever its talkgroup, and PTT talks to it
@@ -2158,6 +2200,29 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 }
 #endif
 
+// A modem with its own voice (CAP_MODEM_VOICE): the stack still paces the call's bursts, but nothing it gives the
+// modem is voiced and nothing it hears is played. The modem keys its vocoder and speaker path itself
+static bool modem_voice_next(uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
+{
+	(void)ctx;
+	memset(ambe72, 0, DMR_AMBE_FRAME_BYTES);
+	return true;
+}
+
+static void modem_voice_frame(const uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
+{
+	(void)ambe72;
+	(void)ctx;
+}
+
+static void modem_voice_lost(void *ctx)
+{
+	(void)ctx;
+}
+
+static const dmr_voice_source_t modem_voice_source = { .next = modem_voice_next };
+static const dmr_voice_sink_t modem_voice_sink = { .frame = modem_voice_frame, .lost = modem_voice_lost };
+
 // On a DMR channel, after set_mode(DMR) and rx(): configure, and start the stack if it isn't running
 static void dmr_begin(radio_sm_t *sm)
 {
@@ -2383,6 +2448,7 @@ static void dmr_publish(radio_sm_t *sm, uint32_t now_ms)
 		d->last_ms = cv->last_heard_ms;
 	}
 	d->underruns = cv->tx_underruns;
+	d->tx_released = cv->tx_released;
 	changed(sm);
 }
 
@@ -4852,8 +4918,65 @@ static bool rx2_engage(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->dual_at = sm->dual_sel;
 	sm->rx2_on = true;
+	sm->rx2_look = false;
+	sm->rx2_relook = true;
 	rx2_publish(sm);
 	return true;
+}
+
+// The selected channel has a signal, a call or its reply window, or the monitor is on: it keeps the main receiver
+static bool dual_sel_busy(const radio_sm_t *sm)
+{
+	if (sm->view.monitor || sm->view.state == RS_RX) {
+		return true;
+	}
+#if CONFIG_DMR
+	if (sm->view.ch.mode == RADIO_MODE_DMR &&
+	    (sm->view.dmr.state == RDMR_RX || sm->view.dmr.reply_active)) {
+		return true;
+	}
+#endif
+	return false;
+}
+
+// The second receiver only senses its channel (rx2_status_t.sense: DMR with one decoder). On a carrier there while
+// the selected channel is quiet, the main receiver goes to decode it: a look, which the scan runs as on one receiver
+// (a hold on the call, the wait after it), and its step brings the main receiver back. A look that found no call for
+// us isn't repeated until the carrier drops, or for RADIO_RX2_RELOOK_MS; after one that played a call the next goes
+// at once (a repeater's hang keeps the carrier up for the reply). True: the main receiver is on the selected channel
+// (nothing for the scan to do)
+static bool rx2_sense(radio_sm_t *sm, const rx2_status_t *st, uint32_t now_ms)
+{
+	if (!dual_here(sm, sm->dual_sel)) {
+		if (sm->rx2_look) {
+#if CONFIG_DMR
+			sm->rx2_look_call = sm->rx2_look_call || sm->view.dmr.state == RDMR_RX;
+#endif
+			return false;
+		}
+		if (dual_tune(sm, sm->dual_sel, now_ms)) {
+			scan_tuned(&sm->scan, now_ms);
+		}
+		return true;
+	}
+	if (sm->rx2_look) {
+		sm->rx2_look = false;
+		sm->rx2_look_ms = now_ms;
+		sm->rx2_relook = sm->rx2_look_call;
+	}
+	if (!st->active) {
+		sm->rx2_relook = true;
+		return true;
+	}
+	if (dual_sel_busy(sm) || (!sm->rx2_relook && now_ms - sm->rx2_look_ms < RADIO_RX2_RELOOK_MS)) {
+		return true;
+	}
+	if (dual_tune(sm, (uint8_t)!sm->dual_sel, now_ms)) {
+		scan_tuned(&sm->scan, now_ms);
+		sm->rx2_look = true;
+		sm->rx2_look_call = false;
+	}
+	return true;	// this poll's readings are from before the retune
 }
 
 // Every poll in dual watch on a radio with a second receiver. True: it has the other channel (nothing to alternate)
@@ -4881,6 +5004,9 @@ static bool rx2_service(radio_sm_t *sm, uint32_t now_ms)
 		if (rx2_settings(sm, (uint8_t)!sm->dual_sel, &t)) {
 			board.rx2->tune(&t);	// a codeplug edit or a squelch change; the same settings again send nothing
 		}
+	}
+	if (st.sense) {
+		return rx2_sense(sm, &st, now_ms);
 	}
 	if (!dual_here(sm, sm->dual_sel) && dual_tune(sm, sm->dual_sel, now_ms)) {
 		scan_tuned(&sm->scan, now_ms);
@@ -5340,7 +5466,8 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		scan_publish(sm);
 		return;
 	}
-	if (sc->kind == SCAN_DUAL && dual_wait_service(sm, st, now_ms)) {
+	// The second receiver only senses its channel and the main one looks there: no looks back from the look
+	if (sc->kind == SCAN_DUAL && !sm->rx2_on && dual_wait_service(sm, st, now_ms)) {
 		scan_publish(sm);
 		return;
 	}
@@ -6267,6 +6394,10 @@ static inline void dtmf_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (voi
 
 // --- FM transmit tones and the end of an FM transmission ---
 
+#if CONFIG_SUBTONE
+static void tail_cancel(radio_sm_t *sm);
+#endif
+
 // Back to receive after an FM transmission (PTT released, roger beep done, burst released)
 // keyed: DMR per-burst keying is still armed (dmr_follow releases it), so no tx_off here
 static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
@@ -6280,10 +6411,14 @@ static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 	sm->view.dtmf_digits[0] = 0;
 #endif
 	if (sm->view.state == RS_TX && !keyed) {
+#if CONFIG_SUBTONE
+		tail_cancel(sm);	// while keyed: the board gives the microphone back
+#endif
 		board.radio->tx_off();	// ends a sub-audio tail too
 	}
 #if CONFIG_SUBTONE
 	sm->tail_ms = 0;
+	sm->view.tx_released = false;
 #endif
 	if (sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
 		bool sent = sm->view.state == RS_TX && sm->view.tx_deny == TXDENY_NONE;
@@ -6324,6 +6459,7 @@ static bool tail_start(radio_sm_t *sm, uint32_t now_ms)
 		return false;
 	}
 	sm->tail_ms = now_ms != 0 ? now_ms : 1;
+	sm->view.tx_released = true;
 	return true;
 }
 
@@ -6332,6 +6468,7 @@ static void tail_cancel(radio_sm_t *sm)
 	if (sm->tail_ms != 0) {
 		board.radio->tx_tail(false);
 		sm->tail_ms = 0;
+		sm->view.tx_released = false;
 	}
 }
 
@@ -6946,6 +7083,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	sm->tail_ms = 0;	// a transmission that ended some other way (tx_off() ended its tail)
+	sm->view.tx_released = false;
 #endif
 #if CONFIG_SCAN
 #if CONFIG_DUAL_WATCH
@@ -8530,6 +8668,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->rx_open_out = -1;
 	sm->sql_floor = INT16_MAX;	// not known yet: no voice peak hold before an idle poll measured it
 	sm->green_out = -1;
+	sm->blue_out = -1;
 #if CONFIG_BCAST_FM
 	sm->bcast_audio_out = -1;
 	sm->bcast_volume_out = -1;
@@ -8545,6 +8684,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->vol_hold = false;
 	sm->view.volume = -1;
 	sm->view.volume_knob = -1;
+	sm->view.volume_b = -1;
 	sm->view.volume_override = -1;
 	sm->view.volume_step = RADIO_VOLUME_DEFAULT;
 	sm->base_squelch = RADIO_SQUELCH_DEFAULT;
@@ -8569,6 +8709,8 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	batt_init(&sm->batt);
 #if CONFIG_BEEP
 	beep_init(pcm_audio());
+	beep_init_tone(pcm_audio() == NULL && board.radio != NULL ? board.radio->beep_tone : NULL,
+		       board.radio != NULL ? board.radio->beep_lead_ms : 0);
 #endif
 	step_update(sm);
 	sm->view.source = codeplug_source();
@@ -8595,11 +8737,18 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	board.radio->set_mode(RADIO_MODE_FM);
 
 #if CONFIG_DMR
-	sm->codec = board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
+	bool modem_voice = board_modem_voice();
+	sm->codec = modem_voice ? board.modem_codec == NULL || board.modem_codec() != NULL :
+			board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
 	sm->view.dmr.codec = sm->codec;
 	dmr_call_init(board.dmr);	// board.dmr NULL: DMR channels receive nothing and refuse PTT
+	dmrDataSetClearedBitsRepair(board.dmr != NULL && board.dmr->clears_crc9);
 	ambeVoiceInit(pcm_audio(), board.vocoder);
-	dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
+	if (modem_voice) {
+		dmr_call_set_voice(&modem_voice_sink, &modem_voice_source);
+	} else {
+		dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
+	}
 #if CONFIG_BEEP
 	ambeVoiceSetMixer(beep_mix);	// beeps while the voice stream owns the PCM audio
 	ambeVoiceSetMicGate(dmr_mic_gate);	// ... and kept off the air: the mic hears the speaker
@@ -8938,6 +9087,20 @@ static void monitor_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now
 	// arg 1 down, 0 up, 2 up after the key's hold function ran. DMR: a short press toggles digital monitor (the hear
 	// all latch) on its release, so a hold can do something else (#19); FM: the squelch is open while the key is
 	// held. A key held across a change to DMR is still released here
+	if (req->arg == 1) {
+		sm->dmon_press = sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.monitor;
+	}
+	if (sm->dmon_press) {
+		// A press that starts on DMR is a digital monitor press, released wherever: a scan's stop is shorter than a
+		// press, so the release often comes on the next stop, which may be FM. Off a scan, only on DMR
+		if (req->arg != 1) {
+			sm->dmon_press = false;
+			if (req->arg == 0 && (sm->view.ch.mode == RADIO_MODE_DMR || scan_carries_hear_all(sm))) {
+				set_hear_all_latch(sm, !hear_all_on(sm));
+			}
+		}
+		return;
+	}
 	if (sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.monitor) {
 		if (req->arg == 0) {
 			set_hear_all_latch(sm, !hear_all_on(sm));
@@ -9574,6 +9737,22 @@ uint8_t radio_volume_stored(uint8_t step)
 	return (uint8_t)(0x80u | ((step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step) + 1u));
 }
 
+// A second volume knob (side B's): its position in the view for the UI, with the 2 % filter and the ends exactly. The
+// board sets that side's level itself
+static void follow_volume_b(radio_sm_t *sm)
+{
+	if (!RFOUNDRY_VOLUME_B || board.power == NULL || board.power->volume_b == NULL) {
+		return;
+	}
+	int v = board.power->volume_b();
+	int seen = sm->view.volume_b;
+	int d = v - seen;
+	if (v >= 0 && (seen < 0 || d >= 2 || d <= -2 || ((v == 0 || v == 100) && v != seen))) {
+		sm->view.volume_b = (int8_t)v;
+		changed(sm);
+	}
+}
+
 // Follow a volume knob the MCU reads (soft volume): pass changes of 2 % or more, and the ends exactly. A radio with
 // no knob (volume() = -1) gets the stored step instead, and a knob radio the debug link's override. A radio that can
 // read its knob but can't set the volume only records where the knob is (radio-features.md 4.2)
@@ -9609,6 +9788,9 @@ static void follow_volume(radio_sm_t *sm)
 		v = sm->volume_sent;
 		src = RVOL_HOLD;
 	}
+	// The 2 % filter is for the knob's reading only: a level set by number (the override, a soft step) or a change of
+	// source goes out exactly, even 1 % from the level in force
+	bool exact = src != RVOL_KNOB || src != sm->view.volume_src;
 	if (src != sm->view.volume_src || sm->vol_step != sm->view.volume_step ||
 	    sm->vol_override != sm->view.volume_override) {
 		sm->view.volume_src = src;
@@ -9617,7 +9799,8 @@ static void follow_volume(radio_sm_t *sm)
 		changed(sm);
 	}
 	int d = v - sm->volume_sent;
-	if (sm->volume_sent < 0 || d >= 2 || d <= -2 || ((v == 0 || v == 100) && v != sm->volume_sent)) {
+	if (sm->volume_sent < 0 || (exact && d != 0) || d >= 2 || d <= -2 ||
+	    ((v == 0 || v == 100) && v != sm->volume_sent)) {
 		sm->volume_sent = (int16_t)v;
 		sm->view.volume = (int8_t)v;
 		changed(sm);
@@ -9896,6 +10079,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		persist(sm, now_ms);
 	}
 	follow_volume(sm);
+	follow_volume_b(sm);
 	battery_poll(sm, now_ms);
 #if CONFIG_RADIO_DETOUR
 	detour_poll(sm, now_ms);
@@ -10125,6 +10309,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 
 	if (sm->view.state == RS_IDLE) {
 		if (opens) {
+			activity(sm, now_ms);	// a squelch open for one poll still keeps battery save awake its idle time
 			sm->view.state = RS_RX;
 			sm->close_count = 0;
 			sm->sql_rssi = held_rssi(&st, sq, open_below);

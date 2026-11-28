@@ -14,6 +14,7 @@ order = 20
 # the sixth character of the APRS tocall, APRDFR (docs/spec/aprs.md 4.2): one per radio, never reused
 aprs_tocall = "R"
 debuglink_aliases = []
+iddb_small = "RadioFoundry writes only the data flash's top 1 MB, below the activation block and calibration (hardware-rt10.md 4)"
 
 [docs]
 hardware = "docs/spec/hardware-rt10.md"

@@ -4,8 +4,11 @@
 """The host tool (stub/f4stub.py) against the stub's real protocol engine (f4stubSim, built from stub/common/stubeng.c
 and stub/stm32f4/f4stub_board.c): the board records, installs on a simulated DM-1701 and MD-380 flash and on f4stub's test
 profile (other SPI wiring), a read-back and the refusals, the SPI flash's security registers (one locked), all over the
-stub's wire protocol. The profiles come from the
-board registry, whose check holds them to the boards' sources (tools/boards.py). Run by `make -C tests/host`."""
+stub's wire protocol. With --gd32 SIM or --at32 SIM, the same tool against the GD32F30x or AT32F43x stub's engine
+(gd32stubSim / at32stubSim, with stub/<target>/..._board.c): every board on that target configured, installed, read back
+and refused. The profiles
+come from the board registry, whose check holds them to the boards' sources (tools/boards.py). Run by
+`make -C tests/host`."""
 import os
 import select
 import subprocess
@@ -52,7 +55,8 @@ def run(sim, flash, job, want_spi=False, board="dm1701"):
         open(fin, "wb").write(flash)
         proc = subprocess.Popen([sim, fin, fout], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
-        radio = f4stub.F4Radio(PipePort(proc), log=lambda *a: None)
+        radio = f4stub.F4Radio(PipePort(proc), log=lambda *a: None,
+                               target=f4stub.BOARDS[board]["target"] if board in f4stub.BOARDS else None)
         # The simulator may still be starting on a loaded machine, and hello() allows 0.5 s once
         for attempt in range(20):
             try:
@@ -75,7 +79,111 @@ def run(sim, flash, job, want_spi=False, board="dm1701"):
         return out, result, log
 
 
+# A peripheral address PEEK must refuse on each short-record target: its flash controller
+CONTROLLER = {"gd32f30x": 0x40022000, "at32f43x": 0x40023C00}
+
+
+def short_main(sim, target):
+    """Every board whose platform builds the target's stub (GD32F30x, AT32F43x), through that stub's real engine"""
+    t = f4stub.TARGETS[target]
+    fails = []
+
+    def check(c, what):
+        if not c:
+            fails.append(what)
+            print("FAIL: " + what)
+
+    boards = sorted(k for k, b in f4stub.BOARDS.items() if b["target"] == target)
+    for bid in boards:
+        b = f4stub.BOARDS[bid]
+        base, end = b["boot_end"], b["owned"][-1][1]
+        o, e = base - 0x08000000, end - 0x08000000
+        first = f4stub.sector_of(t.sectors(1024), base)[0]
+        flash = bytearray((i * 5 + 3 + (i >> 11)) & 0xFF for i in range(0x100000))
+        flash[o:o + 4] = (0x20017FF0).to_bytes(4, "little")
+        app = bytearray((i * 3 + (i >> 9)) & 0xFF for i in range(250000))
+        app[:4] = (0x20017FF0).to_bytes(4, "little")
+
+        out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image(bid, [(base, bytes(app))], backup_dir=d),
+                            board=bid)
+        erases = [int(x.split()[1]) for x in log.splitlines() if x.startswith("erase")]
+        nsec = (end - base) // t.sectors(1024)[0][2]
+        check("config %d %08X" % (b["id"], base) in log, "%s: record decoded by the stub (%r)" % (bid, log.splitlines()[:1]))
+        check(res == (nsec, 0), "%s: install through the real engine %s" % (bid, res))
+        check(erases[:1] == [first] and sorted(erases) == list(range(first, first + nsec)),
+              "%s: the commit sector %d first, then the owned sectors (%d erases)" % (bid, first, len(erases)))
+        check(out[:o] == bytes(flash[:o]), "%s: bootloader untouched" % bid)
+        check(out[e:] == bytes(flash[e:]), "%s: the flash after the application untouched" % bid)
+        check(out[o:o + len(app)] == bytes(app) and out[o + len(app):e].count(0xFF) == e - o - len(app),
+              "%s: image in place, the rest erased" % bid)
+
+        def reads(r, d):
+            got = r.read_flash(0x08000000, 0x10000)
+            bad = []
+            mg = t.magic.to_bytes(4, "big")
+            for op, payload in ((f4stub.OP_ERASE, bytes([first - 1]) + mg),             # the bootloader's last sector
+                                (f4stub.OP_ERASE, bytes([first + 3]) + mg),             # interlock: the app is committed
+                                (f4stub.OP_ERASE, bytes([first]) + f4stub.MAGIC.to_bytes(4, "big")),   # the F4 magic
+                                (f4stub.OP_PROGRAM, (0x08000000).to_bytes(4, "big") + b"\x00" * 4),
+                                (f4stub.OP_PROGRAM, (end - 4).to_bytes(4, "big") + b"\x00" * 4),   # interlock again
+                                (f4stub.OP_PEEK, CONTROLLER[target].to_bytes(4, "big") + (4).to_bytes(2, "big"))):
+                try:
+                    r.request(op, payload, retries=0)
+                    bad.append(op)
+                except stubtool.DumpError:
+                    pass
+            refused = None
+            try:
+                r.erase(first - 1)                  # the tool's own refusal: the board's protected bootloader
+            except f4stub.F4Error as ex:
+                refused = str(ex)
+            return got, bad, refused
+
+        out, (got, bad, refused), log = run(sim, bytes(flash), reads, board=bid)
+        check(got == bytes(flash[:0x10000]), "%s: read-back of the bootloader" % bid)
+        check(bad == [], "%s: the engine refuses bootloader erase and program, the interlock, the other magic, a "
+              "peripheral peek (%s)" % (bid, bad))
+        check(refused is not None and "protected" in refused, "%s: the tool refuses the bootloader first (%s)" % (bid, refused))
+        check(out == bytes(flash) and "erase" not in log, "%s: nothing changed by the refused requests" % bid)
+
+        # unconfigured: the engine refuses every write itself
+        def raw_writes(r, d):
+            got = []
+            mg = t.magic.to_bytes(4, "big")
+            for op, payload in ((f4stub.OP_ERASE, bytes([first]) + mg),
+                                (f4stub.OP_PROGRAM, (base + 0x1000).to_bytes(4, "big") + b"\x00" * 4)):
+                try:
+                    r.request(op, payload, retries=0)
+                    got.append("ok")
+                except stubtool.DumpError as ex:
+                    got.append(str(ex))
+            return got, r.board, r.app_base, r.target
+
+        out, (got, bd, ab, tg), log = run(sim, bytes(flash), raw_writes, board=None)
+        check(tg == target and bd is None and ab == 0, "%s: HELLO names the %s stub, unconfigured" % (bid, t.label))
+        check(len(got) == 2 and all("status 0x11" in g for g in got), "%s: unconfigured: writes refused %s" % (bid, got))
+
+        # a board of the other target: the tool refuses before CONFIG
+        def other(r, d):
+            try:
+                r.configure("dm1701")
+                return "configured"
+            except f4stub.F4Error as ex:
+                return str(ex)
+
+        out, why, log = run(sim, bytes(flash), other, board=None)
+        check("config" not in log and "%s stub runs" % t.label in why, "%s: an STM32F4 board refused (%s)" % (bid, why))
+
+    print("f4stub_wire_check --%s %s (%d board%s, %d failure%s)" % (
+        target[:4], "PASSED" if not fails else "FAILED", len(boards), "" if len(boards) == 1 else "s", len(fails),
+        "" if len(fails) == 1 else "s"))
+    return 0 if not fails else 1
+
+
 def main():
+    for flag, target in (("--gd32", "gd32f30x"), ("--at32", "at32f43x")):
+        if sys.argv[1:2] == [flag]:
+            return short_main(sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, flag[2:] + "stubSim"), target)
     sim = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "f4stubSim")
     fails = []
 

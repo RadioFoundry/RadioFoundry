@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# AnyTone AT-D578UV (mobile), GD32F303 builds: GD32F303VK + SCT3258 DMR baseband + four QA4818N RF chips (BK4819-class) +
+# ST7735S 160x128 on an 8080 bus. Radios built from mid-2022 carry an Artery AT32F43x
+# instead, which this image doesn't run on
+PLATFORM   := gd32f30x
+MCU        := gd32f303
+# The image starts where the vendor bootloader starts the application
+APP_BASE   := 0x08006000
+# Bench knobs, e.g. D578UV_DEFS="-DD578UV_LEVEL_IC=0" to keep SWD on
+# board_t .name, the Artery build (boards/d578uva) has its own
+BOARD_T_NAME := AT-D578UV
+D578UV_DEFS ?=
+MCU_DEFS   += $(D578UV_DEFS)
+# The UI task's deepest chain (a quick key that opens the satellite pass screen, down to a NAND read) is 1808 bytes
+# here: with make stack-check's overhead and margin, 538 words, 8 bytes to spare
+MCU_DEFS   += -DUI_TASK_STACK_WORDS=538
+# The start task's deepest chain (the satellite channel sync's zone write down to a NAND page move) is 2528 bytes:
+# with the overhead and margin, 716 words
+MCU_DEFS   += -DSTART_TASK_STACK=720
+BOARD_DIRS := boards/d578uv drivers/display/st7735 drivers/flash/spi_nand drivers/input/quadrature drivers/modem/sct \
+              drivers/rf/rfbus drivers/rf/subaudio drivers/rf/qa4818 drivers/gps/nmea_line drivers/gps/gps_rx \
+              platform/gd32f30x/gps_uart drivers/bcast/ktamfm drivers/bcast/rda5807m drivers/bus/i2c_gpio
+# The core's storage on the NAND, with CONFIG_NAND_STORAGE
+BOARD_NAND_DIRS := drivers/flash/nand_sectors drivers/flash/nand_blocks
+# The 160x128 panel in 16 colors (display_d578uv.c): the 4 bpp frame buffer is 10240 B and 128 rows, not the 40 KB / 160 row
+# RGB565 default. A screen has at most 16 colors (core/ui/gfx.h); with CONFIG_FONT_AA the edge grays compete for them
+MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u
+# Hardware traits (hal/hal_traits.h): the SCT3258 is a packet modem that plays the voice, the air tap gives the
+# demodulator's slope (rxtap_d578uv.c), side B has its own volume knob, and the board lists temperature sensors
+BOARD_PACKET_MODEM := y
+BOARD_SLOPE_TAP := y
+BOARD_VOLUME_B := y
+BOARD_TEMP := y

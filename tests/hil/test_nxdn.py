@@ -635,6 +635,7 @@ SCAN_VOICE_FRAMES = 120 # 2.4 s a call: longer than a scan's round of a short zo
 
 @pytest.mark.feature("nxdn")
 @pytest.mark.feature("scan")
+@pytest.mark.needs_switch("NXDN")   # "scan" is required on a radio without NXDN: its skip there is excused
 @pytest.mark.rf
 @pytest.mark.codeplug_write
 @pytest.mark.bench_service

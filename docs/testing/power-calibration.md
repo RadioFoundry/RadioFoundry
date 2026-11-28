@@ -13,7 +13,7 @@ keys each step and asks for the reading.
 
 | Command | Use |
 |---|---|
-| `power_cal.py --allow-rf MHZ key STEP...` | Key each drive (or `Ln`, power level n), 2 s each (`STEP:S` for S seconds) |
+| `power_cal.py --allow-rf MHZ key STEP...` | Key each drive (or `Ln`, power level n; `DRIVE@Ln`, a drive with level n's other settings), 2 s each (`STEP:S` for S seconds) |
 | `power_cal.py --allow-rf MHZ zero --hi D --lo D` | The bisection for the zero point and the cliff (3.2) |
 | `power_cal.py --allow-rf MHZ check --margin M` | The short check (4): every level, then the margin step; PASS or FAIL |
 
@@ -34,6 +34,8 @@ These facts set the procedure. Check them again only on a new model.
 | A drive of 0 is below the cliff | The PA must not be on with the drive at 0: the ramp starts and ends at the zero point (a carrier leak at key-up and a splash at key-down come from this) |
 | A warm PA moved the zero point and the cliff by about 5 counts | One hot check per model; no hot checks per radio |
 | With the drive changed after key-up, the meter first shows the starting level | The override sets the drive before key-up |
+| A board may set more than the drive per level (a transmitter trim register by level and band): the same drive at another level's settings gave 34 W instead of about 45 W | Key each level's drives at that level (`DRIVE@Ln`); a plain drive uses the lowest level's settings |
+| Not every PA has the cliff: on one model output fell smoothly to zero and stayed there down to drive 64 of 4095, cold and hot | No margin is needed there; the short check's dark step is any drive below the zero point at every frequency checked |
 
 ## 2. Equipment and setup
 

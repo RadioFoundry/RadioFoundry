@@ -73,6 +73,10 @@ MCU_DEFS += $(OPTION_DEFS)
 # Hardware options (hal/hal_hwopt.h): a board that has some says BOARD_HWOPTS := y in its board.mk. The others build
 # none of the code that lists, asks for and stores them
 MCU_DEFS += -DRFOUNDRY_HWOPTS=$(if $(filter y,$(BOARD_HWOPTS)),1,0)
+# Hardware traits few boards share (hal/hal_traits.h): a board that has one says BOARD_<TRAIT> := y in its board.mk
+# (BOARD_NO_PCM in its config.mk). The others build none of the code for it
+BOARD_TRAITS := PACKET_MODEM NO_PCM SLOPE_TAP VOLUME_B TEMP
+MCU_DEFS += $(foreach t,$(BOARD_TRAITS),-DRFOUNDRY_$(t)=$(if $(filter y,$(BOARD_$(t))),1,0))
 # The sixth character of the APRS tocall (APRDF?, docs/spec/aprs.md 4.2): board.toml aprs_tocall, one per radio
 # (tools/boards.py check validates the file; this only reads the value, and refuses a build without a valid one)
 APRS_TOCALL_ID := $(shell sed -n "s/^aprs_tocall[ 	]*=[ 	]*[\"']\([^\"']*\)[\"'].*/\1/p" boards/$(BOARD)/board.toml 2>/dev/null)
@@ -307,6 +311,13 @@ $(if $(RFOUNDRY_GIT_SOURCE),,$(error tools/build_source.py failed (above)))
 # RFOUNDRY_BOARD_ID: the board's id (boards/<id>), for platform code that names things after the board (the HR_C7000 codec
 # host's profile ids, "<id>-<stock tag>"); core/ never uses it
 DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DRFOUNDRY_BOARD_ID=\"$(BOARD)\"
+# BOARD_T_NAME (board.mk): board_t .name for boards that build one board_t between them (part_of), so each reports its
+# own name over the debug link; the registry reads it from board.mk (tools/boards.py). No spaces: the flags pass through
+# shell words (make stack-check)
+ifneq ($(BOARD_T_NAME),)
+$(if $(word 2,$(BOARD_T_NAME)),$(error BOARD_T_NAME '$(BOARD_T_NAME)' has a space: the build flags can't carry it))
+DEFS += -DBOARD_T_NAME=\"$(BOARD_T_NAME)\"
+endif
 
 OPT ?= -Os
 # Every function's frame size and calls, next to each object (or each LTO partition, next to the .elf), for the stack

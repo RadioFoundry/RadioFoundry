@@ -1,0 +1,60 @@
+{
+ "board": "d578uv",
+ "commit": "a72ebdfb1f8f28a52e56337934734a30d24ccd22",
+ "date": "2026-11-19T05:05:55Z",
+ "dirty": false,
+ "features": [
+  "tone_burst_key"
+ ],
+ "firmware": {
+  "board": "AT-D578UV",
+  "codec": "d578uv-boot",
+  "display": "160x128x4",
+  "features": "FM,SUBTONE,DMR,DMR_TALKER_ALIAS,DMR_GPS,GPS,APRS,APRS_AFSK,APRS_DMR,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_UDP_COMPRESS,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,AM_RX,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "a72ebdfb",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "microphone",
+  "radio",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-rf": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.1,
+  "dmr-tg": 202,
+  "fm-mhz": 446.05
+ },
+ "sources": {
+  "tone_burst_key": {
+   "core/debuglink": "13b1cd4b777e6fb31fa29f8d2edc76384ac576c4",
+   "core/input": "37a38d55a0afb35e5ad11283a34c98375e757621",
+   "core/radio": "b6c2a324ee0b3e28082631349b9991f1dc5f297f",
+   "core/ui/ui_menus.c": "b50376f02d63d9a1f46b36498a3331ccfcbf1e3b",
+   "core/ui/ui_svc_storage.c": "d4b40fa365ff31a85101f054fc6f610b4487606d",
+   "docs/spec/radio-features.md": "3fb21e1d2742f9d088ef5cd95f0aff9176cbbf79"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "tone_burst_key"
+   ],
+   "id": "tests/hil/test_fm_tx.py::test_fm_tx_tone_burst_key",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.1.1",
+  "python": "3.13.5"
+ }
+}

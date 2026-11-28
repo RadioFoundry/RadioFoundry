@@ -29,13 +29,16 @@ def _cause(radio):
 
 @pytest.mark.feature("watchdog")
 def test_watchdog_running(radio):
-    """Started and fed: a timeout, the feed count going up, and the idle task's longest gap well inside the timeout."""
+    """Started and fed: a timeout, the feed count going up, and the idle task's longest gap well inside the timeout.
+    The gap is measured from a clear: since the start it also holds work that feeds the watchdog itself (a SPI NAND
+    board's codeplug write, docs/spec/watchdog.md 4), seconds on some radios."""
     v = _view(radio)
     timeout = as_int(v["watchdog.timeout_ms"])
     assert 1000 <= timeout <= 32000, v
     assert v.get("watchdog.starving") == "0", v
     feeds = as_int(v["watchdog.feeds"])
-    time.sleep(0.5)
+    radio.link.watchdog_clear_gap()
+    time.sleep(2.0)
     v2 = _view(radio)
     assert as_int(v2["watchdog.feeds"]) > feeds, (v, v2)
     assert as_int(v2["watchdog.max_gap_ms"]) < timeout // 2, v2
@@ -62,9 +65,17 @@ def test_watchdog_resets(radio, kind):
     # The feeds stop 100 ms after the reply (WDT_TEST_DELAY_MS), so the reset comes no sooner than that plus the timeout.
     # A radio that answers at once on a direct UART otherwise still answers from before the reset
     time.sleep(timeout_s + 0.5)
-    radio.reconnect(timeout_s + 30.0, "the watchdog reset")
-    back_s = time.monotonic() - t0
-    up_after = as_int(radio.view(["link"])["uptime_ms"])
+    # The timeout is nominal: an RC-clocked watchdog may run up to a third longer (a GD32's IRC40K allows 30 kHz). A
+    # starved radio still answers until the reset, so it is asked again until its uptime shows the restart
+    deadline = t0 + timeout_s * 1.4 + 2.0
+    while True:
+        radio.reconnect(timeout_s + 30.0, "the watchdog reset")
+        back_s = time.monotonic() - t0
+        up_after = as_int(radio.view(["link"])["uptime_ms"])
+        if up_after < back_s * 1000.0 or time.monotonic() > deadline:
+            break
+        radio.link.close()
+        time.sleep(0.5)
     # Up for less than the time since the test started: it restarted. (Against up_before alone, a test run right after
     # the previous one's restart reads a radio that restarted as one that didn't.)
     assert up_after < back_s * 1000.0, ("the radio didn't restart", up_before, up_after, back_s)

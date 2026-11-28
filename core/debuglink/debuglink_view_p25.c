@@ -7,6 +7,7 @@
 #if CONFIG_P25
 #include "board.h"
 #include "radio/radio_p25.h"
+#include "p25/p25_engine.h"
 #if CONFIG_IMBE
 #include "p25/p25Voice.h"
 #include "dsp/miclimit.h"
@@ -35,6 +36,8 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 			dl_text(t, "p25.rx_work_us=%u\np25.rx_span_us=%u\n", (unsigned)work, (unsigned)span);
 		}
 	}
+	// What the board's air interface gives P25 (AIR_FIT_*: without TX a P25 PTT is refused)
+	dl_text(t, "p25.fit=%u\n", board.air != NULL ? (unsigned)p25_engine_fit(board.air) : 0u);
 	radio_p25_settings(&s);
 	dl_text(t, "p25.rx_nac=%u\np25.tx_nac=%u\np25.rx_tgid=%u\np25.talkaround=%u\np25.unit_call=%u\n", s.rx_nac,
 		s.tx_nac, s.rx_tgid, s.talkaround, s.unit_call);

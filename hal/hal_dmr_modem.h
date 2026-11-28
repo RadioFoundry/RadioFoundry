@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hal_traits.h"
 
 typedef enum { DMR_SYNC_NONE, DMR_SYNC_MS, DMR_SYNC_BS, DMR_SYNC_TS1, DMR_SYNC_TS2 } dmr_sync_family_t;
 
@@ -149,6 +150,8 @@ typedef struct {
 enum { DMR_BS_CACH_NONE, DMR_BS_CACH_OURS, DMR_BS_CACH_CHIP, DMR_BS_CACH_UNKNOWN };
 #endif
 
+// tx_release, play_*, slot_verified, clears_crc9 and cach_ticks are read only where board.mk says
+// BOARD_PACKET_MODEM := y (hal_traits.h)
 typedef struct {
 	// Chip on and in DMR mode (after the board's RF side is in DMR mode); events start flowing to cb
 	bool (*start)(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx);
@@ -165,6 +168,16 @@ typedef struct {
 	uint8_t (*tx_queue_space)(void);
 	void (*tx_end)(void);		// send what is queued, then DMR_EV_TX_DONE
 	void (*tx_abort)(void);
+	// Optional. The call is ending but runs to its superframe boundary: a modem that takes the voice from the
+	// microphone itself sends silence from here on (the stack does that for the voice it gives the modem)
+	void (*tx_release)(void);
+	// Optional (NULL: can't), a modem with its own vocoder (CAP_MODEM_VOICE): it plays voice frames the MCU gives it
+	// while its DMR side is stopped, for an air mode whose voice is the DMR air frame's AMBE+2 (NXDN). play_begin sets
+	// the vocoder up (false: the modem can't now, as while started); play_frame takes one 72-bit air frame (9 bytes, as
+	// a DMR voice burst carries it) at the air's pace, 20 ms each; play_end plays what is held and stops
+	bool (*play_begin)(void);
+	void (*play_frame)(const uint8_t ambe72[9]);
+	void (*play_end)(void);
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
 	// Optional (NULL: the driver can't): voice burst F's 32-bit embedded field from the next tx_begin on, TX(31) first
 	// in field[0] bit 7 (an encrypted over's late-entry ALG / key ID, dmrFecPrivacyField); NULL: the chip's own filler
@@ -174,6 +187,9 @@ typedef struct {
 	// callers set the filter after start() and configure()
 	void (*set_cc_filter)(int8_t cc);
 	bool (*is_transmitting)(void);	// slot state, never the PA
+	// Optional (NULL: at once). A repeater's outbound being received: true once the modem has settled which of its
+	// slots is which, so an aligned tx_begin lands on the slot asked and not the other one
+	bool (*slot_verified)(void);
 	// Optional (NULL: the driver can't). For the transmission begun last: receive in the slots between our bursts and
 	// report what is heard there, with the RF switched back to receive per burst (an SFR's inbound slot, sfr.md 3)
 	void (*tx_listen)(void);
@@ -189,6 +205,12 @@ typedef struct {
 	int8_t (*tx_fill)(const dmr_tx_burst_t *b);
 	// Optional (NULL: not kept): lost modem interrupts found and recovered from since start
 	void (*health)(dmr_modem_health_t *h);
+	// The modem clears octet 0 bit 0 and octet 1 of each block after a data header with A set (it takes them for a
+	// confirmed block's CRC-9): the data stack may then solve them from the CRC-32 (dmrDataSetClearedBitsRepair)
+	bool clears_crc9;
+	// Its DMR_EV_SLOT_TICKs are CACHs heard (a repeater's idle outbound gives it no frames), never slot numbers kept
+	// running on the timing it last had: they keep a repeater up even where its bursts are reported too
+	bool cach_ticks;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	// Split duplex (docs/spec/split-duplex.md), all optional (NULL: the driver can't; the role is not offered).
 	// The modem clock: free-running microseconds (wraps), the clock slot_clock is stamped in. RX half and TIME

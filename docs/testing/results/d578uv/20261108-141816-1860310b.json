@@ -1,0 +1,211 @@
+{
+ "board": "d578uv",
+ "commit": "1860310b226ecde67f24e7d1e77ef582ad403b41",
+ "date": "2026-11-08T14:18:16Z",
+ "dirty": false,
+ "features": [
+  "watchdog",
+  "ui_settings",
+  "dmr_control_station"
+ ],
+ "firmware": {
+  "board": "AT-D578UV",
+  "codec": "d578uv-boot",
+  "display": "160x128x4",
+  "features": "FM,SUBTONE,DMR,DMR_TALKER_ALIAS,DMR_GPS,APRS,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_UDP_COMPRESS,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,AM_RX,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "d9395a3d",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.125,
+  "dmr-tg": 202,
+  "fm-mhz": 446.125,
+  "tx-power": 40
+ },
+ "sources": {
+  "dmr_control_station": {
+   "core/debuglink/debuglink.c": "f6a047900f868c2e2e9491cfc0ae447cf976a434",
+   "core/dmr/dmrDataService.c": "ae83d8ba2fb330a97e5effa2b8f53265039bd25d",
+   "core/dmr/dmrDataService.h": "25dc1a140c599bf1c9a6bf51d964b52e2227b37d",
+   "core/hostlink/hostlink_net.c": "ed73b49cdc0cad3dee846549e16947bcfb137957",
+   "core/hostlink/hostlink_net.h": "1e778c8717782f88effa7e2fa8d4023e17c0e622",
+   "core/ui/ui_menus.c": "799b9cba8a811d890f2e416a9b842ff960fe12a1",
+   "core/ui/ui_svc_storage.c": "ecfb1f4fd13da0352f81b7426a927e8753255360",
+   "docs/spec/usb-network.md": "3650061b7ce6be9425c862da53968437ff9919a6"
+  },
+  "ui_settings": {
+   "core/hostlink/build_info.c": "73dbddd5cf176f0f93346325160724c27b1f2652",
+   "core/ui/ui_menus.c": "799b9cba8a811d890f2e416a9b842ff960fe12a1",
+   "docs/spec/ui.md": "3cc062532da132e7dca9594b2409bb442ca947bd"
+  },
+  "watchdog": {
+   "core/app/watchdog.c": "8afad86ce936bcb659785cdedcdd8ab05c929c23",
+   "docs/spec/watchdog.md": "5c65f537210a784e8aac9874ef4954ebc1797fc2"
+  }
+ },
+ "tests": [
+  {
+   "excused": true,
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_boot_network",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] re-enumerates the radio as a network adapter: run with --allow-usb-switch",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_fixed_link",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] re-enumerates the radio as a network adapter: run with --allow-usb-switch",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_passthrough_reply",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] re-enumerates the radio as a network adapter: run with --allow-usb-switch",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_passthrough_text",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] re-enumerates the radio as a network adapter: run with --allow-usb-switch",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "excused": true,
+   "features": [
+    "dmr_control_station"
+   ],
+   "id": "tests/hil/test_control_station.py::test_usb_settings_stored",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without CONFIG_DMR_IP_GATEWAY",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": true,
+   "features": [
+    "ui_settings"
+   ],
+   "id": "tests/hil/test_ui.py::test_factory_reset",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] erases the settings and the native area: set RFOUNDRY_HIL_FACTORY_RESET=1 (and --allow-reboot)",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "ui_settings"
+   ],
+   "id": "tests/hil/test_ui.py::test_long_press_time_reaches_input",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "ui_settings"
+   ],
+   "id": "tests/hil/test_ui.py::test_updown_changes_the_zone",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_reset_cause_reboot",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[irq-off]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[spin]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[starve]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_running",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_watchdog.py:41: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_test_refused_without_token",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

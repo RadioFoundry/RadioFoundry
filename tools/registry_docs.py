@@ -108,15 +108,18 @@ def pr_link(n):
 # ── the board side ──────────────────────────────────────────────────────────
 
 def board_page(b):
-    """The page a board's rows link to: its bring-up checklist when it has one, else its hardware page."""
-    return b.data["docs"].get("bringup") or b.data["docs"]["hardware"]
+    """The page a board's rows link to: its bring-up checklist when it has one, else its hardware page, else None
+    (a radio whose hardware notes are kept out of the repository)."""
+    docs = b.data.get("docs", {})
+    return docs.get("bringup") or docs.get("hardware")
 
 
 def board_title(b, dst_dir):
     """A board's name, linked to its page, then the names it is also sold as (the maker left off where it repeats)
     and "(mobile)" for a mobile radio."""
     d = b.data
-    link = "[%s](%s)" % (d["name"], os.path.relpath(board_page(b), dst_dir or "."))
+    page = board_page(b)
+    link = "[%s](%s)" % (d["name"], os.path.relpath(page, dst_dir or ".")) if page else d["name"]
     return link + "".join(", " + a for a in also_names(b)) + (" (mobile)" if d["kind"] == "mobile" else "")
 
 
@@ -131,10 +134,12 @@ def ordered(boards):
 
 
 def names_board(radio, boards):
-    """The board a survey row names (its model, as a whole word, among the row's radios), or None."""
+    """The boards a survey row names (its model, as a whole word, among the row's radios). A board that is part_of
+    another one the row names is that radio's other build, not a second radio: the row is the radio's."""
     hits = [b for b in boards.values()
             if re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(b.data["model"]), plain(radio))]
-    return hits
+    ids = {b.id for b in hits}
+    return [b for b in hits if b.data.get("part_of") not in ids]
 
 
 # ── the survey ──────────────────────────────────────────────────────────────
@@ -148,8 +153,11 @@ def survey_table(text):
 
 def port_cell(b):
     """The survey's Port cell of a board's row."""
-    return "%s ([%s](%s))" % (LEVEL_WORD[b.data["status"]["level"]], os.path.basename(board_page(b)),
-                              os.path.relpath(board_page(b), os.path.dirname(SURVEY)))
+    page = board_page(b)
+    if page is None:
+        return LEVEL_WORD[b.data["status"]["level"]]
+    return "%s ([%s](%s))" % (LEVEL_WORD[b.data["status"]["level"]], os.path.basename(page),
+                              os.path.relpath(page, os.path.dirname(SURVEY)))
 
 
 def survey(root, boards):
@@ -234,6 +242,8 @@ def readme_radios(root, boards, rows):
     records = bringup.load_records(os.path.join(root, "docs", "testing", "results"))
     out = ["| Radio | Builds | Host tests | On the radio | Support |", "|---|:---:|:---:|:---:|---|"]
     for b in ordered(boards):
+        if b.data.get("variant_of"):
+            continue	# the same radio as the board it names
         out.append("| %s | ● | ● | %s | %s |" % (board_title(b, ""), on_radio_mark(b, records),
                                                b.data["status"]["summary"]))
     for r in planned(rows):
@@ -246,6 +256,8 @@ def manual_radios(boards, rows):
     """The user manual's radio index: each board's section on the page, what it is also sold as, what works."""
     out = ["| Radio | Also sold as | What works |", "|---|---|---|"]
     for b in ordered(boards):
+        if b.data.get("variant_of"):
+            continue	# the same radio as the board it names
         d = b.data
         anchor = re.sub(r"[^\w\- ]", "", d["name"].lower()).replace(" ", "-")
         out.append("| [%s](#%s) | %s | %s |" % (d["name"], anchor, ", ".join(d["also"]), d["status"]["summary"]))
@@ -285,12 +297,20 @@ def feature_mark(b, s, cfg):
     return "?" if s in b.data["hardware"].get("unconfirmed", {}) else "○"
 
 
+def column(b, bs):
+    """A board's column heading: its model, and its CPU too where another board has the same model (the builds of one
+    radio for two processors, board.toml part_of)."""
+    if sum(o.data["model"] == b.data["model"] for o in bs) > 1:
+        return "%s (%s)" % (b.data["model"], b.data["hardware"]["cpu"])
+    return b.data["model"]
+
+
 def feature_defaults(root, boards):
     """The feature matrix's table of every switch on every board: on by default, off, not written yet, or not available."""
     bs = ordered(boards)
     cfg = {b.id: dict(print_config(root, b.id)) for b in bs}
     order = [s for s, _ in print_config(root, bs[0].id)] if bs else []
-    out = ["| Feature switch | %s |" % " | ".join(b.data["model"] for b in bs),
+    out = ["| Feature switch | %s |" % " | ".join(column(b, bs) for b in bs),
            "|---|" + ":-:|" * len(bs)]
     for s in order:
         marks = [feature_mark(b, s, cfg[b.id]) for b in bs]
@@ -316,8 +336,8 @@ def issue_radios(boards):
 
 
 def pr_radios(boards):
-    """The pull request template's list of radios, by model."""
-    return [", ".join(b.data["model"] for b in ordered(boards))]
+    """The pull request template's list of radios, by model (a radio built for two processors once)."""
+    return [", ".join(dict.fromkeys(b.data["model"] for b in ordered(boards)))]
 
 
 VOLTS_WORD = {"battery": "Battery", "supply": "Supply", "none": "None"}
@@ -349,7 +369,7 @@ def checked_on_radio(root, boards):
     feats = bringup.load_features(os.path.join(root, "tests", "hil", "features.toml"))
     records = bringup.load_records(os.path.join(root, "docs", "testing", "results"))
     bs = ordered(boards)
-    out = ["| Feature | %s |" % " | ".join(b.data["model"] for b in bs), "|---|" + ":-:|" * len(bs)]
+    out = ["| Feature | %s |" % " | ".join(column(b, bs) for b in bs), "|---|" + ":-:|" * len(bs)]
     for e in feats:
         cells = []
         for b in bs:

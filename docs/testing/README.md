@@ -12,6 +12,7 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 | Coverage, sanitizers, fuzzing | the host (gcovr for coverage) | `tools/coverage.sh`, `make -C tests/host SANITIZE=1` | [docs/dev/ci.md](../dev/ci.md#coverage) |
 | Hardware in the loop, radio only | the radio on USB | `python3 -m pytest tests/hil -v -rs` | `tests/hil/README.md` |
 | Hardware in the loop, on air | the radio and the SDR bench | the same with opt-in flags | `tests/hil/README.md`, section 3 here |
+| RSSI check | the radio and the SDR bench | `tools/bench/rssi_cal.py` | `docs/testing/rssi-calibration.md` |
 | Manual bench cases | the bench board, a person at the radio | `tools/bench/bench_line.py HOST run bench_tx ARGS` | `docs/testing/dmr-bench.md` |
 | DM-32UV first hardware test | a DM-32UV on its programming cable, a dummy load | step by step | `docs/testing/dm32-bringup.md` |
 | MD-380 first hardware test | an MD-380 / MD-390 / RT3 on USB, a dummy load, an SDR or signal generator | step by step | `docs/testing/md380-bringup.md` |

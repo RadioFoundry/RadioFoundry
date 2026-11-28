@@ -49,6 +49,9 @@
 // 0x04
 #define RDA5807M_DE_50US	0x0800u	// de-emphasis 50 us (0 = 75 us)
 #define RDA5807M_SOFTMUTE	0x0200u
+#define RDA5807M_GPIO_MASK	0x003Fu	// GPIO3 bits 5:4, GPIO2 3:2, GPIO1 1:0: 00 high impedance, 10 low, 11 high
+#define RDA5807M_GPIO1_LOW	0x0002u
+#define RDA5807M_GPIO1_HIGH	0x0003u
 // 0x05
 #define RDA5807M_INT_MODE	0x8000u
 #define RDA5807M_SEEKTH_SHIFT	8	// bits 11:8
@@ -87,6 +90,9 @@ typedef struct {
 	bool rclk_direct;	// the reference is a clock signal, not a crystal
 	bool de_50us;		// de-emphasis 50 us (Europe, most of the world) instead of 75 us (Americas)
 	uint8_t seek_th;	// seek SNR threshold 0..15 (datasheet default 8)
+	// The chip's GPIO pins (0x04 bits 5:0, RDA5807M_GPIO_MASK) while it is on and after power-down, for a board that
+	// switches something with them; 0 leaves them high impedance
+	uint8_t gpio_on, gpio_off;
 } rda5807m_cfg_t;
 
 typedef struct {

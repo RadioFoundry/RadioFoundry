@@ -51,6 +51,8 @@ NAMES = {
     "rfoundryEventSource": f"{RFOUNDRY}.8.1", "rfoundryEventDestination": f"{RFOUNDRY}.8.2", "rfoundryEventGroup": f"{RFOUNDRY}.8.3",
     "rfoundryEventSlot": f"{RFOUNDRY}.8.4", "rfoundryEventDuration": f"{RFOUNDRY}.8.5", "rfoundryEventText": f"{RFOUNDRY}.8.6",
     "rfoundryEventValue": f"{RFOUNDRY}.8.7",
+    "rfoundryTempKind": f"{RFOUNDRY}.9.1.1.2", "rfoundryTempMilliVolts": f"{RFOUNDRY}.9.1.1.3",
+    "rfoundryTempValue": f"{RFOUNDRY}.9.1.1.4", "rfoundryFanState": f"{RFOUNDRY}.9.2",
     "rfoundryCallStart": f"1.3.6.1.4.1.{PEN}.2.0.1", "rfoundryCallEnd": f"1.3.6.1.4.1.{PEN}.2.0.2",
     "rfoundrySmsReceivedNotification": f"1.3.6.1.4.1.{PEN}.2.0.3", "rfoundryEmergency": f"1.3.6.1.4.1.{PEN}.2.0.4",
     "rfoundryArsChange": f"1.3.6.1.4.1.{PEN}.2.0.5", "rfoundryLowBattery": f"1.3.6.1.4.1.{PEN}.2.0.6",

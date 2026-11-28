@@ -26,7 +26,9 @@
 #include "hal_air.h"
 #include "hal_baseband.h"
 #include "hal_rx2.h"
+#include "hal_temp.h"
 #include "hal_hwopt.h"
+#include "hal_traits.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -52,6 +54,16 @@ enum {
 	// talk permit then plays before the first burst: DMR voice keys after a short hold in which the radio still
 	// receives and the tone sounds (dmr_call_config_t.permit_hold_ms)
 	CAP_BEEP_NOT_ON_AIR = 1u << 8,
+	// The DMR modem encodes and plays the voice itself (a baseband with its own vocoder and codec path): voice bits
+	// never reach the MCU, so DMR voice needs no board.vocoder, and what works on the voice bits (privacy, recording,
+	// a hotspot's voice) has nothing to work on. The modem still takes and reports bursts in their slots. Needs
+	// BOARD_PACKET_MODEM := y in board.mk too (hal_traits.h; the core tests board_modem_voice())
+	CAP_MODEM_VOICE	= 1u << 9,
+	// The status LED mixes red, green and blue. The core then shows cyan for a digital reception and orange for a
+	// repeater role, and sends LED_BLUE to board.power->led (radio-features.md 5.7)
+	CAP_LED_RGB	= 1u << 10,
+	// Green flashes while a zone or VFO scan runs and nothing else lights the LED (radio-features.md 5.7)
+	CAP_LED_SCAN_FLASH = 1u << 11,
 };
 
 // What a hardware identity line names (board_t.hw_line; docs/spec/support-info.md 2)
@@ -107,12 +119,27 @@ typedef struct {
 	// ("P1", "P2"; docs/spec/ui.md 1); NULL: "*" and "#"
 	const char *quick_label;
 	const char *context_label;
+	// Optional: the key whose hold sends QUICK (the key lock) when it isn't the quick_label key ("MENU"), for the hints'
+	// "hold *"; NULL: quick_label
+	const char *lock_label;
+	// The backlight's default dims after 30 s and never goes off (Settings > Display > Backlight Dim/Off "30s/dim"),
+	// for a mobile on vehicle power; false: dims at 30 s, off at 2 min
+	bool backlight_dims_only;
+	// In text entry * types a space (the AnyTone microphones' convention), held it deletes; false: * deletes
+	bool text_star_space;
 	const hal_radio_t *radio;
 	const hal_power_t *power;
 	const hal_flash_t *flash;
 	const hal_dmr_modem_t *dmr;	// NULL on FM-only radios
 	const hal_audio_t *audio;
 	const hal_vocoder_t *vocoder;
+	// Optional, a board whose modem plays the voice (CAP_MODEM_VOICE, no vocoder): the modem's voice code the board
+	// keeps in flash, checked. Its profile id (VERSION's codec=, docs/spec/debuglink.md 3.1) when the check passes,
+	// NULL when it fails (erased, damaged); then DMR voice can't run. NULL hook: the modem holds its own
+	const char *(*modem_codec)(void);
+	// True while something the boot screen should cover is still starting (a baseband booting); the UI holds the
+	// splash until it is false, so it must end by itself. NULL: the splash has its fixed time only
+	bool (*boot_busy)(void);
 	const hal_stream_t *host_port;	// the link to a host computer (MMDVM hotspot, CPS); NULL if none
 	// Optional: line i of a board diagnostics page (raw readings for bench checks); false past the last line
 	bool (*diag_line)(uint8_t i, char *buf, uint8_t len);
@@ -156,11 +183,20 @@ typedef struct {
 	const hal_gps_t *gps;
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
+	// Optional: the temperature sensors and the fan (hal_temp.h); NULL on a radio with none the firmware reads
+	const hal_temp_t *temp;
 	// Optional: bench access to the radio's RF chip registers (the debug link's CHIP_REG, docs/spec/debuglink.md
 	// 3.24). chip and page are the board's numbering (its hardware page lists them), chip below 0xFF (the SoC's).
 	// Writes val when write, then sets *val to the register as read back (a write-only register: the value written).
 	// False for a chip, page or register it doesn't offer. NULL: none
 	bool (*chip_reg)(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
+	// Optional: CHIP_REG's fields longer than 32 bits on the same chips. n == 0 reads, such as a baseband's version
+	// text: the register into out, at most cap bytes; returns the bytes read. n > 0 writes data (n bytes, such as a
+	// baseband's voice frames) and returns the bytes of the chip's answer put in out (0 for a plain acknowledgment;
+	// out may be NULL with cap 0). -1 for a chip, page or register it doesn't
+	// offer, a length it refuses, or no answer. May wait for the chip (up to a few hundred ms). NULL: none
+	int (*chip_reg_bytes)(uint8_t chip, uint8_t page, uint8_t reg, const uint8_t *data, uint8_t n, uint8_t *out,
+			      uint8_t cap);
 
 	// Optional: hardware options a person states because software can't read them (hal_hwopt.h): Settings >
 	// Advanced > Hardware and the debug link's HWOPT. NULL / 0 = none. Only in a build whose board.mk says
@@ -172,6 +208,24 @@ typedef struct {
 } board_t;
 
 extern const board_t board;
+
+// The DMR modem plays the voice itself (CAP_MODEM_VOICE): constant false in a build without a packet modem
+// (hal_traits.h), so none of that path is built
+static inline bool board_modem_voice(void)
+{
+	return RFOUNDRY_PACKET_MODEM && (board.caps & CAP_MODEM_VOICE) != 0;
+}
+
+// VERSION's codec= (docs/spec/debuglink.md 3.1): the vocoder's check, or where the modem plays the voice the board's
+// check of the modem's code (board_t.modem_codec, set in DMR builds only): its profile id, or absent. none without either
+static inline const char *board_codec_id(void)
+{
+	if (RFOUNDRY_PACKET_MODEM && board.vocoder == NULL && board.modem_codec != NULL) {
+		const char *id = board.modem_codec();
+		return id != NULL ? id : "absent";
+	}
+	return hal_vocoder_id(board.vocoder);
+}
 
 // The entries of board.bands in force now: the receive-only extension counts only while it is on
 static inline uint8_t board_band_count(void)
