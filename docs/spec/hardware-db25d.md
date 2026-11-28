@@ -160,13 +160,20 @@ with a BK4819 main chip, with the same recorded voice in each mode:
 |---|---|---|---|---|
 | 3 | -21.0 dB | -20.9 dB | | |
 | 7 | -13.1 dB | -13.1 dB | -13.1 dB | -13.2 dB |
+| 12 | -4.3 dB | -4.3 dB | -4.4 dB | -4.7 dB |
+| 16 | -0.2 dB | -0.4 dB | -0.5 dB | -0.5 dB |
 
-Steps above 7 are not measured (unverified). On a radio with an FD6818 main chip, FM keeps that chip's 16 AF levels, one
-a step from the top; their dB and the trim against them are not measured (unverified). At step 7 neither path clips (FM peaks at -9 dBFS, DMR at -17 dBFS at the
-microphone).
+Wide FM measures within 0.4 dB of narrow FM at steps 12 and 16. The microphone recorded no clipped samples at any step.
+From step 12 up, voice peaks compress: from step 12 to 16 the quiet parts of the voice rise by the curve's 8 dB, the
+loud parts by about 3 dB, the same in every mode. The compression is past the point where the two paths meet (the
+amplifier, the speaker or the test microphone; a check with the microphone farther away is open), so no trim changes
+the compression. On a radio with an FD6818 main chip, FM keeps that chip's 16 AF levels, one a step from the top; their
+dB and the trim against them are not measured (unverified).
 
 The radio sets `volume_pcm`, so beeps play at `beep_level` and the line out scales them on the way out; at the steps
-measured they follow the voice. The board gives the core the curve itself as `volume_db10`
+measured they follow the voice. At steps 12 and 16 a beep measures the same level in FM and DMR, within 0.6 dB
+between the two steps and about 2 dB over step 7: the cap holds beeps at step 8's level. The board gives the core the
+curve itself as `volume_db10`
 (`radio_volume_curve_db10`), so above step 8 each beep is played softer by the gain added over step 8's
 (`radio-features.md` 4): at step 16 the beep is 16 dB below `beep_level`. The speaker volume itself never changes for a
 beep.
