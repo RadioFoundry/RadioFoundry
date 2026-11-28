@@ -1,0 +1,871 @@
+{
+  "pr": 1174,
+  "base_sha": "34e7bddbe7bd6587085717b31468ba1d9c3f68f2",
+  "head_sha": "07284b0da28f96eab08a15028cfef241ba984373",
+  "generated": "2026-11-27T06:27:42Z",
+  "counts": {
+    "changed": 10,
+    "added": 95,
+    "removed": 0,
+    "unchanged": 879
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 8,
+      "screens": [
+        "spectrum",
+        "spectrum_air",
+        "spectrum_bandwidth",
+        "spectrum_captured",
+        "spectrum_center_keys",
+        "spectrum_center_tuner",
+        "spectrum_dual",
+        "spectrum_edit"
+      ]
+    },
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-2.png",
+      "rows": 8,
+      "screens": [
+        "spectrum_filter",
+        "spectrum_immediate",
+        "spectrum_panned",
+        "spectrum_precision",
+        "spectrum_scale",
+        "spectrum_settings",
+        "spectrum_settings_keys",
+        "spectrum_shortcuts"
+      ]
+    },
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-3.png",
+      "rows": 5,
+      "screens": [
+        "tools",
+        "tools_spectrum",
+        "tools_spectrum_offer",
+        "tools_spectrum_unfocused",
+        "tools_zone_offer"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 8,
+      "screens": [
+        "spectrum",
+        "spectrum_air",
+        "spectrum_bandwidth",
+        "spectrum_captured",
+        "spectrum_center_keys",
+        "spectrum_center_tuner",
+        "spectrum_dual",
+        "spectrum_edit"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-2.png",
+      "rows": 8,
+      "screens": [
+        "spectrum_filter",
+        "spectrum_immediate",
+        "spectrum_panned",
+        "spectrum_precision",
+        "spectrum_scale",
+        "spectrum_settings",
+        "spectrum_settings_keys",
+        "spectrum_shortcuts"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-3.png",
+      "rows": 5,
+      "screens": [
+        "tools",
+        "tools_spectrum",
+        "tools_spectrum_offer",
+        "tools_spectrum_unfocused",
+        "tools_zone_offer"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 8,
+      "screens": [
+        "spectrum",
+        "spectrum_air",
+        "spectrum_bandwidth",
+        "spectrum_captured",
+        "spectrum_center_keys",
+        "spectrum_center_tuner",
+        "spectrum_dual",
+        "spectrum_edit"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-2.png",
+      "rows": 8,
+      "screens": [
+        "spectrum_filter",
+        "spectrum_immediate",
+        "spectrum_panned",
+        "spectrum_precision",
+        "spectrum_scale",
+        "spectrum_settings",
+        "spectrum_settings_keys",
+        "spectrum_shortcuts"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-3.png",
+      "rows": 5,
+      "screens": [
+        "tools",
+        "tools_spectrum",
+        "tools_spectrum_offer",
+        "tools_spectrum_unfocused",
+        "tools_zone_offer"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 8,
+      "screens": [
+        "spectrum",
+        "spectrum_air",
+        "spectrum_bandwidth",
+        "spectrum_captured",
+        "spectrum_center_keys",
+        "spectrum_center_tuner",
+        "spectrum_dual",
+        "spectrum_edit"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-2.png",
+      "rows": 8,
+      "screens": [
+        "spectrum_filter",
+        "spectrum_immediate",
+        "spectrum_panned",
+        "spectrum_precision",
+        "spectrum_scale",
+        "spectrum_settings",
+        "spectrum_settings_keys",
+        "spectrum_shortcuts"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-3.png",
+      "rows": 5,
+      "screens": [
+        "tools",
+        "tools_spectrum",
+        "tools_spectrum_offer",
+        "tools_spectrum_unfocused",
+        "tools_zone_offer"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 8,
+      "screens": [
+        "spectrum",
+        "spectrum_air",
+        "spectrum_bandwidth",
+        "spectrum_captured",
+        "spectrum_center_keys",
+        "spectrum_center_tuner",
+        "spectrum_dual",
+        "spectrum_edit"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-2.png",
+      "rows": 8,
+      "screens": [
+        "spectrum_filter",
+        "spectrum_immediate",
+        "spectrum_panned",
+        "spectrum_precision",
+        "spectrum_scale",
+        "spectrum_settings",
+        "spectrum_settings_keys",
+        "spectrum_shortcuts"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-3.png",
+      "rows": 5,
+      "screens": [
+        "tools",
+        "tools_spectrum",
+        "tools_spectrum_offer",
+        "tools_spectrum_unfocused",
+        "tools_zone_offer"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "spectrum",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_air",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_bandwidth",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_captured",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_center_keys",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_center_tuner",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_dual",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_edit",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_filter",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_immediate",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_panned",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_precision",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_scale",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_settings",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_settings_keys",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "spectrum_shortcuts",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "tools",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "tools_spectrum",
+      "status": "added",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "tools_spectrum_offer",
+      "status": "added",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "tools_spectrum_unfocused",
+      "status": "added",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "tools_zone_offer",
+      "status": "changed",
+      "image": "compare/128x64-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_air",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_bandwidth",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_captured",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_center_keys",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_center_tuner",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_dual",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_edit",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_filter",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_immediate",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_panned",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_precision",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_scale",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_settings",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_settings_keys",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "spectrum_shortcuts",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "tools",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "tools_spectrum",
+      "status": "added",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "tools_spectrum_offer",
+      "status": "added",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "tools_spectrum_unfocused",
+      "status": "added",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "tools_zone_offer",
+      "status": "changed",
+      "image": "compare/160x128-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_air",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_bandwidth",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_captured",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_center_keys",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_center_tuner",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_dual",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_edit",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_filter",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_immediate",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_panned",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_precision",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_scale",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_settings",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_settings_keys",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "spectrum_shortcuts",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "tools",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "tools_spectrum",
+      "status": "added",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "tools_spectrum_offer",
+      "status": "added",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "tools_spectrum_unfocused",
+      "status": "added",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "tools_zone_offer",
+      "status": "changed",
+      "image": "compare/160x120i5-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_air",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_bandwidth",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_captured",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_center_keys",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_center_tuner",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_dual",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_edit",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_filter",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_immediate",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_panned",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_precision",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_scale",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_settings",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_settings_keys",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "spectrum_shortcuts",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tools",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tools_spectrum",
+      "status": "added",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tools_spectrum_offer",
+      "status": "added",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tools_spectrum_unfocused",
+      "status": "added",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tools_zone_offer",
+      "status": "changed",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_air",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_bandwidth",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_captured",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_center_keys",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_center_tuner",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_dual",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_edit",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_filter",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_immediate",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_panned",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_precision",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_scale",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_settings",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_settings_keys",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "spectrum_shortcuts",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tools",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tools_spectrum",
+      "status": "added",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tools_spectrum_offer",
+      "status": "added",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tools_spectrum_unfocused",
+      "status": "added",
+      "image": "compare/240x320i10x5-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tools_zone_offer",
+      "status": "changed",
+      "image": "compare/240x320i10x5-3.png"
+    }
+  ]
+}

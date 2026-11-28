@@ -1,0 +1,102 @@
+{
+  "pr": 1090,
+  "base_sha": "86e014841855a321db209575893fb75f17204bc9",
+  "head_sha": "f664741f5b186c930dcc16190891056ca1a6e626",
+  "generated": "2026-11-27T06:25:55Z",
+  "counts": {
+    "changed": 10,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 879
+  },
+  "images": [
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 2,
+      "screens": [
+        "settings_display",
+        "settings_display__light",
+        "settings_display__high_contrast",
+        "settings_display__night",
+        "settings_editor"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 2,
+      "screens": [
+        "settings_display",
+        "settings_display__light",
+        "settings_display__high_contrast",
+        "settings_display__night",
+        "settings_editor"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "240x320",
+      "screen": "settings_display",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_display__light",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_display__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_display__night",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_editor",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_display",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_display__light",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_display__high_contrast",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_display__night",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_editor",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    }
+  ]
+}

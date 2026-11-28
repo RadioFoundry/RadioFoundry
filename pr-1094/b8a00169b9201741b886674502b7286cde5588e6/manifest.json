@@ -1,0 +1,266 @@
+{
+  "pr": 1094,
+  "base_sha": "d0db4f539d4c5f0c677410a113589f060c438353",
+  "head_sha": "b8a00169b9201741b886674502b7286cde5588e6",
+  "generated": "2026-11-27T06:28:25Z",
+  "counts": {
+    "changed": 0,
+    "added": 30,
+    "removed": 0,
+    "unchanged": 889
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 6,
+      "screens": [
+        "scan_list_add",
+        "scan_list_channels",
+        "scan_list_delete",
+        "scan_list_options",
+        "scan_list_zone",
+        "scan_lists"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 6,
+      "screens": [
+        "scan_list_add",
+        "scan_list_channels",
+        "scan_list_delete",
+        "scan_list_options",
+        "scan_list_zone",
+        "scan_lists"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 6,
+      "screens": [
+        "scan_list_add",
+        "scan_list_channels",
+        "scan_list_delete",
+        "scan_list_options",
+        "scan_list_zone",
+        "scan_lists"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 6,
+      "screens": [
+        "scan_list_add",
+        "scan_list_channels",
+        "scan_list_delete",
+        "scan_list_options",
+        "scan_list_zone",
+        "scan_lists"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 6,
+      "screens": [
+        "scan_list_add",
+        "scan_list_channels",
+        "scan_list_delete",
+        "scan_list_options",
+        "scan_list_zone",
+        "scan_lists"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "scan_list_add",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "scan_list_channels",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "scan_list_delete",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "scan_list_options",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "scan_list_zone",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "scan_lists",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "scan_list_add",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "scan_list_channels",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "scan_list_delete",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "scan_list_options",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "scan_list_zone",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "scan_lists",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "scan_list_add",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "scan_list_channels",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "scan_list_delete",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "scan_list_options",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "scan_list_zone",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "scan_lists",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "scan_list_add",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "scan_list_channels",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "scan_list_delete",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "scan_list_options",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "scan_list_zone",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "scan_lists",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "scan_list_add",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "scan_list_channels",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "scan_list_delete",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "scan_list_options",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "scan_list_zone",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "scan_lists",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    }
+  ]
+}

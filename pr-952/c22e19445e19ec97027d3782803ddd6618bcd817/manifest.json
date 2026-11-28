@@ -1,0 +1,679 @@
+{
+  "pr": 952,
+  "base_sha": "454a5b76be4f1a4de88d97256f3065a592a321b6",
+  "head_sha": "c22e19445e19ec97027d3782803ddd6618bcd817",
+  "generated": "2026-11-23T16:38:43Z",
+  "counts": {
+    "changed": 6,
+    "added": 75,
+    "removed": 0,
+    "unchanged": 883
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 8,
+      "screens": [
+        "clear_keys_confirm",
+        "group_key_got",
+        "group_key_listen",
+        "group_key_sent",
+        "key_fill_compare",
+        "key_fill_done",
+        "key_fill_menu",
+        "key_fill_ready"
+      ]
+    },
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-2.png",
+      "rows": 7,
+      "screens": [
+        "key_send",
+        "settings_privacy_check",
+        "settings_privacy_wipe",
+        "stored_keys",
+        "wipe_code",
+        "wipe_confirm",
+        "wipe_failed"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 8,
+      "screens": [
+        "clear_keys_confirm",
+        "group_key_got",
+        "group_key_listen",
+        "group_key_sent",
+        "key_fill_compare",
+        "key_fill_done",
+        "key_fill_menu",
+        "key_fill_ready"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-2.png",
+      "rows": 8,
+      "screens": [
+        "key_send",
+        "settings_privacy_check",
+        "settings_privacy_wipe",
+        "stored_keys",
+        "tools_zone_offer",
+        "wipe_code",
+        "wipe_confirm",
+        "wipe_failed"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 8,
+      "screens": [
+        "clear_keys_confirm",
+        "group_key_got",
+        "group_key_listen",
+        "group_key_sent",
+        "key_fill_compare",
+        "key_fill_done",
+        "key_fill_menu",
+        "key_fill_ready"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-2.png",
+      "rows": 8,
+      "screens": [
+        "key_send",
+        "settings_privacy_check",
+        "settings_privacy_wipe",
+        "stored_keys",
+        "tools_zone_offer",
+        "wipe_code",
+        "wipe_confirm",
+        "wipe_failed"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 8,
+      "screens": [
+        "clear_keys_confirm",
+        "group_key_got",
+        "group_key_listen",
+        "group_key_sent",
+        "key_fill_compare",
+        "key_fill_done",
+        "key_fill_menu",
+        "key_fill_ready"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-2.png",
+      "rows": 8,
+      "screens": [
+        "key_send",
+        "settings_privacy_check",
+        "settings_privacy_wipe",
+        "stored_keys",
+        "tools",
+        "tools_zone_offer",
+        "wipe_code",
+        "wipe_confirm"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-3.png",
+      "rows": 1,
+      "screens": [
+        "wipe_failed"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 8,
+      "screens": [
+        "clear_keys_confirm",
+        "group_key_got",
+        "group_key_listen",
+        "group_key_sent",
+        "key_fill_compare",
+        "key_fill_done",
+        "key_fill_menu",
+        "key_fill_ready"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-2.png",
+      "rows": 8,
+      "screens": [
+        "key_send",
+        "settings_privacy_check",
+        "settings_privacy_wipe",
+        "stored_keys",
+        "tools",
+        "tools_zone_offer",
+        "wipe_code",
+        "wipe_confirm"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-3.png",
+      "rows": 1,
+      "screens": [
+        "wipe_failed"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "clear_keys_confirm",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "group_key_got",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "group_key_listen",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "group_key_sent",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "key_fill_compare",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "key_fill_done",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "key_fill_menu",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "key_fill_ready",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "key_send",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "settings_privacy_check",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "settings_privacy_wipe",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "stored_keys",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "wipe_code",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "wipe_confirm",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "wipe_failed",
+      "status": "added",
+      "image": "compare/128x64-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "clear_keys_confirm",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "group_key_got",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "group_key_listen",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "group_key_sent",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "key_fill_compare",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "key_fill_done",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "key_fill_menu",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "key_fill_ready",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "key_send",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "settings_privacy_check",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "settings_privacy_wipe",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "stored_keys",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "tools_zone_offer",
+      "status": "changed",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "wipe_code",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "wipe_confirm",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "wipe_failed",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "clear_keys_confirm",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "group_key_got",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "group_key_listen",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "group_key_sent",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "key_fill_compare",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "key_fill_done",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "key_fill_menu",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "key_fill_ready",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "key_send",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "settings_privacy_check",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "settings_privacy_wipe",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "stored_keys",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "tools_zone_offer",
+      "status": "changed",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "wipe_code",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "wipe_confirm",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "wipe_failed",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "clear_keys_confirm",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "group_key_got",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "group_key_listen",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "group_key_sent",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "key_fill_compare",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "key_fill_done",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "key_fill_menu",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "key_fill_ready",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "key_send",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_privacy_check",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_privacy_wipe",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "stored_keys",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tools",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tools_zone_offer",
+      "status": "changed",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "wipe_code",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "wipe_confirm",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "wipe_failed",
+      "status": "added",
+      "image": "compare/240x320-3.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "clear_keys_confirm",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "group_key_got",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "group_key_listen",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "group_key_sent",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "key_fill_compare",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "key_fill_done",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "key_fill_menu",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "key_fill_ready",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "key_send",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_privacy_check",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_privacy_wipe",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "stored_keys",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tools",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tools_zone_offer",
+      "status": "changed",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "wipe_code",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "wipe_confirm",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "wipe_failed",
+      "status": "added",
+      "image": "compare/240x320i10x5-3.png"
+    }
+  ]
+}

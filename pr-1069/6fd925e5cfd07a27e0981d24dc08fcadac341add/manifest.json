@@ -1,0 +1,91 @@
+{
+  "pr": 1069,
+  "base_sha": "dd67ecd659ee35955f9efddc68632b191ea6c153",
+  "head_sha": "6fd925e5cfd07a27e0981d24dc08fcadac341add",
+  "generated": "2026-11-24T22:37:30Z",
+  "counts": {
+    "changed": 0,
+    "added": 5,
+    "removed": 0,
+    "unchanged": 889
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dual_aes"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dual_aes"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dual_aes"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dual_aes"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dual_aes"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "home_dual_aes",
+      "status": "added",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_aes",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_aes",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_aes",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_aes",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    }
+  ]
+}

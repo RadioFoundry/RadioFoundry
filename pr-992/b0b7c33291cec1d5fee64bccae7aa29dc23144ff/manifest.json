@@ -1,0 +1,161 @@
+{
+  "pr": 992,
+  "base_sha": "e62d0fcf272a9c08d501988c2976480d045e6304",
+  "head_sha": "b0b7c33291cec1d5fee64bccae7aa29dc23144ff",
+  "generated": "2026-11-27T16:33:08Z",
+  "counts": {
+    "changed": 15,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 874
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 3,
+      "screens": [
+        "home_fm",
+        "home_monitor",
+        "home_temporary"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 3,
+      "screens": [
+        "home_fm",
+        "home_monitor",
+        "home_temporary"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 3,
+      "screens": [
+        "home_fm",
+        "home_monitor",
+        "home_temporary"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 3,
+      "screens": [
+        "home_fm",
+        "home_monitor",
+        "home_temporary"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 3,
+      "screens": [
+        "home_fm",
+        "home_monitor",
+        "home_temporary"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "128x64",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_fm",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_monitor",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_temporary",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    }
+  ]
+}

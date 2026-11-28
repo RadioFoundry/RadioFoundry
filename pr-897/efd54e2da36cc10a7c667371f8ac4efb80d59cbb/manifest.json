@@ -1,0 +1,106 @@
+{
+  "pr": 897,
+  "base_sha": "5a8663fe9d91492cd9a7b13d77c64d01e9426cb5",
+  "head_sha": "efd54e2da36cc10a7c667371f8ac4efb80d59cbb",
+  "generated": "2026-11-21T20:18:59Z",
+  "counts": {
+    "changed": 6,
+    "added": 0,
+    "removed": 0,
+    "unchanged": 1067
+  },
+  "images": [
+    {
+      "geometry": "128x64",
+      "color": "mono",
+      "image": "compare/128x64-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dmr_lastheard"
+      ]
+    },
+    {
+      "geometry": "320x240",
+      "color": "color",
+      "image": "compare/320x240-1.png",
+      "rows": 1,
+      "screens": [
+        "home_dmr_lastheard"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "128x64",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/128x64-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "320x240",
+      "screen": "home_dmr_lastheard",
+      "status": "changed",
+      "image": "compare/320x240-1.png"
+    }
+  ]
+}
