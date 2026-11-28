@@ -98,6 +98,13 @@ switch = "NXDN_SCRAMBLER"
 spec = "docs/spec/nxdn.md"
 source = ["core/nxdn/nxdn_scramble.c", "core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c"]
 
+[feature.ysf]
+switch = "YSF"
+spec = "docs/spec/ysf.md"
+source = ["core/ysf", "core/air", "core/fec", "core/radio/radio_ysf.c", "core/radio/radio_ysf.h",
+          "core/radio/radio_air.h", "core/radio/radio_air_mem.c", "core/radio/radio_air_voice.c",
+          "core/debuglink/debuglink_view_ysf.c"]
+
 [feature.mbe2400]
 switch = "MBE2400"
 spec = "docs/spec/mbe-2400.md"
@@ -600,6 +607,10 @@ switch = "AIR_RAW"
 spec = "docs/spec/debuglink.md"
 source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
 
+[feature.air_rx_adapt]
+switch = "AIR_RX_ADAPT"
+spec = "docs/spec/air-interface.md"
+source = ["core/air/air_softmodem.c"]
 [feature.debuglink_dmrip]
 switch = "DEBUGLINK_DMRIP"
 spec = "docs/spec/debuglink.md"

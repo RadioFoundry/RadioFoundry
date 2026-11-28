@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "../air/air_syms.h"
+#include "../fec/crc16.h"
 #include "../fec/trellis.h"
 
 #define SS_EVERY	35	// information dibits between two status symbols
@@ -35,17 +36,10 @@ uint16_t p25_block_end_sym(uint8_t k)
 	return dibits_syms((uint16_t)(BLOCK_AT / 2 + (k + 1) * (BLOCK_BITS / 2)));
 }
 
-// ── CRC-CCITT of the first 80 bits: x^16 + x^12 + x^5 + 1, register from 0, the remainder inverted ──
+// ── CRC-CCITT of the first 80 bits (fec/crc16.h) ──
 uint16_t p25_tsbk_crc(const uint8_t blk[P25_TSBK_BYTES])
 {
-	uint16_t r = 0;
-
-	for (unsigned i = 0; i < 10; i++) {
-		r ^= (uint16_t)(blk[i] << 8);
-		for (unsigned b = 0; b < 8; b++)
-			r = (uint16_t)((r & 0x8000) ? (r << 1) ^ 0x1021 : r << 1);
-	}
-	return (uint16_t)~r;
+	return fec_crc_ccitt(blk, 10);
 }
 
 void p25_tsbk_seal(uint8_t blk[P25_TSBK_BYTES])

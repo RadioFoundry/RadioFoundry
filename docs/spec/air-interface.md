@@ -172,6 +172,62 @@ a 64-bit gain product and ring indexes by `%`. The HI/LO unit's multiply-accumul
 eight of the dot product and is not used: the context switch does not save HI and LO. Open: a provider that knows
 the channel is empty (`AIR_CHUNK_NO_SIGNAL`) could stop feeding the modem.
 
+### 6.1 Adaptive receive options
+
+A mode may ask the soft modem for more than the plain receiver, in its profile's `rx_opts`. A mode that asks for
+nothing (P25, NXDN) gets the plain receiver, symbol for symbol.
+
+| | |
+|---|---|
+| Switch | `CONFIG_AIR_RX_ADAPT`, turned on by a mode that asks; needs an air-framed mode and `CONFIG_SUBTONE` (the tone and code lists, `core/radio/tones.h`) |
+| Boards | HR_C7000 only so far ([feature-matrix.md](../feature-matrix.md)) |
+| State | Lent by the mode's engine for its session (`air_softmodem_lend`, about 1.6 KB). The soft modem grows by a pointer |
+| Per-sample path | 32 bits, no divide (section 6). The equalizer divides once a symbol, the DCS search once a word |
+| Coefficients | Worked out in integers at open and at a pick (a series cosine). No floating point |
+| Code in RAM | The per-sample and per-symbol functions are `RFOUNDRY_HOT_CODE`: in RAM where the platform gives a section for code (about 1.1 KB on HR_C7000) |
+| Bench | `air_softmodem_adapt_off` turns an option off from the next symbol; `air_softmodem_adapt_get` gives what runs |
+
+**`AIR_RX_EQ`: equalizer**
+
+| | |
+|---|---|
+| Filter | 7 taps a symbol apart, on the soft values: the symbols before from its own memory, those after from the line |
+| Adaptation | Decision-directed normalized LMS towards the level decided, step 2^-6, only within the sync spacing of the last sync |
+| Limits | Center tap held within 0.7-1.2. A side tap past 0.5 resets all taps to a pass-through |
+| Reset | Each new lock starts from a pass-through |
+
+**`AIR_RX_TONE`: CTCSS notch**
+
+| | |
+|---|---|
+| Input | Each symbol's slicing error, before the equalizer, counted only where its neighborhood (the symbol and the two decided around it) differs from the same place a frame (the sync spacing) earlier. The errors' slow mean comes off first; coasting gives zeros |
+| Search | A second-order CIC keeping one sample in four, then a Goertzel filter per standard CTCSS tone (`tones_ctcss`, 67.0-254.1 Hz) over blocks of six frames: 1.7 Hz bins, neighbors 2.9 Hz apart. 50 updates every 4 symbols. The CIC's droop is weighed into each tone's gain |
+| Pick | Power 10 times the mean of the others (neighbors left out) in two blocks; a block where none passes leaves the count. The first pick may take one block at 30 times, if also 4 times each neighbor. Never switches to a neighbor of the tone notched |
+| Notch | On the input samples: zeros at the tone's exact frequency, poles inside at Q 20, unity gain at DC. Run as differences from a double zero and pole at DC, 20 bits each: 49 dB off a 69.3 Hz tone |
+| Reset | The search and the notch start over only when the session opens; locks and resets keep them |
+| Limits | On a radio's recordings without a tone, no block passed 9. What a notch leaves of a tone sent through a receiver is more than of the same tone added after it |
+
+**`AIR_RX_DCS`: DCS remover**
+
+| | |
+|---|---|
+| Average | The input samples averaged by their place in the 23-bit word (184 bins, 8 a bit; each bin x += (in - x) / 16 a visit). The word repeats every 171 ms; the 4FSK doesn't |
+| Read | Once a word, after four: the bins' mean off, each bit summed at the best of 8 offsets, the 23 bits tested as a cyclic Golay(23,12) codeword (either generator, any rotation, not all zeros or ones) |
+| Lock | A codeword locks; three words that are not unlock |
+| Removal | While locked, the word read times one bit's shape (at each of the 8 places in a bit, the mean of the 23 bits' bins, each with its bit's sign), interpolated between bins, off each sample before the CTCSS notch |
+| Code | Read as a standard code (`tones_dcs`) from any rotation; an inverted code reads as its pair (023 inverted is 047) |
+
+**Modeled channel** (`airSoftmodemTest`, a C4FM profile at 4800 symbols/s, 8 kHz tap), symbol errors:
+
+| Channel | Plain | With the option |
+|---|---|---|
+| Upper band cut to 2.4 kHz, noise (equalizer) | 3.07 % | 0.02 % |
+| Upper band cut to 2.2 kHz, noise (equalizer) | 8.6 % | 1.2 % |
+| 127.3 Hz tone, 0.4 of a level, noise (notch) | 0.62 % | 0.27 % |
+| DCS 023, half a level, noise (DCS remover) | 18.7 % | 7.0 % |
+
+Every standard tone is found as itself at 0.2 and at 0.4 of a level. With only a CTCSS tone, no DCS code locks.
+
 ## 7. The session
 
 `air_session` runs one mode on one provider. Two tasks use it:
@@ -192,12 +248,31 @@ In the radio core each mode on the air interface fills one table of these steps 
 release are one path for every mode. A mode whose session opened with `AIR_FIT_RX` and no `AIR_FIT_TX` refuses PTT
 before anything is queued: `tx_deny=air_no_tx` ("This mode: receive only").
 
+### 7.1 The shared voice engine
+
+NXDN and YSF run their engines on `air_voice` (`core/air/air_voice.h`): the session, the call in hand and whether it
+plays, the view the radio core reads (published under a sequence count), and transmit, where `tx_fill` takes the
+encoder's voice frames into the mode's call layer and sends silence once the encoder falls behind the provider's lead.
+A mode gives what differs:
+
+| The mode gives | NXDN | YSF |
+|---|---|---|
+| Its call layer's transmit steps (`air_voice_tx_ops_t`: ready, symbols, sent, done, voice, end) | `nxdn_call_tx_*` | `ysf_call_tx_*` |
+| Which calls play (`air_voice_rx_fields(..., play)`) | RAN, group or unit, the traffic key | the DG-ID, DN voice only |
+| What a transmission sends (before `air_voice_tx_prime`) | the VCALL | the header's fields, or a room command |
+| Its typed hooks, called on the event `air_voice` returns (start, update, end) | `nxdn_engine_hooks_t` | `ysf_engine_hooks_t` |
+
+On the radio core's side both use `radio_air_voice.c`: the DMR side's voice path as sink and source, the engine's
+memory (`radio_air_engine_get`) and the counters every such mode keeps (`radio_air_counts_t`). P25's engine is not on
+it yet.
+
 ## 8. Users
 
 | User | State |
 |---|---|
 | P25 Phase 1 conventional voice | written, host tested ([p25.md](p25.md)) |
-| NXDN conventional voice, 4800 and 9600 bit/s | written, host tested, in the radio core ([nxdn.md](nxdn.md) 6) |
+| NXDN conventional voice, 4800 and 9600 bit/s | written, host tested, in the radio core ([nxdn.md](nxdn.md) 6), on `air_voice` (7.1) |
+| YSF DN voice | written, host tested, in the radio core ([ysf.md](ysf.md)), on `air_voice` (7.1) |
 | A DMR engine on symbols | not written. The interface carries TDMA (slot length, slot events, the slot clock, per-slot transmit chunks, syncs inside the burst); today's DMR runs on the modem chip's own layer 2 |
 | 2-level modes | carried (the dibit map, the soft modem's fit) |
 | AFSK (APRS) | not a symbol mode: its tones ride the audio band. The sample taps can feed a demodulator for it; nothing uses them for that yet |

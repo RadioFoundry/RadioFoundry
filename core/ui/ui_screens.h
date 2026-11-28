@@ -107,6 +107,12 @@ typedef struct {
 	uint8_t tone_target;		// Tone editor: RADIO_TONE_BOTH, RADIO_TONE_TX or RADIO_TONE_RX
 	subtone_t tone_edit;		// Tone editor: the value picked (shown at once, before the radio's view catches up)
 	uint8_t cc_edit;		// Color code editor: the value picked
+#if CONFIG_YSF
+	uint8_t dgid_edit;		// DG-ID editor (YSF): the value picked
+	char ysf_last[11];		// the last YSF call heard (Home's activity when idle): callsign, DG-ID, when
+	uint8_t ysf_last_dgid;
+	uint32_t ysf_last_ms;		// 0: none yet
+#endif
 	uint8_t diag_first;	// first board line on the diagnostics page
 	bool locked;		// keys locked (long QUICK)
 	bool scanning;
@@ -145,6 +151,11 @@ enum {
 	QT_TIMESLOT, QT_CC, QT_HEAR_ALL, QT_PRIVACY, QT_TALK_TO,
 	QT_TO_VFO,		// on a channel, in place of QT_MODE: copy the channel to the VFO
 	QT_SPLIT,		// in the VFO, in place of QT_MONITOR (FM) / QT_PRIVACY (DMR): the TX frequency or offset
+	QT_YSF_ROOMS,		// YSF, in place of FM's Tone: the Rooms page
+	QT_DGID,		// YSF, in place of FM's Width: the transmit DG-ID
+	QT_RX_DGID,		// YSF, in place of the squelch (it doesn't gate YSF): the receive DG-ID
+	QT_NONE,		// an empty tile: YSF's 5 and 6 on a channel (Monitor and VOX are FM's), kept for Send GPS
+				// and Group Monitor (ysf.md 8)
 
 };
 // The tile kind at position 0..8 (keys 1..9) for this channel or the VFO

@@ -87,6 +87,7 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 | `--p25-voice-mhz` | where the radio transmits on the voice channel the bench's control channel grants (`test_p25_trunk_tx`) |
 | `--p25-voice-out-mhz` | where a second bench transmitter (`--bench-api-2`) plays the call the bench's control channel grants (`test_p25_trunk_rx`; the bench transmits) |
 | `--nxdn-mhz` | the NXDN test frequency (the radio's VFO; `test_nxdn_tx_off_air`, `test_nxdn_stored_channel_tx`, and `test_nxdn_rx_from_bench` and `test_nxdn_scan_from_bench`, where the bench transmits) |
+| `--ysf-mhz` | the YSF test frequency (the radio's VFO; `test_ysf_tx_off_air`) |
 | `--noaa-mhz` | a NOAA weather radio station heard at the rig (`test_fm`, receive only; optional tests) |
 | `--vhf-fm-mhz` | a VHF FM frequency the bench transmits on (`test_fm`: receive in the VHF band) |
 | `--aprs-test-mhz` | `test_aprs`'s AFSK frequency: an amateur simplex frequency that is not an APRS one |
@@ -109,7 +110,7 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 With `--allow-rf`, every transmit frequency the run is given (`--dmr-freq`, `--fm-mhz`, `--p25-mhz`, `--aprs-test-mhz`,
 `--sfr-freq`, `--roam-rx` / `--roam-tx`, `--split-out-mhz`, `--split-tx-mhz`, `--outbound-mhz`, `--am-mhz`,
 `--vhf-fm-mhz`, `--t3-tx-mhz`, `--t3-payload-tx-mhz`, `--p25-cc-mhz`, `--p25-cc-in-mhz`, `--p25-voice-mhz`,
-`--p25-voice-out-mhz`, `--nxdn-mhz`) must be in `tx_mhz`, or the run
+`--p25-voice-out-mhz`, `--nxdn-mhz`, `--ysf-mhz`) must be in `tx_mhz`, or the run
 stops before the first test. The bench client refuses to key anywhere else. Example file (placeholder values: use
 your license's and your site's):
 

@@ -24,6 +24,9 @@
 #if CONFIG_NXDN
 #include "nxdn/nxdn_codeplug.h"
 #endif
+#if CONFIG_YSF
+#include "ysf/ysf_codeplug.h"
+#endif
 
 // The UI services' one radio view copy (the UI task's only; too big for its stack). A service fetches it with
 // radio_get_view and reads it before returning: nothing may hold it across a call into another service
@@ -54,6 +57,7 @@ extern radio_view_t ui_svc_view;
 #define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
 #define UI_FEAT_P25		(1u << 22)	// P25 on this board (CONFIG_P25, radio_p25_fits): the VFO's mode tile offers it
 #define UI_FEAT_NXDN		(1u << 23)	// NXDN on this board (CONFIG_NXDN, radio_nxdn_fits): the same
+#define UI_FEAT_YSF		(1u << 24)	// YSF on this board (CONFIG_YSF, radio_ysf_fits): the same
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -85,7 +89,8 @@ bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's g
 // A channel mode's name as the screens show it (radio_mode_t). A name, never translated
 static inline const char *ui_mode_name(uint8_t mode)
 {
-	return mode == RADIO_MODE_DMR ? "DMR" : mode == RADIO_MODE_P25 ? "P25" : mode == RADIO_MODE_NXDN ? "NXDN" : "FM";
+	return mode == RADIO_MODE_DMR ? "DMR" : mode == RADIO_MODE_P25 ? "P25" : mode == RADIO_MODE_NXDN ? "NXDN" :
+	       mode == RADIO_MODE_YSF ? "YSF" : "FM";
 }
 // Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
 // when the request went to the radio core, else why nothing changed
@@ -102,8 +107,24 @@ bool ui_svc_save_channel(void);
 // codeplug storage in this build
 void ui_svc_next_aes_key(channel_t *ch);
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from);
-#if CONFIG_P25 || CONFIG_NXDN
-// A P25 or NXDN channel's own settings, its tag's parameter block (p25-codeplug.md 2, nxdn-codeplug.md 2)
+#if CONFIG_YSF
+// This radio's YSF radio ID (radio_ysf_rid): five characters, made from the MCU's unique ID. weak (may be
+// NULL): it comes from the fallback, so it may not be unique (docs/spec/ysf.md 6)
+void ui_svc_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak);
+// The callsign YSF sends: the codeplug's YSF record; "" = none (PTT refused)
+void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1]);
+// Set the DG-IDs (0-99; receive 0 hears every one): in the VFO (chan 0) they stay; on stored channel chan they last
+// until another channel is taken (radio_ysf_settings_t.temp_chan). False: out of range
+bool ui_svc_ysf_dgid(uint8_t tx, uint8_t rx, uint16_t chan);
+// Rooms (docs/spec/ysf.md 9): send a command (radio_req_ysf_wx; false: not on a YSF channel), the node's state, a
+// room of the page held
+bool ui_svc_ysf_wx(uint8_t cmd, uint32_t arg, const char *text);
+void ui_svc_ysf_wx_state(radio_ysf_wx_t *out);
+bool ui_svc_ysf_wx_room(uint8_t i, ysf_wx_room_t *out);
+#endif
+#if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
+// A P25, NXDN or YSF channel's own settings, its tag's parameter block (p25-codeplug.md 2, nxdn-codeplug.md 2,
+// ysf-codeplug.md 2)
 typedef union {
 #if CONFIG_P25
 	p25_conv_t p25;
@@ -111,8 +132,11 @@ typedef union {
 #if CONFIG_NXDN
 	nxdn_conv_t nxdn;
 #endif
+#if CONFIG_YSF
+	ysf_chan_t ysf;
+#endif
 } ui_air_conv_t;
-// ui_svc_write_channel for a P25 or NXDN channel (ch's kind, or a plain one in that mode) with conv as its block: the
+// ui_svc_write_channel for a P25, NXDN or YSF channel (ch's kind, or a plain one in that mode) with conv as its block: the
 // channel editor's NAC, RAN and rate. A plain channel takes its talk target and talkaround from the radio's settings
 // as it does without conv
 bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv);
@@ -520,7 +544,7 @@ typedef struct {
 void ui_svc_boot_text(char line1[17], char line2[17]);
 // The codeplug's name fields (Settings > My radio): the radio name (8 characters; APRS takes its first word as the
 // callsign) and the two boot screen lines (16 each). Set is a storage job: false while another one is pending
-enum { UI_NAME_RADIO, UI_NAME_BOOT1, UI_NAME_BOOT2, UI_NAME_COUNT };
+enum { UI_NAME_RADIO, UI_NAME_BOOT1, UI_NAME_BOOT2, UI_NAME_YSF_CALL, UI_NAME_COUNT };	// YSF_CALL: CONFIG_YSF
 void ui_svc_name_get(uint8_t which, char out[17]);
 bool ui_svc_name_set(uint8_t which, const char *text);
 

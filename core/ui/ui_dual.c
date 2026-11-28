@@ -178,8 +178,8 @@ static uint8_t shown_mode(const channel_t *c)
 {
 	if (!codeplug_kind_built(c->kind) || c->kind == CODEPLUG_KIND_DMR_TRUNK)
 		return c->mode;
-	// The other kinds a build runs: P25 (trunked too) and NXDN
-	return c->kind == CODEPLUG_KIND_NXDN ? RADIO_MODE_NXDN : RADIO_MODE_P25;
+	// The other kinds a build runs: P25 (trunked too), NXDN and YSF
+	return c->kind == CODEPLUG_KIND_NXDN ? RADIO_MODE_NXDN : c->kind == CODEPLUG_KIND_YSF ? RADIO_MODE_YSF : RADIO_MODE_P25;
 }
 
 static void pane_fill(uint8_t i)
@@ -218,7 +218,7 @@ static void pane_fill(uint8_t i)
 	p->mode = shown_mode(&ch);
 	p->am = p->mode == RADIO_MODE_FM && radio_am_channel(&ch);	// as the receiver hears it (Home's mode word)
 	p->rx_hz = ch.rx_hz;
-	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN)
+	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN || p->mode == RADIO_MODE_YSF)
 		return;	// no tone or slot: the engine's own squelch (the channel's settings say which)
 	sbuf_t b;
 	sb_init(&b, p->detail, sizeof p->detail);
@@ -836,6 +836,8 @@ static const char *signal_word(const ui_dual_pane_t *p, bool dmr)
 		return TR(DUAL_VALUE_P25_CALL, "P25 call");
 	if (p->mode == RADIO_MODE_NXDN)
 		return TR(DUAL_VALUE_NXDN_CALL, "NXDN call");
+	if (p->mode == RADIO_MODE_YSF)
+		return TR(DUAL_VALUE_YSF_CALL, "YSF call");
 	return p->am ? TR(DUAL_VALUE_AM_SIGNAL, "AM signal") : TR(DUAL_VALUE_FM_SIGNAL, "FM signal");
 }
 

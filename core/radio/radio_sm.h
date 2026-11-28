@@ -199,6 +199,8 @@ typedef enum {
 	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
 	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
 	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
+	RREQ_YSF_SET,		// radio_task.c: the same for YSF (radio_ysf_set_settings)
+	RREQ_YSF_WX,		// radio_task.c: a room command was armed (radio_ysf_wx_arm): send it as a short transmission
 #if CONFIG_RADIO_DETOUR
 	RREQ_DETOUR,		// a detour: arg RADIO_DETOUR_MARK (arg2: backstop ms) or _RETURN
 #endif

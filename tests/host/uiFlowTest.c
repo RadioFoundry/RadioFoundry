@@ -148,6 +148,70 @@ static const flow_t flows[] = {
 #endif
 	{ "P25 channel: bandwidth is FM only", "dlmode:p25", "quick 8", "mode=p25 toast=FM_only:_this_is_a_P25_channel",
 	  2, false },
+#if CONFIG_YSF
+	// YSF: the power, the DG-ID heard and our radio ID in the chips, the DG-ID PTT sends on the talk line; a call names
+	// its caller by callsign
+	{ "YSF channel shows its mode", "dlmode:ysf", "", "mode=ysf screen=home shows=YSF shows=DG-ID_00 hides=K7Q2Z hides=No_tone hides=SQ5", 0, false },
+	{ "YSF home: a call", "dlmode:ysf", "ysfrx:N1ABC,12", "screen=home shows=N1ABC shows=DG-ID_12", 0, false },
+	{ "YSF home: another DG-ID", "dlmode:ysf", "ysfrx:N1ABC,12,o", "screen=home shows=Other_DG-ID:_not_played hides=N1ABC", 0, false },
+	{ "YSF home: not DN voice", "dlmode:ysf", "ysfrx:N1ABC,0,v", "screen=home shows=Not_DN_voice:_not_played", 0, false },
+	// The channel editor: Mode steps on from NXDN to YSF (DG-ID 00), then FM; a YSF channel has a DG-ID row and no
+	// contact or ID row (it names us by callsign)
+	{ "E Mode: NXDN to YSF", "p25 nxdn ysf ok 5 ok down down", "ok ok ok", "focus=Mode shows=YSF shows=DG-ID hides=RAN hides=Contact",
+	  3, false },
+	{ "E Mode: YSF to FM", "p25 nxdn ysf ok 5 ok down down", "ok ok ok ok", "focus=Mode shows=FM hides=DG-ID", 4, false },
+	{ "E Mode: DMR to YSF where the radio has no P25 or NXDN", "ysf ok 5 ok down down", "ok", "focus=Mode shows=YSF", 1, false },
+	{ "E Mode: DMR channel saved as YSF", "ysf ok 5 ok down down ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=YSF shows=DG-ID", 1, true },
+	{ "E Mode: the saved YSF channel opens as YSF", "ysf ok 5 ok down down ok long:ok back back back", "ok 5 ok",
+	  "screen=channel shows=YSF shows=DG-ID hides=Color_code", 3, false },
+	{ "E YSF DG-ID: typed", "ysf ok 5 ok down down ok down", "ok 4 2 ok", "focus=TX_DG-ID shows=42", 4, false },
+	{ "E YSF RX DG-ID: typed", "ysf ok 5 ok down down ok down down", "ok 3 5 ok", "focus=RX_DG-ID shows=35", 4, false },
+	// Rooms (ysf.md 9): tile 3 on YSF opens it; the node's status, a typed room ID connected, the room list
+	{ "Q YSF: tile 3 is Rooms", "dlmode:ysf", "quick 3", "screen=rooms shows=Refresh shows=Node", 2, false },
+	{ "T YSF: 0 in Tools is Rooms", "dlmode:ysf", "ok 6 0", "screen=rooms shows=Node", 3, false },
+	{ "H YSF: # on Home is Rooms", "dlmode:ysf", "ctx", "screen=rooms shows=Node", 1, false },
+	// The DG-IDs: quick settings tile 8 (Width's place) and the Rooms page's first row send; tile 2 (the squelch's,
+	// which doesn't gate YSF) and the Rooms page's second row hear (00: every DG-ID, so a gateway's answer on another
+	// one still plays); a channel's for now. Tiles 5 and 6 are empty on a channel (Monitor and VOX are FM's)
+	{ "Q YSF: tile 8 is the TX DG-ID", "dlmode:ysf", "quick 8", "screen=quick shows=TX_DG", 2, false },
+	{ "Q YSF: tile 2 is the RX DG-ID", "dlmode:ysf", "quick 2 1 7 ok", "dgid=0 rxdgid=17 shows=RX_DG shows=17", 5, false },
+	{ "Q YSF: tiles 5 and 6 are empty", "dlmode:ysf", "quick 5 6", "screen=quick hides=MON hides=VOX hides=SQL toast=none", 3, false },
+	{ "Q YSF VFO: tile 5 stays TX freq", "ok 4 up ok dlmode:ysf", "quick 5 up ok", "txfreq=147120000", 4, false },
+	{ "Q YSF: DG-ID typed", "dlmode:ysf", "quick 8 2 5 ok", "dgid=25 rxdgid=0 shows=25", 5, false },
+	{ "Q YSF: DG-ID stepped down from 00", "dlmode:ysf", "quick 8 down ok", "dgid=99", 4, false },
+	{ "W Rooms: DG-ID row typed", "dlmode:ysf quick 3", "ok 1 2 ok", "screen=rooms dgid=12 rxdgid=0 shows=12", 4, false },
+	{ "W Rooms: DG-ID row, BACK leaves it", "dlmode:ysf quick 3", "ok 1 2 back", "screen=rooms dgid=-1", 4, false },
+	{ "W Rooms: RX DG-ID row typed", "dlmode:ysf quick 3", "down ok 1 2 ok", "screen=rooms rxdgid=12 dgid=0 shows=12", 5, false },
+	// Recent: a YSF call by its callsign and DG-ID; no DMR actions for it
+	{ "R YSF call in Recent", "dlmode:ysf ysfrx:N1ABC,12", "ok 3", "screen=recent shows=N1ABC shows=DG-ID_12", 2, false },
+	{ "YSF home: a room data transmission", "dlmode:ysf", "ysfrx:N0RPT,0,d", "screen=home shows=N0RPT shows=Data hides=Not_DN", 0, false },
+	// No YSF callsign set (ysf.md 5.2): Home says so, and PTT is refused with its own reason and where to set it
+	{ "YSF home: no callsign", "ysf dlmode:ysf long:ok", "noysfcall wait:500", "screen=home shows=No_callsign",
+	  0, false },
+	{ "YSF PTT: no callsign set", "ysf dlmode:ysf long:ok noysfcall wait:500", "pttdown",
+	  "screen=home shows=NO_TX shows=No_callsign hides=TALKING tx=0", 1, false },
+	{ "R YSF data transmission in Recent", "dlmode:ysf ysfrx:N0RPT,0,d ysfend", "ok 3", "screen=recent shows=N0RPT", 2, false },
+	{ "H YSF idle: the last call heard", "dlmode:ysf ysfrx:N1ABC,12 ysfend", "", "screen=home shows=N1ABC shows=DG-ID_12", 0, false },
+	{ "R YSF: our own call echoed stays out", "dlmode:ysf ysfrx:N0CALL,0", "ok 3", "screen=recent hides=N0CALL", 2, false },
+	{ "R YSF call in Recent: no actions", "dlmode:ysf ysfrx:N1ABC,12", "ok 3 ctx", "screen=recent toast=No_actions_here", 3, false },
+	{ "W Rooms: Refresh asks the node", "dlmode:ysf quick 3", "down down ok", "screen=rooms wxcmd=0 shows=Waiting...", 3, false },
+	{ "W Rooms: OK on Room ID asks too", "dlmode:ysf quick 3", "down down down down down ok", "screen=rooms wxcmd=0", 6, false },
+	{ "W Rooms: the node's answer", "dlmode:ysf quick 3 down down ok", "wxdx", "screen=rooms shows=NODE", 0, false },
+	{ "W Rooms: the node's room and its ID", "dlmode:ysf quick 3 down down ok wxdx", "down down down", "screen=rooms shows=TEST shows=27299", 3, false },
+	{ "W Rooms: a typed room connected", "dlmode:ysf quick 3", "2 7 2 9 9 ok", "wxcmd=1 wxarg=27299", 6, false },
+	{ "W Rooms: connect without a room ID", "dlmode:ysf quick 3", "2 back back ok", "wxcmd=-1 toast=Type_a_room_ID_first", 4, false },
+	{ "W Rooms: disconnect", "dlmode:ysf quick 3", "down down down down down down down ok", "wxcmd=2", 8, false },
+	{ "W Rooms: the room list", "dlmode:ysf quick 3", "down down down down down down down down ok wxrooms:3", "screen=room-list wxcmd=3 wxarg=1 shows=ROOM0 shows=ROOM2 shows=Next_page", 9, false },
+	{ "W Rooms: a room picked connects", "dlmode:ysf quick 3 down down down down down down down down ok wxrooms:3", "down ok", "screen=rooms wxcmd=1 wxarg=20001", 2, false },
+	{ "W Rooms: the next page", "dlmode:ysf quick 3 down down down down down down down down ok wxrooms:3", "down down down ok", "wxcmd=3 wxarg=4", 4, false },
+#if CONFIG_CHANNEL_EDIT
+	{ "W Rooms: a search's next page", "dlmode:ysf quick 3 down down down down down down down down ok wxsearch:20", "down down down down down down down down down down down down down down down down down down down down ok", "wxcmd=4 wxarg=21", 21, false },
+	{ "W Rooms: a search's page counted", "dlmode:ysf quick 3 down down down down down down down down ok wxsearch:20", "", "screen=room-list shows=1-20_of_25", 0, false },
+#endif
+	{ "E YSF DG-ID: saved with the channel", "ysf ok 5 ok down down ok down ok 4 2 ok", "long:ok",
+	  "screen=channel writes=1 shows=42", 1, true },
+#endif
 #if CONFIG_P25
 	// P25 on Home: what PTT calls on the talk line, the NAC in the chips, the caller while a call comes in
 	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
@@ -880,6 +944,17 @@ static const flow_t flows[] = {
 	// The own DMR ID (Settings > My radio, set76, the codeplug's): digits type it, OK saves, BACK takes the last digit
 	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 0 ok", "screen=dmr-id shows=DMR_ID", 4, false },
+#if CONFIG_YSF
+	// The YSF callsign: the radio name's until one is typed; the radio ID: shown, never edited (the chip's,
+	// docs/spec/ysf.md 6), and on About
+	{ "S My radio shows the YSF callsign", "ok 7 0 ok", "down down down down", "screen=dmr-id focus=YSF_callsign shows=N0CALL", 4, false },
+	{ "S YSF callsign opens text entry", "ok 7 0 ok down down down down", "ok", "screen=text", 1, false },
+	{ "S YSF callsign typed and saved", "ok 7 0 ok down down down down ok", "2 ok",
+	  "screen=dmr-id toast=Saved writes=1 focus=YSF_callsign hides=N0CALL", 2, true },
+	{ "S My radio shows the YSF radio ID", "ok 7 0 ok", "down down down down down", "screen=dmr-id focus=YSF_RID shows=K7Q2Z", 5, false },
+	{ "S About shows the YSF radio ID", "ok 7 0 down ok", "down", "screen=about shows=K7Q2Z", 1, false },
+	{ "S the radio ID is not editable", "ok 7 0 ok down down down down down", "ok", "screen=dmr-id toast=Read_only", 1, false },
+#endif
 	{ "S About from My radio", "", "ok 7 0 down ok", "screen=about shows=Build:", 5, false },
 	{ "S DMR ID typed and saved", "ok 7 0 ok", "9 9 9 9 9 9 9 ok", "set76=9999999 toast=DMR_ID_saved", 8, false },
 	{ "S DMR ID: BACK takes a digit back", "ok 7 0 ok", "3 1 back ok", "set76=3 toast=DMR_ID_saved", 4, false },
@@ -982,6 +1057,16 @@ static const flow_t flows[] = {
 	  2, false },
 	{ "S VFO mode: NXDN back to FM", "nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
 	  false },
+#if CONFIG_YSF
+	// YSF after NXDN (or DMR where the radio has neither P25 nor NXDN); then FM
+	{ "S VFO mode: NXDN to YSF", "nxdn ysf ok 4 up ok quick 4 back quick 4 back", "quick 4",
+	  "toast=VFO:_YSF mode=ysf temporary=0 vfo=1", 2, false },
+	{ "S VFO mode: DMR to YSF", "ysf ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_YSF mode=ysf", 2, false },
+	{ "S VFO mode: YSF back to FM", "ysf ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
+	  false },
+	{ "S VFO mode: YSF shows on the strip", "ysf ok 4 up ok quick 4 back quick 4 back", "", "mode=ysf screen=home shows=YSF",
+	  0, false },
+#endif
 	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
 	  0, false },
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },
@@ -1406,8 +1491,16 @@ static const flow_t flows_k[] = {
 	  "set47=17 shows=VFO/Channel", 1, false },
 	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
+#if CONFIG_YSF
+	// (Rooms is the last function in a build with YSF)
+	{ "K top key hold: Rooms last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=22 shows=Rooms",
+	  1, false },
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
+	  false },
+#else
 	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
+#endif
 	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=19 shows=TG_name", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },

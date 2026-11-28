@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include "config.h"
 #include "codeplug/codeplug.h"
+#include "radio/radio_air.h"
 
 // The NXDN settings (RAM only, reset at start-up; nxdn.md 6.2): the VFO's, and the shape of what is in force
 typedef struct {
@@ -56,9 +57,8 @@ typedef struct {
 
 // Counters for the debug link (any task reads them; the radio task writes them while NXDN runs)
 typedef struct {
-	uint32_t rx_calls, tx_calls, tx_filler;
+	radio_air_counts_t air;		// rx_calls, tx_calls, tx_filler; the session's rx_chunks, tx_underruns, tx_syms
 	uint32_t frames, lich_fail, sacch_fail, facch_fail, voice, voice_held, fec_bits, ran_rejects;	// the call layer's
-	uint32_t rx_chunks, tx_underruns, tx_syms;	// the session's
 	uint32_t begins, begin_fails;	// engine starts, and the ones the provider refused (no provider, no fit, no memory)
 } radio_nxdn_stats_t;
 

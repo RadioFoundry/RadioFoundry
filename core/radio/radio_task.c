@@ -74,6 +74,10 @@ static radio_p25_settings_t pending_p25;	// radio_req_p25_settings -> the radio 
 #if CONFIG_NXDN
 static radio_nxdn_settings_t pending_nxdn;	// radio_req_nxdn_settings -> the radio task, under view_lock
 #endif
+#if CONFIG_YSF
+static radio_ysf_settings_t pending_ysf;	// radio_req_ysf_settings -> the radio task, under view_lock
+static struct { uint8_t cmd; uint32_t arg; char text[YSF_WX_TEXT_LEN + 1]; } pending_wx;	// radio_req_ysf_wx
+#endif
 #if CONFIG_AIR_RAW
 static volatile bool bench_held, bench_keyed;	// published sm.air_bench, sm.bench_keyed
 static volatile uint8_t bench_ack;		// published sm.bench_seq
@@ -297,6 +301,26 @@ static void radio_task(void *arg)
 					xSemaphoreGive(view_lock);
 					radio_nxdn_set_settings(&n);
 					radio_sm_request(&sm, &req, hal_millis());
+#endif
+#if CONFIG_YSF
+				} else if (req.type == RREQ_YSF_SET) {
+					radio_ysf_settings_t y;
+					xSemaphoreTake(view_lock, portMAX_DELAY);
+					y = pending_ysf;
+					xSemaphoreGive(view_lock);
+					radio_ysf_set_settings(&y);
+					radio_sm_request(&sm, &req, hal_millis());
+				} else if (req.type == RREQ_YSF_WX) {
+					uint8_t wcmd;
+					uint32_t warg;
+					char text[YSF_WX_TEXT_LEN + 1];
+					xSemaphoreTake(view_lock, portMAX_DELAY);
+					wcmd = pending_wx.cmd;
+					warg = pending_wx.arg;
+					memcpy(text, pending_wx.text, sizeof text);
+					xSemaphoreGive(view_lock);
+					if (radio_ysf_wx_arm(wcmd, warg, text))
+						radio_sm_request(&sm, &req, hal_millis());
 #endif
 				} else if (req.type == RREQ_SETTINGS) {
 					apply_pending_settings();
@@ -694,7 +718,7 @@ static void post_pair(uint8_t type, int32_t arg, uint32_t arg2, TickType_t wait)
 	send(&req, wait);
 }
 
-#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
 void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }
 #endif
 #if CONFIG_RADIO_DETOUR
@@ -755,6 +779,33 @@ void radio_req_nxdn_settings(const radio_nxdn_settings_t *s)
 	pending_nxdn = *s;
 	xSemaphoreGive(view_lock);
 	post(RREQ_NXDN_SET, 0, pdMS_TO_TICKS(50));
+}
+#endif
+#if CONFIG_YSF
+void radio_req_ysf_settings(const radio_ysf_settings_t *s)
+{
+	if (view_lock == NULL) {
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	pending_ysf = *s;
+	xSemaphoreGive(view_lock);
+	post(RREQ_YSF_SET, 0, pdMS_TO_TICKS(50));
+}
+
+void radio_req_ysf_wx(uint8_t cmd, uint32_t arg, const char *text)
+{
+	if (view_lock == NULL) {
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	pending_wx.cmd = cmd;
+	pending_wx.arg = arg;
+	memset(pending_wx.text, 0, sizeof pending_wx.text);
+	if (text != NULL)
+		strncpy(pending_wx.text, text, YSF_WX_TEXT_LEN);
+	xSemaphoreGive(view_lock);
+	post(RREQ_YSF_WX, 0, pdMS_TO_TICKS(50));
 }
 #endif
 

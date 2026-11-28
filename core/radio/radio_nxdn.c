@@ -14,21 +14,11 @@
 #include "codeplug/codeplug_tag.h"
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/call/dmr_call.h"
-#if CONFIG_P25 && !defined(HAL_VOCODER_LEND_BYTES)
-#include "radio/radio_p25.h"
-#endif
 
 // The 72-bit voice frame NXDN carries is the one the DMR side's voice path takes and gives (nxdn.md 5): the
 // standard's second FEC test frame (7.2.1) is the DMR side's AMBE+2 silence frame
 _Static_assert(NXDN_EHR_BYTES == DMR_AMBE_FRAME_BYTES, "one voice frame size");
 
-#if CONFIG_P25 && !defined(HAL_VOCODER_LEND_BYTES)
-// P25's memory is idle while NXDN runs (one air mode at a time): no copy of our own
-#define NXDN_MEM_SHARED	1
-#else
-#define NXDN_MEM_SHARED	0
-static nxdn_engine_t own_mem;
-#endif
 
 static const radio_nxdn_settings_t defaults = {
 	.rate9600 = true, .rx_ran = NXDN_RAN_ANY, .tx_ran = 1, .rx_gid = 0, .unit_id = 1, .unit_call = false,
@@ -38,8 +28,8 @@ static radio_nxdn_settings_t set;
 static nxdn_engine_t *eng;		// while running
 static radio_nxdn_stats_t stats;
 static nxdn_call_stats_t call_base;	// the call layer's counters already counted (they restart with the engine)
-static air_session_stats_t air_base;
-static uint32_t rx_calls_base, tx_calls_base, filler_base, rejects_base;
+static radio_air_counts_t air_base;	// the same for the engine's and the session's
+static uint32_t rejects_base;
 
 void radio_nxdn_init(void)
 {
@@ -140,38 +130,10 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 // ── Voice: the DMR side's voice path (ambeVoice.h), its sink on receive and its source on transmit. The hooks run in
 // the provider's task, which is the only one feeding that path while NXDN runs (the DMR stack is stopped); the
 // audio stream is started and stopped by the radio task (begin, end) ──
-static void v_start(const nxdn_call_t *c, void *ctx)
-{
-	const dmr_voice_sink_t *s = ambeVoiceSink();
-
-	(void)c;
-	(void)ctx;
-	s->begin(NULL, s->ctx);
-}
-
-static void v_voice(const uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
-{
-	const dmr_voice_sink_t *s = ambeVoiceSink();
-
-	(void)ctx;
-	s->frame(ehr, s->ctx);
-}
-
-static void v_end(void *ctx)
-{
-	const dmr_voice_sink_t *s = ambeVoiceSink();
-
-	(void)ctx;
-	s->end(s->ctx);
-}
-
-static bool v_tx(uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
-{
-	const dmr_voice_source_t *s = ambeVoiceSource();
-
-	(void)ctx;
-	return s->next(ehr, s->ctx);
-}
+static void v_start(const nxdn_call_t *c, void *ctx) { (void)c; (void)ctx; radio_air_voice_rx_start(); }
+static void v_voice(const uint8_t v[NXDN_EHR_BYTES], void *ctx) { (void)ctx; radio_air_voice_rx_frame(v); }
+static void v_end(void *ctx) { (void)ctx; radio_air_voice_rx_end(); }
+static bool v_tx(uint8_t v[NXDN_EHR_BYTES], void *ctx) { (void)ctx; return radio_air_voice_tx_next(v); }
 
 #if CONFIG_NXDN_SCRAMBLER
 static uint16_t v_key(uint8_t system, uint8_t cipher, uint8_t id, void *ctx)
@@ -188,31 +150,6 @@ static const nxdn_engine_hooks_t voice_hooks = {
 #endif
 };
 
-// The encoder runs from the header on, so the first voice frames are ready when the engine asks
-static void voice_tx(bool on)
-{
-	const dmr_voice_source_t *s = ambeVoiceSource();
-
-	if (on)
-		s->begin(s->ctx);
-	else
-		s->end(s->ctx);
-}
-
-static nxdn_engine_t *mem_get(void)
-{
-#if NXDN_MEM_SHARED
-	size_t len = 0;
-	void *m = radio_p25_idle_mem(&len);
-
-	if (m == NULL || len < sizeof(nxdn_engine_t) || ((uintptr_t)m & 7u) != 0)
-		return NULL;
-	return m;
-#else
-	return &own_mem;
-#endif
-}
-
 bool radio_nxdn_begin(const channel_t *ch, uint16_t number)
 {
 	nxdn_engine_cfg_t cfg;
@@ -220,7 +157,7 @@ bool radio_nxdn_begin(const channel_t *ch, uint16_t number)
 	radio_nxdn_end();
 	stats.begins++;
 	params(ch, number, &cfg);
-	eng = mem_get();
+	eng = radio_air_engine_get(sizeof(nxdn_engine_t));
 	if (eng == NULL || board.air == NULL || nxdn_engine_fit(board.air, cfg.rate9600) == 0) {
 		eng = NULL;
 		stats.begin_fails++;
@@ -235,7 +172,7 @@ bool radio_nxdn_begin(const channel_t *ch, uint16_t number)
 	}
 	memset(&call_base, 0, sizeof(call_base));
 	memset(&air_base, 0, sizeof(air_base));
-	rx_calls_base = tx_calls_base = filler_base = rejects_base = 0;
+	rejects_base = 0;
 	return true;
 }
 
@@ -277,14 +214,8 @@ void radio_nxdn_apply(const channel_t *ch, uint16_t number)
 static void count(const nxdn_engine_view_t *ev)
 {
 	const nxdn_call_stats_t *c = &eng->rx.stats;
-	const air_session_stats_t *a = &eng->session.stats;
 
-	stats.rx_calls += ev->rx_calls - rx_calls_base;
-	stats.tx_calls += ev->tx_calls - tx_calls_base;
-	stats.tx_filler += ev->tx_filler - filler_base;
-	rx_calls_base = ev->rx_calls;
-	tx_calls_base = ev->tx_calls;
-	filler_base = ev->tx_filler;
+	radio_air_count(&stats.air, &air_base, ev->rx_calls, ev->tx_calls, ev->tx_filler, &eng->av.session.stats);
 	stats.frames += c->frames - call_base.frames;
 	stats.lich_fail += c->lich_fail - call_base.lich_fail;
 	stats.sacch_fail += c->sacch_fail - call_base.sacch_fail;
@@ -295,10 +226,6 @@ static void count(const nxdn_engine_view_t *ev)
 	call_base = *c;
 	stats.ran_rejects += eng->rx.rx.ran_rejects - rejects_base;
 	rejects_base = eng->rx.rx.ran_rejects;
-	stats.rx_chunks += a->rx_chunks - air_base.rx_chunks;
-	stats.tx_underruns += a->tx_underruns - air_base.tx_underruns;
-	stats.tx_syms += a->tx_syms - air_base.tx_syms;
-	air_base = *a;
 }
 
 // The engine's configuration as settings: what the screen, the view and the debug link show
@@ -381,14 +308,14 @@ bool radio_nxdn_poll(radio_nxdn_view_t *v)
 
 static bool nxdn_no_tx(void)
 {
-	return eng != NULL && (eng->session.fit & AIR_FIT_TX) == 0;
+	return eng != NULL && (eng->av.session.fit & AIR_FIT_TX) == 0;
 }
 
 static bool nxdn_tx_prepare(void)
 {
 	if (eng == NULL || !nxdn_engine_tx_prepare(eng))
 		return false;
-	voice_tx(true);
+	radio_air_voice_tx(true);
 	return true;
 }
 
@@ -400,7 +327,7 @@ static bool nxdn_tx_go(void)
 static void nxdn_tx_stop(void)
 {
 	if (eng != NULL) {
-		voice_tx(false);	// the engine fills the frame on air with silence
+		radio_air_voice_tx(false);	// the engine fills the frame on air with silence
 		nxdn_engine_tx_stop(eng);
 	}
 }
@@ -408,7 +335,7 @@ static void nxdn_tx_stop(void)
 static void nxdn_tx_abort(void)
 {
 	if (eng != NULL) {
-		voice_tx(false);
+		radio_air_voice_tx(false);
 		nxdn_engine_tx_abort(eng);
 	}
 }
@@ -421,7 +348,7 @@ static uint8_t nxdn_tx_state(void)
 static void nxdn_tx_clear(void)
 {
 	if (eng != NULL) {
-		voice_tx(false);
+		radio_air_voice_tx(false);
 		nxdn_engine_tx_clear(eng);
 	}
 }

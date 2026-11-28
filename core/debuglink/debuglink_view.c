@@ -62,7 +62,7 @@ static const char *state_key(uint8_t s)
 // The channel's mode (radio_mode_t) as the view names it
 static const char *mode_key(uint8_t m)
 {
-	static const char *const names[] = { "fm", "dmr", "p25", "nxdn" };
+	static const char *const names[] = { "fm", "dmr", "p25", "nxdn", "ysf" };
 	return m < sizeof(names) / sizeof(names[0]) ? names[m] : "?";
 }
 
@@ -72,7 +72,7 @@ static const char *deny_key(uint8_t d)
 					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
 					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused", "ceased", "bench",
 					     "trunk", "air_no_tx", "aes_key", "aes_wait", "not_dmr",
-					     "data_encrypted" };
+					     "data_encrypted", "no_callsign" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 
@@ -601,7 +601,7 @@ static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dm
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
 						  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc",
 						  "net_link", "cps", "board", "audio", "t3", "t3_svc", "t3_roam", "voice_cap", "t3_msg",
-						  "t3_ra", "p25", "p25_trunk", "nxdn",
+						  "t3_ra", "p25", "p25_trunk", "nxdn", "ysf",
 #if CONFIG_DEBUGLINK_DMRIP
 						  "dmrip",
 #endif
@@ -742,6 +742,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_NXDN:
 		debuglink_view_nxdn(v, t);
+		break;
+	case DL_VIEW_YSF:
+		debuglink_view_ysf(v, t);
 		break;
 #if CONFIG_DEBUGLINK_DMRIP
 	case DL_VIEW_DMRIP:

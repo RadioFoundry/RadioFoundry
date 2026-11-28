@@ -41,6 +41,7 @@ typedef struct {
 #endif
 #include "radio/radio_p25.h"
 #include "radio/radio_nxdn.h"
+#include "radio/radio_ysf.h"
 
 typedef enum {
 	RS_IDLE,	// receiving, squelch closed
@@ -69,6 +70,7 @@ typedef enum {
 	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX, TXDENY_AES_KEY,
 	TXDENY_AES_WAIT,	// AES: the MI reservation is not saved yet (dmrAesSeq_t)
 	TXDENY_NOT_DMR, TXDENY_DATA_ENCRYPTED,
+	TXDENY_NO_CALLSIGN,	// YSF: no callsign set (Settings > My radio > YSF callsign)
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -557,6 +559,9 @@ typedef struct {
 #if CONFIG_NXDN
 	radio_nxdn_view_t nxdn;	// NXDN conventional (docs/spec/nxdn.md 6): the same
 #endif
+#if CONFIG_YSF
+	radio_ysf_view_t ysf;	// YSF DN (docs/spec/ysf.md 5): the same
+#endif
 #if CONFIG_DMR_TRUNK
 	radio_t3_brief_t t3;
 #endif
@@ -573,7 +578,7 @@ typedef struct {
 #define RADIO_TEMP_RX_TONE	0x10u
 #define RADIO_TEMP_TS		0x20u	// DMR timeslot (radio_req_dmr_timeslot)
 #define RADIO_TEMP_CC		0x40u	// DMR color code (radio_req_dmr_color_code)
-#define RADIO_TEMP_MODE		0x80u	// FM <-> DMR <-> P25 <-> NXDN (radio_req_mode)
+#define RADIO_TEMP_MODE		0x80u	// FM <-> DMR <-> P25 <-> NXDN <-> YSF (radio_req_mode)
 
 // Which tone radio_req_tone sets
 #define RADIO_TONE_TX		0x01u
@@ -670,9 +675,9 @@ void radio_req_reload(void);			// the settings' preferences changed (squelch, ma
 // Refused on DMR channels, while transmitting, and for tones tones_valid() rejects
 void radio_req_bandwidth(radio_bw_t bw);
 void radio_req_tone(uint8_t which, subtone_t tone);	// which: RADIO_TONE_TX, RADIO_TONE_RX or RADIO_TONE_BOTH
-#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
-// The current channel's or the VFO's mode (radio_mode_t): FM, DMR, P25 (CONFIG_P25) or NXDN (CONFIG_NXDN). On a
-// channel a temporary change; in the VFO its own, kept with it (a saved P25 or NXDN VFO comes back in its default
+#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
+// The current channel's or the VFO's mode (radio_mode_t): FM, DMR, P25 (CONFIG_P25), NXDN (CONFIG_NXDN) or YSF
+// (CONFIG_YSF). On a channel a temporary change; in the VFO its own, kept with it (a saved P25, NXDN or YSF VFO comes back in its default
 // mode where the build or the board doesn't run that mode). Refused while transmitting, in hotspot mode, in a listen
 // band, and for a mode the build, the board or the VFO doesn't have
 void radio_req_mode(uint8_t mode);
@@ -684,6 +689,13 @@ void radio_req_p25_settings(const radio_p25_settings_t *s);
 #if CONFIG_NXDN
 // The NXDN settings (RAM only, radio_nxdn.h): the same
 void radio_req_nxdn_settings(const radio_nxdn_settings_t *s);
+#endif
+#if CONFIG_YSF
+// The YSF settings (RAM only, radio_ysf.h): the same
+void radio_req_ysf_settings(const radio_ysf_settings_t *s);
+// A room command to the node (docs/spec/ysf.md 9; YSF_WX_*: arg the room ID for CONNECT, the first entry for ALL,
+// text for SEARCH). Sent as a short transmission on a YSF channel, refused as PTT would be (view.tx_deny says why)
+void radio_req_ysf_wx(uint8_t cmd, uint32_t arg, const char *text);
 #endif
 #if CONFIG_DMR
 void radio_req_reply_cancel(void);		// BACK on Home: end the DMR reply window

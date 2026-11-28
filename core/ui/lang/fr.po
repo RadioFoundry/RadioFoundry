@@ -492,6 +492,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "FM seul: canal NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_YSF_CHANNEL"
+msgid "FM only: this is YSF"
+msgstr "FM seul: canal YSF"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -607,7 +612,7 @@ msgctxt "QUICK_TOAST_TONE_RX_ONLY"
 msgid "Tone for RX only"
 msgstr "Tonalité RX seule"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "TOAST_NO_ACTIONS_HERE"
 msgid "No actions here"
 msgstr "Pas d'action ici"
@@ -792,7 +797,7 @@ msgctxt "VALUE_30_MIN"
 msgid "30 min"
 msgstr "30 min"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_rooms.c core/ui/ui_screens.c
 msgctxt "VALUE_NONE"
 msgid "None"
 msgstr "Aucun"
@@ -1211,6 +1216,11 @@ msgstr "Appel P25"
 msgctxt "DUAL_VALUE_NXDN_CALL"
 msgid "NXDN call"
 msgstr "Appel NXDN"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_YSF_CALL"
+msgid "YSF call"
+msgstr "Appel YSF"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_AM_SIGNAL"
@@ -3053,6 +3063,16 @@ msgid "Not set"
 msgstr "Non défini"
 
 #: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_YSF_CALLSIGN"
+msgid "YSF callsign"
+msgstr "Indicatif YSF"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_YSF_RID"
+msgid "YSF RID"
+msgstr "RID YSF"
+
+#: core/ui/ui_menus.c
 msgctxt "MYID_LABEL_RADIO_NAME"
 msgid "Radio name"
 msgstr "Nom de la radio"
@@ -3078,6 +3098,11 @@ msgid "Radio: "
 msgstr "Radio : "
 
 #: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_YSF_CALL_CHARS"
+msgid "Letters, digits, - and / only"
+msgstr "Lettres, chiffres, - et / seulement"
+
+#: core/ui/ui_menus.c
 msgctxt "TOAST_SAVED"
 msgid "Saved"
 msgstr "Enregistré"
@@ -3091,6 +3116,11 @@ msgstr "Les ID débutent à 1"
 msgctxt "MYID_TOAST_SAVED"
 msgid "DMR ID saved"
 msgstr "ID DMR enregistré"
+
+#: core/ui/ui_menus.c
+msgctxt "VALUE_READ_ONLY"
+msgid "Read only"
+msgstr "Lecture seule"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_TYPING_NOT_IN_BUILD"
@@ -3221,6 +3251,11 @@ msgstr "Build : "
 msgctxt "ABOUT_BODY_DATE"
 msgid "Date: "
 msgstr "Date : "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_BODY_YSF_RID"
+msgid "YSF RID: "
+msgstr "RID YSF : "
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_LICENSE"
@@ -3576,6 +3611,11 @@ msgstr "Diagnostics"
 msgctxt "TOOLS_ROW_SHARES_RECEIVED"
 msgid "Zones/Chs Received"
 msgstr "Zones/Canaux reçus"
+
+#: core/ui/ui_menus.c core/ui/ui_rooms.c
+msgctxt "WX_TITLE"
+msgid "Rooms"
+msgstr "Salons"
 
 #: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
@@ -4607,6 +4647,111 @@ msgctxt "POS_TOAST_RANGE"
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "Max 90 N/S, 180 E/O"
 
+#: core/ui/ui_rooms.c
+msgctxt "WX_TOAST_YSF_ONLY"
+msgid "Rooms: on a YSF channel"
+msgstr "Salons : sur un canal YSF"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_REFRESH"
+msgid "Refresh"
+msgstr "Actualiser"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_LABEL_NODE"
+msgid "Node"
+msgstr "Noeud"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_LABEL_ROOM"
+msgid "Room"
+msgstr "Salon"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_LABEL_ROOM_ID"
+msgid "Room ID"
+msgstr "ID salon"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_CONNECT"
+msgid "Connect"
+msgstr "Connecter"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_DISCONNECT"
+msgid "Disconnect"
+msgstr "Déconnecter"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_ROOMS"
+msgid "Rooms"
+msgstr "Salons"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_SEARCH"
+msgid "Search"
+msgstr "Chercher"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_VALUE_WAITING"
+msgid "Waiting..."
+msgstr "Attente..."
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_VALUE_NO_ANSWER"
+msgid "No answer"
+msgstr "Pas de réponse"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_TOAST_ROOM_ID_FIRST"
+msgid "Type a room ID first"
+msgstr "Tapez d'abord un ID de salon"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_NODE"
+msgid "Node: "
+msgstr "Noeud : "
+
+#: core/ui/ui_rooms.c
+msgctxt "HINT_TYPE_OK_SEND_BACK"
+msgid "0-9 room  OK send  Back"
+msgstr "0-9 salon  OK envoyer  Retour"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_NEXT_PAGE"
+msgid "Next page"
+msgstr "Page suivante"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_WAITING"
+msgid "Waiting for the node..."
+msgstr "Attente du noeud..."
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_NOTHING_FOUND"
+msgid "Nothing found"
+msgstr "Rien trouvé"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_NO_LIST"
+msgid "No list yet"
+msgstr "Pas encore de liste"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_OF"
+msgid " of "
+msgstr " sur "
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_TITLE_ROOMS"
+msgid "Rooms"
+msgstr "Salons"
+
+#: core/ui/ui_rooms.c
+msgctxt "HINT_OK_CONNECT_BACK"
+msgid "OK connect  Back"
+msgstr "OK connecter  Retour"
+
 #: core/ui/ui_satellite.c
 msgctxt "SATELLITE_TLE_STALE"
 msgid "TLE is 14+ days old; refresh from site"
@@ -4823,6 +4968,11 @@ msgid "No TX frequency"
 msgstr "Pas de fréq TX"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_NO_CALLSIGN"
+msgid "No callsign"
+msgstr "Pas d'indicatif"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "FM Commerciale"
@@ -4921,6 +5071,11 @@ msgstr "Mode Hotspot: PTT off"
 msgctxt "DENY_WHY_NO_DMR_ID"
 msgid "No DMR ID in codeplug"
 msgstr "Pas ID DMR codeplug"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_NO_CALLSIGN"
+msgid "No callsign set"
+msgstr "Aucun indicatif défini"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_REPEATER_CHANNEL"
@@ -5046,6 +5201,11 @@ msgstr "OK pour stop hotspot"
 msgctxt "DENY_FIX_SET_DMR_ID"
 msgid "Set your DMR ID in qdmr"
 msgstr "Régler ID DMR qdmr"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_SET_YSF_CALLSIGN"
+msgid "Set callsign in My radio"
+msgstr "Régler indicatif Ma radio"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_TUNE_OUT_OF_BAND"
@@ -5321,6 +5481,21 @@ msgstr "Autre TG : non lu"
 msgctxt "CALL_HINT_MON_DMON"
 msgid "MON: digital monitor"
 msgstr "MON: moniteur num."
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_NOT_DN"
+msgid "Not DN voice: not played"
+msgstr "Pas de voix DN : non lu"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_OTHER_DGID"
+msgid "Other DG-ID: not played"
+msgstr "Autre DG-ID : non lu"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_VALUE_DATA"
+msgid "Data"
+msgstr "Données"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
@@ -5623,6 +5798,11 @@ msgid "{TX freq|TXFreq}"
 msgstr "{Fréq TX|FréqTX}"
 
 #: core/ui/ui_screens.c
+msgctxt "QUICK_LABEL_ROOMS"
+msgid "Rooms"
+msgstr "Salons"
+
+#: core/ui/ui_screens.c
 msgctxt "QUICK_LABEL_TONE_TX"
 msgid "Tone TX"
 msgstr "Tonalité TX"
@@ -5636,6 +5816,11 @@ msgstr "Tonalité RX"
 msgctxt "QUICK_VALUE_COPY"
 msgid "Copy"
 msgstr "Copier"
+
+#: core/ui/ui_screens.c
+msgctxt "QUICK_VALUE_OPEN"
+msgid "Open"
+msgstr "Ouvrir"
 
 #: core/ui/ui_screens.c
 msgctxt "QUICK_VALUE_ALL"

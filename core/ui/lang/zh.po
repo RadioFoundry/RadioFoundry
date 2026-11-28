@@ -494,6 +494,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "仅 FM：这是 NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_YSF_CHANNEL"
+msgid "FM only: this is YSF"
+msgstr "仅 FM：这是 YSF"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -609,7 +614,7 @@ msgctxt "QUICK_TOAST_TONE_RX_ONLY"
 msgid "Tone for RX only"
 msgstr "仅接收亚音"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "TOAST_NO_ACTIONS_HERE"
 msgid "No actions here"
 msgstr "此处无操作"
@@ -794,7 +799,7 @@ msgctxt "VALUE_30_MIN"
 msgid "30 min"
 msgstr "30 分钟"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_rooms.c core/ui/ui_screens.c
 msgctxt "VALUE_NONE"
 msgid "None"
 msgstr "无"
@@ -1213,6 +1218,11 @@ msgstr "P25 通话"
 msgctxt "DUAL_VALUE_NXDN_CALL"
 msgid "NXDN call"
 msgstr "NXDN 通话"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_YSF_CALL"
+msgid "YSF call"
+msgstr "YSF 通话"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_AM_SIGNAL"
@@ -3055,6 +3065,16 @@ msgid "Not set"
 msgstr "未设置"
 
 #: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_YSF_CALLSIGN"
+msgid "YSF callsign"
+msgstr "YSF 呼号"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_YSF_RID"
+msgid "YSF RID"
+msgstr "YSF RID"
+
+#: core/ui/ui_menus.c
 msgctxt "MYID_LABEL_RADIO_NAME"
 msgid "Radio name"
 msgstr "电台名称"
@@ -3080,6 +3100,11 @@ msgid "Radio: "
 msgstr "电台： "
 
 #: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_YSF_CALL_CHARS"
+msgid "Letters, digits, - and / only"
+msgstr "仅限字母、数字、- 和 /"
+
+#: core/ui/ui_menus.c
 msgctxt "TOAST_SAVED"
 msgid "Saved"
 msgstr "已保存"
@@ -3093,6 +3118,11 @@ msgstr "ID 从 1 开始"
 msgctxt "MYID_TOAST_SAVED"
 msgid "DMR ID saved"
 msgstr "DMR ID 已保存"
+
+#: core/ui/ui_menus.c
+msgctxt "VALUE_READ_ONLY"
+msgid "Read only"
+msgstr "只读"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_TYPING_NOT_IN_BUILD"
@@ -3223,6 +3253,11 @@ msgstr "构建： "
 msgctxt "ABOUT_BODY_DATE"
 msgid "Date: "
 msgstr "日期： "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_BODY_YSF_RID"
+msgid "YSF RID: "
+msgstr "YSF RID： "
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_LICENSE"
@@ -3578,6 +3613,11 @@ msgstr "诊断"
 msgctxt "TOOLS_ROW_SHARES_RECEIVED"
 msgid "Zones/Chs Received"
 msgstr "收到的区域/信道"
+
+#: core/ui/ui_menus.c core/ui/ui_rooms.c
+msgctxt "WX_TITLE"
+msgid "Rooms"
+msgstr "房间"
 
 #: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
@@ -4609,6 +4649,111 @@ msgctxt "POS_TOAST_RANGE"
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "北南 90，东西 180"
 
+#: core/ui/ui_rooms.c
+msgctxt "WX_TOAST_YSF_ONLY"
+msgid "Rooms: on a YSF channel"
+msgstr "房间：仅限 YSF 信道"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_REFRESH"
+msgid "Refresh"
+msgstr "更新"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_LABEL_NODE"
+msgid "Node"
+msgstr "节点"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_LABEL_ROOM"
+msgid "Room"
+msgstr "房间"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_LABEL_ROOM_ID"
+msgid "Room ID"
+msgstr "房间 ID"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_CONNECT"
+msgid "Connect"
+msgstr "连接"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_DISCONNECT"
+msgid "Disconnect"
+msgstr "断开"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_ROOMS"
+msgid "Rooms"
+msgstr "房间列表"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_SEARCH"
+msgid "Search"
+msgstr "搜索"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_VALUE_WAITING"
+msgid "Waiting..."
+msgstr "等待中..."
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_VALUE_NO_ANSWER"
+msgid "No answer"
+msgstr "无应答"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_TOAST_ROOM_ID_FIRST"
+msgid "Type a room ID first"
+msgstr "请先输入房间 ID"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_NODE"
+msgid "Node: "
+msgstr "节点： "
+
+#: core/ui/ui_rooms.c
+msgctxt "HINT_TYPE_OK_SEND_BACK"
+msgid "0-9 room  OK send  Back"
+msgstr "0-9 房间  OK 发送  返回"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_NEXT_PAGE"
+msgid "Next page"
+msgstr "下一页"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_WAITING"
+msgid "Waiting for the node..."
+msgstr "等待节点..."
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_NOTHING_FOUND"
+msgid "Nothing found"
+msgstr "未找到"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_NO_LIST"
+msgid "No list yet"
+msgstr "尚无列表"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_OF"
+msgid " of "
+msgstr " / "
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_TITLE_ROOMS"
+msgid "Rooms"
+msgstr "房间列表"
+
+#: core/ui/ui_rooms.c
+msgctxt "HINT_OK_CONNECT_BACK"
+msgid "OK connect  Back"
+msgstr "OK 连接  返回"
+
 #: core/ui/ui_satellite.c
 msgctxt "SATELLITE_TLE_STALE"
 msgid "TLE is 14+ days old; refresh from site"
@@ -4825,6 +4970,11 @@ msgid "No TX frequency"
 msgstr "无发射频率"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_NO_CALLSIGN"
+msgid "No callsign"
+msgstr "无呼号"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "调频广播"
@@ -4923,6 +5073,11 @@ msgstr "热点模式：PTT 关闭"
 msgctxt "DENY_WHY_NO_DMR_ID"
 msgid "No DMR ID in codeplug"
 msgstr "电台频率中无 DMR ID"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_NO_CALLSIGN"
+msgid "No callsign set"
+msgstr "未设置呼号"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_REPEATER_CHANNEL"
@@ -5048,6 +5203,11 @@ msgstr "OK 停止热点"
 msgctxt "DENY_FIX_SET_DMR_ID"
 msgid "Set your DMR ID in qdmr"
 msgstr "在 qdmr 中设置 DMR ID"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_SET_YSF_CALLSIGN"
+msgid "Set callsign in My radio"
+msgstr "在“我的电台”中设置呼号"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_TUNE_OUT_OF_BAND"
@@ -5323,6 +5483,21 @@ msgstr "其他通话组：不播放"
 msgctxt "CALL_HINT_MON_DMON"
 msgid "MON: digital monitor"
 msgstr "MON：数字监听"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_NOT_DN"
+msgid "Not DN voice: not played"
+msgstr "非 DN 语音：不播放"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_OTHER_DGID"
+msgid "Other DG-ID: not played"
+msgstr "其他 DG-ID：不播放"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_VALUE_DATA"
+msgid "Data"
+msgstr "数据"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
@@ -5625,6 +5800,11 @@ msgid "{TX freq|TXFreq}"
 msgstr "{发射频率|发频}"
 
 #: core/ui/ui_screens.c
+msgctxt "QUICK_LABEL_ROOMS"
+msgid "Rooms"
+msgstr "房间"
+
+#: core/ui/ui_screens.c
 msgctxt "QUICK_LABEL_TONE_TX"
 msgid "Tone TX"
 msgstr "发射亚音"
@@ -5638,6 +5818,11 @@ msgstr "接收亚音"
 msgctxt "QUICK_VALUE_COPY"
 msgid "Copy"
 msgstr "复制"
+
+#: core/ui/ui_screens.c
+msgctxt "QUICK_VALUE_OPEN"
+msgid "Open"
+msgstr "打开"
 
 #: core/ui/ui_screens.c
 msgctxt "QUICK_VALUE_ALL"

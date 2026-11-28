@@ -32,6 +32,9 @@
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
+//   ysfrx:<call>,<dgid>[,o|v|d] a YSF call: o another DG-ID (not played), v not DN voice (not played), d a data
+//                               transmission (room data: shown, no voice)
+//   ysfend                      the YSF call heard ends
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
 //   p25t:<state>[,<tg>[,<reg>[,<tx>[,<why>]]]]  the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds),
 //                       its follower in state 1 finding the system, 2 on the control channel, 3 following talk group
@@ -99,6 +102,7 @@
 #endif
 #if CONFIG_DMR_TRUNK
 #include "dmr/trunk/t3_ms.h"
+static char sim_names[UI_NAME_COUNT][17];	// the codeplug's names (UI_NAME_*), below
 #endif
 
 #define TICK_MS		50
@@ -774,7 +778,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 static struct {
 	uint16_t number;
 	channel_t ch;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
 	bool air_set;		// saved with a block (ui_svc_write_channel_air)
 	ui_air_conv_t air;
 #endif
@@ -800,7 +804,7 @@ static int sim_write(uint16_t number, const channel_t *ch)
 		n_edits++;
 	sim_edits[i].number = number;
 	sim_edits[i].ch = *ch;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
 	sim_edits[i].air_set = false;
 #endif
 	sim_rec.codeplug_writes++;
@@ -815,7 +819,7 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
 	return sim_write(number, ch) >= 0;
 }
 
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
 // The block goes with the channel: a plain channel in P25 or NXDN becomes one of the kind, as the storage job makes it
 bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
 {
@@ -824,7 +828,8 @@ bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t fro
 		return sim_held;
 	channel_t c = *ch;
 	if (c.kind == CODEPLUG_KIND_NONE) {
-		c.kind = c.mode == RADIO_MODE_P25 ? CODEPLUG_KIND_P25 : CODEPLUG_KIND_NXDN;
+		c.kind = c.mode == RADIO_MODE_P25 ? CODEPLUG_KIND_P25 : c.mode == RADIO_MODE_YSF ? CODEPLUG_KIND_YSF :
+			 CODEPLUG_KIND_NXDN;
 		c.mode = RADIO_MODE_DMR;	// the stand-in record
 	}
 	int i = sim_write(number, &c);
@@ -952,6 +957,77 @@ bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
 		out->conv = sim_air(number)->nxdn;
 	out->unit_id = 1;
 	out->target = 1;
+	return true;
+}
+#endif
+
+#if CONFIG_YSF
+static bool ysf_radio;		// below: the "ysf" token
+bool radio_ysf_fits(void) { return ysf_radio; }
+// A stored YSF channel's DG-IDs (ysf_codeplug.c): 0 and 0, unless the editor saved a block
+bool ysf_chan_load(uint16_t number, const channel_t *ch, ysf_chan_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_YSF)
+		return false;
+	memset(out, 0, sizeof *out);
+	if (sim_air(number) != NULL)
+		*out = sim_air(number)->ysf;
+	return true;
+}
+// Who this radio is on air: a fixed radio ID, as a chip's would be, and the callsign from the radio name
+void ui_svc_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak)
+{
+	strcpy(out, "K7Q2Z");
+	if (weak)
+		*weak = false;
+}
+// The codeplug's YSF callsign: "N0CALL" in the simulated codeplug, none after the noysfcall token
+static bool sim_no_ysf_call;
+void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
+{
+	// The typed one (My radio), else the codeplug's. Never the radio name's (ysf.md 5.2)
+	strcpy(out, sim_names[UI_NAME_YSF_CALL][0] ? sim_names[UI_NAME_YSF_CALL] : sim_no_ysf_call ? "" : "N0CALL");
+}
+static radio_view_t view;	// (defined again below: one object)
+// The DG-IDs set (quick settings, the Rooms page): the view shows them at once; dgid (transmit), rxdgid and dgchan
+// in the results
+static int sim_dgid = -1, sim_rxdgid = -1, sim_dgchan = -1;
+bool ui_svc_ysf_dgid(uint8_t tx, uint8_t rx, uint16_t chan)
+{
+	if (tx > RADIO_YSF_DGID_MAX || rx > RADIO_YSF_DGID_MAX)
+		return false;
+	sim_dgid = tx;
+	sim_rxdgid = rx;
+	sim_dgchan = chan;
+	view.ysf.tx_dgid = tx;
+	view.ysf.rx_dgid = rx;
+	return true;
+}
+// Rooms: a command is recorded (wxcmd, wxarg in the results); the node's replies come from the wxdx and wxrooms
+// tokens
+static radio_ysf_wx_t sim_wx = { .asked_cmd = YSF_WX_NONE };
+static ysf_wx_room_t sim_wx_rooms[YSF_WX_ROOMS];
+static int sim_wx_cmd = -1;
+static uint32_t sim_wx_arg;
+bool ui_svc_ysf_wx(uint8_t cmd, uint32_t arg, const char *text)
+{
+	(void)text;
+	if (view.ch.mode != RADIO_MODE_YSF)
+		return false;
+	sim_wx_cmd = cmd;
+	sim_wx_arg = arg;
+	sim_wx.asked++;
+	sim_wx.asked_cmd = cmd;
+	if (cmd == YSF_WX_ALL || cmd == YSF_WX_SEARCH)
+		sim_wx.rooms_first = (uint16_t)(arg ? arg : 1);
+	return true;
+}
+void ui_svc_ysf_wx_state(radio_ysf_wx_t *out) { *out = sim_wx; }
+bool ui_svc_ysf_wx_room(uint8_t i, ysf_wx_room_t *out)
+{
+	if (i >= sim_wx.rooms)
+		return false;
+	*out = sim_wx_rooms[i];
 	return true;
 }
 #endif
@@ -1658,6 +1734,14 @@ static void ptt(bool down)
 			changed();
 			return;
 		}
+#if CONFIG_YSF
+		if (view.ch.mode == RADIO_MODE_YSF && (view.ysf.flags & RADIO_YSF_NO_CALL) != 0) {
+			view.state = RS_TX_DENIED;	// as the radio core: no YSF callsign set (ysf.md 5.2)
+			view.tx_deny = TXDENY_NO_CALLSIGN;
+			changed();
+			return;
+		}
+#endif
 		view.state = RS_TX;
 		view.tx_elapsed_ms = 0;
 		if (view.scan != 3)
@@ -1747,9 +1831,11 @@ static uint16_t n_inbox;
 static bool soft_volume;
 // The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
 static bool bcast_rx;
-// P25 on this radio (UI_FEAT_P25: the VFO's mode tile offers it) only with the "p25" token; NXDN with "nxdn"
+// P25 on this radio (UI_FEAT_P25: the VFO's mode tile offers it) only with the "p25" token; NXDN with "nxdn", YSF
+// with "ysf"
 static bool p25_radio;
 static bool nxdn_radio;
+static bool ysf_radio;
 // Hardware options (Settings > Advanced > Hardware, hal_hwopt.h) only with the "hwopt" token: a revision that starts
 // unset and a plain option
 static int8_t hwopt_val[2];
@@ -1774,7 +1860,7 @@ uint32_t ui_svc_features(void)
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
 	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM) &
 	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB) & ~(p25_radio ? 0 : UI_FEAT_P25) &
-	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN);
+	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN) & ~(ysf_radio ? 0 : UI_FEAT_YSF);
 }
 // My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
 static char sim_names[UI_NAME_COUNT][17];
@@ -1783,6 +1869,7 @@ static void sim_names_reset(void)
 	strcpy(sim_names[UI_NAME_RADIO], "Q0TEST");
 	strcpy(sim_names[UI_NAME_BOOT1], "Q0TEST");
 	strcpy(sim_names[UI_NAME_BOOT2], "Jamie Thompson");
+	sim_names[UI_NAME_YSF_CALL][0] = '\0';
 }
 void ui_svc_name_get(uint8_t which, char out[17])
 {
@@ -2739,6 +2826,17 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	bcast_rx = false;
 	p25_radio = false;
 	nxdn_radio = false;
+	ysf_radio = false;
+#if CONFIG_YSF
+	sim_no_ysf_call = false;
+#endif
+#if CONFIG_YSF
+	memset(&sim_wx, 0, sizeof sim_wx);
+	sim_wx.asked_cmd = YSF_WX_NONE;
+	sim_wx_cmd = -1;
+	sim_dgid = sim_rxdgid = sim_dgchan = -1;
+	sim_wx_arg = 0;
+#endif
 #if CONFIG_NXDN
 	memset(&view.nxdn, 0, sizeof view.nxdn);
 	view.nxdn.flags = RADIO_NXDN_9600;	// the NXDN settings' defaults (radio_nxdn.c): 9600 bit/s, RAN 1, group 1
@@ -2958,8 +3056,16 @@ static bool check(const char *kv, char *err, size_t len)
 #endif
 	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" :
 								     view.ch.mode == RADIO_MODE_P25 ? "p25" :
-								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" : "fm");
+								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" :
+								     view.ch.mode == RADIO_MODE_YSF ? "ysf" : "fm");
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
+#if CONFIG_YSF
+	else if (strcmp(key, "wxcmd") == 0) snprintf(got, sizeof got, "%d", sim_wx_cmd);
+	else if (strcmp(key, "dgid") == 0) snprintf(got, sizeof got, "%d", sim_dgid);
+	else if (strcmp(key, "rxdgid") == 0) snprintf(got, sizeof got, "%d", sim_rxdgid);
+	else if (strcmp(key, "dgchan") == 0) snprintf(got, sizeof got, "%d", sim_dgchan);
+	else if (strcmp(key, "wxarg") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_wx_arg);
+#endif
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);
 	else if (strcmp(key, "txpriv") == 0) snprintf(got, sizeof got, "%u", sim_rec.tx_private);
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
@@ -3450,6 +3556,7 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "dlmode") == 0 && arg != NULL) {	// the debug link sets the mode (DMR_FIELDS): fm, dmr, p25 or nxdn
 		ui_svc_mode(strcmp(arg, "p25") == 0 ? RADIO_MODE_P25 : strcmp(arg, "nxdn") == 0 ? RADIO_MODE_NXDN :
+			    strcmp(arg, "ysf") == 0 ? RADIO_MODE_YSF :
 			    strcmp(arg, "dmr") == 0 ? RADIO_MODE_DMR : RADIO_MODE_FM);
 		advance(100);
 		return true;
@@ -3482,7 +3589,7 @@ static bool run_token(char *t, char *err, size_t len)
 		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
 		return true;
 	}
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
 	if (strcmp(t, "chkind") == 0) {		// stored channel n is a P25 or NXDN channel: its tag, over a stand-in record
 		unsigned n = 0;
 		char k[8] = "";
@@ -3499,7 +3606,8 @@ static bool run_token(char *t, char *err, size_t len)
 				if (*ch == '_')
 					*ch = ' ';
 		}
-		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : CODEPLUG_KIND_P25;
+		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : strcmp(k, "ysf") == 0 ? CODEPLUG_KIND_YSF :
+			 CODEPLUG_KIND_P25;
 		c.mode = RADIO_MODE_DMR;
 		if (sim_write((uint16_t)n, &c) < 0) {
 			snprintf(err, len, "no room for %s", t);
@@ -3522,6 +3630,63 @@ static bool run_token(char *t, char *err, size_t len)
 			(kind == 'e' ? 0 : RADIO_NXDN_PLAYED));
 		view.nxdn.src = (uint16_t)src;
 		view.nxdn.dst = (uint16_t)dst;
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
+		return true;
+	}
+#endif
+#if CONFIG_YSF
+	if (strcmp(t, "wxdx") == 0) {		// the node answers its status: in room 27299 TEST
+		sim_wx.serial++;
+		sim_wx.kind = YSF_WX_DX;
+		sim_wx.connected = true;
+		strcpy(sim_wx.node_name, "NODE");
+		strcpy(sim_wx.node_call, "N0RPT");
+		strcpy(sim_wx.room_id, "27299");
+		strcpy(sim_wx.room_name, "TEST");
+		changed();
+		advance(100);
+		return true;
+	}
+	// The node answers a list of N rooms (of 40), or a search's result of N (of 25 matches)
+	if ((strcmp(t, "wxrooms") == 0 || strcmp(t, "wxsearch") == 0) && arg != NULL) {
+		unsigned n = (unsigned)atoi(arg);
+		sim_wx.serial++;
+		sim_wx.kind = YSF_WX_ALL;
+		sim_wx.search = t[2] == 's';
+		sim_wx.rooms = (uint8_t)(n > YSF_WX_ROOMS ? YSF_WX_ROOMS : n);
+		sim_wx.rooms_total = sim_wx.search ? 25 : 40;
+		for (unsigned i = 0; i < sim_wx.rooms; i++) {
+			snprintf(sim_wx_rooms[i].id, sizeof sim_wx_rooms[i].id, "%05u", 20000 + i);
+			snprintf(sim_wx_rooms[i].name, sizeof sim_wx_rooms[i].name, "ROOM%u", i);
+			sim_wx_rooms[i].users = (uint8_t)i;
+		}
+		changed();
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "ysfend") == 0) {		// the YSF call heard ends
+		view.ysf.flags = RADIO_YSF_ON;
+		view.state = RS_IDLE;
+		view.last_rx_ms = now_ms;
+		changed();
+		advance(300);
+		return true;
+	}
+	if (strcmp(t, "ysfrx") == 0) {
+		char call[RADIO_YSF_CALL_LEN + 1] = "";
+		unsigned dgid = 0;
+		char kind = 'p';
+		if (arg == NULL || sscanf(arg, "%10[^,],%u,%c", call, &dgid, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.ysf.flags = (uint8_t)(RADIO_YSF_ON | RADIO_YSF_RX | (kind == 'v' || kind == 'd' ? RADIO_YSF_NOT_DN : 0) |
+			(kind == 'd' ? RADIO_YSF_DATA : 0) | (kind == 'o' || kind == 'v' || kind == 'd' ? 0 : RADIO_YSF_PLAYED));
+		strcpy(view.ysf.src, call);
+		view.ysf.dgid = (uint8_t)dgid;
 		view.state = RS_RX;
 		view.rssi_dbm = -84;
 		changed();
@@ -3877,6 +4042,19 @@ static bool run_token(char *t, char *err, size_t len)
 		nxdn_radio = true;
 		return true;
 	}
+	if (strcmp(t, "ysf") == 0) {		// this radio runs YSF
+		ysf_radio = true;
+		return true;
+	}
+#if CONFIG_YSF
+	if (strcmp(t, "noysfcall") == 0) {	// no YSF callsign set: Home says so, PTT on YSF is refused
+		sim_no_ysf_call = true;
+		view.ysf.flags |= RADIO_YSF_NO_CALL;
+		changed();
+		return true;
+	}
+#endif
+
 	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)
 		board.hwopts = sim_hwopts;
 		board.hwopt_count = 2;

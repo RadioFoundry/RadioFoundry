@@ -4,6 +4,7 @@
 // pulse to a deviation waveform, a band-limited tap sampled at its own rate and phase, with a scale error, an
 // offset and noise. It checks the symbols and soft values that come out, the times on them, that a whole P25 call
 // decodes through the framer behind it, that noise makes no sync, and what a hole in the samples does.
+#include <complex.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +12,7 @@
 
 #include "air/air_softmodem.h"
 #include "air/air_syms.h"
+#include "radio/tones.h"
 #include "p25/p25.h"
 
 static int failures, checks;
@@ -684,6 +686,270 @@ static void testHole(void)
 	CHECK(out_gap_chunks == 3 && out_nsync == 6, "reset: gaps %u syncs %u", out_gap_chunks, out_nsync);
 }
 
+#if CONFIG_AIR_RX_ADAPT
+// ── The adaptive options (air-interface.md 6.1): a profile's own, in memory its engine lends ──
+static air_softmodem_adapt_t adapt_mem;
+
+// A YSF-like profile: 4800 symbols/s, 2700 Hz, a 20-symbol sync opening every 480-symbol frame
+static air_profile_t c4fm_like(uint8_t opts)
+{
+	air_profile_t p;
+
+	memset(&p, 0, sizeof(p));
+	p.sym_rate = 4800;
+	p.levels = 4;
+	p.shape = AIR_SHAPE_RRC;
+	p.shape_param = 20;
+	p.dev_outer_hz = 2700;
+	p.sync_any_syms = 480;
+	p.rx_opts = opts;
+	p.nsyncs = 1;
+	p.sync[0].id = 3;
+	p.sync[0].nsyms = 20;
+	memcpy(p.sync[0].syms, (uint8_t[]){ 0xD4, 0x71, 0xC9, 0x63, 0x4D }, 5);
+	return p;
+}
+
+// One run through the modem: symbol errors per ncmp from the first sync
+static double run_adapt(const air_profile_t *p, bool lend, uint32_t *nsync)
+{
+	air_softmodem_t m;
+	uint32_t nerr, ncmp;
+	double rms;
+
+	air_softmodem_lend(lend ? &adapt_mem : NULL);
+	air_softmodem_rx_open(&m, p, 8000, 2000, on_chunk, NULL);
+	out_reset();
+	feed(&m, 8000, 0, tap_n, 256);
+	air_softmodem_lend(NULL);
+	*nsync = out_nsync;
+	if (!compare(p, 200, 480, &nerr, &ncmp, &rms) || !ncmp)
+		return 1;
+	return (double)nerr / ncmp;
+}
+
+// A DCS code (octal) at amplitude a (counts) added to the tap: the Golay(23,12) word (the 9-bit code, then 100,
+// then 11 parity bits), data first and LSB first, sent over and over at 134.4 bit/s through a 300 Hz low-pass, as a
+// transmitter does; inverted when inv
+static void add_dcs(unsigned code, bool inv, double a)
+{
+	uint32_t data = code | 4u << 9, word = data << 11, r = word;
+	int bits[23];
+	double y = 0, k = 1 - exp(-2 * M_PI * 300.0 / 8000);
+
+	for (int i = 22; i >= 11; i--)
+		if (r & (1u << i))
+			r ^= 0xC75u << (i - 11);
+	word |= r & 0x7FFu;
+	for (int i = 0; i < 12; i++)
+		bits[i] = (word >> (11 + i)) & 1;
+	for (int i = 0; i < 11; i++)
+		bits[12 + i] = (word >> i) & 1;
+	for (uint32_t i = 0; i < tap_n; i++) {
+		int b = bits[(uint32_t)(i * 134.4 / 8000) % 23] ^ (inv ? 1 : 0);
+		double v;
+
+		y += k * ((b ? a : -a) - y);
+		v = tap[i] + y;
+		tap[i] = (int16_t)lround(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+	}
+}
+
+// The same with the receiver reset every `every` samples, as lost samples or a new lock do: only the tone found counts
+static void run_adapt_resets(const air_profile_t *p, uint32_t every)
+{
+	air_softmodem_t m;
+
+	air_softmodem_lend(&adapt_mem);
+	air_softmodem_rx_open(&m, p, 8000, 2000, on_chunk, NULL);
+	out_reset();
+	for (uint32_t at = 0; at < tap_n; at += every) {
+		feed(&m, 8000, at, at + every < tap_n ? at + every : tap_n, 256);
+		air_softmodem_rx_reset(&m);
+	}
+	air_softmodem_lend(NULL);
+}
+
+// A tone of amplitude a (counts) at f Hz added to the tap
+static void add_tone(double f, double a)
+{
+	for (uint32_t i = 0; i < tap_n; i++) {
+		double v = tap[i] + a * sin(2 * M_PI * f * i / 8000);
+
+		tap[i] = (int16_t)lround(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+	}
+}
+
+static void testAdapt(void)
+{
+	air_profile_t plain = c4fm_like(0), eq = c4fm_like(AIR_RX_EQ), tone = c4fm_like(AIR_RX_TONE);
+	air_profile_t both = c4fm_like(AIR_RX_EQ | AIR_RX_TONE);
+	air_softmodem_adapt_view_t v;
+	uint32_t ns0, ns1;
+	double e0, e1;
+
+	// A profile that asks for nothing gets nothing, lent memory or not: the plain receiver, symbol for symbol
+	air_stream(&plain, 0, 11000, 200, 480);
+	modulate(&plain, 0);
+	sample_tap(8000, 17, 3600, 2000, 300, 300);
+	e0 = run_adapt(&plain, false, &ns0);
+	{
+		static uint8_t first_hard[OUT_MAX];
+		uint32_t n0 = out_n;
+
+		memcpy(first_hard, out_hard, out_n);
+		e1 = run_adapt(&plain, true, &ns1);
+		CHECK(n0 == out_n && !memcmp(first_hard, out_hard, out_n) && e0 == e1, "no options asked: the same symbols");
+		air_softmodem_adapt_get(&v);
+		CHECK(v.opts == 0, "no options asked: none running (%u)", v.opts);
+	}
+
+	// A clean signal through the equalizer stays clean
+	sample_tap(8000, 17, 3600, 2000, 300, 0);
+	e1 = run_adapt(&eq, true, &ns1);
+	CHECK(e1 < 0.0005 && ns1 >= 20, "equalizer, clean: %.4f errors, %u syncs", e1, ns1);
+	air_softmodem_adapt_get(&v);
+	CHECK(v.opts == AIR_RX_EQ && v.eq_center > 16384 * 7 / 10 && v.eq_center < 16384 * 12 / 10 && v.eq_resets == 0,
+	      "equalizer, clean: center %d, resets %u", v.eq_center, v.eq_resets);
+
+	// The upper band cut, as a repeater's chain does, and noise: the equalizer takes out errors the filter leaves
+	for (unsigned hi = 2200; hi <= 2400; hi += 200) {
+		sample_tap(8000, 17, hi, 2000, 300, 350);
+		e0 = run_adapt(&plain, true, &ns0);
+		e1 = run_adapt(&eq, true, &ns1);
+		printf("  band cut to %u Hz: symbol errors %.2f %% plain, %.2f %% equalized\n", hi, 100 * e0, 100 * e1);
+		CHECK(e0 > 0.01 && e1 < e0 / 2 && ns1 >= ns0, "equalizer, band cut to %u Hz: %.4f against %.4f", hi, e1, e0);
+	}
+
+	// A 127.3 Hz tone of 0.4 of a level under the signal: found, notched, fewer errors
+	sample_tap(8000, 17, 3600, 2000, 300, 450);
+	add_tone(127.3, 0.4 * 1800);
+	e0 = run_adapt(&plain, true, &ns0);
+	e1 = run_adapt(&tone, true, &ns1);
+	air_softmodem_adapt_get(&v);
+	printf("  127.3 Hz tone: symbol errors %.2f %% plain, %.2f %% notched (found %u.%u Hz)\n", 100 * e0, 100 * e1,
+	       v.tone_dhz / 10, v.tone_dhz % 10);
+	CHECK(v.tone_dhz == 1273 && v.tone_picks >= 1, "tone found: %u", v.tone_dhz);
+	CHECK(e0 > 0.005 && e1 < e0 * 0.6, "tone notched: %.4f against %.4f", e1, e0);
+	// A low tone notched as deep as a high one: coefficients x 2^14 put the zero of a 69.3 Hz notch 0.7 Hz off the
+	// tone. And found as fast behind the equalizer, which follows a low tone in part and hid it from a search run
+	// after it
+	sample_tap(8000, 17, 3600, 2000, 300, 450);
+	add_tone(69.3, 0.4 * 1800);
+	e0 = run_adapt(&plain, true, &ns0);
+	e1 = run_adapt(&tone, true, &ns1);
+	{
+		// The notch's own response at the tone, from the coefficients it runs (x 2^14 and x 2^20, at 8 kHz)
+		const air_softmodem_adapt_t *a = &adapt_mem;
+		double w = 2 * M_PI * 69.3 / 8000, g = a->ng / 16384.0, dc = a->ndc / 1048576.0;
+		double a1 = a->nda / 1048576.0 - 2, a2 = 1 - a->ne / 1048576.0;
+		double complex z1 = cexp(-I * w), z2 = z1 * z1;
+		double h = cabs(g * (1 - (2 - dc) * z1 + z2) / (1 + a1 * z1 + a2 * z2));
+
+		printf("  69.3 Hz tone: symbol errors %.2f %% plain, %.2f %% notched, the notch %.1f dB at the tone\n",
+		       100 * e0, 100 * e1, 20 * log10(h + 1e-12));
+		CHECK(e0 > 0.005 && e1 < e0 * 0.7 && h < 0.01, "69.3 Hz tone notched: %.4f against %.4f, %.4f at the tone",
+		      e1, e0, h);
+	}
+	e1 = run_adapt(&both, true, &ns1);
+	air_softmodem_adapt_get(&v);
+	printf("  69.3 Hz tone, equalizer on: symbol errors %.2f %% (found %u.%u Hz)\n", 100 * e1, v.tone_dhz / 10,
+	       v.tone_dhz % 10);
+	CHECK(v.tone_dhz == 693 && e1 < e0 * 0.5, "69.3 Hz tone behind the equalizer: %u, %.4f against %.4f",
+	      v.tone_dhz, e1, e0);
+	// Tones on or next to a multiple of the 10 Hz frame rate (100.0 Hz is one: what repeats every frame is left out,
+	// not differenced away), close neighbors and the band's edges, each found as itself
+	{
+		static const struct { double hz; uint16_t dhz; } t[] = { { 67.0, 670 }, { 69.3, 693 }, { 79.7, 797 },
+			{ 100.0, 1000 }, { 146.2, 1462 }, { 159.8, 1598 }, { 192.8, 1928 }, { 199.5, 1995 }, { 250.3, 2503 },
+			{ 254.1, 2541 } };
+
+		for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
+			sample_tap(8000, 17, 3600, 2000, 300, 450);
+			add_tone(t[i].hz, 0.4 * 1800);
+			run_adapt(&tone, true, &ns1);
+			air_softmodem_adapt_get(&v);
+			CHECK(v.tone_dhz == t[i].dhz, "%.1f Hz tone: found %u", t[i].hz, v.tone_dhz);
+		}
+	}
+	// Every standard tone, at 0.2 and at 0.4 of a level, found as itself (air-interface.md 6.1)
+	{
+		const uint16_t *all = tones_ctcss;
+		unsigned found = 0;
+
+		for (unsigned lv = 1; lv <= 2; lv++) {
+			for (unsigned i = 0; i < TONES_CTCSS_COUNT; i++) {
+				sample_tap(8000, 17, 3600, 2000, 300, 450);
+				add_tone(all[i] / 10.0, 0.2 * lv * 1800);
+				run_adapt(&tone, true, &ns1);
+				air_softmodem_adapt_get(&v);
+				found += v.tone_dhz == all[i];
+				CHECK(v.tone_dhz == all[i], "%u.%u Hz tone at %.1f of a level: found %u", all[i] / 10,
+				      all[i] % 10, 0.2 * lv, v.tone_dhz);
+			}
+		}
+		printf("  standard tones: %u of 100 found as themselves (50 at 0.2, 50 at 0.4 of a level)\n", found);
+	}
+
+	// Resets every half second (lost samples, a new lock) don't start the search over: the tone a repeater sends
+	// outlasts them, and a search that began again at each never reached the second block it needs
+	sample_tap(8000, 17, 3600, 2000, 300, 450);
+	add_tone(127.3, 0.4 * 1800);
+	run_adapt_resets(&tone, 4000);
+	air_softmodem_adapt_get(&v);
+	CHECK(v.tone_dhz == 1273, "tone found across resets: %u", v.tone_dhz);
+	// DCS 023 at half a level under the signal (about 450 Hz, as repeaters send it): found (its word averaged by its place, any start of it a
+	// codeword), named, taken off the samples: fewer errors than without. Inverted it reads as 047, the code whose
+	// word is 023's inverted, as radios list them. Without DCS nothing locks
+	{
+		air_profile_t dcs = c4fm_like(AIR_RX_DCS);
+
+		sample_tap(8000, 17, 3600, 2000, 300, 450);
+		add_dcs(023, false, 0.5 * 1800);
+		e0 = run_adapt(&plain, true, &ns0);
+		e1 = run_adapt(&dcs, true, &ns1);
+		air_softmodem_adapt_get(&v);
+		printf("  DCS 023: symbol errors %.2f %% plain, %.2f %% with DCS taken off (code %03o)\n", 100 * e0, 100 * e1,
+		       v.dcs_code & 0x1FFu);
+		CHECK(v.dcs_code == 023 && v.dcs_locks >= 1, "DCS found: %03o, %u locks", v.dcs_code, v.dcs_locks);
+		CHECK(e1 < e0 * 0.45, "DCS taken off: %.4f against %.4f", e1, e0);
+		sample_tap(8000, 17, 3600, 2000, 300, 450);
+		add_dcs(023, true, 0.5 * 1800);
+		run_adapt(&dcs, true, &ns1);
+		air_softmodem_adapt_get(&v);
+		CHECK(v.dcs_code == 047, "DCS 023 inverted reads as 047: %03o", v.dcs_code);
+		sample_tap(8000, 17, 3600, 2000, 300, 450);
+		add_tone(127.3, 0.4 * 1800);
+		run_adapt(&dcs, true, &ns1);
+		air_softmodem_adapt_get(&v);
+		CHECK(v.dcs_code == 0 && v.dcs_locks == 0, "no DCS, a tone: none locked (%03o, %u)", v.dcs_code, v.dcs_locks);
+	}
+
+	// No tone: none picked, however long (and the same data again and again, as silence repeats, picks none)
+	sample_tap(8000, 17, 3600, 2000, 300, 300);
+	e1 = run_adapt(&both, true, &ns1);
+	air_softmodem_adapt_get(&v);
+	CHECK(v.tone_dhz == 0 && v.tone_picks == 0 && v.tone_blocks >= 3, "no tone: %u picked in %u blocks", v.tone_dhz,
+	      v.tone_blocks);
+	for (uint32_t k = 680; k < air_n; k++)
+		air[k] = air[200 + (k - 200) % 480];	// every frame the first one
+	modulate(&both, 0);
+	sample_tap(8000, 17, 3600, 2000, 300, 200);
+	run_adapt(&both, true, &ns1);
+	air_softmodem_adapt_get(&v);
+	CHECK(v.tone_dhz == 0, "repeating frames: no tone (%u)", v.tone_dhz);
+
+	// The bench turns an option off at once
+	sample_tap(8000, 17, 3600, 2000, 300, 250);
+	add_tone(127.3, 0.4 * 1800);
+	air_softmodem_adapt_off = AIR_RX_TONE;
+	run_adapt(&both, true, &ns1);
+	air_softmodem_adapt_get(&v);
+	air_softmodem_adapt_off = 0;
+	CHECK(v.opts == AIR_RX_EQ && v.tone_dhz == 0, "bench off: opts %u tone %u", v.opts, v.tone_dhz);
+}
+#endif
+
 int main(void)
 {
 	testFit();
@@ -694,6 +960,9 @@ int main(void)
 	testShapes();
 	testCall();
 	testHole();
+#if CONFIG_AIR_RX_ADAPT
+	testAdapt();
+#endif
 	printf("airSoftmodemTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
 }

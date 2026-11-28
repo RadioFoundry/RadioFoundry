@@ -221,6 +221,27 @@ plan entry the radio uses the plan the control channel sends.
 follows calls to every talk group, not just the channel's. **Fallback channel** is kept in the codeplug; the radio
 doesn't use it yet and keeps hunting for a control channel. A trunked channel has no frequencies of its own.
 
+### YSF
+
+Pick **YSF** in the channel form's **Mode** for YSF (C4FM DN voice). Using it on the radio:
+[Channels, zones and the VFO](07-channels-zones-vfo.md#ysf-channels). A YSF channel has no contact or Own ID.
+
+**YSF channel:**
+
+| Field | Meaning |
+|---|---|
+| TX DG-ID | DG-ID sent, 0-99 |
+| RX DG-ID | DG-ID heard, 0-99. 0 hears every DG-ID |
+
+**Radio tab:**
+
+| Field | Meaning |
+|---|---|
+| YSF callsign | The callsign YSF sends, up to 10 letters, digits, - and /. Blank: none, and the radio won't transmit on YSF |
+
+There is no radio ID field, on purpose: every radio makes its own from its chip, so a codeplug copied to many radios
+never gives two of them the same one ([Your radio ID](07-channels-zones-vfo.md#your-radio-id)).
+
 ### Files
 
 **Open File** takes:

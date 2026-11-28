@@ -1192,6 +1192,15 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 			sb_str(&b, "TG ");
 		sb_u32(&b, v->nxdn.talk, 1);
 #endif
+#if CONFIG_YSF
+	} else if (v->ch.mode == RADIO_MODE_YSF && (v->ysf.flags & RADIO_YSF_NO_CALL) != 0) {
+		sb_str(&b, TR(HOME_STATE_NO_CALLSIGN, "No callsign"));	// PTT refused until the codeplug has one
+		c = ui_col.warn;
+	} else if (v->ch.mode == RADIO_MODE_YSF) {
+		// What PTT sends to: the DG-ID (YSF has no talk groups)
+		sb_str(&b, "TX DG-ID ");
+		sb_u32(&b, v->ysf.tx_dgid, 2);
+#endif
 	} else {
 		// A channel shows the frequency it listens on, as dual watch does, and a repeater's offset after it: no
 		// other row has either (#1031). Where PTT goes, with the arrow, only while PTT is held (transmitting, or
@@ -1270,6 +1279,20 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "NAC ");
 		sb_hex(&b, v->p25.rx_nac, 3);
+		if (x + gfx_text_width(f, buf) <= w)
+			gfx_text(f, x, y, buf, ui_col.fg);
+#endif
+		return;
+	}
+	if (v->ch.mode == RADIO_MODE_YSF) {
+		// The same for YSF: the power and the DG-ID heard (00: every one)
+		if (pw_temp)
+			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
+		x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+#if CONFIG_YSF
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, "RX DG-ID ");
+		sb_u32(&b, v->ysf.rx_dgid, 2);
 		if (x + gfx_text_width(f, buf) <= w)
 			gfx_text(f, x, y, buf, ui_col.fg);
 #endif
@@ -1412,6 +1435,7 @@ const char *ui_deny_text(const radio_view_t *v, uint8_t why, char *buf, size_t l
 	case TXDENY_REJECTED: sb_str(&b, TR(DENY_WHY_MODEM_REFUSED, "Modem refused to send")); break;
 	case TXDENY_HOTSPOT: sb_str(&b, TR(DENY_WHY_HOTSPOT_MODE, "Hotspot mode: PTT off")); break;
 	case TXDENY_NO_ID: sb_str(&b, TR(DENY_WHY_NO_DMR_ID, "No DMR ID in codeplug")); break;
+	case TXDENY_NO_CALLSIGN: sb_str(&b, TR(DENY_WHY_NO_CALLSIGN, "No callsign set")); break;
 	case TXDENY_AM: sb_str(&b, TR(WHY_AIR_BAND_RX_ONLY, "Air band: receive only")); break;
 	case TXDENY_BCAST: sb_str(&b, TR(WHY_BROADCAST_RX_ONLY, "Broadcast: receive only")); break;
 	case TXDENY_SFR_RPT: sb_str(&b, TR(DENY_WHY_REPEATER_CHANNEL, "Repeater channel: PTT off")); break;
@@ -1465,6 +1489,7 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_NO_DMR: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 	case TXDENY_HOTSPOT: return TR(HOTSPOT_HINT_OK_STOPS, "OK stop hotspot");
 	case TXDENY_NO_ID: return TR(DENY_FIX_SET_DMR_ID, "Set your DMR ID in qdmr");
+	case TXDENY_NO_CALLSIGN: return TR(DENY_FIX_SET_YSF_CALLSIGN, "Set callsign in My radio");
 	case TXDENY_AM:
 	case TXDENY_BCAST: return v->vfo ? TR(DENY_FIX_TUNE_OUT_OF_BAND, "Tune out of the band") :
 		TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
@@ -1986,6 +2011,42 @@ static void draw_last_heard(const radio_view_t *v, const ui_state_t *s, int y)
 	gfx_text(sm, 0, y, fit, ui_col.fg);
 }
 
+#if CONFIG_YSF
+// Activity on Home, YSF idle: the last YSF call heard (ui_state_t.ysf_last), as DMR's: "N1ABC" / "DG-ID 12 11s ago"
+static void draw_last_heard_ysf(const ui_state_t *s, int y)
+{
+	const font_t *sm = ui_layout.small;
+	int w = gfx_width();
+	char where[32], fit[48];
+	sbuf_t b;
+
+	if (s->ysf_last_ms == 0) {
+		gfx_text(sm, 0, y + (ui_layout.activity_h - sm->h) / 2, TR(EMPTY_NO_CALLS_HEARD, "No calls heard yet"),
+			ui_col.dim);
+		return;
+	}
+	sb_init(&b, where, sizeof where);
+	sb_str(&b, "DG-ID ");
+	sb_u32(&b, s->ysf_last_dgid, 2);
+	sb_chr(&b, ' ');
+	sb_age(&b, s->now_ms - s->ysf_last_ms);
+	if (ui_layout.activity_h >= 2 * sm->h) {
+		gfx_text_fit(sm, s->ysf_last, w, fit, sizeof fit);
+		gfx_text(sm, 0, y, fit, ui_col.fg);
+		gfx_text_fit(sm, where, w, fit, sizeof fit);
+		gfx_text(sm, 0, y + sm->h, fit, ui_col.dim);
+		return;
+	}
+	// One line: the callsign whole (10 at most), where and when in what is left
+	y += (ui_layout.activity_h - sm->h) / 2;
+	gfx_text_fit(sm, s->ysf_last, w, fit, sizeof fit);
+	int cw = gfx_text_width(sm, fit);
+	gfx_text(sm, 0, y, fit, ui_col.fg);
+	gfx_text_fit(sm, where, w - cw - sm->w, fit, sizeof fit);
+	gfx_text(sm, w - gfx_text_width(sm, fit), y, fit, ui_col.dim);
+}
+#endif
+
 // One text line of the call screens, if it still fits above the hint row; returns the next y
 static int call_line(const font_t *f, int y, const char *text, color_t c)
 {
@@ -2147,14 +2208,32 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 #endif
 
 #if CONFIG_AIR
-// A P25 or NXDN call coming in (air_call): whether one is heard now, and its fields
+// A P25, NXDN or YSF call coming in (air_call): whether one is heard now, and its fields. YSF names its caller by
+// callsign (call, "" until heard) and its target by DG-ID: dgid >= 0
 typedef struct {
 	bool played, enc, unit;
 	uint32_t src, dst;
+#if CONFIG_YSF
+	bool not_dn, data;
+	const char *call;
+	int16_t dgid;
+#endif
 } air_call_t;
 
 static bool air_call(const radio_view_t *v, air_call_t *c)
 {
+	memset(c, 0, sizeof *c);
+#if CONFIG_YSF
+	c->dgid = -1;
+	if (v->ch.mode == RADIO_MODE_YSF && (v->ysf.flags & RADIO_YSF_RX) != 0) {
+		c->played = (v->ysf.flags & RADIO_YSF_PLAYED) != 0;
+		c->not_dn = (v->ysf.flags & RADIO_YSF_NOT_DN) != 0;
+		c->data = (v->ysf.flags & RADIO_YSF_DATA) != 0;
+		c->call = v->ysf.src;
+		c->dgid = v->ysf.dgid;
+		return true;
+	}
+#endif
 #if CONFIG_P25
 	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
 		const radio_p25_view_t *p = &v->p25;
@@ -2189,12 +2268,44 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 	char buf[64], fit[48];
 	sbuf_t b;
 
+#if CONFIG_YSF
+	if (!c->played && !c->data) {
+		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
+			c->not_dn ? TR(CALL_WHY_NOT_DN, "Not DN voice: not played") :
+			c->dgid >= 0 ? TR(CALL_WHY_OTHER_DGID, "Other DG-ID: not played") :
+			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
+		gfx_text(f, 0, y, fit, ui_col.warn);
+		return;
+	}
+#else
 	if (!c->played) {
 		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
 			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
 		gfx_text(f, 0, y, fit, ui_col.warn);
 		return;
 	}
+#endif
+#if CONFIG_YSF
+	if (c->call != NULL) {
+		// YSF: "N0CALL > DG-ID 12", or "N0RPT > Data" for a data transmission (room data); the callsign kept longest
+		for (int with_dgid = 1; with_dgid >= 0; with_dgid--) {
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, c->call[0] ? c->call : "?");
+			if (with_dgid && c->data) {
+				sb_str(&b, " " GLYPH_ARROW " ");
+				sb_str(&b, TR(CALL_VALUE_DATA, "Data"));
+			} else if (with_dgid) {
+				sb_str(&b, " " GLYPH_ARROW " DG-ID ");
+				sb_u32(&b, (uint32_t)c->dgid, 2);
+			}
+			if (gfx_text_width(f, buf) <= gfx_width())
+				break;
+		}
+		gfx_text_fit(f, buf, gfx_width(), fit, sizeof fit);
+		gfx_text(f, 0, y, fit, ui_col.rx);
+		return;
+	}
+#endif
 	// Too wide: keep the marker and destination, then cut the destination if needed
 	for (int with_id = c->src != 0; with_id >= 0; with_id--) {
 		sb_init(&b, buf, sizeof buf);
@@ -2328,6 +2439,12 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_DMR
 		if (v->ch.mode == RADIO_MODE_DMR && v->dmr.active) {
 			draw_last_heard(v, s, y);	// hear all shows as "All" in the chips and in the hint
+			break;
+		}
+#endif
+#if CONFIG_YSF
+		if (v->ch.mode == RADIO_MODE_YSF) {
+			draw_last_heard_ysf(s, y);
 			break;
 		}
 #endif
@@ -3663,6 +3780,16 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 	if (!v->vfo && pos == 3)
 		return QT_TO_VFO;	// a channel's tile 4 copies it to the VFO; the VFO's stays Mode
 	uint8_t kind = v->ch.mode == RADIO_MODE_DMR ? dmr[pos] : fm[pos];
+	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_TONE)
+		kind = QT_YSF_ROOMS;	// no tones on YSF: tile 3 opens Rooms
+	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_BANDWIDTH)
+		kind = QT_DGID;		// nor a width: tile 8 is the transmit DG-ID
+	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_SQUELCH)
+		kind = QT_RX_DGID;	// the squelch doesn't gate YSF (ysf.md 5): tile 2 is the receive DG-ID
+	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && (kind == QT_VOX || (kind == QT_MONITOR && !v->vfo)))
+		return QT_NONE;		// VOX and the monitor open FM's audio only; the VFO's tile 5 stays TX freq.
+					// Left empty, not greyed out: a tile that can never work there only confuses, and these
+					// two are kept for Send GPS and Group Monitor (ysf.md 8)
 	if (v->vfo && (kind == QT_MONITOR || kind == QT_PRIVACY))
 		return QT_SPLIT;	// the VFO's TX frequency; Monitor stays on its key, privacy on channels
 	return kind;
@@ -3700,13 +3827,17 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_TO_VFO] = TRN(QUICK_LABEL_COPY_TO_VFO, TEXT_ALT_OPEN "Copy to VFO"
 			TEXT_ALT_NEXT "To VFO" TEXT_ALT_CLOSE),
 		[QT_SPLIT] = TRN(QUICK_LABEL_TX_FREQ, TEXT_ALT_OPEN "TX freq" TEXT_ALT_NEXT "TXFreq" TEXT_ALT_CLOSE),
+		[QT_YSF_ROOMS] = TRN(QUICK_LABEL_ROOMS, "Rooms"),
+		[QT_DGID] = TRX(QUICK_LABEL_TX_DGID, TEXT_ALT_OPEN "TX DG-ID" TEXT_ALT_NEXT "TX DG" TEXT_ALT_CLOSE),
+		[QT_RX_DGID] = TRX(QUICK_LABEL_RX_DGID, TEXT_ALT_OPEN "RX DG-ID" TEXT_ALT_NEXT "RX DG" TEXT_ALT_CLOSE),
 	};
 	uint8_t kind = ui_quick_kind(tile, v);
 	bool editing = s->quick_edit && s->quick_focus == tile;
 	sbuf_t b;
 	sb_init(&b, label, label_len);
 	sb_chr(&b, (char)('1' + tile));
-	sb_str(&b, tr(names[kind]));
+	if (kind != QT_NONE)
+		sb_str(&b, tr(names[kind]));	// an empty tile has its number only
 	sb_init(&b, value, value_len);
 	switch (kind) {
 	case QT_POWER:
@@ -3785,6 +3916,20 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		sb_u32(&b, s->brightness, 1);
 		sb_chr(&b, '%');
 		return true;
+	case QT_YSF_ROOMS:
+		sb_str(&b, TR(QUICK_VALUE_OPEN, "Open"));
+		return CONFIG_YSF;
+#if CONFIG_YSF
+	case QT_DGID:
+		sb_u32(&b, editing ? s->dgid_edit : v->ysf.tx_dgid, 2);
+		return true;
+	case QT_RX_DGID:
+		sb_u32(&b, editing ? s->dgid_edit : v->ysf.rx_dgid, 2);
+		return true;
+	case QT_NONE:
+		sb_str(&b, "-");
+		return false;
+#endif
 #if CONFIG_DMR
 	case QT_TIMESLOT:
 		sb_str(&b, "TS");

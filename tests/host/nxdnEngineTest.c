@@ -345,7 +345,7 @@ static void testCall(bool rate9600)
 	// a frame waits for its four voice frames only while the queue holds more than its lead, so the first ones and
 	// the last (a frame finished after the key) may be silence
 	CHECK(n > 100 && n < 112, "%s: the over ended %u periods after 100", name, n);
-	CHECK(prov[0].underruns == 0 && prov[0].keyed_violations == 0 && r[0].e.session.stats.tx_underruns == 0,
+	CHECK(prov[0].underruns == 0 && prov[0].keyed_violations == 0 && r[0].e.av.session.stats.tx_underruns == 0,
 	      "%s: underruns %u, keyed outside permission %u", name, prov[0].underruns, prov[0].keyed_violations);
 	nxdn_engine_view(&r[0].e, &v);
 	CHECK(v.tx == AIR_TX_IDLE && v.tx_calls == 1 && v.tx_filler <= 8, "%s: sender's view: tx %u calls %u filler %u", name, v.tx,
