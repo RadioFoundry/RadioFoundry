@@ -30,4 +30,10 @@
 #define RFOUNDRY_VOLUME_B	1
 #endif
 
+// Temperature sensors the board lists (board_t.temp): the readings (core/app/temp.c), the debug link's sensors view and
+// SNMP's rfoundryTempTable (docs/spec/temperature.md)
+#ifndef RFOUNDRY_TEMP
+#define RFOUNDRY_TEMP		1
+#endif
+
 #endif

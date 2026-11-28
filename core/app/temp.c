@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include "temp.h"
 
-#if CONFIG_TEMP
+#if RFOUNDRY_TEMP
 
 bool temp_curve_dc(const temp_point_t *curve, uint8_t len, uint16_t mv, int16_t *dc)
 {

@@ -36,8 +36,6 @@ CONFIG_NAND_STORAGE ?= y
 # PTT and keys from the Bluetooth module on UART4 (PC10 / PC11). Found by asking it at start,
 # so a radio without the module (not every model has it) only shows it absent
 CONFIG_BT_PTT ?= y
-# The temperature sensors and the fan (power_d578uv.c d578uv_temp)
-CONFIG_TEMP ?= y
 CONFIG_SATELLITE_TLE ?= n	# RAM: about 1.2 KB, and this build is about 0.9 KB short with APRS receive on
 CONFIG_SIG_TONES ?= n	# RAM: about 0.7 KB, which P25 and NXDN take here
 # Air band AM and broadcast FM receive run on the KTMicro receiver on PB6/PB7, AM behind side B's chips.

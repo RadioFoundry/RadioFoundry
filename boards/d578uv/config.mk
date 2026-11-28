@@ -34,8 +34,6 @@ CONFIG_NAND_STORAGE ?= y
 # PTT and keys from the Bluetooth module on UART4 (PC10 / PC11). Found by asking it at start,
 # so a radio without the module (not every model has it) only shows it absent
 CONFIG_BT_PTT ?= y
-# The temperature sensors and the fan (power_d578uv.c d578uv_temp)
-CONFIG_TEMP ?= y
 # Air band AM and broadcast FM receive run on the KTMicro receiver on PB6/PB7, AM behind side B's chips
 #
 # APRS receive samples the receive audio on PC0 (afsk_d578uv.c). It doesn't fit with DMR on:

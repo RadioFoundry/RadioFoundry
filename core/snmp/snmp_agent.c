@@ -149,7 +149,7 @@ static void fill(uint32_t now)
 	data.lastDst = v->dmr.last.dst;
 	data.lastGroup = v->dmr.last.group;
 	data.lastMs = v->dmr.last_ms;
-#if CONFIG_TEMP
+#if RFOUNDRY_TEMP
 	data.tempCount = 0;
 	for (uint8_t i = 0; i < SNMP_TEMP_MAX; i++) {
 		temp_reading_t r;

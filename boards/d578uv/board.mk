@@ -27,7 +27,8 @@ BOARD_NAND_DIRS := drivers/flash/nand_sectors drivers/flash/nand_blocks
 # RGB565 default. A screen has at most 16 colors (core/ui/gfx.h); with CONFIG_FONT_AA the edge grays compete for them
 MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u
 # Hardware traits (hal/hal_traits.h): the SCT3258 makes and plays the voice, the air tap gives the demodulator's
-# slope (rxtap_d578uv.c), and side B has its own volume knob
+# slope (rxtap_d578uv.c), side B has its own volume knob, and the board lists temperature sensors
 BOARD_MODEM_VOICE := y
 BOARD_SLOPE_TAP := y
 BOARD_VOLUME_B := y
+BOARD_TEMP := y

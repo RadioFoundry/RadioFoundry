@@ -579,7 +579,7 @@ static void cps_section(dl_text_t *t)
 // 0.1 degree C, "-" where the board has none
 static void sensors_section(dl_text_t *t)
 {
-#if !CONFIG_TEMP
+#if !RFOUNDRY_TEMP
 	dl_text(t, "sensor.count=0\nfan.on=-\n");	// not read in this build
 #else
 	static const char *const kinds[] = { "?", "pa", "board", "mcu", "battery" };

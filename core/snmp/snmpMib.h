@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "config.h"
+#include "../../hal/hal_traits.h"	// the MIB runs in the host tests without hal/ on the path
 #include "snmp/snmp.h"
 
 // The enterprise number of the RadioFoundry MIB. TBD: 32473 is the IANA number reserved for documentation (RFC 5612), a
@@ -71,7 +72,7 @@ typedef struct {
 	uint32_t netToAir, netPacketsUp;	// the gateway: packets to the air side, packets from the air to the host
 	// Last, past what the MIB reads (its fields must stay within 255 octets: snmpMib.c)
 	char smsText[SNMP_TEXT_MAX + 1];	// the newest message (filled when an SMS event is new)
-#if CONFIG_TEMP
+#if RFOUNDRY_TEMP
 	// The temperature sensors (core/app/temp.h) and the fan: read by instance, not through the offset table
 	uint8_t tempCount;		// rows, at most SNMP_TEMP_MAX
 	struct {

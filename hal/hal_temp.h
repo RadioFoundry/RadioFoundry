@@ -10,6 +10,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "hal_traits.h"
 
 typedef enum {
 	TEMP_KIND_PA = 1,	// the transmitter's power amplifier or its heatsink

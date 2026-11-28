@@ -86,7 +86,6 @@ is `tools/bringup.py list --radio <id>`.
 | `signaling_tones` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | off | off | not recorded |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `bt_ptt` | off | ✕ | ✕ | off | ✕ | ✕ | off | pass, needs re-run | not recorded | ✕ |
-| `temp` | not written | not written | not written | not written | not written | not written | not written | not recorded | not recorded | not written |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | partial | not recorded | ✕ |
 | `satellite_tle` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off | off | not recorded |
 | `gps_icon` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | not recorded | ✕ |
@@ -283,7 +282,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `BT_PTT` | ? | ✕ | ✕ | ? | ✕ | ✕ | ? | ● | ● | ✕ |
-| `TEMP` | … | … | … | … | … | … | … | ● | ● | … |
 | `GPS` | ● | ● | ✕ | ● | ● | ● | ● | ● | ● | ✕ |
 | `AUDIO_PROBE` | … | ○ | … | … | … | ○ | ○ | … | … | … |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -366,7 +364,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Signaling tone chains (Settings > Signaling tones) | `SIG_TONES` | 5,340 | 5,748* | Needs `BEEP` |
 | Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured with `CONFIG_SNMP=n`; 236 B with LTO |
 | Bluetooth PTT and keys: the module's PTT button and its hand mic | `BT_PTT` | — | — | Needs a Bluetooth module on a UART ([build-config](build-config.md)) |
-| Temperature readings: the board's sensors and fan in the debug link and SNMP | `TEMP` | — | — | Needs sensors the board lists (`board_t.temp`, [temperature](spec/temperature.md)) |
 | GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | 9,568 | 9,556 | Needs a GPS receiver. Off, DMR GPS Info, LRRP and APRS send the fixed position when one is set ([position](spec/position.md)). The DM-1701 has none from the factory but listens for an owner-fitted one |
 
 ## DMR data
