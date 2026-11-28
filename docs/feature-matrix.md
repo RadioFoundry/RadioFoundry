@@ -59,6 +59,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | partial, needs re-run |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `dmr_aes` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `key_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_data_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
@@ -204,6 +205,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_PRIVACY` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_AES` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `KEY_CHECK` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_TALKER_ALIAS` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_GPS` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `DMR_SMS` | ● | ● | ● | ● | ● | ● | ● | ✕ |
@@ -335,6 +337,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | The 2400 bit/s MBE voice codec, compatible with D-STAR's voice frames | `MBE2400` | ~0* | ~0* | No mode uses the codec yet, so the link leaves the codec out; the code is about 6 KB, more without P25 (the MBE core) ([mbe-2400.md](spec/mbe-2400.md)) |
 | Basic privacy, 8-bit and 16-bit keys | `DMR_PRIVACY` | 6,260 | 7,340 |  |
 | AES-256 DMR voice, PI header and late-entry signaling | `DMR_AES` | 3,484 | 4,692 | Requires `DMR_PRIVACY`. DM-1701: 480 B RAM. TX to a receiver of another make needs the modem driver's burst F field (`set_burst_f`, [dmr-voice.md](spec/dmr-voice.md) 5.1): only the HR_C7000 driver has it (DM-32UV); on the HR_C6000 and other radios our AES overs reach radios running RadioFoundry only (#864). |
+| Key check values: Settings > Privacy > Key check and Stored keys | `KEY_CHECK` | 2,344 | — | DM-1701: 128 B RAM (switch on versus off). DM-32UV default build: 1,676 B flash, no RAM. Checked on a DM-32UV: Key check shows the vectors of `tests/vectors/key-check.txt`, and Stored keys lists the privacy and AES keys |
 | Talker alias receive and send | `DMR_TALKER_ALIAS` | 1,088 | 1,068 |  |
 | ETSI GPS Info in the embedded LC | `DMR_GPS` | 992 | 892 |  |
 | DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,564 | 3,456 |  |

@@ -218,6 +218,9 @@ CPS shim's area 1 reads, can see them. The settings area is outside what the ope
 reads any address. Options: refuse area 1 reads of the settings area, or obfuscate with a key from the MCU's UID.
 Neither stops a determined reader, and basic privacy is weak anyway.
 
+A slot's key check value ([key-check.md](key-check.md) 2.1) is shown in Settings > Privacy; it doesn't hide a key this
+short.
+
 ## 4. The sector journal
 
 A codeplug edit, or a CPS commit, rewrites a whole 4 KB sector: erase, then program. A cut between the two would

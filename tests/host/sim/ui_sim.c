@@ -93,6 +93,8 @@
 #include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
 #include "codeplug/codeplug_tag.h"
+#include "codeplug/key_store.h"
+#include "support/kcv.h"
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
@@ -1993,6 +1995,45 @@ bool ui_svc_privacy(bool on)
 	return view.dmr.privacy == on;
 }
 bool ui_svc_monitor(bool on) { view.monitor = on; changed(); return true; }
+
+// The stored keys (codeplug/key_store.h): key slot 1 from the settings, then an NXDN scrambler key on a system the
+// simulated codeplug doesn't otherwise have, so the Keys screen shows both kinds
+bool ui_svc_privacy_kcv(char out[7])
+{
+	int32_t type = ui_svc_setting_get(UI_SET_PRIVACY_TYPE), key = ui_svc_setting_get(UI_SET_PRIVACY_KEY);
+	uint8_t v[KCV_LEN];
+	if (type == 0 || (type == 1 && (key < 1 || key > 255)) || !kcv_privacy((uint8_t)type, (uint32_t)key, v))
+		return false;
+	kcv_text(v, out);
+	return true;
+}
+uint16_t ui_svc_keys_count(void)
+{
+	return ui_svc_setting_get(UI_SET_PRIVACY_TYPE) != 0 ? 2 : 1;
+}
+bool ui_svc_key(uint16_t i, struct key_row_s *e, char name[17])
+{
+	static const uint8_t seed[2] = { 0x34, 0x12 };
+	char t[KCV_TEXT];
+	memset(e, 0, sizeof *e);
+	name[0] = 0;
+	if (i == 0 && ui_svc_privacy_kcv(t)) {
+		e->cls = KCV_CLASS_PRIVACY;
+		e->num = 1;
+		e->type = (uint8_t)ui_svc_setting_get(UI_SET_PRIVACY_TYPE);
+		e->kcv_ok = kcv_privacy(e->type, (uint32_t)ui_svc_setting_get(UI_SET_PRIVACY_KEY), e->kcv);
+		return true;
+	}
+	if (i != ui_svc_keys_count() - 1u)
+		return false;
+	e->cls = KCV_CLASS_TRAFFIC;
+	e->num = 2;
+	e->type = 4;
+	e->key_id = 5;
+	strcpy(name, "NXDN Ops");
+	e->kcv_ok = kcv_traffic(4, 1, seed, sizeof seed, e->kcv);
+	return true;
+}
 bool ui_svc_vox(bool on)
 {
 	view.vox_on = on && view.ch.mode == RADIO_MODE_FM;
@@ -2561,6 +2602,7 @@ static sim_map_t cur_map;
 static const char *shot_dir, *shot_prefix;
 int sim_presses(void) { return presses; }
 void sim_count_reset(void) { presses = 0; }
+
 void sim_set_shot_dir(const char *dir, const char *prefix) { shot_dir = dir; shot_prefix = prefix; }
 static void (*tick_hook)(uint32_t now_ms);
 void sim_set_tick_hook(void (*hook)(uint32_t now_ms)) { tick_hook = hook; }

@@ -20,6 +20,9 @@
 #ifndef CONFIG_DMR_AES
 #define CONFIG_DMR_AES			CONFIG_DMR_PRIVACY
 #endif
+#ifndef CONFIG_KEY_CHECK
+#define CONFIG_KEY_CHECK		1
+#endif
 #ifndef CONFIG_DMR_TALKER_ALIAS
 #define CONFIG_DMR_TALKER_ALIAS		1
 #endif

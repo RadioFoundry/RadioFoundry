@@ -92,6 +92,13 @@ static inline const char *ui_mode_name(uint8_t mode)
 uint8_t ui_svc_vfo_copy(const radio_view_t *v);
 bool ui_svc_hear_all(bool on);
 bool ui_svc_privacy(bool on);			// false also when there is no key: the UI says how to add one
+// The key check value of privacy key slot 1 (docs/spec/key-check.md), six hex digits; false when the slot has no key
+bool ui_svc_privacy_kcv(char out[7]);
+// The stored keys (codeplug/key_store.h: privacy slots, then traffic keys) for Settings > Privacy > Keys: how many, and
+// row i with its check value, never the key, and a traffic key's system name (empty when the page kept none)
+struct key_row_s;
+uint16_t ui_svc_keys_count(void);
+bool ui_svc_key(uint16_t i, struct key_row_s *row, char name[17]);
 bool ui_svc_monitor(bool on);			// FM monitor latch
 bool ui_svc_vox(bool on);
 // Make temporary channel changes permanent (storage-cps): false when busy, off a stored channel, or unavailable

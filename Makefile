@@ -215,6 +215,10 @@ APP_SRC := $(filter-out core/crash/crash_trace.c,$(APP_SRC))
 ifeq ($(CONFIG_FAULT_TRACE),y)
 APP_SRC += core/crash/crash_trace.c
 endif
+# Key check values (core/support is globbed with SUPPORT_INFO): their files with their own switch, once
+ifeq ($(CONFIG_KEY_CHECK),y)
+APP_SRC += $(filter-out $(APP_SRC),core/support/sha256.c core/support/kcv.c)
+endif
 # Zone sharing over DMR data: the record, the sender and the offers (its codeplug side is core/codeplug/zone_import.c)
 ifeq ($(CONFIG_ZONE_SHARE),y)
 APP_SRC += core/dmr/zoneShare.c core/dmr/zoneShareSvc.c

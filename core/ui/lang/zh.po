@@ -4060,6 +4060,16 @@ msgid "Key"
 msgstr "按键"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEY_CHECK"
+msgid "Key check"
+msgstr "密钥检查"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEYS"
+msgid "Stored keys"
+msgstr "已存密钥"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_AUTO_LOCK"
 msgid "Auto lock"
 msgstr "自动锁键"
@@ -4360,6 +4370,11 @@ msgid " steps"
 msgstr " 步"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
+msgid "Pick a key type first"
+msgstr "请先选按键类型"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
 msgid "Talk permit tone: not in this build"
 msgstr "通话许可音：本版本无"
@@ -4420,11 +4435,6 @@ msgid "Talker alias: not in this build"
 msgstr "主叫别名：本版本无"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
-msgid "Pick a key type first"
-msgstr "请先选按键类型"
-
-#: core/ui/ui_menus.c
 msgctxt "SET_WHY_NO_GPS_ON_RADIO"
 msgid "No GPS on this radio"
 msgstr "本机无 GPS"
@@ -4438,6 +4448,11 @@ msgstr "DMR 定位：本版本无"
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "诊断：本版本无"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_KEY_CHECK_COMPARE"
+msgid "Radios that show the same check value hold the same key"
+msgstr "检查值同的电台，密钥同"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -4553,6 +4568,26 @@ msgstr "扫描停在此处"
 msgctxt "SCAN_TOAST_LISTS_USE_QDMR"
 msgid "Edit scan lists in qdmr"
 msgstr "在 qdmr 中编辑扫描列表"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_LABEL_PRIVACY"
+msgid "Privacy"
+msgstr "加密"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_TYPE_8_BIT"
+msgid "8-bit"
+msgstr "8 位"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_TYPE_16_BIT"
+msgid "16-bit"
+msgstr "16 位"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_EMPTY"
+msgid "No keys stored"
+msgstr "无密钥"
 
 #: core/ui/ui_menus.c
 msgctxt "LANG_VALUE_IN_USE"

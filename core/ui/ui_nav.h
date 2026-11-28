@@ -46,6 +46,7 @@ typedef enum {
 	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
 	SCR_SATELLITE_TEXT,		// one 69-character TLE line
 	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
+	SCR_KEYS,			// Settings > Privacy > Keys: every stored key and its check value (codeplug/key_store.h)
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
