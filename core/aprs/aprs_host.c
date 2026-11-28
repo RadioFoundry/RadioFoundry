@@ -59,8 +59,17 @@ void aprs_host_kiss_frame(const uint8_t *f, size_t n, uint32_t now_ms)
 			position_nmea((const char *)f + 2, n - 2u, false, now_ms);
 		}
 		break;
+	case KISS_CMD_TXDELAY:
+	case KISS_CMD_PERSIST:
+	case KISS_CMD_SLOTTIME:
+	case KISS_CMD_TXTAIL:
+		// Packet mode uses them (aprs.md 9.2); APRS mode ignores them: its own settings and CSMA apply (9)
+		if (n >= 2) {
+			aprs_host_kiss_param((uint8_t)(type & 0x0Fu), f[1]);
+		}
+		break;
 	default:
-		break;		// TXDELAY, persistence, slot time: the radio's own settings and CSMA apply (aprs.md 9)
+		break;		// FULLDUPLEX: the radio is half duplex
 	}
 }
 

@@ -76,6 +76,7 @@ typedef struct {
 	bool igate_tx;		// APRS-IS -> RF
 	uint8_t digi;		// aprs_digi_mode_t
 	bool mute;		// the speaker stays off on the APRS frequency in FM; decoding goes on, Monitor plays it
+	bool packet;		// KISS mode Packet (with kiss, CONFIG_APRS_PACKET; aprs.md 9.2): any frame on the selected channel
 } aprs_cfg_t;	// where our position comes from and its ambiguity: the position service's settings (position.h)
 
 void aprs_cfg_default(aprs_cfg_t *c);
@@ -92,6 +93,9 @@ bool aprs_callsign_ok(const char *call);
 // Why nothing can be sent now (aprs_view_t.block)
 typedef enum {
 	APRS_OK, APRS_NO_CALL, APRS_NO_FREQ, APRS_NOT_AMATEUR, APRS_NO_POSITION, APRS_NO_AFSK, APRS_BUSY,
+	// Packet mode (aprs.md 9.2): the selected channel isn't FM, a scan or dual watch runs (the host's frames,
+	// aprs_view_t.pk_block), and APRS's own packets held while packet mode is on (block)
+	APRS_NOT_FM, APRS_SCANNING, APRS_PACKET,
 } aprs_block_t;
 
 // How an RF transmission ended (aprs_rf_done). The failures name the step that stopped it
@@ -123,6 +127,10 @@ typedef struct {
 	bool msg_pending;	// our message waiting for its ack / its next try
 	uint8_t msg_tries;
 	bool msg_acked;
+	bool packet;		// packet mode is on (aprs.md 9.2): KISS on with the Packet mode, CONFIG_APRS_PACKET
+	uint8_t pk_block;	// aprs_block_t for the host's frames in packet mode (the selected channel)
+	uint32_t pk_hz;		// packet mode: the selected channel's frequency, where packets go (not the APRS frequency)
+	uint32_t duty_holds;	// packet transmissions held back by the duty cycle
 	char last_info[48];	// the information field of our last beacon (truncated)
 	uint32_t serial;	// bumped on every change worth a redraw
 #if CONFIG_APRS_RX
@@ -159,7 +167,13 @@ typedef struct {
 typedef struct {
 	bool can_rf;		// an FM APRS transmission could start now (nothing else on the air, no PTT, no scan ...)
 	bool fm_rx;		// receiving FM (the receive path's audio is worth demodulating)
-	uint32_t rx_hz;		// on this frequency: APRS receive runs only on the APRS frequency
+	uint32_t rx_hz;		// on this frequency: APRS receive runs only on the APRS frequency (packet mode: any)
+	// The selected channel, for packet mode (aprs.md 9.2): FM, where it transmits (0: receive only), 12.5 kHz, and
+	// whether a zone or VFO scan or dual watch runs
+	bool ch_fm;
+	uint32_t ch_tx_hz;
+	bool ch_narrow;
+	bool scanning;
 	bool on_dmr;		// the channel is DMR with the call stack running (digital positions can go out)
 	uint32_t own_dmr_id;
 } aprs_radio_t;
@@ -181,6 +195,11 @@ typedef struct {
 	uint8_t level;
 	const uint8_t *tones;
 	uint16_t nbits;
+	// Packet mode (aprs.md 9.2): the job is on the selected channel, CSMA with the host's persistence (p = (persist +
+	// 1) / 256) and slot time. Otherwise false, and the radio core's own APRS CSMA applies
+	bool packet;
+	uint8_t persist;
+	uint16_t slot_ms;
 } aprs_rf_job_t;
 // The radio core starts it: fills job (tones stay valid until aprs_rf_done). False: nothing after all
 bool aprs_rf_take(aprs_rf_job_t *job, uint32_t now_ms);
@@ -252,6 +271,8 @@ bool aprs_rf_pending(void);
 bool aprs_can_receive(void);
 // The receive path is running (the receiver must stay awake: no battery saving)
 bool aprs_rx_listening(void);
+// The receive path hears a packet transmission (afsk_demod_dcd): KISS packet mode's carrier sense (radio task)
+bool aprs_rx_dcd(void);
 // The frequency the receive path decodes on, 0 when receiving is off or the radio can't (radio task)
 uint32_t aprs_rx_freq(void);
 // Stop the receive path at once (radio task): before tuning away from the APRS frequency (aprs_ax25.c)
@@ -265,8 +286,12 @@ bool aprs_send_message(const char *to, const char *text);
 bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags);
 // RAM-only override for bench tests (debug link): the callsign ("" = back to the settings / codeplug)
 void aprs_set_test_call(const char *call);
-// A KISS data frame (AX.25 without FCS) from the host for RF: checked (our callsign as the source, rate limit)
+// A KISS data frame (AX.25 without FCS) from the host for RF: checked (our callsign as the source; APRS mode: a UI
+// frame and the rate limit; packet mode, aprs.md 9.2: any frame type, the selected channel's checks)
 bool aprs_host_frame(const uint8_t *frame, size_t n, uint32_t now_ms);
+// A KISS parameter from the host (KISS_CMD_TXDELAY, _PERSIST, _SLOTTIME, _TXTAIL and the value byte): used in packet mode,
+// clamped, held in RAM until the mode changes (aprs.md 9.2); APRS mode ignores them (9)
+void aprs_host_kiss_param(uint8_t cmd, uint8_t value);
 // An APRS-IS line from the host helper (KISS SetHardware 'G')
 void aprs_host_is_line(const char *line, size_t n, uint32_t now_ms);
 // KISS-encoded bytes for the host: copies up to max, returns the count (0 = nothing waiting)
@@ -280,6 +305,7 @@ static inline bool aprs_host_frame(const uint8_t *frame, size_t n, uint32_t now_
 	return false;
 }
 static inline void aprs_host_is_line(const char *line, size_t n, uint32_t now_ms) { (void)line; (void)n; (void)now_ms; }
+static inline void aprs_host_kiss_param(uint8_t cmd, uint8_t value) { (void)cmd; (void)value; }
 static inline size_t aprs_host_output(uint8_t *out, size_t max) { (void)out; (void)max; return 0; }
 static inline const char *aprs_path_text(uint8_t path) { (void)path; return ""; }
 static inline bool aprs_to_codeplug(void) { return false; }
@@ -287,6 +313,7 @@ static inline uint8_t aprs_tx_power(uint8_t current) { return current; }
 static inline bool aprs_rf_pending(void) { return false; }
 static inline bool aprs_can_receive(void) { return false; }
 static inline bool aprs_rx_listening(void) { return false; }
+static inline bool aprs_rx_dcd(void) { return false; }
 static inline uint32_t aprs_rx_freq(void) { return 0u; }
 static inline void aprs_rx_release(void) {}
 static inline uint32_t aprs_mute_hz(void) { return 0u; }

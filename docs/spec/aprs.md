@@ -103,7 +103,8 @@ with the DMR backend alone.
 - A hard minimum of 30 s between automatic beacons (`AUTO_MIN_S`), 10 s for any configuration
   (`APRS_MIN_INTERVAL_FLOOR_S`), and "send now" pressed again within 5 s is ignored.
 - Frames from the host (KISS) must carry our callsign (any SSID) as the source and are rate limited: a burst of 3,
-  then one per 10 s.
+  then one per 10 s. In packet mode (9.2) any frame type is taken, the same source rule applies and a duty cycle
+  replaces the burst limit.
 - CSMA before every RF transmission (section 6); our own PTT always wins (an APRS transmission is aborted, the
   channel restored).
 - iGate transmit (IS -> RF) only for messages to stations heard directly in the last 30 minutes (section 9.1).
@@ -362,7 +363,7 @@ UDP port 3334 in USB network mode, where the host port runs over the network). T
 (`HOSTLINK_TNC`) holds while frames flow and ends after 30 s idle, like the hotspot and CPS modes.
 
 Port 0 only. DATA frames are checked (section 3) and queued for RF; TXDELAY, PERSIST and SLOTTIME are accepted and
-ignored (the engine's own CSMA applies); SetHardware 'G' carries an APRS-IS line, 'N' an NMEA sentence. To the host:
+ignored (the engine's own CSMA applies; packet mode, 9.2, honors them); SetHardware 'G' carries an APRS-IS line, 'N' an NMEA sentence. To the host:
 received frames (RX builds) as KISS DATA, and lines for APRS-IS as SetHardware 'G'.
 
 ### 9.1 iGate
@@ -381,6 +382,73 @@ in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), wh
 - Digipeater (RX builds, off): fill-in (WIDE1-1 only) or wide (WIDE1-1 and WIDE2-N), also our own call in the path;
   our call inserted before the WIDE entry, marked used (traced), the hop count decremented; duplicates suppressed
   for 30 s.
+
+### 9.2 Packet mode
+
+With KISS mode set to Packet (`CONFIG_APRS_PACKET`, off by default in the setting), the host port is a plain KISS TNC
+for any AX.25 traffic on the selected channel: Winlink through PAT, a BBS or node, keyboard to keyboard, Linux
+`kissattach`, BPQ. The host runs the link layer (connected mode, windows, timers, retries); the radio moves frames
+between the host and the air and makes no link decisions of its own. APRS mode (9) stays the default and is
+unchanged.
+
+**The channel.** Packet mode uses the selected channel as the radio is tuned to it: its receive and transmit
+frequencies, bandwidth and transmit subtone, in FM. Nothing is retuned for a transmission. RF is blocked, with the
+reason on the APRS page and in `aprs.block`, when the channel isn't FM (`not FM`), when its transmit frequency fails
+the amateur and board band checks of 3 (`not amateur`), when there is no callsign or no AFSK (as in 3), and while a
+zone or VFO scan or dual watch runs (`scanning`).
+
+**From the host.** KISS port 0 only; frames for other ports and the Return byte are ignored.
+
+- DATA: any well formed AX.25 frame (I, S, U and UI; AX.25 2.2 section 4.2: the PID follows the control field in I and
+  UI frames only), 2-10 addresses, at most 256 bytes of information. The source must be our callsign (any SSID), as in
+  APRS mode: station identification. Anything else is dropped and counted in `host_dropped`. There is no burst limit;
+  the duty cycle below bounds the air time.
+- TXDELAY, P, SLOTTIME, TXTAIL (KISS commands 1-4) are honored, held in RAM for the session and never saved. At
+  start-up and when the mode changes: TXDELAY the APRS TX delay setting, P 63, SLOTTIME 10 (100 ms), TXTAIL 0 (the
+  tail flags only). Bounds: TXDELAY 5-100 (50-1000 ms; never fewer than `MIN_FLAGS`), SLOTTIME 1-25, TXTAIL 0-10;
+  a value outside is clamped. FULLDUPLEX is ignored (the radio is half duplex). SetHardware 'G' and 'N' work as in
+  APRS mode.
+
+**Transmit.** The radio core's job (6) with these differences:
+
+1. No retune and no settle time: the job waits on the channel it is on, with the channel's receive running as always
+   (squelch, speaker, the demodulator: `radio_sm.c` `aprs_on_channel`). No job starts while the squelch is open.
+2. CSMA per the KISS paper: each SLOTTIME, if the channel is clear, transmit with probability (P + 1) / 256, else
+   wait a slot. The channel is busy while the squelch is open or the demodulator detects a data carrier (DCD,
+   `aprs_rx_dcd`): set once its HDLC decoder sees two flags back to back, a transmission's preamble, which noise
+   almost never makes (under 2 % of random bits in `aprsTest`, so an ungated receiver isn't held off an empty
+   channel), and cleared by seven 1s in a row, the end of a transmission or an idle channel. A frame that hasn't gone
+   out 10 s after it was queued is dropped and counted in `rf_busy`: the host's own retry timer sends it again. A job
+   still waiting for its slot after 10 s ends as busy, without a retune. It keys the channel as PTT would: its
+   transmit frequency and subtone, the radio's current power.
+3. Frames back to back with one flag between them, as many as the tone buffer holds, TXDELAY of flags before, TXTAIL
+   of flags plus the 3 tail flags after. The packet build's buffer is 768 bytes (6144 symbols, 5.1 s): two frames
+   with 256 bytes of information and no digipeaters (274 bytes with the FCS, at most 2630 symbols stuffed) fit after a
+   300 ms TXDELAY (360 symbols). A frame that doesn't fit waits for the next transmission. The queue holds 4 frames.
+4. Duty cycle: the keyed time in any 60 s is at most `PACKET_DUTY_MS` (30 s). A job that would pass it waits and is
+   checked again a second later; each wait counts once in `duty_holds`. The radio's TX timeout applies to each
+   transmission as for PTT.
+5. Our PTT, a channel change or any other request that aborts an APRS job (6) aborts this one; the frames taken are
+   dropped, not retried 15 s later (the host retries). PTT itself works as always.
+
+**Receive.** While the receive setting is on and the radio receives FM on the selected channel (also during the
+job's LISTEN, which no longer leaves the frequency), the path of 5.3 runs on the channel's receive frequency. Every
+frame with a good FCS goes to the host as KISS DATA; frames as short as two addresses, a control byte and the FCS
+(17 bytes) are taken, as S and U frames are. UI frames with no layer 3 also update Stations heard and messages to us,
+as on the APRS frequency. Battery saving stays off and the squelch holds 300 ms (`RADIO_SQL_CLOSE_POLLS_APRS`) as in
+5.3, since both follow `aprs_rx_listening()`: on a board whose receive audio is squelch gated, a packet isn't cut in
+pieces on the packet channel either. The host output ring is 1024 bytes in the packet build: about three typical 256 byte frames
+escaped, and at least one in the worst case (every byte escaped: 547 bytes with no digipeaters). A frame that doesn't
+fit is dropped and counted in `host_dropped`; the host retries.
+
+**APRS while in packet mode.** Automatic beacons, Send position now, messages, iGate (both ways) and the digipeater
+send nothing: each would key on a channel that isn't APRS's. The APRS page says "Packet mode" as the reason. Setting
+KISS mode back to APRS restores them; nothing queued for packet carries over.
+
+**Hosts.** USB serial, UDP 3334 and TCP 8001 as in 9. The host link's TNC mode still ends after 30 s idle, but
+received frames reach the host in idle too, and the next FEND claims the port again, so a long quiet wait for a
+connection loses nothing. FX.25 transmissions from other stations decode as the AX.25 frames they carry (FX.25 is
+built to be read by plain AX.25 receivers); the radio sends plain AX.25 only.
 
 ## 10. UI
 
@@ -402,6 +470,11 @@ position's, `pos_ms`, else the last packet's. An object's or item's position is 
 station's position is dropped at 24 h, `STATION_POS_MS`, so its age never wraps). On a radio without
 `board.afsk`, Power, Path and SSID are dimmed, and so is Frequency unless the build receives APRS. SSID (the last
 row, so the rows above keep their digits): 0-15, OK steps up and wraps 15 to 0, a long OK steps down.
+
+With `CONFIG_APRS_PACKET`, **KISS mode** (APRS, Packet; 9.2) is the row above SSID, so the rows above it keep their
+digits; dimmed while KISS on USB is off, and OK then says "KISS on USB is off". In packet mode the body adds
+"Packet mode: APRS waits." and, when the host's frames can't go, the selected channel's reason (`pk_block`:
+not FM, not amateur, scanning). The gallery's `aprs_packet` shows it.
 
 The page shows the rows the build has:
 
@@ -449,7 +522,8 @@ debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native c
 (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX), `aprs_flags2` (iGate, iGate TX, messaging, UDT,
 to APRS-IS, mute), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
 `aprs_symbol`, `aprs_path`, `aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1),
-`aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
+`aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater), `aprs_flags2` bit 7 (KISS mode Packet, 9.2; where it is
+stored is open, 14). The position fields in the same record (`aprs_lat`,
 `aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's
 ([position.md](position.md) 5): APRS never changes them, and its save keeps them. The codeplug's APRS record 1 (EEPROM 0x1588,
 64 bytes each) gives the SSID, path, symbol, comment, frequency and ambiguity when present; its fixed position
@@ -499,7 +573,11 @@ writes `aprs_test_44k1.wav` with three frames) and `aprsRadioTest` (the engine w
 air decoded back, the minimum interval, CSMA on a busy channel, PTT cutting a transmission, the not-amateur block,
 manual and after-PTT triggers, KISS and NMEA from the host, messages with acks, the station list, digipeating and
 the iGate both ways, the DMR position source, a packet as AFSK audio through the PCM stream into the station list
-only on the APRS frequency). `usrpNetTest` checks the stream's APRS ring. `tests/host/aprs_wav_check.sh` feeds the WAV to Direwolf's `atest`
+only on the APRS frequency; packet mode, 9.2: an I frame from the host keyed on the channel's frequency with no
+retune, S and U frames through AX.25 decode and the HDLC decoder both ways, the UI-only rule still enforced in APRS
+mode, TXDELAY setting the preamble, P and SLOTTIME deferring on a clear channel, a busy frame dropped at 10 s, the
+duty cycle holding a job, the not-amateur and not-FM blocks, PTT dropping the taken frames, a received I frame
+reaching the host, beacons and the digipeater held). `usrpNetTest` checks the stream's APRS ring. `tests/host/aprs_wav_check.sh` feeds the WAV to Direwolf's `atest`
 when it is installed (a black-box check).
 
 HIL (opt-in, `tests/hil/test_aprs.py`, README there): `--allow-rf --allow-service-stop --aprs-call CALL` (a licensed
@@ -538,6 +616,15 @@ is still to run on the HR_C7000 boards. Per-radio levels and results are in the 
 - The codeplug APRS record's fixed position encoding.
 - Receive from the HR_C6000's ungated RX RAM (5.3).
 - Settings and debug link section / command numbers may need renumbering when merged with other branches.
+- Packet mode (9.2), pending the maintainers on #1199:
+  - Where the KISS mode setting is stored: `aprs_flags2` 0x80 is the last free APRS bit, and the APRS work in #498
+    uses it.
+  - Channels with a transmit offset or subtone: allowed as programmed (the draft), or simplex with no tone only.
+  - The duty cycle figure (30 s in 60 s) and whether it should be a setting.
+  - Scan and dual watch: blocked (the draft), or packet on the selected channel with the second receiver paused.
+  - The source rule: kept (the draft). It rules out host-side digipeating.
+  - Listening on the APRS frequency from a voice channel by time share (#255) changes the same receive decision;
+    packet mode turns that time share off while it is on.
 
 Future, not done:
 

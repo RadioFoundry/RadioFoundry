@@ -545,6 +545,14 @@ bool ui_svc_aprs_view(aprs_view_t *v)
 	if (!aprs_sim.no_call)
 		strcpy(v->call, "Q0SIM-7");
 	v->block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
+	// KISS packet mode as the engine shows it (aprs.md 9.2): APRS's own packets wait, the channel takes the host's
+	v->packet = aprs_sim.cfg.kiss && aprs_sim.cfg.packet;
+	if (v->packet) {
+		v->block = APRS_PACKET;
+		v->pk_block = aprs_sim.no_call ? APRS_NO_CALL : APRS_OK;
+		v->pk_hz = 145050000;	// the selected channel's
+
+	}
 	v->freq_hz = aprs_sim.cfg.region == APRS_REGION_CUSTOM ? aprs_sim.cfg.freq_hz : hz[aprs_sim.cfg.region % APRS_REGION_COUNT];
 	v->pos_valid = !aprs_sim.no_call && !aprs_sim.no_pos;
 	v->pos_src = POSITION_SRC_FIXED;
@@ -3097,6 +3105,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "pos_lon") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LON));
 	else if (strcmp(key, "pos_dmrgps") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_DMR_CALLS));
 	else if (strcmp(key, "aprs_kiss") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.kiss);
+	else if (strcmp(key, "aprs_packet") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.packet);	// KISS mode
 #if CONFIG_DMR_ROAMING
 	else if (strcmp(key, "roam") == 0) snprintf(got, sizeof got, "%u", view.roam.state);	// RROAM_STATE_*
 	else if (strcmp(key, "roamzone") == 0) snprintf(got, sizeof got, "%u", view.roam.zone_on);

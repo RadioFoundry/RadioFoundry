@@ -106,6 +106,7 @@ below are for an STM32F4 radio.
 | `CONFIG_GPS_SKY` | = GPS | the GPS screen under Tools > Position: satellites on a sky plot and signal bars, fix quality, grid locator (`core/position/nmea_sky.c`, `core/ui/ui_gps.c`; `docs/spec/ui.md` 2.3). Off, that page is text |
 | `CONFIG_SATELLITE_TLE` | y when `DEBUGLINK=y` (full and amateur; n in commercial or when `DEBUGLINK=n`; a board may default it off for flash limits) | satellite TLE inventory transfer and tracking support (`docs/spec/satellite.md`); radios with a dedicated data-flash range store up to 10 records, using 12 KB from update staging. The board must also have enough program flash for the feature |
 | `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK (n where flash is short) | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |
+| `CONFIG_APRS_PACKET` | = APRS_AFSK | KISS packet mode ([aprs.md](spec/aprs.md) 9.2): the KISS TNC takes any AX.25 frame and sends it on the selected channel, for hosts that run connected mode (PAT / Winlink, BBS, `kissattach`); the setting is off by default |
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
 | `CONFIG_DMR_AES` | = DMR_PRIVACY | AES-256 voice encryption (DMRA, PI header ALG 0x25), RX and TX on channels bound to a traffic key in the codeplug, `core/dmr/dmrAes.c` (`docs/spec/dmr-voice.md` 5.1) |

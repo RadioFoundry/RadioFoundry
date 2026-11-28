@@ -875,6 +875,21 @@ msgid "No APRS tones on this radio; DMR positions work."
 msgstr "本机无 APRS 亚音；DMR 定位可用。"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_WHY_PACKET_MODE"
+msgid "Packet mode: APRS waits."
+msgstr "分组模式：APRS 等待。"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_WHY_NOT_FM"
+msgid "Packet needs FM."
+msgstr "分组只能用 FM。"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_WHY_SCANNING"
+msgid "Packet: scan is on."
+msgstr "分组：扫描中。"
+
+#: core/ui/ui_aprs.c
 msgctxt "WHY_APRS_NOT_IN_BUILD"
 msgid "APRS: not in this build"
 msgstr "APRS：本版本无"
@@ -883,6 +898,11 @@ msgstr "APRS：本版本无"
 msgctxt "APRS_BODY_NO_CALLSIGN"
 msgid "No callsign"
 msgstr "无呼号"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_BODY_PACKET_ON"
+msgid " packet on "
+msgstr " 分组于 "
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_ON"
@@ -975,6 +995,11 @@ msgid "Mute APRS audio"
 msgstr "APRS静音"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_KISS_MODE"
+msgid "KISS mode"
+msgstr "KISS 模式"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "USB NMEA"
@@ -988,6 +1013,11 @@ msgstr "开"
 msgctxt "APRS_VALUE_AS_CHANNEL"
 msgid "As channel"
 msgstr "按信道"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_VALUE_PACKET"
+msgid "Packet"
+msgstr "分组"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_TOAST_SENDING_POSITION"
@@ -1013,6 +1043,11 @@ msgstr "信标开"
 msgctxt "APRS_TOAST_BEACONS_OFF"
 msgid "Beacons off"
 msgstr "信标关"
+
+#: core/ui/ui_aprs.c
+msgctxt "APRS_WHY_KISS_OFF"
+msgid "KISS on USB is off"
+msgstr "USB KISS 已关闭"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_CANT_RECEIVE"

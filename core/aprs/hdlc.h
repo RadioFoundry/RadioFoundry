@@ -13,7 +13,7 @@
 #include "aprs/ax25.h"
 
 #define HDLC_FLAG		0x7Eu
-#define HDLC_FRAME_MIN		(2u * AX25_ADDR_BYTES + 2u + 2u)	// two addresses, control, PID, FCS
+#define HDLC_FRAME_MIN		(2u * AX25_ADDR_BYTES + 1u + 2u)	// two addresses, control, FCS (an S or U frame)
 #define HDLC_BUF_MAX		(AX25_FRAME_MAX + 2u)			// a frame and its FCS
 
 // Tone sequence bits: bit i of the buffer is byte i / 8, bit i % 8 (LSB first)
@@ -42,6 +42,10 @@ typedef struct {
 	uint8_t last;		// the previous tone (NRZI)
 	uint8_t ones;
 	bool in_frame;		// a flag was seen: bits are collected
+	// Data carrier detect (docs/spec/aprs.md 9.2): set once two flags come back to back (a transmission's preamble;
+	// noise almost never makes two), cleared by seven 1s in a row (the end of a transmission, an idle or silent channel)
+	uint8_t flag_run;
+	bool dcd;
 	uint32_t nbits;
 	uint8_t buf[HDLC_BUF_MAX];
 	uint32_t frames, fcs_errors, aborts;	// counters

@@ -107,6 +107,131 @@ static void test_addresses(void)
 	      strcmp(f.digi[1].call, "QAC") == 0, "is line");
 }
 
+// The frame types a host's connected mode sends through a KISS TNC (AX.25 2.2 4.2, 4.3): the PID only in I and UI
+// frames, so an S or U frame is two addresses and a control byte, 15 bytes with no digipeater (docs/spec/aprs.md 9.2)
+static size_t frame_of(const char *src, const char *dst, const char *digi, uint8_t control, uint8_t pid,
+		       const char *info, uint8_t *out, size_t max)
+{
+	ax25_frame_t f;
+	memset(&f, 0, sizeof(f));
+	ax25_addr_parse(dst, strlen(dst), &f.dst);
+	ax25_addr_parse(src, strlen(src), &f.src);
+	f.dst.h = true;		// a command
+	if (digi != NULL) {
+		ax25_addr_parse(digi, strlen(digi), &f.digi[0]);
+		f.ndigi = 1;
+	}
+	f.control = control;
+	f.pid = pid;
+	f.info = (const uint8_t *)info;
+	f.info_len = (uint16_t)(info != NULL ? strlen(info) : 0);
+	return ax25_encode(&f, out, max);
+}
+
+static void test_frame_types(void)
+{
+	CHECK(ax25_has_pid(0x03) && ax25_has_pid(0x13), "UI has a PID");
+	CHECK(ax25_has_pid(0x00) && ax25_has_pid(0x22) && ax25_has_pid(0xFE), "I frames have a PID");
+	CHECK(!ax25_has_pid(0x01) && !ax25_has_pid(0x41) && !ax25_has_pid(0x09), "S frames (RR, RNR, REJ) have none");
+	CHECK(!ax25_has_pid(0x3F) && !ax25_has_pid(0x73) && !ax25_has_pid(0x53) && !ax25_has_pid(0x1F) &&
+	      !ax25_has_pid(0x87) && !ax25_has_pid(0xAF) && !ax25_has_pid(0xE3), "SABM UA DISC DM FRMR XID TEST: none");
+
+	uint8_t buf[64];
+	ax25_frame_t f;
+	// SABM with P: 15 bytes, the control byte last, no PID
+	size_t n = frame_of("Q1TST-1", "Q1ABC", NULL, 0x3F, 0xF0, NULL, buf, sizeof(buf));
+	CHECK(n == 15 && buf[14] == 0x3F, "SABM n=%zu", n);
+	CHECK(ax25_decode(buf, n, &f) && f.control == 0x3F && f.pid == 0 && f.info_len == 0 && f.ndigi == 0 &&
+	      strcmp(f.src.call, "Q1TST") == 0 && f.src.ssid == 1, "SABM decode");
+	// RR N(R)=2: an S frame
+	n = frame_of("Q1ABC", "Q1TST-1", NULL, 0x41, 0, NULL, buf, sizeof(buf));
+	CHECK(n == 15 && ax25_decode(buf, n, &f) && f.control == 0x41 && f.info_len == 0, "RR n=%zu", n);
+	// UA with F through a digipeater: 22 bytes
+	n = frame_of("Q1ABC", "Q1TST-1", "Q1DIG", 0x73, 0, NULL, buf, sizeof(buf));
+	CHECK(n == 22 && ax25_decode(buf, n, &f) && f.ndigi == 1 && f.control == 0x73 && f.info_len == 0, "UA digi");
+	// TEST: a U frame with an information field and no PID
+	n = frame_of("Q1TST-1", "Q1ABC", NULL, 0xE3, 0, "ping", buf, sizeof(buf));
+	CHECK(n == 19 && ax25_decode(buf, n, &f) && f.control == 0xE3 && f.pid == 0 && f.info_len == 4 &&
+	      memcmp(f.info, "ping", 4) == 0, "TEST n=%zu", n);
+	// I frame N(S)=0 N(R)=1 with no layer 3: the PID, then the data
+	n = frame_of("Q1TST-1", "Q1ABC", NULL, 0x20, AX25_PID_NONE, "hello", buf, sizeof(buf));
+	CHECK(n == 21 && buf[14] == 0x20 && buf[15] == AX25_PID_NONE, "I n=%zu", n);
+	CHECK(ax25_decode(buf, n, &f) && f.control == 0x20 && f.pid == AX25_PID_NONE && f.info_len == 5 &&
+	      memcmp(f.info, "hello", 5) == 0, "I decode");
+	// cut short: the addresses alone, or an I frame without its PID
+	CHECK(!ax25_decode(buf, 14, &f), "no control byte");
+	CHECK(!ax25_decode(buf, 15, &f), "I frame without its PID");
+	// a UI frame is as before: control, PID, info
+	n = make_frame("Q0TEST>APRS:>test", buf, sizeof(buf));
+	CHECK(n == 21 && ax25_decode(buf, n, &f) && f.control == AX25_CONTROL_UI && f.pid == AX25_PID_NONE &&
+	      f.info_len == 5, "UI unchanged");
+
+	// The 15-byte SABM (17 with its FCS) through HDLC: the decoder takes the shortest frame there is
+	uint8_t tones[128];
+	n = frame_of("Q1TST-1", "Q1ABC", NULL, 0x3F, 0, NULL, buf, sizeof(buf));
+	hdlc_enc_t e;
+	hdlc_enc_init(&e, tones, sizeof(tones));
+	CHECK(hdlc_enc_flags(&e, 4) && hdlc_enc_frame(&e, buf, n) && hdlc_enc_flags(&e, 2), "SABM tones");
+	hdlc_dec_t d;
+	hdlc_dec_init(&d);
+	size_t got = 0;
+	bool same = false;
+	for (uint32_t i = 0; i < e.nbits; i++) {
+		size_t k = hdlc_dec_bit(&d, hdlc_tone_bit(tones, i));
+		if (k) {
+			got = k;
+			same = k == 15 && memcmp(d.buf, buf, 15) == 0;	// the frame is valid until the next call
+		}
+	}
+	CHECK(got == 15 && same, "SABM through HDLC got %zu", got);
+}
+
+// Data carrier detect (docs/spec/aprs.md 9.2): two flags back to back set it, a frame keeps it, seven 1s clear it, and
+// random bits (an ungated receiver on an empty channel) almost never set it
+static void dcd_bits(hdlc_dec_t *d, const uint8_t *tones, uint32_t from, uint32_t to)
+{
+	for (uint32_t i = from; i < to; i++) {
+		hdlc_dec_bit(d, hdlc_tone_bit(tones, i));
+	}
+}
+
+static void test_dcd(void)
+{
+	uint8_t frame[64], tones[256];
+	size_t n = make_frame("Q0TEST>APRS:>dcd", frame, sizeof(frame));
+	hdlc_enc_t e;
+	hdlc_enc_init(&e, tones, sizeof(tones));
+	CHECK(hdlc_enc_flags(&e, 3) && hdlc_enc_frame(&e, frame, n), "dcd tones");
+	uint32_t frame_end = e.nbits;
+	hdlc_dec_t d;
+	hdlc_dec_init(&d);
+	// The decoder has no NRZI reference before the first tone change, so the first flag goes to syncing it (a real
+	// preamble has dozens): the second flag is the first it sees, the third the first back to back
+	dcd_bits(&d, tones, 0, 17);
+	CHECK(!d.dcd, "one flag seen: no dcd");
+	dcd_bits(&d, tones, 17, 24);
+	CHECK(d.dcd, "two flags back to back: dcd");
+	dcd_bits(&d, tones, 24, frame_end);
+	CHECK(d.dcd, "dcd through the frame");
+	// seven 1s: no tone change for seven bits (NRZI)
+	bool level = hdlc_tone_bit(tones, frame_end - 1u);
+	for (int i = 0; i < 8; i++) {
+		hdlc_dec_bit(&d, level);
+	}
+	CHECK(!d.dcd, "seven 1s clear dcd");
+	// Random tone decisions: dcd set on a small share of them
+	hdlc_dec_init(&d);
+	uint32_t x = 0x9E3779B9u, on = 0, total = 100000;
+	for (uint32_t i = 0; i < total; i++) {
+		x ^= x << 13;
+		x ^= x >> 17;
+		x ^= x << 5;
+		hdlc_dec_bit(&d, (x & 1u) != 0);
+		on += d.dcd ? 1u : 0u;
+	}
+	CHECK(on < total / 50u, "noise dcd %u of %u", on, total);
+}
+
 // --- HDLC ---
 
 static void test_hdlc(void)
@@ -1476,6 +1601,8 @@ int main(int argc, char **argv)
 	test_fcs();
 	test_addresses();
 	test_hdlc();
+	test_frame_types();
+	test_dcd();
 	test_afsk();
 	test_position_build();
 	test_position_parse();

@@ -338,6 +338,9 @@
 #ifndef CONFIG_APRS_IGATE
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
 #endif
+#ifndef CONFIG_APRS_PACKET
+#define CONFIG_APRS_PACKET		CONFIG_APRS_AFSK
+#endif
 // P25 Phase 1 conventional (core/p25): the one switch. Derived from it (config/features.mk, never set by hand): AIR the
 // air interface (core/air, docs/spec/air-interface.md: the framer for digital modes the core frames itself and the
 // board's provider behind board.air), IMBE the full-rate voice decoder, MBE the MBE core it sits on (core/mbe).
@@ -590,8 +593,9 @@
 #if CONFIG_NXDN && !CONFIG_DMR
 #error "CONFIG_NXDN needs CONFIG_DMR (its voice is the DMR vocoder's)"
 #endif
-#if (CONFIG_APRS_RX && !CONFIG_APRS_AFSK) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
-#error "an APRS sub-feature is on without its parent (APRS_RX needs APRS_AFSK; APRS_IGATE needs APRS_RX and HOSTLINK)"
+#if (CONFIG_APRS_RX && !CONFIG_APRS_AFSK) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK)) || \
+    (CONFIG_APRS_PACKET && !CONFIG_APRS_AFSK)
+#error "an APRS sub-feature is on without its parent (APRS_RX and APRS_PACKET need APRS_AFSK; APRS_IGATE needs APRS_RX and HOSTLINK)"
 #endif
 #if !CONFIG_FM && !CONFIG_DMR
 #error "at least one of CONFIG_FM and CONFIG_DMR"

@@ -16,6 +16,14 @@
 #if CONFIG_APRS_AFSK
 #include "aprs/afsk.h"
 
+#if CONFIG_APRS_PACKET
+// KISS packet mode (aprs.md 9.2): a host's window of frames waits; two frames of 256 bytes of information each, with no
+// digipeater, fit one transmission even fully stuffed after a 300 ms TXDELAY (6144 symbols, 5.1 s: under the radio
+// core's 6 s APRS_SEND_MAX_MS); a received 256-byte frame escaped is up to 547 bytes
+#define QUEUE_LEN	4		// frames waiting for the air
+#define TONES_BYTES	768		// one transmission: preamble, frames, tail
+#define OUT_RING	1024		// KISS bytes for the host: received frames, iGate lines
+#else
 #define QUEUE_LEN	2		// frames waiting for the air
 #define TONES_BYTES	512		// one transmission: preamble, frames, tail (4096 symbols, 3.4 s)
 #if CONFIG_APRS_RX
@@ -23,13 +31,24 @@
 #else
 #define OUT_RING	256		// only our own lines to APRS-IS
 #endif
+#endif
 
 typedef struct {
 	uint16_t len;
 	uint8_t kind;
 	uint8_t tries;
+#if CONFIG_APRS_PACKET
+	uint32_t queued_ms;	// packet mode: a host frame not on the air PACKET_STALE_MS later is dropped
+#endif
 	uint8_t data[AX25_FRAME_MAX];
 } qframe_t;
+
+#if CONFIG_APRS_PACKET
+#define PACKET_STALE_MS		10000u		// aprs.md 9.2: the host's retry timer sends it again
+#define PACKET_DUTY_WINDOW_MS	60000u
+#define PACKET_DUTY_MS		30000u		// keyed time in any PACKET_DUTY_WINDOW_MS (open: #1199, aprs.md 14)
+#define PACKET_DUTY_SLOTS	16		// transmissions remembered for the duty cycle
+#endif
 #endif
 
 typedef struct {
@@ -71,6 +90,22 @@ typedef struct {
 	uint32_t ident_ms;
 	uint32_t cp_serial;
 	char info[AX25_INFO_MAX + 1];	// scratch for information fields (under the lock)
+#if CONFIG_APRS_PACKET
+	// Packet mode (aprs.md 9.2): on (cfg.kiss && cfg.packet), the selected channel as the radio task last gave it,
+	// why the host's frames can't go, the host's KISS parameters (10 ms units, persistence 0-255), and the duty cycle:
+	// each transmission's start and keyed ms, and the time before which nothing more fits
+	bool pk_on;
+	uint8_t pk_block;
+	uint32_t ch_rx_hz, ch_tx_hz;
+	bool ch_narrow;
+	uint8_t kp_txdelay, kp_persist, kp_slot, kp_txtail;
+	uint32_t duty_at[PACKET_DUTY_SLOTS];
+	uint16_t duty_ms[PACKET_DUTY_SLOTS];
+	uint8_t duty_next;
+	uint32_t duty_wait_ms;
+	bool duty_waiting;
+	uint16_t job_ms;	// the keyed time of the job taken
+#endif
 #if CONFIG_APRS_RX
 	aprs_station_t st[APRS_STATIONS];
 	uint8_t nst;
@@ -117,8 +152,9 @@ void aprs_ax25_init(uint32_t now_ms);
 void aprs_ax25_identity(void);
 // Every tick, outside the lock: the identity again when the codeplug changed, and now and then
 void aprs_ax25_poll(uint32_t now_ms);
-// Every tick, lock held, before the beacon triggers: the host's rate limit, old station positions, what blocks RF
-void aprs_ax25_tick(uint32_t now_ms);
+// Every tick, lock held, before the beacon triggers: the host's rate limit, old station positions, what blocks RF, packet
+// mode's channel and stale frames (r: the radio task's state)
+void aprs_ax25_tick(const aprs_radio_t *r, uint32_t now_ms);
 // A beacon is due (lock held): the packet is built, queued for RF when rf says so and RF isn't blocked, and sent to
 // APRS-IS when that is on. True when it went anywhere
 bool aprs_ax25_beacon(const position_fix_t *f, bool rf);
@@ -136,7 +172,7 @@ void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms);
 static inline void aprs_ax25_init(uint32_t now_ms) { (void)now_ms; }
 static inline void aprs_ax25_identity(void) {}
 static inline void aprs_ax25_poll(uint32_t now_ms) { (void)now_ms; }
-static inline void aprs_ax25_tick(uint32_t now_ms) { (void)now_ms; }
+static inline void aprs_ax25_tick(const aprs_radio_t *r, uint32_t now_ms) { (void)r; (void)now_ms; }
 static inline bool aprs_ax25_beacon(const position_fix_t *f, bool rf) { (void)f; (void)rf; return false; }
 static inline void aprs_ax25_service(void) {}
 static inline bool aprs_ax25_can_send(void) { return false; }

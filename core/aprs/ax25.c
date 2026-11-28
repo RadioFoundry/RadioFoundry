@@ -100,7 +100,8 @@ static void put_addr(uint8_t *p, const ax25_addr_t *a, bool last)
 size_t ax25_encode(const ax25_frame_t *f, uint8_t *out, size_t max)
 {
 	size_t naddr = 2u + f->ndigi;
-	size_t n = naddr * AX25_ADDR_BYTES + 2u + f->info_len;
+	bool pid = ax25_has_pid(f->control);
+	size_t n = naddr * AX25_ADDR_BYTES + 1u + (pid ? 1u : 0u) + f->info_len;
 	if (f->ndigi > AX25_MAX_DIGIS || f->info_len > AX25_INFO_MAX || n > max) {
 		return 0;
 	}
@@ -111,7 +112,9 @@ size_t ax25_encode(const ax25_frame_t *f, uint8_t *out, size_t max)
 	}
 	size_t k = naddr * AX25_ADDR_BYTES;
 	out[k++] = f->control;
-	out[k++] = f->pid;
+	if (pid) {
+		out[k++] = f->pid;
+	}
 	if (f->info_len != 0) {
 		memcpy(out + k, f->info, f->info_len);
 	}
@@ -171,13 +174,18 @@ bool ax25_decode(const uint8_t *buf, size_t n, ax25_frame_t *f)
 	}
 	f->ndigi = (uint8_t)(naddr - 2u);
 	size_t k = naddr * AX25_ADDR_BYTES;
-	if (k + 2u > n) {
+	if (k + 1u > n) {
 		return false;
 	}
-	f->control = buf[k];
-	f->pid = buf[k + 1u];
-	f->info = buf + k + 2u;
-	f->info_len = (uint16_t)(n - k - 2u);
+	f->control = buf[k++];
+	if (ax25_has_pid(f->control)) {
+		if (k + 1u > n) {
+			return false;
+		}
+		f->pid = buf[k++];
+	}
+	f->info = buf + k;
+	f->info_len = (uint16_t)(n - k);
 	return f->info_len <= AX25_INFO_MAX;
 }
 

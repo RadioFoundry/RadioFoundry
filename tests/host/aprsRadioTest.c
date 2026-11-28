@@ -42,8 +42,12 @@ static struct {
 	bool keyed;
 	uint16_t tone_hz;	// the TX tone in force (0 = the microphone)
 	uint8_t noise_on_aprs;	// noise reading on 144.390 (low = a carrier)
+	uint8_t noise_on_ch;	// ... on any other frequency (0: 120, no carrier)
+	int rx_calls;		// receiver tunes
+	int rx_calls_at_key;	// ... when the transmitter last keyed
+	subtone_t tx_tone;	// the subtone the transmitter last keyed with
 	// AFSK
-	uint8_t tones[600];
+	uint8_t tones[800];	// the largest tone buffer (aprs_int.h TONES_BYTES) and room
 	uint16_t nbits;
 	int starts, stops;
 	uint32_t afsk_end_ms;
@@ -79,12 +83,12 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 	}
 #endif
 	hw.rx_hz = hz;
+	hw.rx_calls++;
 	return true;
 }
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
 	(void)bw;
-	(void)t;
 	if (hw.tx_fail) {
 		return false;
 	}
@@ -92,6 +96,8 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 	hw.tx_hz = hz;
 	hw.tx_power = p;
 	hw.keyed = true;
+	hw.rx_calls_at_key = hw.rx_calls;
+	hw.tx_tone = *t;
 	return true;
 }
 static void r_tx_off(void)
@@ -101,7 +107,7 @@ static void r_tx_off(void)
 }
 static void r_status(radio_status_t *st)
 {
-	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : 120;
+	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : hw.noise_on_ch != 0 ? hw.noise_on_ch : 120;
 	st->rssi_dbm = st->noise < 64 ? -80 : -120;	// a signal reads above the floor (a voice peak's noise doesn't drop it)
 	st->carrier = false;
 	st->tone_ok = true;
@@ -948,6 +954,374 @@ static void test_host_kiss_nmea(void)
 }
 
 // The last try's ack wait ends while the frequency is blocked: the message is over, not pending forever
+// APRS mode (the default KISS mode) still takes only UI frames, now that AX.25 decode takes every frame type
+// (docs/spec/aprs.md 3, 9.2): an I frame from our call is refused, a received S frame is counted bad and not passed on
+static void test_kiss_aprs_mode_ui_only(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.kiss = true;
+	aprs_set_cfg(&c, now);
+	ax25_frame_t f;
+	uint8_t frame[AX25_FRAME_MAX];
+	memset(&f, 0, sizeof(f));
+	ax25_addr_parse("Q1ABC", 5, &f.dst);
+	ax25_addr_parse("Q1TST-1", 7, &f.src);
+	f.dst.h = true;
+	f.control = 0x20;		// I frame
+	f.pid = AX25_PID_NONE;
+	f.info = (const uint8_t *)"hello";
+	f.info_len = 5;
+	size_t n = ax25_encode(&f, frame, sizeof(frame));
+	aprs_view_t v0, v;
+	aprs_get_view(&v0);
+	CHECK(n == 21 && !aprs_host_frame(frame, n, now));
+	aprs_get_view(&v);
+	CHECK(v.host_dropped == v0.host_dropped + 1);
+#if CONFIG_APRS_RX
+	f.control = 0x41;		// RR: an S frame, 15 bytes
+	f.info_len = 0;
+	n = ax25_encode(&f, frame, sizeof(frame));
+	CHECK(n == 15);
+	aprs_get_view(&v0);
+	aprs_rx_frame(frame, n, now);
+	aprs_get_view(&v);
+	CHECK(v.rx_bad == v0.rx_bad + 1 && v.rx_frames == v0.rx_frames && v.host_out == v0.host_out);
+#endif
+}
+
+#if CONFIG_APRS_PACKET
+// ---- KISS packet mode (docs/spec/aprs.md 9.2) ----
+
+// An AX.25 frame from Q1TST-1 to Q1ABC: control, PID (when the control byte has one), info
+static size_t pk_frame(const char *src, uint8_t control, const char *info, size_t info_len, uint8_t *out, size_t max)
+{
+	ax25_frame_t f;
+	memset(&f, 0, sizeof(f));
+	ax25_addr_parse("Q1ABC", 5, &f.dst);
+	ax25_addr_parse(src, strlen(src), &f.src);
+	f.dst.h = true;
+	f.control = control;
+	f.pid = AX25_PID_NONE;
+	f.info = (const uint8_t *)info;
+	f.info_len = (uint16_t)info_len;
+	return ax25_encode(&f, out, max);
+}
+
+// KISS on, mode Packet, our call Q1TST, on the FM simplex channel CH_HZ
+static void packet_setup(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.kiss = true;
+	c.packet = true;
+	aprs_set_cfg(&c, now);
+	run(200);
+}
+
+// Send a host frame and wait for it to go out and the radio to come back
+static bool pk_send(const uint8_t *frame, size_t n)
+{
+	int starts = hw.starts;
+	nframes = 0;
+	if (!aprs_host_frame(frame, n, now)) {
+		return false;
+	}
+	bool went = wait_start(starts + 1, 5000);
+	wait_idle();
+	return went;
+}
+
+static bool frame_seen(const char *tnc2)
+{
+	for (int i = 0; i < nframes; i++) {
+		if (strcmp(frames[i], tnc2) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void test_packet_basics(void)
+{
+	packet_setup();
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.packet && v.block == APRS_PACKET && v.pk_block == APRS_OK);
+	CHECK(v.pk_hz == CH_HZ);	// where packets go: the selected channel, not the APRS frequency
+	uint8_t frame[AX25_FRAME_MAX];
+	// An I frame: keyed on the selected channel, not the APRS frequency, and decoded off the air as sent
+	size_t n = pk_frame("Q1TST-1", 0x20, "hello", 5, frame, sizeof(frame));
+	CHECK(pk_send(frame, n));
+	CHECK(hw.tx_hz == CH_HZ && frame_seen("Q1TST-1>Q1ABC:hello"));
+	CHECK(hw.rx_hz == CH_HZ && !hw.keyed);
+	// A SABM: 15 bytes, no PID
+	n = pk_frame("Q1TST-1", 0x3F, NULL, 0, frame, sizeof(frame));
+	CHECK(n == 15 && pk_send(frame, n) && hw.tx_hz == CH_HZ && frame_seen("Q1TST-1>Q1ABC:"));
+	// Someone else's call: refused, as in APRS mode
+	n = pk_frame("Q1XYZ", 0x20, "x", 1, frame, sizeof(frame));
+	aprs_get_view(&v);
+	uint32_t dropped = v.host_dropped;
+	CHECK(!aprs_host_frame(frame, n, now));
+	aprs_get_view(&v);
+	CHECK(v.host_dropped == dropped + 1);
+}
+
+// No burst limit: connected mode sends frames back to back (APRS mode: 3, then one per 10 s)
+static void test_packet_no_burst_limit(void)
+{
+	packet_setup();
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1TST-1", 0x20, "data", 4, frame, sizeof(frame));
+	int ok = 0;
+	for (int i = 0; i < 6; i++) {
+		ok += pk_send(frame, n) ? 1 : 0;
+	}
+	CHECK(ok == 6);
+}
+
+// The host's TXDELAY (KISS command 1, 10 ms units) sets the preamble; APRS mode would ignore it
+static void test_packet_txdelay(void)
+{
+	packet_setup();
+	uint8_t frame[AX25_FRAME_MAX], kiss[16];
+	size_t n = pk_frame("Q1TST-1", 0x20, "hi", 2, frame, sizeof(frame));
+	CHECK(pk_send(frame, n));
+	uint16_t bits30 = hw.nbits;		// the default: the APRS TX delay, 300 ms
+	uint8_t val = 60;			// 600 ms
+	size_t k = kiss_encode(KISS_CMD_TXDELAY, &val, 1, kiss, sizeof(kiss));
+	aprs_host_feed(kiss, k, now);
+	CHECK(pk_send(frame, n));
+	CHECK(hw.nbits == bits30 + 8u * hdlc_flags_for_ms(300, 1200, 0));
+}
+
+// APRS's own packets wait while packet mode is on, and come back with APRS mode
+static void test_packet_holds_aprs(void)
+{
+	packet_setup();
+	fixed_position(490583333, -720291667);
+	int starts = hw.starts;
+	aprs_send_now();
+	run(20000);
+	CHECK(hw.starts == starts);
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.packet = false;
+	aprs_set_cfg(&c, now);
+	run(200);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(!v.packet && v.block == APRS_OK);
+	CHECK(aprs_send_now() && wait_start(starts + 1, 20000) && hw.tx_hz == APRS_HZ);
+}
+
+#if CONFIG_APRS_RX
+// Every received frame goes to the host in packet mode, connected mode's too
+static void test_packet_rx_to_host(void)
+{
+	packet_setup();
+	host_out_has("");		// empty the ring
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1ABC", 0x22, "world", 5, frame, sizeof(frame));
+	aprs_view_t v0, v;
+	aprs_get_view(&v0);
+	aprs_rx_frame(frame, n, now);
+	CHECK(host_out_has("world"));
+	n = pk_frame("Q1ABC", 0x41, NULL, 0, frame, sizeof(frame));	// RR
+	aprs_rx_frame(frame, n, now);
+	aprs_get_view(&v);
+	CHECK(v.rx_frames == v0.rx_frames + 2 && v.rx_bad == v0.rx_bad && v.host_out == v0.host_out + 2);
+}
+#endif
+
+// The selected channel's checks: not amateur, not FM
+static void test_packet_channel_blocks(void)
+{
+	reset();
+	chan.rx_hz = chan.tx_hz = 150000000u;	// in the radio's band, not amateur
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("Q1TST");
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.kiss = true;
+	c.packet = true;
+	aprs_set_cfg(&c, now);
+	run(200);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.pk_block == APRS_NOT_AMATEUR);
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1TST-1", 0x20, "x", 1, frame, sizeof(frame));
+	CHECK(!aprs_host_frame(frame, n, now));
+	run(5000);
+	CHECK(hw.tx_calls == 0);
+	chan.rx_hz = chan.tx_hz = CH_HZ;
+	chan.mode = RADIO_MODE_DMR;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("Q1TST");	// RAM only: a restart of the radio core clears it
+	run(200);
+	aprs_get_view(&v);
+	CHECK(v.pk_block == APRS_NOT_FM && !aprs_host_frame(frame, n, now));
+}
+
+// A KISS parameter from the host through the host port's own parser (aprs_host.c)
+static void pk_param(uint8_t cmd, uint8_t value)
+{
+	uint8_t kiss[8];
+	size_t k = kiss_encode(cmd, &value, 1, kiss, sizeof(kiss));
+	aprs_host_feed(kiss, k, now);
+}
+
+// The radio core's side (aprs.md 9.2): no retune before keying, the channel's subtone, the host's slot time
+static void test_packet_no_retune_slot(void)
+{
+	reset();
+	chan.tx_tone = (subtone_t){ TONE_CTCSS, 1000 };	// 100.0 Hz on transmit
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("Q1TST");
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.kiss = true;
+	c.packet = true;
+	aprs_set_cfg(&c, now);
+	run(200);
+	pk_param(KISS_CMD_PERSIST, 255);	// every clear slot
+	pk_param(KISS_CMD_SLOTTIME, 1);
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1TST-1", 0x20, "slot", 4, frame, sizeof(frame));
+	int rx0 = hw.rx_calls;
+	uint32_t t0 = now;
+	CHECK(pk_send(frame, n));
+	uint32_t fast = now - t0;
+	CHECK(hw.rx_calls_at_key == rx0);	// keyed without a retune
+	CHECK(hw.tx_hz == CH_HZ && hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 1000);
+	CHECK(hw.rx_hz == CH_HZ && !hw.keyed);	// back on the channel's receive
+	pk_param(KISS_CMD_SLOTTIME, 25);	// 250 ms
+	t0 = now;
+	int starts = hw.starts;
+	CHECK(aprs_host_frame(frame, n, now) && wait_start(starts + 1, 5000));
+	uint32_t slow_start = now - t0;
+	wait_idle();
+	(void)fast;
+	CHECK(slow_start >= 250u);
+	// fast covers the whole send; the start alone with SLOTTIME 1 is within a few polls
+	pk_param(KISS_CMD_SLOTTIME, 1);
+	t0 = now;
+	starts = hw.starts;
+	CHECK(aprs_host_frame(frame, n, now) && wait_start(starts + 1, 5000));
+	CHECK(now - t0 <= 100u && slow_start >= now - t0 + 150u);
+	wait_idle();
+}
+
+// A carrier on the channel holds the job, while the channel's receive (and the demodulator) keep running; the job goes
+// once it clears. Busy for APRS_CSMA_GIVE_UP_MS: dropped. PTT while waiting: dropped
+static void test_packet_busy_channel(void)
+{
+	fake_tap.caps = AUDIO_TAP_FM_RX;	// a board whose FM receive audio is on the PCM stream
+	memset(&pcm, 0, sizeof(pcm));
+	packet_setup();
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.rx_on = true;
+	aprs_set_cfg(&c, now);
+	run(200);
+	CHECK(aprs_rx_listening());		// on the packet channel
+	pk_param(KISS_CMD_PERSIST, 255);
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1TST-1", 0x20, "busy", 4, frame, sizeof(frame));
+	hw.noise_on_ch = 20;			// a strong carrier
+	run(500);
+	int starts = hw.starts;
+	CHECK(aprs_host_frame(frame, n, now));
+	run(2000);
+	CHECK(hw.starts == starts && sm.view.state == RS_RX);	// waiting (no job starts while the squelch is open)
+	CHECK(aprs_rx_listening() && hw.rx_hz == CH_HZ);	// the demodulator keeps listening while it waits
+	hw.noise_on_ch = 0;			// the carrier drops
+	CHECK(wait_start(starts + 1, 3000) && hw.tx_hz == CH_HZ);
+	wait_idle();
+	// Busy past the stale time: dropped, nothing sent later
+	aprs_view_t v0, v;
+	aprs_get_view(&v0);
+	hw.noise_on_ch = 20;
+	run(500);
+	starts = hw.starts;
+	int rx0 = hw.rx_calls;
+	CHECK(aprs_host_frame(frame, n, now));
+	run(10000u + 1000u);		// PACKET_STALE_MS (aprs_int.h) and a second
+	aprs_get_view(&v);
+	CHECK(v.rf_busy >= v0.rf_busy + 1 && sm.aprs_phase == 0 && hw.rx_calls == rx0);	// no retune meanwhile
+	hw.noise_on_ch = 0;
+	run(3000);
+	CHECK(hw.starts == starts);
+	// PTT while a job waits for its slot (a clear channel, p = 1/256 so it waits): the job is dropped
+	pk_param(KISS_CMD_PERSIST, 0);
+	pk_param(KISS_CMD_SLOTTIME, 25);
+	CHECK(aprs_host_frame(frame, n, now));
+	run(500);
+	CHECK(sm.aprs_phase == 1 && !hw.keyed);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.aprs_phase == 0);
+	req(RREQ_PTT, 0);
+	hw.noise_on_ch = 0;
+	run(3000);
+	CHECK(hw.starts == starts);
+	fake_tap.caps = 0;
+}
+
+// A host's window: four frames at once are all taken (queue of 4), and two frames of 256 bytes of information, the
+// worst case for bit stuffing (all 0xFF), go out in one transmission (aprs.md 9.2)
+static void test_packet_window(void)
+{
+	packet_setup();
+	static char info[AX25_INFO_MAX];
+	memset(info, 0xFF, sizeof(info));
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1TST-1", 0x20, info, sizeof(info), frame, sizeof(frame));
+	int starts = hw.starts;
+	nframes = 0;
+	int taken = 0;
+	for (int i = 0; i < 4; i++) {
+		taken += aprs_host_frame(frame, n, now) ? 1 : 0;
+	}
+	CHECK(taken == 4);
+	CHECK(wait_start(starts + 1, 3000));
+	CHECK(nframes == 2);			// two in the first transmission
+	wait_idle();
+	CHECK(wait_start(starts + 2, 5000) && nframes == 4);	// the other two in the next
+	wait_idle();
+}
+
+// The duty cycle: at most PACKET_DUTY_MS keyed in any minute; frames past it wait, and are dropped once stale
+static void test_packet_duty_cycle(void)
+{
+	packet_setup();
+	static char info[AX25_INFO_MAX];
+	memset(info, 'U', sizeof(info));	// 0x55: no stuffing, a steady length
+	uint8_t frame[AX25_FRAME_MAX];
+	size_t n = pk_frame("Q1TST-1", 0x20, info, sizeof(info), frame, sizeof(frame));
+	uint32_t keyed = 0, start = now;
+	for (int i = 0; i < 20 && now - start < 50000; i++) {
+		int starts = hw.starts;
+		aprs_host_frame(frame, n, now);
+		if (wait_start(starts + 1, 3000)) {
+			keyed += (uint32_t)hw.nbits * 1000u / 1200u;
+			wait_idle();
+		}
+	}
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.duty_holds >= 1);
+	CHECK(keyed <= 30000u);
+	CHECK(keyed >= 25000u);			// it did send up to the cap
+	CHECK(v.rf_busy >= 1);			// held frames went stale and were dropped
+}
+#endif
+
 static void test_message_ends_blocked(void)
 {
 	reset();
@@ -2280,6 +2654,23 @@ int main(void)
 	test_tx_power();
 	test_tx_power_own();
 	test_host_kiss_nmea();
+	test_kiss_aprs_mode_ui_only();
+#if CONFIG_APRS_PACKET
+	test_packet_basics();
+	test_packet_no_burst_limit();
+	test_packet_txdelay();
+	test_packet_holds_aprs();
+#if CONFIG_APRS_RX
+	test_packet_rx_to_host();
+#endif
+	test_packet_channel_blocks();
+	test_packet_duty_cycle();
+	test_packet_no_retune_slot();
+	test_packet_window();
+#if CONFIG_APRS_RX
+	test_packet_busy_channel();
+#endif
+#endif
 	test_messages();
 	test_message_ends_blocked();
 	test_third_party_messages();

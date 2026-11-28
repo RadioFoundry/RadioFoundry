@@ -35,14 +35,14 @@ static void view_settings(dl_text_t *t)
 		"set.aprs_power=%u\n", c.boot, c.level, c.txdelay, word(c.via, vias, 3), (unsigned)c.dmr_dst, c.power);
 	dl_text(t, "set.aprs_dmr_udt=%u\nset.aprs_kiss=%u\nset.aprs_rx=%u\nset.aprs_igate=%u\n",
 		c.dmr_udt, c.kiss, c.rx_on, c.igate);
-	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_to_is=%u\nset.aprs_mute=%u\n", c.igate_tx, c.digi, c.to_is,
-		c.mute);
+	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_to_is=%u\nset.aprs_mute=%u\nset.aprs_packet=%u\n",
+		c.igate_tx, c.digi, c.to_is, c.mute, c.packet);
 }
 
 void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 {
 	static const char *const blocks[] = { "ok", "no_call", "no_freq", "not_amateur", "no_position", "no_afsk",
-					      "busy" };
+					      "busy", "not_fm", "scanning", "packet" };
 	static const char *const srcs[] = { "none", "gps", "host", "fixed" };
 	static const char *const fails[] = { "none", "busy", "aborted", "no_key", "no_afsk", "timeout" };
 	static const char *const whys[] = { "none", "interval", "smart", "turn", "distance", "ptt", "manual", "boot" };
@@ -55,8 +55,10 @@ void debuglink_view_aprs(uint8_t part, dl_text_t *t)
 	aprs_get_view(&v);
 	dl_text(t, "aprs.built=1\naprs.afsk_built=%u\naprs.dmr_built=%u\naprs.rx_built=%u\naprs.igate_built=%u\n",
 		CONFIG_APRS_AFSK, CONFIG_APRS_DMR, CONFIG_APRS_RX, CONFIG_APRS_IGATE);
-	dl_text(t, "aprs.call=%s\naprs.block=%s\naprs.freq_hz=%u\n", v.call, word(v.block, blocks, 7),
+	dl_text(t, "aprs.call=%s\naprs.block=%s\naprs.freq_hz=%u\n", v.call, word(v.block, blocks, 10),
 		(unsigned)v.freq_hz);
+	dl_text(t, "aprs.packet_built=%u\naprs.packet=%u\naprs.pk_block=%s\naprs.duty_holds=%u\n", CONFIG_APRS_PACKET, v.packet,
+		word(v.pk_block, blocks, 10), (unsigned)v.duty_holds);
 	dl_text(t, "aprs.pos_src=%s\naprs.pos_valid=%u\n", word(v.pos_src, srcs, 4), v.pos_valid);
 	if (v.pos_valid) {
 		dl_text_deg(t, "aprs.lat", v.lat);
@@ -154,6 +156,12 @@ static uint8_t set_field(uint8_t field, uint32_t val)
 	case DL_APRS_F_DIGI: c.digi = (uint8_t)val; break;
 	case DL_APRS_F_TO_IS: c.to_is = val != 0; break;
 	case DL_APRS_F_MUTE: c.mute = val != 0; break;
+	case DL_APRS_F_PACKET:
+		if (!CONFIG_APRS_PACKET) {
+			return DL_ST_BAD_ARG;
+		}
+		c.packet = val != 0;
+		break;
 	case DL_APRS_F_POWER:
 		if (val > board.power_count) {
 			return DL_ST_BAD_ARG;

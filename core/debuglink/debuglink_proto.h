@@ -250,6 +250,7 @@ enum {
 	DL_APRS_F_POWER,		// RF power: 0 = the radio's current level, n = the board's level n - 1
 	DL_APRS_F_AMBIGUITY,		// position ambiguity 0-4 (APRS101 ch. 8), for APRS packets and DMR reports
 	DL_APRS_F_MUTE,			// the speaker silent on the APRS frequency 0/1
+	DL_APRS_F_PACKET,		// KISS mode: 0 APRS, 1 Packet (aprs.md 9.2; CONFIG_APRS_PACKET, else refused)
 };
 
 // DL_CMD_SNMP operations (first payload byte; docs/spec/debuglink.md 3.17)

@@ -92,6 +92,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "aprs_station", "wait:600000 aprs:heard ok" },
 	{ "aprs_station_text", "aprs:heard ok up up" },
 	{ "aprs_station_evicted", "aprs:heard ok aprs:evict down" },
+	{ "aprs_packet", "ok 6 8 up up up up up ok down down down ok" },	// Tools > APRS, KISS mode Packet (aprs.md 9.2)
 	{ "hub", "ok" },
 	{ "contacts", "ok 1" },
 	{ "contacts_find", "ok 1 5 6" },
@@ -310,6 +311,7 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_roaming", "ok 6 6 1 wait:4000" },
 	{ "w_aprs", "ok 6 8" },
 	{ "w_aprs_nocall", "aprs:nocall ok 6 8" },
+	{ "w_aprs_packet", "ok 6 8 up up up up up ok down down down ok" },	// KISS on, KISS mode Packet (aprs.md 9.2)
 	{ "w_fixed_position", "ok 7 5 down down ok 1 3 3 7 4 9 0 ok 2 8 4 3 8 8 0 down ok wait:3000" },
 	{ "w_fixed_position_edit", "ok 7 5 down down ok 1 3 3 7" },
 	{ "w_aprs_heard", "ok 6 8 up ok" },
