@@ -29,7 +29,7 @@
 #define ID_TRIES	3u
 #define ID_RESET_MS	100u		// stock: soft reset, this long, release, this long, read again
 #define REG_ID		0x00
-#define REG_PAGE	0x7F		// the FD6818 family's page select: page 0 before the reset
+#define REG_PAGE	RFBUS_REG_PAGE	// the FD6818 family's page select: page 0 before the reset
 
 typedef enum { CHIP_NONE, CHIP_BK4819, CHIP_FD6818, CHIP_7813, CHIP_AT1141 } chip_t;
 
@@ -241,7 +241,7 @@ bool db25d_main_tone_heard(uint16_t r0c, uint8_t type)
 }
 
 void db25d_main_af(db25d_af_t af) { sh_main.ops->af(sh_main.chip, sh_af(af)); }
-void db25d_main_af_gain(uint8_t gain) { sh_main.ops->af_gain(sh_main.chip, gain); }
+void db25d_main_af_db10(int16_t db10) { sh_main.ops->af_db10(sh_main.chip, db10); }
 
 void db25d_main_status(uint16_t *r67, uint16_t *r65, uint16_t *r0c)
 {
@@ -262,18 +262,10 @@ bool db25d_main_is_fd6818(void)
 bool db25d_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
 {
 	chip_t k = chip == 0 ? main_chip : chip == 1 ? lo_chip : CHIP_NONE;
-	if (k == CHIP_NONE || page != 0 || reg > 0x7Fu || (write && *val > 0xFFFFu)) {
+	if (k == CHIP_NONE || page != 0) {
 		return false;	// CHIP_NONE also before db25d_rf_init identified the chips
 	}
-	if (write && reg == REG_PAGE && (k == CHIP_FD6818 || k == CHIP_7813)) {
-		return false;	// a page select would leave the radio task's page 0 accesses on another page
-	}
-	rfbus_t *bus = chip == 0 ? &bus_main.bus : &bus_lo.bus;
-	if (write) {
-		rfbus_write(bus, reg, (uint16_t)*val);
-	}
-	*val = rfbus_read(bus, reg);
-	return true;
+	return rfbus_chip_reg(chip == 0 ? &bus_main.bus : &bus_lo.bus, reg, val, write, k == CHIP_FD6818 || k == CHIP_7813);
 }
 
 uint16_t db25d_main_glitch(void)

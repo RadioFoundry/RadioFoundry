@@ -132,16 +132,51 @@ the radio stopped before the display was lit, until a power cycle; that fault is
 
 **Speaker volume.** The BK4819 init (table in 4.3) writes register 0x48 as 0xB3BF and then 0xB3B3 near the end, so the AF
 DAC gain nibble ends at 3. Neither ADC 0 nor ADC 7 is a volume knob, and the VOL/SQL key may be a squelch key rather than
-volume (unverified). RadioFoundry gives the radio a volume of its own: 16 steps (`RADIO_VOLUME_MAX`) on the AF DAC gain nibble (bits 3:0, the public BK4819 meaning), with the other fields of 0x48 left at 0xB3B3's upper bits. Step 0 is mute (register 0x47 to its mute word, and the chip's output off); steps 1..16 give nibble 0..15, the table being `nibble = (step - 1) * DB25D_VOL_GAIN_TOP / 15` in `radio_db25d.c` (`DB25D_VOL_GAIN_TOP` is 15; lower it if the top steps distort). Nibble 3 is step 4; the default step 8 gives nibble 7. The dB per nibble step, and whether the top steps distort the speaker, are not measured (unverified). The debug link can set a step (`radio-features.md` 4.2). In DMR the chip's
-output is the modem's input (4.5): it gets the digital gain word 0xB174 (nibble 4) and the volume step comes back when the radio
-returns to FM. DMR voice and beeps leave the modem's codec line out instead (4.5), so the same step also sets the HR_C7000 line out
-gain (GCR_DACL, `hrc7000_volume_db`): 0 dB at the default step 8, 3 dB less a step below it (step 1 is -21 dB) and up to
-`DB25D_PCM_VOL_TOP_DB` (12 dB) at step 16; step 0 keeps the amplifier off. The radio sets `volume_pcm`, so beeps play at
-`beep_level` and the volume scales them on the way out. The board also gives the radio core the line out gain as its curve
-(`volume_db10`), so above step 7 each beep is played softer by the gain added over step 7's (`radio-features.md` 4):
-at step 16 the beep is 15 dB below `beep_level`. The speaker volume itself never changes for a beep. The curve is the
-register's nominal dB, not measured at the speaker (unverified): if the line out gains less than that, beeps at the top
-steps sound softer than at step 7, never louder.
+volume (unverified). RadioFoundry gives the radio a volume of its own: 16 steps (`RADIO_VOLUME_MAX`) on the
+radio core's curve (`radio_volume_db10`, `radio-features.md` 4): 0 dB at step 16, 2 dB less each step down. Step 0
+is mute (register 0x47 to its mute word, the chip's output off and the amplifier off). The debug link can set a step
+(`radio-features.md` 4.2).
+
+Register 0x48's fields, measured at the speaker:
+
+| Bits | Field | Step |
+|---|---|---|
+| 11:10 | RX gain 1 | 0, -6, -12, -18 dB |
+| 9:4 | RX gain 2 | 0.5 dB a code |
+| 3:0 | AF DAC gain | linear in amplitude, not in dB: +8.5, +5.8, +3.6, +2.2, +2.0, +1.5, +0.9 dB for the first steps up from 0 |
+
+FM follows the curve on the gains ahead of the DAC (`bk4819_set_af_db10`): the DAC nibble stays at 15, gain 2 goes
+down 0.5 dB a code from 0x3B (`BK4819_AF_TOP_GAIN2`, the init table's value), and gain 1's 6 dB stages take over below
+gain 2's range. With the gain cut ahead of the DAC, the hiss at step 1 is about 2 dB above the nibble mapping's, near
+the room's noise floor. In DMR the chip's output is the modem's input (4.5): the chip gets the digital gain word 0xB174
+(nibble 4), and the volume comes back when the radio returns to FM.
+
+DMR, NXDN and P25 voice and beeps leave the modem's codec line out instead (4.5), which never passes the main chip's AF
+gain. That path follows the curve on the HR_C7000 line out gain (GCR_DACL, 1 dB a code, `hrc7000_dac_code`), at
+`DB25D_PCM_TRIM_DB` (15 dB) over the curve, so decoded voice plays at the FM level. Measured at the speaker of a radio
+with a BK4819 main chip, with the same recorded voice in each mode:
+
+| Step | FM | DMR | NXDN | P25 |
+|---|---|---|---|---|
+| 3 | -21.0 dB | -20.9 dB | | |
+| 7 | -13.1 dB | -13.1 dB | -13.1 dB | -13.2 dB |
+| 12 | -4.3 dB | -4.3 dB | -4.4 dB | -4.7 dB |
+| 16 | -0.2 dB | -0.4 dB | -0.5 dB | -0.5 dB |
+
+Wide FM measures within 0.4 dB of narrow FM at steps 12 and 16. The microphone recorded no clipped samples at any step.
+From step 12 up, voice peaks compress: from step 12 to 16 the quiet parts of the voice rise by the curve's 8 dB, the
+loud parts by about 3 dB, the same in every mode. The compression is past the point where the two paths meet (the
+amplifier, the speaker or the test microphone; a check with the microphone farther away is open), so no trim changes
+the compression. On a radio with an FD6818 main chip, FM keeps that chip's 16 AF levels, one a step from the top; their
+dB and the trim against them are not measured (unverified).
+
+The radio sets `volume_pcm`, so beeps play at `beep_level` and the line out scales them on the way out; at the steps
+measured they follow the voice. At steps 12 and 16 a beep measures the same level in FM and DMR, within 0.6 dB
+between the two steps and about 2 dB over step 7: the cap holds beeps at step 8's level. The board gives the core the
+curve itself as `volume_db10`
+(`radio_volume_curve_db10`), so above step 8 each beep is played softer by the gain added over step 8's
+(`radio-features.md` 4): at step 16 the beep is 16 dB below `beep_level`. The speaker volume itself never changes for a
+beep.
 
 Switching the amplifier on (PTA24 low) pops, whatever the order of the other speaker pins (measured). So the board
 gives the radio core an amplifier hang (`hal_audio_t.speaker_warm`, `speaker_hang_s` 5 s, `radio-features.md` 4):
@@ -1058,7 +1093,7 @@ State on a radio:
 | Display | `st7735` on a 4-wire serial bus: SPI2 or bit-banged, chosen by the ADC 2 strap |
 | Power | No battery (`CAP_NO_BATTERY`): a mobile on a fixed 13.8 V supply with no supply reading (3.3). The core shows no battery icon, percentage, Battery saver or Low battery warning setting, and has no battery monitor, so it never warns or refuses to transmit for the battery. `hal_power_t` has no `battery_mv` or `battery_pct`. The diagnostics page shows the raw ADC channels |
 | Keys | Matrix and encoder positions checked on the radio. VOL/SQL is `ACT_VOLUME`: the volume screen, then the encoder (`radio-features.md` 4.2) |
-| Volume | No knob (`hal_power_t.volume()` is -1): the stored step (0..16) goes to `hal_radio_t.volume()` and sets the BK4819 AF DAC gain (3.3) for FM and the HR_C7000 line out gain for DMR voice and beeps; the debug link sets it too (op 30). Checked on the radio in FM: the steps change the level and step 0 is silent. DMR: not yet checked on the radio |
+| Volume | No knob (`hal_power_t.volume()` is -1): the stored step (0..16) goes to `hal_radio_t.volume()`, which follows the radio core's 2 dB a step curve on the BK4819 RX gains (3.3) for FM and on the HR_C7000 line out gain for DMR, NXDN and P25 voice and beeps; the debug link sets the step too (op 30). Checked on the radio: at steps 3 and 7 FM and decoded voice play within 0.1 dB, steps 1 and 5 follow the curve, and step 0 is silent. Steps above 7: not yet checked |
 | Storage | `CONFIG_NAND_STORAGE` (on): settings kept in NAND blocks 1920-1951 through `drivers/flash/nand_sectors` (6.6). On the owner's radio the region mounted clean (no foreign data, no bad blocks) and the VFO frequency survived a chip reset |
 | Codeplug over the cable | `CONFIG_CPS_OPENFW` (on): the open-firmware CPS on the host link (UART1, 115200) over the codeplug areas of 6.6, at the STM32 radios' addresses (EEPROM part at 0, flash part at 0x20000, no `--offset`). Radio info reports type 6; no MCU ROM or flash security register area; no calibration window. `tools/cps_client.py --port /dev/ttyUSB1 read / write / verify`, qdmr should work as well (not tried). The channels and zones come from the stored codeplug (`core/codeplug`), which the radio re-reads at the end of a session. Host-tested on a simulated NAND with power cuts; read, write and verify run on the owner's radio (read 63 s, write 76 s). `CONFIG_APRS_RX` and `CONFIG_APRS_IGATE` are off (no FM receive PCM on this radio) |
 | Codec | Profiles for three 018 vendor firmware files and the 020 program flash read (8); `make` merges one into `rfoundry_db25d_codec.bin` when its file is in `codecs/`. On the owner's radio (2026-10-19), with the code moved to the codec window: the 020 read and the 2024-09-23 file each give VERSION `codec=db25d-020` / `db25d-2409` and decode a bench voice call with every one of its 234 AMBE frames |

@@ -48,6 +48,13 @@ static inline void rfbus_delay_ms(rfbus_t *bus, uint32_t ms)
 
 void rfbus_write_table(rfbus_t *bus, const rfbus_regval_t *t, size_t n);
 
+#define RFBUS_REG_PAGE	0x7F	// the page select of the chips that have pages (the FD6818 family)
+
+// The debug link's CHIP_REG (debuglink.md 3.24) for a chip on this bus: registers 0x00-0x7F, 16 bits, one frame each.
+// paged: the chip has pages and its driver works on page 0, so a write to RFBUS_REG_PAGE is refused. False for a
+// NULL bus (not attached yet) or anything out of range. No driver follows a write: its next set-up overwrites the value
+bool rfbus_chip_reg(rfbus_t *bus, uint8_t reg, uint32_t *val, bool write, bool paged);
+
 // ---- The 3-wire bit-banged bus ----
 
 typedef struct {

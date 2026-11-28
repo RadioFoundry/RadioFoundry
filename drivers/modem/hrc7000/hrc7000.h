@@ -235,10 +235,6 @@ void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code);
 #define HRC7000_DAC_MIN_DB	(-31)
 #define HRC7000_DAC_MAX_DB	32
 uint8_t hrc7000_dac_code(int db);
-// A soft volume on the line out (radios without a knob, whose DMR voice and beeps play through the codec DAC): volume
-// step 1..steps as dB, 0 dB at def_step (the level before the volume reached the DAC), 3 dB a step below it and top_db
-// spread over the steps above. Step 0 gives the least gain; the board mutes it elsewhere
-int hrc7000_volume_db(unsigned step, unsigned def_step, unsigned steps, int top_db);
 
 // FM receive / transmit (8.2). wide = 25 kHz. FM receive turns the FM audio path to the speaker on
 void hrc7000_fm_rx(hrc7000_t *d, bool wide);

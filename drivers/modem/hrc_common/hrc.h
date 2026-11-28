@@ -96,6 +96,10 @@ void hrc_attach(hrc_t *dev, const hrc_bus_t *bus, const hrc_chip_t *chip);
 // --- Register access (the page is the caller's: HRC_PAGE_SYS is mapped to the chip's configuration page) ---
 bool hrc_write(hrc_t *dev, uint8_t page, uint8_t reg, uint8_t val);
 bool hrc_read(hrc_t *dev, uint8_t page, uint8_t reg, uint8_t *val);
+// The debug link's CHIP_REG (debuglink.md 3.24): pages 1 and 4 only (2 and 3 are the data and vocoder FIFOs, which a
+// read would drain), one byte, each access one bus transaction. False for any other page, a value over 0xFF or a chip
+// not attached yet. No driver follows a write: its next set-up overwrites the value
+bool hrc_chip_reg(hrc_t *dev, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 bool hrc_write_burst(hrc_t *dev, uint8_t page, uint8_t reg, const uint8_t *data, uint16_t len);
 bool hrc_read_burst(hrc_t *dev, uint8_t page, uint8_t reg, uint8_t *data, uint16_t len);
 // 11-bit address write (page 1 tone table)

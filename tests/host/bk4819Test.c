@@ -436,6 +436,21 @@ static void test_sequences(void)
 	bk4819_set_af_gain(&m, 200);
 	CHECK(chips[0].log[1].val == 0xB3BF && m.af_gain == 0xB3BF);
 
+	// The volume in dB: DAC gain 15, RX gain 2 down 0.5 dB a code from 0x3B, gain 1's 6 dB stages below code 1
+	chips[0].n = 0;
+	bk4819_set_af_db10(&m, 0);
+	CHECK(chips[0].log[0].val == 0xB3BF);
+	bk4819_set_af_db10(&m, 15);		// above the top: the top
+	CHECK(chips[0].log[1].val == 0xB3BF);
+	bk4819_set_af_db10(&m, -20);		// 2 dB: 4 codes
+	CHECK(chips[0].log[2].val == 0xB37F);
+	bk4819_set_af_db10(&m, -290);		// 29 dB: code 1, gain 1 still 0 dB
+	CHECK(chips[0].log[3].val == 0xB01F);
+	bk4819_set_af_db10(&m, -300);		// 30 dB: -6 dB on gain 1, code 11
+	CHECK(chips[0].log[4].val == (0xB000 | 1u << 10 | 11u << 4 | 0xF));
+	bk4819_set_af_db10(&m, -2000);		// below the range: the least gain, never code 0 (mute)
+	CHECK(chips[0].log[5].val == (0xB000 | 3u << 10 | 1u << 4 | 0xF));
+
 	// Analog mode set (stock): AFC on (0x73 bit 4 cleared, the rest kept), 0x7E, 0x2B, live microphone 0x50
 	chips[0].regs[0x73] = 0x0112;
 	chips[0].n = 0;

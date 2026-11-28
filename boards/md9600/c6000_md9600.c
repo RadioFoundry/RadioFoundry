@@ -46,7 +46,10 @@
 
 #define C6000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first access (as the other HR_C6000 radios)
 #define DMR_MIC_GAIN		7	// the other HR_C6000 radios' value (unverified here)
-#define RX_GAIN_DB		2	// 4:0x37 = 0xC2 (unverified)
+#ifndef MD9600_RX_GAIN_DB
+#define MD9600_RX_GAIN_DB	4	// 4:0x37 = 0xC4: DMR, NXDN and P25 voice at the FM level (hardware-md9600.md 6.1)
+#endif
+#define RX_GAIN_DB		MD9600_RX_GAIN_DB
 #define SAFE_GAIN		0x80u	// modulation gain without a calibration value
 #define VOICE_SPI_PINS		(GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5)	// PB3 SCK, PB4 MISO, PB5 MOSI (AF5)
 
@@ -444,6 +447,13 @@ void md9600_c6000_init(void)
 	diag.up = hrc_read(&modem, 4, 0x10, &diag.r10);
 	stm32_hrc_dmr_init(&modem, &dmr_board);
 	speaker_apply();
+}
+
+// The debug link's CHIP_REG (board.chip_reg, hardware-md9600.md 4.1): chip 1 is the HR_C6000 (hrc_chip_reg). Each
+// access is one masked transaction (hrc_bus.c), so the radio task's and the modem ISRs' accesses don't mix with it
+bool md9600_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	return chip == 1 && hrc_chip_reg(&modem, page, reg, val, write);
 }
 
 #if CONFIG_DMR

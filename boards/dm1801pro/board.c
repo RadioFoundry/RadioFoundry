@@ -136,6 +136,7 @@ const board_t board = {
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
 	.system = &hrc_system,
+	.chip_reg = dm1801pro_chip_reg,
 	.hw_line = hw_line,
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,

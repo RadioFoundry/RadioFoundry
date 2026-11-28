@@ -782,6 +782,13 @@ uint8_t dm1801pro_codec_byte(uint8_t reg)
 	return hrc7000_codec_rd(&modem, reg);
 }
 
+// The debug link's CHIP_REG (board.chip_reg, hardware-dm1801pro.md 5.1): chip 0 is the FD6818, page 0
+// (rfbus_chip_reg)
+bool dm1801pro_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	return chip == 0 && page == 0 && rfbus_chip_reg(fd.bus, reg, val, write, true);	// fd.bus: NULL before radio init
+}
+
 const hal_radio_t dm1801pro_radio = {
 	.init = init,
 	.set_mode = set_mode,

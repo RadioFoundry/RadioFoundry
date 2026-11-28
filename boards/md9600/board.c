@@ -155,6 +155,7 @@ const board_t board = {
 #endif
 	.power = &md9600_power,
 	.flash = &stm32_spi_flash,
+	.chip_reg = md9600_chip_reg,
 	.hw_line = hw_line,
 #if CONFIG_DIAG
 	.diag_line = md9600_diag_line,

@@ -52,7 +52,7 @@ typedef struct {
 #define BK4819_REG_FREQ_HI	0x39
 #define BK4819_REG_BANDWIDTH	0x43
 #define BK4819_REG_AF		0x47
-#define BK4819_REG_AF_GAIN	0x48	// bits 3:0 AF DAC gain
+#define BK4819_REG_AF_GAIN	0x48	// bits 11:10 RX gain 1 (0/-6/-12/-18 dB), 9:4 RX gain 2 (0.5 dB a code), 3:0 AF DAC gain
 #define BK4819_REG_TX_AUDIO	0x50	// bit 15 set: transient while a tone is set up; the stock analog value is 0x3B18 (live)
 #define BK4819_REG_SUBAUDIO	0x51
 #define BK4819_REG_TONE_CTRL	0x70	// bit 15 tone 1 on, bits 14:8 its gain (bit 7 / bits 6:0: tone 2)
@@ -160,6 +160,14 @@ void bk4819_set_af(bk4819_t *dev, uint16_t af);
 void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool high);
 // AF DAC gain 0..15 (the received audio level)
 void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain);
+// The received audio level in tenths of a dB below the loudest (db10 <= 0): the DAC gain at 15 and RX gain 2 at
+// BK4819_AF_TOP_GAIN2, less 0.5 dB a code of gain 2, with gain 1's 6 dB stages below gain 2's range. Gain 2 is
+// linear in dB; the DAC gain isn't (about 20 log(n + 0.5)), so the volume leaves it at the top
+#ifndef BK4819_AF_TOP_GAIN2
+#define BK4819_AF_TOP_GAIN2	0x3Bu	// the init table's value (+3.5 dB)
+#endif
+_Static_assert(BK4819_AF_TOP_GAIN2 >= 1 && BK4819_AF_TOP_GAIN2 <= 0x3F, "gain 2 is 6 bits, 0 is its floor");
+void bk4819_set_af_db10(bk4819_t *dev, int16_t db10);
 // DMR receive (hardware-db25d.md 4.5): the stock firmware's digital mode set for the main chip, written when it enters a
 // digital channel: 0x2A, 0x51 = 0, AFC off, 0x52, 0x47, 0x7E, 0x43, 0x40 = 0, 0x27, 0x2B, 0x48, then the AF output on
 // with the digital bit (0x47 = 0x6143). The modem samples the chip's AF output, so the output stays on in DMR. Idle the

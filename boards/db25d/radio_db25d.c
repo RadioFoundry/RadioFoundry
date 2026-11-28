@@ -45,21 +45,16 @@
 #ifndef DB25D_TX_TONE_GAIN
 #define DB25D_TX_TONE_GAIN	BK4819_TONE_GAIN_STOCK
 #endif
-// Speaker volume steps 1..RADIO_VOLUME_MAX -> the AF DAC gain nibble (register 0x48 bits 3:0): the nibble rises with
-// the step, step 1 = 0 up to DB25D_VOL_GAIN_TOP at the top step; with 16 steps and TOP 15 that is nibble = step - 1.
-// The other fields of 0x48 stay at the stock value. Step 0 is mute. The stock firmware leaves the nibble at 3 after
-// its init and has no volume of its own that was found (hardware-db25d.md 3.3). The dB per nibble step is not
-// measured (INF): lower DB25D_VOL_GAIN_TOP if the top steps distort at the speaker
-#ifndef DB25D_VOL_GAIN_TOP
-#define DB25D_VOL_GAIN_TOP	15u
+// Speaker volume: both paths follow the core's curve (radio_volume_db10, 2 dB a step): FM on the main chip's RX gain
+// (bk4819_set_af_db10, step 16 as loud as the nibble's top), the PCM path (DMR, NXDN and P25 voice, beeps) on the
+// modem's line out gain, which never passes the main chip's AF gain (4.5). The line out is DB25D_PCM_TRIM_DB over the
+// curve, measured so decoded voice plays at the FM level (hardware-db25d.md 3.3)
+#ifndef DB25D_PCM_TRIM_DB
+#define DB25D_PCM_TRIM_DB	15
 #endif
-#define DB25D_VOL_GAIN_DEFAULT	3u
-// The same steps on the PCM path (DMR voice, beeps), which leaves the modem's codec line out and never passes the
-// main chip's AF gain (4.5): the line out gain, 0 dB at the default step as before the volume reached it, 3 dB a step
-// below and up to this many dB at the top step (hrc7000_volume_db). Not measured at the speaker (INF)
-#ifndef DB25D_PCM_VOL_TOP_DB
-#define DB25D_PCM_VOL_TOP_DB	12
-#endif
+#define PCM_DB(db10)		((db10) / 10 + DB25D_PCM_TRIM_DB)	// the line out gain at a point of the curve
+#define VOL_DAC_DEFAULT		(-PCM_DB(RADIO_VOLUME_DB10(RADIO_VOLUME_DEFAULT)))	// hrc7000_dac_code() of a gain <= 0
+_Static_assert(VOL_DAC_DEFAULT >= 0 && VOL_DAC_DEFAULT <= 31, "the default step's line out gain is 0 dB or less");
 #define TX_RX_OFF_US		50u		// 3.2: RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// ours: the chip's VCO calibration, before the PA is selected. The stock has none beyond the page's delay
 #define TX_SUPPLY_US		200u		// 3.2: PA select and PTA23 low, then this long before the TX supply
@@ -86,8 +81,8 @@ static bool have_rx;
 static bool transmitting;
 static bool audio_open;		// what audio() was last asked, restored after a transmission
 static bool vol_muted;		// volume step 0: the chip output stays off whatever audio() asks
-static uint8_t vol_gain = DB25D_VOL_GAIN_DEFAULT;	// the AF DAC gain nibble the volume step selects
-static uint8_t vol_dac;		// the modem's line out gain code the volume step selects (0 = 0 dB, the default step)
+static int16_t vol_db10 = RADIO_VOLUME_DB10(RADIO_VOLUME_DEFAULT);	// the curve at the step
+static uint8_t vol_dac = VOL_DAC_DEFAULT;	// the modem's line out gain code the volume step selects (0..31 = 0..-31 dB)
 static bool tx_uhf;
 static uint16_t tx_pa;
 // An FM transmission's highest level drive at its frequency (hal_radio_t.tx_drive_top), 0 when not transmitting FM
@@ -756,45 +751,24 @@ static void audio(bool on)
 	speaker_pins();
 }
 
-// The speaker volume (the radio core passes the step as a percent, no knob here): the chip's AF DAC gain, register 0x48 bits
-// 3:0, stepping with DB25D_VOL_GAIN_TOP. Step 0 closes the chip output as well, as the gain alone isn't known to be
-// silent. DMR: the chip's output is the modem's input (4.5), so it keeps the stock gain; the volume comes back with FM.
-// The PCM path's gain (vol_dac) is set in volume() in every mode
+// The speaker volume (the radio core passes the step as a percent, no knob here) on the main chip's RX gain. Step 0
+// closes the chip output as well, as the gain alone isn't known to be silent. DMR: the chip's output is the modem's
+// input (4.5), so it gets the fixed DMR gain word; the volume comes back with FM. The PCM path's gain (vol_dac) is set in
+// volume() in every mode
 static void volume_apply(void)
 {
 	if (!supported || mode == RADIO_MODE_DMR || transmitting) {
 		return;		// during a transmission nothing here moves: tx_stop() runs audio(), and the gain is in place
 	}
-	db25d_main_af_gain(vol_gain);
+	db25d_main_af_db10(vol_db10);
 	db25d_main_af(audio_open && !vol_muted ? DB25D_AF_FM : DB25D_AF_MUTE);
-}
-
-// The step back from its percent
-static unsigned volume_step(uint8_t percent)
-{
-	unsigned step = (percent * RADIO_VOLUME_MAX + 50u) / 100u;
-	return step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step;
-}
-
-// The line out gain the step gives the PCM path (vol_dac)
-static int8_t volume_db(uint8_t percent)
-{
-	return (int8_t)hrc7000_volume_db(volume_step(percent), RADIO_VOLUME_DEFAULT, RADIO_VOLUME_MAX, DB25D_PCM_VOL_TOP_DB);
-}
-
-// The same gain for the core's beep level (hal_radio_t.volume_db10): the register's own dB (hrc7000.h), not measured at
-// the speaker
-static int16_t volume_db10(uint8_t percent)
-{
-	return (int16_t)(volume_db(percent) * 10);
 }
 
 static void volume(uint8_t percent)
 {
-	unsigned step = volume_step(percent);
-	vol_muted = step == 0;
-	vol_gain = step == 0 ? 0 : (uint8_t)(((step - 1u) * DB25D_VOL_GAIN_TOP + (RADIO_VOLUME_MAX - 1u) / 2u) / (RADIO_VOLUME_MAX - 1u));
-	vol_dac = hrc7000_dac_code(volume_db(percent));
+	vol_muted = percent == 0;
+	vol_db10 = radio_volume_curve_db10(percent);
+	vol_dac = hrc7000_dac_code(vol_muted ? HRC7000_DAC_MIN_DB : PCM_DB(vol_db10));
 	if (modem.buf != NULL) {	// attached by init(), which applies vol_dac itself
 		hrc7000_set_dac_gain(&modem, vol_dac);
 		speaker_pins();		// step 0 and back: the amplifier
@@ -831,7 +805,7 @@ const hal_radio_t db25d_radio = {
 	.audio = audio,
 	.volume = volume,
 	.volume_pcm = true,	// the modem's line out gain scales DMR voice and beeps (vol_dac)
-	.volume_db10 = volume_db10,
+	.volume_db10 = radio_volume_curve_db10,	// beeps: the line out follows the curve
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,

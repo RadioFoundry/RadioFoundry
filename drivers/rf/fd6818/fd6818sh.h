@@ -20,7 +20,7 @@
 #define FD6818SH_ID_7813	0x7813u		// the sibling part, seen only as an LO
 
 #define FD6818SH_REG_STATE	0x03
-#define FD6818SH_REG_PAGE	0x7F		// 1 = page 1, for the registers a table marks so
+#define FD6818SH_REG_PAGE	RFBUS_REG_PAGE	// 1 = page 1, for the registers a table marks so
 
 typedef enum { FD6818SH_MAIN, FD6818SH_LO, FD6818SH_LO_7813 } fd6818sh_role_t;
 typedef enum { FD6818SH_TONE_NONE, FD6818SH_TONE_CTCSS, FD6818SH_TONE_DCS, FD6818SH_TONE_DCS_INV } fd6818sh_tone_t;

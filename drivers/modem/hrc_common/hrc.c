@@ -99,6 +99,17 @@ bool hrc_prompt_on(hrc_t *dev, bool on)
 	return hrc_write(dev, HRC_PAGE_SYS, 0x06, on ? (uint8_t)(v | 0x02u) : (uint8_t)(v & ~0x02u));
 }
 
+bool hrc_chip_reg(hrc_t *dev, uint8_t page, uint8_t reg, uint32_t *val, bool write)
+{
+	if (dev->bus == NULL || (page != HRC_PAGE_AUX && page != HRC_PAGE_SYS) || (write && *val > 0xFFu)) {
+		return false;
+	}
+	uint8_t v = (uint8_t)*val;
+	bool ok = (!write || hrc_write(dev, page, reg, v)) && hrc_read(dev, page, reg, &v);
+	*val = v;
+	return ok;
+}
+
 bool hrc_prompt_room(hrc_t *dev)
 {
 	uint8_t v;

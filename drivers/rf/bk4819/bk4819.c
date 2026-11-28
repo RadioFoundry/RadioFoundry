@@ -194,6 +194,19 @@ void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain)
 	bk4819_write(dev, BK4819_REG_AF_GAIN, (uint16_t)((dev->af_gain & 0xFFF0u) | gain));
 }
 
+void bk4819_set_af_db10(bk4819_t *dev, int16_t db10)
+{
+	int g2 = (int)BK4819_AF_TOP_GAIN2 + (db10 < 0 ? db10 / 5 : 0);	// 0.5 dB codes
+	unsigned g1 = 0;
+	for (; g2 < 1 && g1 < 3u; g1++) {
+		g2 += 12;	// gain 1 takes 6 dB more
+	}
+	if (g2 < 1) {
+		g2 = 1;		// 0 mutes
+	}
+	bk4819_write(dev, BK4819_REG_AF_GAIN, (uint16_t)((dev->af_gain & 0xF000u) | g1 << 10 | (unsigned)g2 << 4 | 0xFu));
+}
+
 // 4.5 DMR receive: the stock digital mode set, in its order. 0x27 and 0x48 are saved for the end; the stock firmware
 // leaves its digital values there when it goes back to analog, RadioFoundry doesn't
 static const regval_t dmr_rx_set[] = {

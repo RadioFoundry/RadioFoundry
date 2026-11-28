@@ -16,6 +16,8 @@
 extern const hal_display_t dm1801pro_display;
 extern const hal_input_t dm1801pro_input;
 extern const hal_radio_t dm1801pro_radio;
+// The debug link's CHIP_REG (board.chip_reg): chip 0 the FD6818, page 0
+bool dm1801pro_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 extern const hal_power_t dm1801pro_power;
 
 // Physical key bits returned by dm1801pro_input.scan(); the matrix positions and the four direct pins are in
