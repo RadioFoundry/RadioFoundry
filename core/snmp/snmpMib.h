@@ -11,6 +11,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "config.h"
 #include "snmp/snmp.h"
 
 // The enterprise number of the RadioFoundry MIB. TBD: 32473 is the IANA number reserved for documentation (RFC 5612), a
@@ -70,6 +71,7 @@ typedef struct {
 	uint32_t netToAir, netPacketsUp;	// the gateway: packets to the air side, packets from the air to the host
 	// Last, past what the MIB reads (its fields must stay within 255 octets: snmpMib.c)
 	char smsText[SNMP_TEXT_MAX + 1];	// the newest message (filled when an SMS event is new)
+#if CONFIG_TEMP
 	// The temperature sensors (core/app/temp.h) and the fan: read by instance, not through the offset table
 	uint8_t tempCount;		// rows, at most SNMP_TEMP_MAX
 	struct {
@@ -79,6 +81,7 @@ typedef struct {
 		int16_t dc;		// 0.1 degree C
 	} temp[SNMP_TEMP_MAX];
 	uint8_t fan;			// 0 no fan the firmware drives, 1 on, 2 off
+#endif
 } snmpData_t;
 
 enum { SNMP_ROLE_RADIO, SNMP_ROLE_HOTSPOT, SNMP_ROLE_SFR, SNMP_ROLE_SPLIT_TX, SNMP_ROLE_SPLIT_RX };

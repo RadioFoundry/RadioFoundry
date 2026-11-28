@@ -150,6 +150,8 @@ typedef struct {
 enum { DMR_BS_CACH_NONE, DMR_BS_CACH_OURS, DMR_BS_CACH_CHIP, DMR_BS_CACH_UNKNOWN };
 #endif
 
+// tx_release, play_*, slot_verified, clears_crc9 and cach_ticks are read only where board.mk says
+// BOARD_MODEM_VOICE := y (hal_traits.h)
 typedef struct {
 	// Chip on and in DMR mode (after the board's RF side is in DMR mode); events start flowing to cb
 	bool (*start)(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx);

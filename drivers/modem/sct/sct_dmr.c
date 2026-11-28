@@ -1371,6 +1371,11 @@ static void m_health(dmr_modem_health_t *h)
 	unlock();
 }
 
+// The core takes the voice hooks below only from a board with the trait (hal_traits.h): without it they do nothing
+#if !RFOUNDRY_MODEM_VOICE
+#error "the SCT modem plays the voice itself: set BOARD_MODEM_VOICE := y in the board's board.mk"
+#endif
+
 const hal_dmr_modem_t sct_dmr_modem = {
 	.start = m_start,
 	.stop = m_stop,

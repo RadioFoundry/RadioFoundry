@@ -435,7 +435,7 @@ static void link_section(dl_text_t *t)
 		dl_text(t, "input.hmic_frames=%u\ninput.hmic_errors=%u\n", (unsigned)hm.frames, (unsigned)hm.errors);
 	}
 	hal_bt_stats_t bt;
-	if (input_bt_stats(&bt)) {
+	if (CONFIG_BT_PTT && input_bt_stats(&bt)) {	// the test first: a build without the lines, LTO or not
 		dl_text(t, "input.bt_present=%u\ninput.bt_ptt=%u\ninput.bt_key=%u\ninput.bt_keys=%u\n", (unsigned)bt.present,
 			(unsigned)bt.ptt, (unsigned)bt.key, (unsigned)bt.keys);
 		dl_text(t, "input.bt_lines=%u\ninput.bt_errors=%u\ninput.bt_links=%u\ninput.bt_offs=%u\n",
