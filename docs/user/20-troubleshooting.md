@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 Open25-DM32 Authors -->
+<!-- Copyright (c) 2026 tylerwatt12 -->
 
 # Troubleshooting
 

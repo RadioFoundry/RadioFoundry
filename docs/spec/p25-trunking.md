@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 tylerwatt12 -->
 
 # P25 trunking
 
@@ -27,7 +28,8 @@ State:
 The radio runs are against a control channel `p25tool.py` writes from the same descriptions as the firmware, so they
 check the radio's timing, retunes and transmissions, not the layouts. Explicit network/RFSS status acquisition has
 also been checked by passive reception on a live system, without registration or affiliation.
-Every message layout of the transmit side comes from published descriptions, not a capture: 9 lists them.
+The affiliation request is checked against the TIA reference in 2.1. Other transmit-side layouts come from published
+descriptions, not a capture; 9 lists what remains unconfirmed.
 
 Sources: published descriptions of TIA-102.AABB (trunking control channel formats), TIA-102.AABC (trunking messages)
 and TIA-102.BAAA-A (the common air interface): test equipment application notes and public opcode references. Facts
@@ -48,9 +50,9 @@ block names the trunking formats.
 | Status symbols | as in every unit, one after each 70 information bits |
 
 The NID does not give a TSDU's length. The receiver (`p25_rx.c`, `rx_head`) decodes the first block as soon as its
-symbols are in and asks the framer for the next one until a block says it is the last, or the third is in. A block
-whose CRC fails still gives its best guess of the flag. For a packet, the header block gives the count of blocks that
-follow; a header whose CRC fails, or a packet longer than the unit buffer (eight blocks), is not taken.
+symbols are in and asks the framer for the next one until a CRC-valid block says it is the last, or the third is in.
+For a packet, the header block gives the count of blocks that follow; a header whose CRC fails, or a packet longer
+than the unit buffer (eight blocks), is not taken.
 
 TSDU and PDU are taken only on a trunked channel (`p25_engine_cfg_t.trunk`); a conventional channel refuses them as
 before. They go to the engine's `rx_unit` hook and never to the call layer.
@@ -101,6 +103,9 @@ Their receive fields enter the same identity checks as TSBK status; configured N
 Other multi-block bodies remain unsupported. The layouts follow figures 5 and 6 of Aeroflex's
 [Understanding Advanced P25 Control Channel Functions](https://www.viavisolutions.com/en-us/literature/understanding-advanced-p25-control-channel-functions-discontinued-application-notes-en.pdf).
 
+A TSDU ends on a CRC-valid last-block flag or the three-block maximum. A CRC-failed block's flag never ends
+framing early; later independent valid blocks remain available. A PDU with a bad header remains rejected as a unit.
+
 ### 2.1 Inbound requests
 
 A radio sends one block at a time, in a TSDU of one block (180 symbols), its status symbols "unknown"
@@ -117,6 +122,10 @@ The registration request carries the WACN and system ID the control channel name
 options are 0 (no emergency, clear, half duplex, priority 0). The affiliation request's reserved bits are 0; it
 carries no emergency flag. Its group and unit ID places were confirmed on a live control channel, which read them
 one octet early when they were packed at bits 16 and 32.
+
+The affiliation field positions follow TIA-102.AABC-E (2019), 6.1.9.1 / figure 6.1.9-1. The distinct simplex and
+unavailable offset values below are specified in 2.3.35, 2.3.36 and 2.3.41. TIA-102.AABB-B (2011), 5 / figure 5-2
+defines independent TSBKs, each with its own CRC; trusting only a valid block's LB is the bounded recovery rule here.
 
 ## 3. Channels to frequencies
 
@@ -144,7 +153,11 @@ offset. The `0x3D` form gives the offset in 250 kHz steps; the VHF/UHF (`0x34`) 
 channel spacings (9). A programmed identifier's offset (`tx_offset_hz`) is kept in 250 kHz steps where it divides,
 else in spacings; a programmed identifier with no offset takes the one the air gives. A control channel's inbound
 frequency is the configured `ctl[].tx_hz`, else its channel number (programmed, or from the network and RFSS status
-broadcasts) through the identifier table. A channel with no inbound frequency is not transmitted on.
+broadcasts) through the identifier table. Raw offset zero means simplex. Sign-only raw offset `0x100` in `0x3D`,
+or `0x2000` in `0x34`/`0x33`, means the implicit uplink is unavailable (`no_tx_offset`), not simplex. It cannot
+authorize transmit; an explicit control uplink or a later known offset is needed. A later unavailable offset
+revokes an earlier learned offset while preserving a genuinely programmed offset. A channel with no inbound
+frequency is not transmitted on.
 
 ## 4. The follower
 
@@ -157,7 +170,7 @@ one lock).
 | State | What it does | Leaves |
 |---|---|---|
 | HUNT | tunes the control channel candidates in turn: the programmed ones (`cfg.cc`, first the primary), then the ones learned off air (adjacent sites, secondary channels of this system), from the last one that answered | a candidate decodes and is the system: CONTROL |
-| CONTROL | reads every block; learns identifiers and control channels; follows grants it wants | a grant followed: VOICE. Nothing decoded for 1 s, or the network status names another system: HUNT |
+| CONTROL | reads every block; learns identifiers and control channels; follows grants it wants | a grant followed: VOICE. Nothing decoded for 1 s, or network/RFSS status conflicts with the selected identity: HUNT |
 | VOICE | the conventional call layer plays the call | a terminator, no voice for 1 s, the longest call, another call on the channel, an encrypted call skipped: CONTROL |
 
 Hunting:
@@ -172,7 +185,18 @@ Hunting:
 
 A candidate without a frequency (a channel number whose identifier is not known yet) is passed over. With WACN and
 system ID set to any, the first block decoded on a candidate of the right NAC holds it. RFSS status names the
-system but not the WACN: it settles a candidate only when the WACN is any.
+system but not the WACN: it settles a candidate only when the WACN is any. During HUNT, RFSS is checked against the
+configured system ID; the displayed identity retained from the previous system does not restrict a wildcard search.
+In CONTROL, a conflicting RFSS system also invalidates prior learned identity proof and stops grant/access admission.
+Reacquisition needs fresh network identity, including when the configured identity is wildcard; a grant cannot reuse
+stale proof after the conflict.
+
+The follower uses the existing `view.sys_ok` transmit gate. Every hunt candidate clears it; only a
+CRC-valid matching NET sets it. RFSS may settle a receive candidate but cannot confirm its WACN. A different RFSS
+system clears the retained WACN before updating the system ID. Remembered display identity, a configured identity,
+and an unrelated good block cannot authorize inbound requests or our voice grant without current NET confirmation.
+An accepted bad-CRC NET clears confirmation even when a later unrelated block passes its CRC. Normal returns from
+a voice channel retain confirmation; control-channel loss and a new hunt do not.
 
 Following a grant (group: `talk_group`, the `groups` list, or every group with `P25_FOLLOW_ALL_GROUPS`; unit to unit:
 to or from `unit_id`, unless `P25_FOLLOW_NO_UNIT`):
@@ -228,6 +252,11 @@ Registration (`view.reg`, `P25_REG_*`):
 | BLOCKED | the system's WACN is in BEE00..BEEFF (`p25_wacn_no_tx`) or its system ID is 00A (`p25_sysid_no_tx`), named by the network status broadcast, the RFSS status broadcast of the control channel held, voice channel link control (LCO 35, 36, 41) or the programming; an adjacent site's status blocks nothing: nothing is sent, a request in hand is dropped, answers are ignored, PTT says why | a follower restart only; the radio core then starts that system blocked until power off (7) |
 
 Losing the control channel and finding the same site again keeps the registration. Hunting resets the site to unknown.
+Transmission waits for a fresh matching NET even when the registration is retained. A changed WACN invalidates
+the old registration even if the system, RFSS and site numbers are the same. The existing registration model uses
+the observed local system identity; separate home-system identity and inter-system roaming are not implemented here.
+A BLOCKED follower remains blocked when a later NET names another network; verifying that identity cannot clear
+the block or change its PTT refusal reason.
 
 Sending (`acc_tick`): a block goes out only after a block of the control channel was heard since the tune, so its
 status symbols are known; while the last status symbol of the last unit said the inbound channel is busy, it waits
@@ -371,7 +400,7 @@ of a live control channel settles them.
 | The TDMA identifier's channel types: slots per carrier (types 0-2 one, 3 two, 4 four, others two) | only type 1 counts as FDMA; every other type is refused as TDMA |
 | The transmit offset's unit in the VHF/UHF and TDMA forms | taken as channel spacings; the `0x3D` form as 250 kHz. A programmed identifier's offset is used where given |
 | The sense of the transmit offset's sign bit (1: above) | as stated |
-| The inbound request layouts (2.1): field order and reserved bits of `0x2C`, `0x28`, `0x00` | as stated; a capture of another radio, or the site's answers, settles them |
+| The inbound request layouts (2.1): field order and reserved bits of `0x2C`, `0x00` | as stated; a capture of another radio, or the site's answers, settles them |
 | The answer layouts (2): registration, affiliation, deny and queued responses | as stated; an answer that doesn't name our unit is ignored, so a wrong guess shows as no answer (`timeouts`) |
 | A grant answering our request is `0x00` with our unit as the source | as stated; the explicit form or another source is not taken as ours |
 | When a subscriber may send on the inbound channel: after an idle status symbol, how long after it, and the random wait | after a block heard since the tune, not while the last status symbol says busy; waits as in 5 |
