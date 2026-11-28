@@ -64,6 +64,9 @@ static uint32_t slc_good, slc_bad, slc_last;	// CACH short LCs (DMR_EV_SHORT_LC)
 static void (*wake_fn)(void);	// dmr_call_set_wake; outlives dmr_call_init
 static void (*wake_listen_fn)(bool listen);	// dmr_call_set_wake_listen; the same
 
+// hal_dmr_modem_t.cach_ticks, only where a board in this build has such a modem (hal_traits.h)
+#define MODEM_CACH_TICKS	(RFOUNDRY_MODEM_VOICE && s.modem->cach_ticks)
+
 // --- Stack state ---
 
 static struct {
@@ -1427,7 +1430,7 @@ static void tx_stop(void)
 		while (s.tail_n < room && s.source->next(s.tail[s.tail_n], s.source->ctx))
 			s.tail_n++;
 	}
-	if (s.modem->tx_release != NULL)
+	if (RFOUNDRY_MODEM_VOICE && s.modem->tx_release != NULL)
 		s.modem->tx_release();
 }
 
@@ -1663,7 +1666,7 @@ static void wake_listen(bool listen)
 {
 	if (s.wake_listening != listen) {
 		s.wake_listening = listen;
-		if (wake_listen_fn != NULL)
+		if (RFOUNDRY_MODEM_VOICE && wake_listen_fn != NULL)
 			wake_listen_fn(listen);
 	}
 }
@@ -1723,7 +1726,7 @@ static bool tx_rewake(uint32_t now)
 // denied just now)
 static bool slot_unverified(uint32_t now)
 {
-	if (!s.cfg.rmo || s.modem->slot_verified == NULL || s.modem->slot_verified()) {
+	if (!s.cfg.rmo || !RFOUNDRY_MODEM_VOICE || s.modem->slot_verified == NULL || s.modem->slot_verified()) {
 		s.slot_waiting = false;
 		return false;
 	}
@@ -2410,8 +2413,8 @@ void dmr_call_poll(uint32_t now_ms)
 			// from them 7 to 19 s after the channel was selected, and a key-up then skipped its wake-up (issue 721)
 			// A modem whose ticks are CACHs heard (cach_ticks) reports no idle bursts: there they are the repeater's
 			// only sign, and noise doesn't give them
-			if (s.cfg.rmo && tick_alt > 3 && (s.modem->cach_ticks || repeater_up(now_ms)) && !tx_waiting() &&
-			    !(s.rpt_bursts && !s.modem->cach_ticks && (!transmitting() || s.tx_listening))) {
+			if (s.cfg.rmo && tick_alt > 3 && (MODEM_CACH_TICKS || repeater_up(now_ms)) && !tx_waiting() &&
+			    !(s.rpt_bursts && !MODEM_CACH_TICKS && (!transmitting() || s.tx_listening))) {
 				s.rpt_last_ms = now_ms;
 				s.rpt_seen = true;
 			}

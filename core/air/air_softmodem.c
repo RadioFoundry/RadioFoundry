@@ -164,6 +164,8 @@ uint32_t air_softmodem_rx_fit(const air_profile_t *p, const hal_baseband_t *bb)
 	lo = bb->rx_lo_hz;
 	below = p->levels == 4 ? 100 : 20;
 	if (bb->rx_slope_hz) {
+		if (!RFOUNDRY_SLOPE_TAP)
+			return 0;	// no board in this build has one (hal_traits.h)
 		// A slope tap is flat after the integrator down to the leak's corner or the tap's own, whichever is higher.
 		// The decision-directed baseline takes back what that high-pass leaves between syncs, so a 4-level profile
 		// needs the band down to a fiftieth of the symbol rate, not a hundredth (tests/host/airTapTest.c)
@@ -217,7 +219,8 @@ bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t 
 			   uint16_t slope_hz, air_softmodem_out_t out, void *ctx)
 {
 	uint16_t step, den;
-	uint8_t leak = air_softmodem_leak(rate_hz, slope_hz, NULL);
+	// Without the trait (hal_traits.h) a slope tap is refused, and none of its code is built
+	uint8_t leak = RFOUNDRY_SLOPE_TAP ? air_softmodem_leak(rate_hz, slope_hz, NULL) : 0;
 
 	if ((p->levels != 2 && p->levels != 4) || !rate_ok(p, rate_hz, &step, &den) || (slope_hz && !leak))
 		return false;
@@ -335,7 +338,7 @@ SM_HOT static void emit(air_softmodem_t *m, uint32_t t_us)
 		x += m->sub * (line_back(m, m->due - 1u) - line_back(m, m->due));
 	else if (m->sub < 0)
 		x -= m->sub * (line_back(m, m->due + 1u) - line_back(m, m->due));
-	if (m->leak) {
+	if (RFOUNDRY_SLOPE_TAP && m->leak) {
 		// The two halves (TWO_K above), x16 line units. The line's symbols are sums at the leak's corner: a
 		// symbol's step (it less the one before, decayed by the leak's rs) is the slope summed over that symbol.
 		// The half before sums the steps at the corner, q a symbol: it is this symbol's line value and two_past
@@ -358,7 +361,7 @@ SM_HOT static void emit(air_softmodem_t *m, uint32_t t_us)
 	} else {
 		v = ((x - m->off / 16) * (int32_t)m->scale) / 4096;
 	}
-	if (m->leak) {
+	if (RFOUNDRY_SLOPE_TAP && m->leak) {
 		// A slope tap: the baseline the last symbols left (each symbol's distance from the level it is nearest,
 		// averaged) comes off, so a run of one level that the leak lets sag still slices right
 		int32_t d, e;
@@ -622,7 +625,7 @@ SM_HOT void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_
 			air_softmodem_rx_reset(m);
 	}
 	m->running = true;
-	unsigned leak = m->leak, ishift = 0;
+	unsigned leak = RFOUNDRY_SLOPE_TAP ? m->leak : 0, ishift = 0;
 
 	// The sum of a derivative is the deviation times about the samples a symbol takes: shifted back by as many bits,
 	// a symbol's level comes out near the tap's own peak, with room to the 16-bit limit

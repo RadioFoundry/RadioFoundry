@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hal_traits.h"
 
 typedef struct {
 	// Receive: discriminator samples, signed 16 bit, positive = above the carrier
@@ -22,7 +23,7 @@ typedef struct {
 	uint16_t rx_counts_per_khz;	// 0 unknown
 	// 0: the samples are the deviation (a flat discriminator). Else they are its derivative (they rise 6 dB an octave
 	// over rx_lo_hz..rx_hi_hz): receive integrates them with a leak near this corner, in Hz, and tracks the level
-	// (rx_counts_per_khz is not used)
+	// (rx_counts_per_khz is not used). Taken only where board.mk says BOARD_SLOPE_TAP := y (hal_traits.h)
 	uint16_t rx_slope_hz;
 	bool (*rx_start)(void);
 	// Up to max samples (frames x rx_channels) received since the last call; the board buffers 60 ms or more

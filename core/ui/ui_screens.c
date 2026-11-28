@@ -3045,7 +3045,7 @@ void ui_draw_home_dual(const radio_view_t *v, const ui_state_t *s)
 		int ay = top + 2 * ph + gap + 2, bottom = L->hint_y;
 #if CONFIG_VOLUME_BAR
 		// The two volume bars on the bottom reach above the hint row: a line less, not a line cut
-		if (s->volbar_b >= 0 && ui_volume_bars_y() < bottom)
+		if (RFOUNDRY_VOLUME_B && s->volbar_b >= 0 && ui_volume_bars_y() < bottom)
 			bottom = ui_volume_bars_y();
 #endif
 		dual_activity(v, s, ay, ft->act ? (bottom - ay) / sm->h : 0);
@@ -3562,7 +3562,7 @@ __attribute__((noinline)) void ui_draw_volume_bar(const ui_state_t *s, bool top)
 	const ui_layout_t *L = &ui_layout;
 	// Two knobs (s->volbar_b): two rows in the smallest font, so on the bottom they fit under the last line Home lays
 	// out on every display class
-	bool two = s->volbar_b >= 0;
+	bool two = RFOUNDRY_VOLUME_B && s->volbar_b >= 0;
 	const font_t *f = two ? L->tiny : L->small;
 	int w = gfx_width(), pitch = f->h + 1;
 	// Rows no screen lays its content in, so nothing is cut on any display class: the hint row (its keys and toasts

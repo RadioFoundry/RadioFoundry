@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "hal_audio.h"
+#include "hal_traits.h"
 
 typedef enum {
 	BEEP_NONE,
@@ -82,6 +83,7 @@ bool beep_gen_block(beep_gen_t *g, int16_t *pcm, unsigned count);
 
 // audio NULL: beeps are counted as dropped, unless beep_init_tone gave a tone hook
 void beep_init(const hal_audio_t *audio);
+#if RFOUNDRY_NO_PCM
 // Without PCM audio: play the patterns as tones through tone(hz, level) (hal_radio_t.beep_tone; hz 0 = off), each
 // segment for its length to the millisecond (beep_tone_run, beep_tone_wait). lead_ms (hal_radio_t.beep_lead_ms):
 // each tone starts that long ahead silent, tone(hz, 0), and a gap before a tone runs it silent. NULL: none
@@ -90,6 +92,23 @@ void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint8_t lead_ms);
 void beep_tone_run(uint32_t now_ms);
 // Milliseconds until beep_tone_run has a change to make, -1 for none: the radio task wakes for it
 int32_t beep_tone_wait(uint32_t now_ms);
+#else
+// No board in this build plays tones (hal_traits.h)
+static inline void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint8_t lead_ms)
+{
+	(void)tone;
+	(void)lead_ms;
+}
+static inline void beep_tone_run(uint32_t now_ms)
+{
+	(void)now_ms;
+}
+static inline int32_t beep_tone_wait(uint32_t now_ms)
+{
+	(void)now_ms;
+	return -1;
+}
+#endif
 // Start a pattern at level 1..100 (0 or BEEP_NONE: nothing). shared: the DMR voice stream is running and mixes the
 // beep in; otherwise the beep starts its own stream. Replaces a pattern still playing
 void beep_play(beep_t b, uint8_t level, bool shared);
@@ -109,7 +128,14 @@ bool beep_warm_on(void);
 // The board has an amplifier hang (hal_audio_t.speaker_warm and speaker_hang_s): beep_warm does something
 bool beep_has_hang(void);
 // The beeps are tones from the radio's own hook (beep_init_tone), not PCM: no stream, no blocks
+#if RFOUNDRY_NO_PCM
 bool beep_tone_route(void);
+#else
+static inline bool beep_tone_route(void)
+{
+	return false;
+}
+#endif
 // From an audio block callback: add the beep to the block (saturating). True while the beep sounds
 bool beep_mix(int16_t *spk);
 // The speaker's sound reaches the microphone (a handheld's speaker sits next to it): true from the block after

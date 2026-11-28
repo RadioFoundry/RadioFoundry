@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hal_traits.h"
 
 typedef enum { DMR_SYNC_NONE, DMR_SYNC_MS, DMR_SYNC_BS, DMR_SYNC_TS1, DMR_SYNC_TS2 } dmr_sync_family_t;
 

@@ -295,7 +295,7 @@ bool input_hand_mic_stats(hal_hand_mic_stats_t *st)
 
 bool input_bt_stats(hal_bt_stats_t *st)
 {
-	if (board.input == NULL || board.input->bt_stats == NULL)
+	if (!CONFIG_BT_PTT || board.input == NULL || board.input->bt_stats == NULL)
 		return false;
 	board.input->bt_stats(st);
 	return true;

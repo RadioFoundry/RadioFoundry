@@ -2504,7 +2504,7 @@ static void knob_moved(const radio_view_t *v)
 __attribute__((noinline)) static void knob_tick(const radio_view_t *v)
 {
 	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : v->volume_src == RVOL_NONE ? v->volume_knob : -1;
-	int8_t lb = v->volume_b;
+	int8_t lb = RFOUNDRY_VOLUME_B ? v->volume_b : -1;	// -1: no board in this build has one (hal_traits.h)
 	bool moved_b = lb >= 0 && knob_b_seen >= 0 && lb != knob_b_seen;
 	if ((lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) || moved_b) {
 		if (lb >= 0) {
@@ -2520,7 +2520,7 @@ __attribute__((noinline)) static void knob_tick(const radio_view_t *v)
 	// The debug link took over (or the knob is gone): side A's old level is wrong. A two-knob radio keeps a bar side B
 	// moved, with the debug link's level for A, as a turn of B then shows it
 	if (lvl < 0 && ui_st.volbar >= 0) {
-		int8_t a = ui_st.volbar_b < 0 || ui_st.volbar_side == 0 ? -1 :
+		int8_t a = !RFOUNDRY_VOLUME_B || ui_st.volbar_b < 0 || ui_st.volbar_side == 0 ? -1 :
 			   (int8_t)(v->volume >= 0 ? radio_volume_step_of((uint8_t)v->volume) : 0);
 		if (a != ui_st.volbar) {
 			ui_st.volbar = a;

@@ -6,6 +6,7 @@
 
 #include <string.h>
 #include "dmr/dmrData.h"
+#include "../../hal/hal_traits.h"
 
 // CAI networks (TS 102 361-3 5.1.1): individual IDs are 12.x.y.z, groups 225.x.y.z; a radio's peripheral network
 // (the host behind it) the next one, 13.x.y.z
@@ -1893,7 +1894,7 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 				uint32_t rxCrc = c[0] | (c[1] << 8) | (c[2] << 16) | ((uint32_t)c[3] << 24);
 
 				if ((dmrDataCRC32(p->data, rxBytes - 4) != rxCrc) &&
-						!(clearedBitsOn && p->responseRequested && (p->dataType == DMR_TYPE_RATE_1_2) &&
+						!(RFOUNDRY_MODEM_VOICE && clearedBitsOn && p->responseRequested && (p->dataType == DMR_TYPE_RATE_1_2) &&
 						  ((rxBytes % 12) == 0) && clearedBitsRepair(p->data, rxBytes / 12, rxBytes - 4, rxCrc)))
 				{
 					return DMR_DATA_RX_ERROR;

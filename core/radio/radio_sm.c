@@ -780,7 +780,7 @@ static void outputs(radio_sm_t *sm)
 	if (!fm && !tx && sm->view.state == RS_RX && sm->view.dmr.state == RDMR_RX) {
 		green = true;
 		digital_rx = true;
-		open = !sm->hotspot && (board.caps & CAP_MODEM_VOICE) != 0;
+		open = !sm->hotspot && board_modem_voice();
 	}
 	if ((sm->hotspot || sm->sfr_rpt) && board.dmr != NULL && board.dmr->is_transmitting()) {
 		tx = true;
@@ -1959,7 +1959,7 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.permit_hold_ms = PERMIT_HOLD_MIN_MS;
 		cfg.permit_busy = permit_busy;
 	}
-	if (board.caps & CAP_MODEM_VOICE)
+	if (board_modem_voice())
 		cfg.tx_ahead = MODEM_VOICE_TX_AHEAD;
 #if CONFIG_DMR_TRUNK
 	// A trunked system: both slots on the control channel; on a payload channel the engine chose the call, so it
@@ -8737,7 +8737,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	board.radio->set_mode(RADIO_MODE_FM);
 
 #if CONFIG_DMR
-	bool modem_voice = (board.caps & CAP_MODEM_VOICE) != 0;
+	bool modem_voice = board_modem_voice();
 	sm->codec = modem_voice ? board.modem_codec == NULL || board.modem_codec() != NULL :
 			board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
 	sm->view.dmr.codec = sm->codec;
@@ -9741,7 +9741,7 @@ uint8_t radio_volume_stored(uint8_t step)
 // board sets that side's level itself
 static void follow_volume_b(radio_sm_t *sm)
 {
-	if (board.power == NULL || board.power->volume_b == NULL) {
+	if (!RFOUNDRY_VOLUME_B || board.power == NULL || board.power->volume_b == NULL) {
 		return;
 	}
 	int v = board.power->volume_b();

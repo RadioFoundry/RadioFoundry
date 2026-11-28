@@ -146,7 +146,7 @@ static bool modem_playing;	// the provider's task only
 
 bool radio_nxdn_modem_voice(void)
 {
-	return (board.caps & CAP_MODEM_VOICE) != 0 && board.dmr != NULL && board.dmr->play_begin != NULL;
+	return board_modem_voice() && board.dmr != NULL && board.dmr->play_begin != NULL;
 }
 
 static void v_start(const nxdn_call_t *c, void *ctx)

@@ -91,6 +91,7 @@ static uint8_t cust_n[2];
 static uint8_t cust_next;
 #endif
 
+#if RFOUNDRY_NO_PCM
 // Tones without PCM (beep_init_tone), radio task only
 static void (*tone_fn)(uint16_t hz, uint8_t level);
 static uint8_t tone_lead_ms;
@@ -100,6 +101,9 @@ static bool tone_lead;		// tone_seg's tone runs silent until tone_at, then sound
 static const beep_seg_t *tone_segs;	// the pattern's steps (a custom one's copy stays until the next but one)
 static uint8_t tone_n, tone_seg, tone_level;
 static uint32_t tone_at;	// when the lead or the segment ends
+#else
+#define tone_on	false	// no board in this build plays tones (hal_traits.h)
+#endif
 
 // Handed from the radio task to the audio side
 static uint8_t req_pattern;
@@ -130,6 +134,7 @@ void beep_init(const hal_audio_t *audio)
 	aud = audio;
 }
 
+#if RFOUNDRY_NO_PCM
 void beep_init_tone(void (*tone)(uint16_t hz, uint8_t level), uint8_t lead_ms)
 {
 	tone_fn = tone;
@@ -198,6 +203,7 @@ int32_t beep_tone_wait(uint32_t now_ms)
 	int32_t left = (int32_t)(tone_at - now_ms);
 	return left > 0 ? left : 0;
 }
+#endif
 
 // The amplifier held powered (beep_warm): since when, until when, and the last poll's time
 static bool warm_on;
@@ -241,10 +247,12 @@ bool beep_has_hang(void)
 	return aud != NULL && aud->speaker_warm != NULL && aud->speaker_hang_s != 0;
 }
 
+#if RFOUNDRY_NO_PCM
 bool beep_tone_route(void)
 {
 	return (aud == NULL || aud->start == NULL) && tone_fn != NULL;
 }
+#endif
 
 uint8_t beep_pattern(beep_t b, const beep_seg_t **segs)
 {
@@ -268,6 +276,7 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 	}
 	stats.last = (uint8_t)b;
 	if (aud == NULL || aud->start == NULL) {
+#if RFOUNDRY_NO_PCM
 		if (tone_fn == NULL || b == BEEP_SWEEP) {	// a tone hook plays fixed pitches: no sweep
 			stats.no_stream++;
 			return;
@@ -287,6 +296,9 @@ void beep_play(beep_t b, uint8_t level, bool shared)
 		tone_on = true;		// replaces a pattern still playing
 		tone_pending = true;	// the radio task's loop starts it (beep_tone_run) at once
 		stats.played++;
+#else
+		stats.no_stream++;
+#endif
 		return;
 	}
 	req_pattern = (uint8_t)b;

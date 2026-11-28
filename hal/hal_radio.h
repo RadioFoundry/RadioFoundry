@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hal_traits.h"
 
 // RADIO_MODE_P25 and RADIO_MODE_NXDN are a channel's modes only (the radio core runs them with the board in
 // RADIO_MODE_DMR, its modem chip's digital mode, docs/spec/p25.md 7, docs/spec/nxdn.md 6): set_mode never gets them
@@ -48,7 +49,8 @@ typedef struct {
 	bool (*dmr_tx_end)(void);
 	// Optional (DMR): for a board whose tx() leaves the receiver deaf between bursts (RF chips held on the transmit
 	// frequency). true: a repeater wake-up burst has gone, receive on the last rx() settings for the answer; false: back
-	// to the transmit set-up of the last tx(), for the next burst. NULL: the modem switches between bursts by itself
+	// to the transmit set-up of the last tx(), for the next burst. NULL: the modem switches between bursts by itself. Called only where board.mk says BOARD_MODEM_VOICE := y
+	// (hal_traits.h)
 	void (*dmr_wake_listen)(bool listen);
 	void (*status)(radio_status_t *st);
 	// Optional: a check of the receiver between status polls, for a board that watches it faster than the squelch runs
@@ -72,7 +74,8 @@ typedef struct {
 	bool volume_pcm;
 	// Optional, for a board without PCM speaker audio (board.audio NULL): sound a beep tone of hz at level 1..100 to
 	// the speaker, whatever the squelch; 0 = off. Level 0 with hz: the tone runs but stays off the speaker
-	// (beep_lead_ms). The core times each tone to the millisecond. Ignored while the radio transmits
+	// (beep_lead_ms). The core times each tone to the millisecond. Ignored while the radio transmits. Used only where
+	// config.mk says BOARD_NO_PCM := y (hal_traits.h)
 	void (*beep_tone)(uint16_t hz, uint8_t level);
 	// With beep_tone: ms each tone runs silent before it sounds, for a tone that takes time to settle; 0 = none
 	uint8_t beep_lead_ms;

@@ -26,3 +26,8 @@ BOARD_NAND_DIRS := drivers/flash/nand_sectors drivers/flash/nand_blocks
 # The 160x128 panel in 16 colors (display_d578uv.c): the 4 bpp frame buffer is 10240 B and 128 rows, not the 40 KB / 160 row
 # RGB565 default. A screen has at most 16 colors (core/ui/gfx.h); with CONFIG_FONT_AA the edge grays compete for them
 MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u
+# Hardware traits (hal/hal_traits.h): the SCT3258 makes and plays the voice, the air tap gives the demodulator's
+# slope (rxtap_d578uv.c), and side B has its own volume knob
+BOARD_MODEM_VOICE := y
+BOARD_SLOPE_TAP := y
+BOARD_VOLUME_B := y
