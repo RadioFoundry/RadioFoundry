@@ -31,6 +31,7 @@ import os
 import selectors
 import socket
 import sys
+import threading
 import time
 
 FEND, FESC, TFEND, TFESC = 0xC0, 0xDB, 0xDC, 0xDD
@@ -105,6 +106,46 @@ def nmea_ok(line: str) -> bool:
         return False
 
 
+class SerialPipe:
+    """A serial port that selectors can wait on everywhere. On Windows, select() takes only sockets, so a thread reads
+    the port and passes the bytes through a local socket pair; elsewhere the port itself is the file object."""
+
+    def __init__(self, port: str, baud: int):
+        import serial
+        self.threaded = os.name == "nt"
+        self.ser = serial.Serial(port, baud, timeout=0.05 if self.threaded else 0)
+        if not self.threaded:
+            self.fileobj = self.ser
+            return
+        self.fileobj, tx = socket.socketpair()
+        self.fileobj.setblocking(False)
+
+        def pump():
+            try:
+                while True:
+                    data = self.ser.read(4096)
+                    if data:
+                        tx.sendall(data)
+            except (OSError, serial.SerialException):
+                tx.close()     # the reader sees end of file
+
+        threading.Thread(target=pump, daemon=True).start()
+
+    def read(self, n: int = 4096) -> bytes:
+        if not self.threaded:
+            return self.ser.read(n)
+        try:
+            data = self.fileobj.recv(n)
+        except BlockingIOError:
+            return b""
+        if not data:
+            sys.exit("serial port closed")
+        return data
+
+    def write(self, data: bytes):
+        self.ser.write(data)
+
+
 class Radio:
     """The radio's host port: a USB serial port, or udp:<ip>[:3334] for a radio in USB network mode."""
 
@@ -121,12 +162,12 @@ class Radio:
                 import serial
             except ImportError:
                 sys.exit("needs pyserial for a serial port: pip install pyserial")
-            self.ser = serial.Serial(port, 115200, timeout=0)
+            self.pipe = SerialPipe(port, 115200)
             try:    # an FTDI cable passes received bytes on after 1 ms, not 16 (Linux only)
-                self.ser.set_low_latency_mode(True)
+                self.pipe.ser.set_low_latency_mode(True)
             except (AttributeError, NotImplementedError, OSError, ValueError):
                 pass
-            self.fileobj = self.ser
+            self.fileobj = self.pipe.fileobj
 
     def read(self) -> bytes:
         if self.udp:
@@ -135,13 +176,13 @@ class Radio:
                 return data
             except BlockingIOError:
                 return b""
-        return self.ser.read(4096)
+        return self.pipe.read()
 
     def write(self, data: bytes):
         if self.udp:
             self.sock.sendto(data, self.addr)
         else:
-            self.ser.write(data)
+            self.pipe.write(data)
 
     def keepalive(self):
         # An empty KISS frame keeps the radio's host link in its TNC mode (it ends after 30 s without frames)
@@ -247,9 +288,8 @@ def main(argv=None) -> int:
     gps = None
     gps_buf = b""
     if a.nmea:
-        import serial
-        gps = serial.Serial(a.nmea, 4800, timeout=0)
-        sel.register(gps, selectors.EVENT_READ, "gps")
+        gps = SerialPipe(a.nmea, 4800)
+        sel.register(gps.fileobj, selectors.EVENT_READ, "gps")
     replay = open(a.nmea_file, "r", errors="replace") if a.nmea_file else None
     next_replay = 0.0
     next_keepalive = 0.0
