@@ -26,9 +26,9 @@ BOARD_DIRS := boards/d578uva boards/d578uv drivers/display/st7735 drivers/flash/
 BOARD_NAND_DIRS := drivers/flash/nand_sectors drivers/flash/nand_blocks
 # The 160x128 panel in 16 colors, as on the GD32 builds (boards/d578uv/board.mk)
 MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u
-# Hardware traits (hal/hal_traits.h): the SCT3258 makes and plays the voice, the air tap gives the demodulator's
-# slope (rxtap_d578uv.c), side B has its own volume knob, and the board lists temperature sensors
-BOARD_MODEM_VOICE := y
+# Hardware traits (hal/hal_traits.h): the SCT3258 is a packet modem that plays the voice, the air tap gives the
+# demodulator's slope (rxtap_d578uv.c), side B has its own volume knob, and the board lists temperature sensors
+BOARD_PACKET_MODEM := y
 BOARD_SLOPE_TAP := y
 BOARD_VOLUME_B := y
 BOARD_TEMP := y

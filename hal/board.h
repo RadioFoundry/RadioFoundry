@@ -57,7 +57,7 @@ enum {
 	// The DMR modem encodes and plays the voice itself (a baseband with its own vocoder and codec path): voice bits
 	// never reach the MCU, so DMR voice needs no board.vocoder, and what works on the voice bits (privacy, recording,
 	// a hotspot's voice) has nothing to work on. The modem still takes and reports bursts in their slots. Needs
-	// BOARD_MODEM_VOICE := y in board.mk too (hal_traits.h; the core tests board_modem_voice())
+	// BOARD_PACKET_MODEM := y in board.mk too (hal_traits.h; the core tests board_modem_voice())
 	CAP_MODEM_VOICE	= 1u << 9,
 	// The status LED mixes red, green and blue. The core then shows cyan for a digital reception and orange for a
 	// repeater role, and sends LED_BLUE to board.power->led (radio-features.md 5.7)
@@ -209,18 +209,18 @@ typedef struct {
 
 extern const board_t board;
 
-// The DMR modem plays the voice itself (CAP_MODEM_VOICE): constant false in a build whose board doesn't have the trait
+// The DMR modem plays the voice itself (CAP_MODEM_VOICE): constant false in a build without a packet modem
 // (hal_traits.h), so none of that path is built
 static inline bool board_modem_voice(void)
 {
-	return RFOUNDRY_MODEM_VOICE && (board.caps & CAP_MODEM_VOICE) != 0;
+	return RFOUNDRY_PACKET_MODEM && (board.caps & CAP_MODEM_VOICE) != 0;
 }
 
 // VERSION's codec= (docs/spec/debuglink.md 3.1): the vocoder's check, or where the modem plays the voice the board's
 // check of the modem's code (board_t.modem_codec, set in DMR builds only): its profile id, or absent. none without either
 static inline const char *board_codec_id(void)
 {
-	if (RFOUNDRY_MODEM_VOICE && board.vocoder == NULL && board.modem_codec != NULL) {
+	if (RFOUNDRY_PACKET_MODEM && board.vocoder == NULL && board.modem_codec != NULL) {
 		const char *id = board.modem_codec();
 		return id != NULL ? id : "absent";
 	}

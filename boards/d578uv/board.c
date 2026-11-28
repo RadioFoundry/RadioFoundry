@@ -24,10 +24,10 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
-// The core takes this board's modem voice, beep tones, slope tap, second knob and sensors only with their traits
+// The core takes this board's modem hooks, beep tones, slope tap, second knob and sensors only with their traits
 // (hal_traits.h): a build without one would drop that hook without a word
-#if !RFOUNDRY_MODEM_VOICE || !RFOUNDRY_NO_PCM || !RFOUNDRY_SLOPE_TAP || !RFOUNDRY_VOLUME_B || !RFOUNDRY_TEMP
-#error "set BOARD_MODEM_VOICE, BOARD_SLOPE_TAP, BOARD_VOLUME_B and BOARD_TEMP in board.mk, BOARD_NO_PCM in config.mk"
+#if !RFOUNDRY_PACKET_MODEM || !RFOUNDRY_NO_PCM || !RFOUNDRY_SLOPE_TAP || !RFOUNDRY_VOLUME_B || !RFOUNDRY_TEMP
+#error "set BOARD_PACKET_MODEM, BOARD_SLOPE_TAP, BOARD_VOLUME_B and BOARD_TEMP in board.mk, BOARD_NO_PCM in config.mk"
 #endif
 
 static const band_t bands[] = {

@@ -59,7 +59,7 @@ static size_t soc_reg(const uint8_t *req, uint16_t len, uint8_t *out)
 // chip u8, page u8, register u8, length u8: the register's first bytes as the chip answers them
 static size_t chip_reg_bytes(const uint8_t *req, uint8_t *out, size_t cap)
 {
-	if (!RFOUNDRY_MODEM_VOICE || board.chip_reg_bytes == NULL) {
+	if (!RFOUNDRY_PACKET_MODEM || board.chip_reg_bytes == NULL) {
 		return answer(out, DL_ST_UNAVAILABLE, 0);
 	}
 	uint8_t want = req[3];
@@ -77,7 +77,7 @@ static size_t chip_reg_bytes(const uint8_t *req, uint8_t *out, size_t cap)
 // chip u8, page u8, register u8, DL_CHIP_REG_WRITE | n, n bytes: written as they are; the reply has no value
 static size_t chip_write_bytes(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
-	if (!RFOUNDRY_MODEM_VOICE || board.chip_reg_bytes == NULL) {
+	if (!RFOUNDRY_PACKET_MODEM || board.chip_reg_bytes == NULL) {
 		return answer(out, DL_ST_UNAVAILABLE, 0);
 	}
 	uint8_t n = (uint8_t)(req[3] & ~DL_CHIP_REG_WRITE);

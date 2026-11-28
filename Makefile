@@ -75,7 +75,7 @@ MCU_DEFS += $(OPTION_DEFS)
 MCU_DEFS += -DRFOUNDRY_HWOPTS=$(if $(filter y,$(BOARD_HWOPTS)),1,0)
 # Hardware traits few boards share (hal/hal_traits.h): a board that has one says BOARD_<TRAIT> := y in its board.mk
 # (BOARD_NO_PCM in its config.mk). The others build none of the code for it
-BOARD_TRAITS := MODEM_VOICE NO_PCM SLOPE_TAP VOLUME_B TEMP
+BOARD_TRAITS := PACKET_MODEM NO_PCM SLOPE_TAP VOLUME_B TEMP
 MCU_DEFS += $(foreach t,$(BOARD_TRAITS),-DRFOUNDRY_$(t)=$(if $(filter y,$(BOARD_$(t))),1,0))
 # The sixth character of the APRS tocall (APRDF?, docs/spec/aprs.md 4.2): board.toml aprs_tocall, one per radio
 # (tools/boards.py check validates the file; this only reads the value, and refuses a build without a valid one)

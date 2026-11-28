@@ -50,7 +50,7 @@ typedef struct {
 	// Optional (DMR): for a board whose tx() leaves the receiver deaf between bursts (RF chips held on the transmit
 	// frequency). true: a repeater wake-up burst has gone, receive on the last rx() settings for the answer; false: back
 	// to the transmit set-up of the last tx(), for the next burst. NULL: the modem switches between bursts by itself.
-	// Called only where board.mk says BOARD_MODEM_VOICE := y (hal_traits.h)
+	// Called only where board.mk says BOARD_PACKET_MODEM := y (hal_traits.h)
 	void (*dmr_wake_listen)(bool listen);
 	void (*status)(radio_status_t *st);
 	// Optional: a check of the receiver between status polls, for a board that watches it faster than the squelch runs

@@ -8,11 +8,12 @@
 #ifndef HAL_TRAITS_H
 #define HAL_TRAITS_H
 
-// The DMR modem is a baseband that makes and plays the voice itself (CAP_MODEM_VOICE), with the hooks only such a
-// modem fills: hal_dmr_modem_t's play_*, tx_release, slot_verified, clears_crc9 and cach_ticks, board_t.modem_codec
-// and chip_reg_bytes, hal_radio_t.dmr_wake_listen
-#ifndef RFOUNDRY_MODEM_VOICE
-#define RFOUNDRY_MODEM_VOICE	1
+// The DMR modem is a whole baseband the MCU talks to in packets (docs/spec/modem-sct.md): it keeps the slots, codes
+// the voice and plays it itself (CAP_MODEM_VOICE). The hooks only such a modem fills: hal_dmr_modem_t's play_*,
+// tx_release, slot_verified, clears_crc9 and cach_ticks, board_t.modem_codec and chip_reg_bytes,
+// hal_radio_t.dmr_wake_listen. A modem driven by frame registers (HR_C6000, HR_C7000) fills none of them
+#ifndef RFOUNDRY_PACKET_MODEM
+#define RFOUNDRY_PACKET_MODEM	1
 #endif
 
 // No PCM path from the MCU to the speaker: beeps go through the radio's tone hook (hal_radio_t.beep_tone)
