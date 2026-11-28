@@ -73,7 +73,7 @@ ON_AIR_DB = "-20"           # on the air: the carrier within 20 dB of the burst'
 OFF_HOLD_MS = 0.3           # off the air: under that level this long
 END_MIN_DB = -3.0           # the carrier at the last symbol's end: lower, and the key-down cut the symbol
 BOOST_MAX_PCT = 120     # PA_KEYUP_BOOST_MAX_PCT
-NAMES = ("dead_pm", "knee_us", "slope_us", "window_us", "settle_us", "pa_us", "ease_pm")
+NAMES = ("dead_pm", "knee_us", "slope_us", "window_us", "settle_us", "pa_us", "ease_pm", "lift_pm")
 EASE_START_PCT = 80     # the fastest approach to start from: this much of the lowest overshooting level's own drive
 EASE_STEP_PCT = 85      # and of itself, each round an eased level still overshoots
 FEATURES = ("bursts_raw", "bursts_ramp")
@@ -86,7 +86,7 @@ class Stop(Exception):
 # ---- the rule and the fit (pure) ---------------------------------------------------------------------------------
 
 def plan(c, d, top, ref, max_drive, ahead=0):
-    """pa_keyup_drives(): c the six constants (a dict), all integer math as the firmware's. Returns a dict with
+    """pa_keyup_drives(): c the constants (a dict, NAMES), all integer math as the firmware's. Returns a dict with
     boost (0: none), drive, boost_us, pa_us, drive_us. ahead: the board's earliest point, which bounds an eased
     level's start as pa_keyup_plan() does (0: unbounded, as pa_keyup_drives())."""
     dead = ref * c["dead_pm"] // 1000
@@ -104,7 +104,9 @@ def plan(c, d, top, ref, max_drive, ahead=0):
     if lead > c["window_us"]:
         lead = c["window_us"]
         room = c["window_us"] - c["settle_us"]
-        b = min(dead + (q + room - 1) // room, top * BOOST_MAX_PCT // 100, max_drive)
+        # no window, no boost; else at least the lift, a boost's least drive
+        b = max(dead + (q + room - 1) // room, ref * c.get("lift_pm", 0) // 1000) if room else d
+        b = min(b, top * BOOST_MAX_PCT // 100, max_drive)
         if ease:
             b = min(b, dead + ease)
     pa = min(c["pa_us"], lead)
@@ -624,8 +626,9 @@ class Radio:
         i = 0
         while i < len(specs):
             c = specs[i][0]
+            most = self.keyrun_max - 1 if c and c.get("lift_pm") else self.keyrun_max    # a lift takes a key's room
             j = i
-            while j < len(specs) and specs[j][0] == c and j - i < self.keyrun_max:
+            while j < len(specs) and specs[j][0] == c and j - i < most:
                 j += 1
             drives = [d for _, d in specs[i:j]]
             if c is None:
@@ -772,7 +775,7 @@ class Cal:
         self.bench.open([mhz])
         radio.tune(mhz)
         v = radio.view()
-        eases = len(v.get("pa_keyup", "").split("/")) >= len(NAMES)    # the firmware has the fastest approach
+        eases = len(v.get("pa_keyup", "").split("/")) > NAMES.index("ease_pm")    # the firmware has the fastest approach
         board = dict(zip(NAMES, radio.ints(v, "pa_keyup", len(NAMES), 6)))
         ahead, max_drive = radio.ints(v, "pa_keyup.limits", 2)
         drives = [int(x) for x in v.get("tx_drive", "").split("/") if x]
@@ -833,7 +836,7 @@ class Cal:
         # Open loop at the window the radio will use, not at the board's earliest point: the same points of its burst
         # sequence as a real key-up, so whatever the sequence adds is in the times
         fixed = lambda w: {"dead_pm": 0, "knee_us": 0, "slope_us": w, "window_us": w, "settle_us": 0, "pa_us": 0xFFFF,
-                           "ease_pm": 0}
+                           "ease_pm": 0, "lift_pm": 0}
         pts, top_rise, own_over = [], None, {}
         limit = top * a.max_pct // 100
         ds = grid([drives[l] for l in levels if drives[l] <= limit], limit, a.points)
@@ -864,7 +867,8 @@ class Cal:
         c = {"dead_pm": dead_pm, "knee_us": knee, "slope_us": slope, "window_us": window,
              "settle_us": min(a.settle_us if a.settle_us is not None else board["settle_us"] or window // 5,
                               max(window - 1, 0)),
-             "pa_us": a.pa_us if a.pa_us is not None else board["pa_us"], "ease_pm": 0}
+             "pa_us": a.pa_us if a.pa_us is not None else board["pa_us"], "ease_pm": 0,
+             "lift_pm": board.get("lift_pm", 0)}     # not fitted here: the board's least boost stays
         # A level that runs far past its power on its own drive came up too fast: the fastest approach starts under
         # the lowest such level's drive, and every level over it comes up on that drive first (pa-keyup.md 2)
         if a.ease_pm is not None:

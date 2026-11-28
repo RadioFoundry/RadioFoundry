@@ -51,6 +51,10 @@ pa_keyup_t pa_keyup_drives(const pa_keyup_cfg_t *c, uint16_t d, uint16_t top, ui
 		}
 		// rounded up: the boost never short of the window. No window, no boost: the level comes up late
 		b = room != 0u ? dead + (q + room - 1u) / room : d;
+		uint32_t lift = (uint32_t)ref * c->lift_pm / 1000u;
+		if (room != 0u && b < lift) {
+			b = lift;	// the least boost that brings the PA's turn-on in the window
+		}
 		if (b > ceiling) {
 			b = ceiling;	// the level comes up late: the window is too short for it
 		}

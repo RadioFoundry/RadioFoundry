@@ -669,7 +669,8 @@ Inverse video is done by toggling 0x21 / 0x20 with 10 ms around it.
 ## 8. FD6818 RF transceiver
 
 Single-chip VHF/UHF transceiver; register-compatible in spirit with the RDA1846S/AT1846S family but with its own
-addresses for frequency and band. **No FD6818 datasheet is available**; the values are the ones that work on the radio.
+addresses for frequency and band. The values are the ones that work on the radio. The chip's datasheet doesn't match every register on this radio: its
+TX gain register (0x28) has no effect here, and the level that reaches the PA is in 0x36 (11.4).
 
 ### 8.1 Bus and timing
 
@@ -811,18 +812,32 @@ hotspot's downlink, never aligned to it, and its bursts were not taken. The radi
 **Burst TX-on timing.** The per-burst RF task ([modem-hrc7000.md](modem-hrc7000.md) 3.1a) runs the TX-on at points
 counted from the RF TX interrupt. The interrupt comes 2.6 ms ahead of the lead point (`rf_tx_lead` = 26), so the first
 symbol is 3.45 ms after it. The PA keys up from the power cal table ([pa-keyup.md](pa-keyup.md)): the dead
-window is 1.5 ms on both bands. UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the
-air on the SDR bench and judged by its shape (`tools/bench/pa_shape.py`): dead zone 79.3 % of the low row's drive, knee
-500 µs, slope 1350 µs, the PA at 0.9 ms and a boost's end at 0.4 ms. Every level boosts. The four lower levels: -3 dB
-point 0.03-0.58 ms before the first symbol, under 1 dB over, 10-symbol mean and RMS within 0.5 dB of the level. The top
-level creeps: -3 dB at 0.12-0.16 ms before the first symbol, then its last 2 dB over about 2 ms (10-symbol mean -1.1 to
--1.2 dB). Its boost is at the 1.2 × top cap, and open-loop drives up to 3000 creep the same way, so the creep is the PA's
-own (the earlier set, knee 574 µs and slope 927 µs, left level 0 2 dB over and the three upper levels creeping).
-The set converted from the earlier form (dead zone 65 %, knee 650 µs, slope 600 µs) keyed the two top levels
-0.27-0.36 ms late. VHF is still that conversion (dead zone 65 %, knee 520 µs, slope 600 µs, the PA at 0.5 ms, a
-boost's end at 0.4 ms; the earlier form: one boost level, 1.2 × top, for a time per step, then a hold at 0.8 × d)
-and is untested on the radio. The measurements below were taken with the earlier form, whose knee was in drive
-counts × ms.
+window is 1.5 ms on both bands. The constants are fitted over the air on the SDR bench at the five levels in watts
+(11.4), at 137.0, 155, 173.975, 400.025, 440, 449.9, 470 and 479.975 MHz: no dead zone and no knee, so every level
+boosts to slope / (window − settle) of its own drive, 1.6 × on UHF (slope 1760 µs) and 1.5 × on VHF (1650 µs), at
+most 1.2 × the top level's, from 1.5 ms to 0.4 ms before the first symbol; the PA at 0.9 ms (UHF) and 0.5 ms (VHF).
+A boost is at least the lift, 2.15 × the 500 mW level's drive (`lift_pm` 2150 on `ref` = `dm32_floor_drive`, a drive
+just over the PA's turn-on, so the lift follows the turn-on over the band). Only the 500 mW and 1 W levels are lifted.
+Without the lift, 1.6 × the 500 mW drive left the PA dark for the first 8-11 symbols of every burst (−42 to −45 dB at the
+first symbol, −1 dB point 1.8-2.3 ms after the first symbol; the first 2 ms from the first symbol −7 to −8 dB), and a repeater that
+heard the radio weakly lost the wake-up CSBK: 0 of 10 decoded, against 30 of 45 with the lift and 6 of 10 with the
+earlier lowest level (about 2 W) on the same bench. A plain step to the drive (no boost) is later still. The lift costs the overshoot of
+the PA loop's turn-on: once the output comes up at a low drive, the loop overshoots 2-3 dB and settles in about 1 ms,
+so the first 2 ms from the first symbol read +1.6 to +2.2 dB at 500 mW and +0.8 to +0.9 dB at 1 W (451.875 and 146 MHz),
+while the burst's mean stays within 0.4 dB of the call's median. No boost found puts the PA up by the first symbol at
+500 mW without that overshoot, and the lift takes the overshoot: a burst that starts strong and settles is decoded,
+while a late or weak start loses the burst's first symbols. At the levels of 11.4, at those frequencies and 432, 475, 144.01 and 147.99 MHz, the
+mean of a burst's first 2 ms from its −3 dB point is −0.25 to +0.38 dB from the burst's level from 2.5 W to 5 W, and
+the first burst is within 0.47 dB of the call's median (bursts spread 0.11 dB at most). The top level is at the cap and creeps: its first 2 ms
+read 0.2-0.9 dB under its level whatever the boost (a longer boost, window 1.58 ms and settle 0.3 ms, moved the top
+level 0.2 dB and put the lower levels up to 0.7 dB over). The set before (a dead zone at 79.3 % of the low row on UHF, 65 % on VHF) gave every level
+under the dead zone one boost, about twice its drive: the two lowest levels came up 1.0-3.0 dB over for their first 2 ms,
+and the middle levels sagged 0.2-0.6 dB. From 470 MHz up the PA loop is fast: the 1 W and 2.5 W levels peak
+1.6-5.0 dB over for a moment, and the adjacent channel power around a burst's start is −30 to −50 dBc (−44 to −65
+under 450 MHz and on VHF). Without the boost there and with a 0.5 ms ramp from the PA's point instead of a step, the
+peaks fell to 0.7-3.0 dB, but the first 2 ms of 2.5 W to the top came up 0.6-1.1 dB late and 479.975 MHz kept −27 to
+−36 dBc, so the boost stays. The measurements below
+were taken with the earlier form, whose knee was in drive counts × ms.
 
 | Point | Before the first symbol | What |
 |---|---|---|
@@ -974,7 +989,8 @@ burst's interrupt looked early against it. The first burst is now timed from the
 ([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The PA
 drops at once, so it is switched off 0.3 ms after the last symbol's point (`off_after_us`): off at the point, the
 carrier was 5 dB down 0.2 ms before the last symbol's end and 10 to 28 dB down at its end, at every level. With
-the delay it holds to within 0.2 dB at the symbol's end and is off the air 0.17 to 0.44 ms after it. The switch moved earlier only
+the delay the carrier holds to within 0.2 dB at the symbol's end. From there the drive goes to 0, the PA loop takes the
+carrier down, and the PA select goes off 0.8 ms later (11.4, the PA ramps). The switch moved earlier only
 on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.2 ms, after
 the inbound burst before ours, as an SFR needs (8.5, the simplex switch and SFR).
 
@@ -1345,9 +1361,150 @@ Read three pieces into a 0x175-byte working image:
 | PA drive points for a TX frequency f | VHF table base 136 MHz, step 9.5 MHz (136, 145.5, 155, 164.5, 174); UHF base 400 MHz, step 17.5 MHz (400, 417.5, 435, 452.5, 470). idx = (f − base) / step capped at 4, linear interpolation to the next point; at idx 4 extrapolate with 2·v4 − v3; clamp 0..4096. f < 136 MHz: VHF point 0, no interpolation. UHF is f > 280 MHz |
 | Power levels | low L, mid M, high H from above. Level 0 = 0.90·L; 1 = L; 2, 3 = L + (M − L)·f1, f2; 4 = M; 5, 6, 7 = M + (H − M)·f3, f4, f5; 8 = H; 9 = user value; clamp 4095 |
 | Fractions f0..f5 | VHF 0.90, 0.41, 0.76, 0.34, 0.60, 0.81; 220 MHz 0.90, 0.42, 0.75, 0.31, 0.55, 0.78; UHF 0.90, 0.43, 0.74, 0.27, 0.51, 0.75 |
-| Fallback without calibration | DAC B = 1408 for every level; SIG_CENTER = 0x6D6C0000, RF_MOD_BIAS_CTRL = 0x01F0FFFF  |
+| Fallback without calibration | DAC B = 1408 (the levels without calibration: 11.4); SIG_CENTER = 0x6D6C0000, RF_MOD_BIAS_CTRL = 0x01F0FFFF  |
 
 For a UHF frequency below 400 MHz an unsigned subtraction gives idx 4. Clamp to 0.
+
+### 11.4 Power levels
+
+RadioFoundry has five levels: 500 mW, 1 W, 2.5 W, 5 W, and the high row H at the top (8 W on UHF, 9 W on VHF). The
+lower four are the same power on both bands. The drives are in `boards/dm32/power_levels.h`
+(`dm32_floor_drive`, `dm32_level_drive`), on the rows of 11.3 with one change: past the last point (470 MHz) the rows
+are held at that point, not extrapolated (`bf_cal_power_held`). Extrapolated, the falling low row put the two lowest
+levels at 479.975 MHz at 639 and 790, where the PA gives nothing.
+
+| Level | UHF drive | VHF drive |
+|---|---|---|
+| 500 mW | 1085 at 400 MHz, 2.6 less per MHz over 400 (877 at 480) | 925 |
+| 1 W | 0.418 · H | place 782 (0.782 · L) |
+| 2.5 W | 0.563 · H | place 1122 (L + 12.2 % of M − L) |
+| 5 W | 0.754 · H | place 1985 (L + 98.5 % of M − L) |
+| 8 W (UHF), 9 W (VHF) | H | H |
+
+A place is in thousandths of a row (`bf_cal_drive_pos`): 0 to 1000 is L · p / 1000, 1000 to 2000 from L to M, 2000
+to 3000 from M to H. Rounded to the nearest count, clamped 0..4095. A radio whose PA needs more drive gets more at
+every level but the lowest, because the factory calibration puts each radio's rows at the same powers.
+
+- **The lowest level is a fixed drive over the PA's turn-on.** Under a drive of about 805-905 the PA gives nothing;
+  for the next 25-50 counts the PA comes on and creeps (a key-up there reads 0.3-2 dB under its final power for
+  130 ms); over that the output is stable. The lowest stable output is 0.30-0.46 W on UHF and 0.22-0.60 W on VHF, so 100, 200 and
+  250 mW are not stable everywhere and the lowest level is 500 mW. The turn-on is at a nearly fixed drive (840-955
+  on both bands, 2-3 counts per MHz), while L moves by hundreds of counts over the UHF band (1712 at 400 MHz, 1312 at
+  435, 1584 at 452.5): as a place on L the turn-on lands anywhere from 0.55 to 0.70 · L, and the earlier lowest level
+  at 0.65 · L was dark from 470 MHz up and creeping elsewhere. The floor sits 35-130 counts over the stable edge on UHF
+  and 20-60 on VHF.
+- **UHF on H, VHF on L and M.** On UHF the low row doesn't follow the PA: as places on the rows, 1 W and 2.5 W were
+  1.0-1.6 dB off over the band at best; as parts of H, 0.6 dB. On VHF the places are within 0.5 dB.
+- **Without calibration** the 500 mW level keeps its fixed drive, which doesn't depend on the rows. The levels
+  over 500 mW take the rows the levels were measured on (H 2912 on UHF; L 1360, M 1840 on VHF) and are capped at the
+  fallback drive (1408, about 2 W, 11.3), the most an uncalibrated radio was given before (`dm32_level_drive_at`):
+  1 W is 1217 at 440 MHz and 1064 at 155 MHz, and 2.5 W, 5 W and the top level are 1408.
+
+Measured on one radio, FM, into a dummy load: a receiver through a 60 dB pad, its readings set by the top level's
+wattmeter reading at each frequency (the path is flat within 0.3 dB against the wattmeter), watts:
+
+| MHz | 500 mW | 1 W | 2.5 W | 5 W | Top |
+|---|---|---|---|---|---|
+| 400.025 | 0.50 | 0.95 | 2.35 | 4.79 | 8.25 |
+| 432 | 0.50 | 1.15 | 2.89 | 5.65 | 8.47 |
+| 440 | 0.46 | 1.08 | 2.71 | 5.38 | 8.14 |
+| 449.9 | 0.43 | 0.87 | 2.28 | 4.75 | 7.64 |
+| 470 | 0.44 | 0.86 | 2.27 | 4.84 | 7.49 |
+| 475 | 0.47 | 0.96 | 2.49 | 5.19 | 7.17 |
+| 479.975 | 0.51 | 1.06 | 2.69 | 5.26 | 6.27 |
+| 137 | 0.47 | 1.01 | 2.35 | 4.48 | 8.22 |
+| 144.01 | 0.50 | 0.91 | 2.31 | 4.65 | 9.35 |
+| 147.99 | 0.55 | 0.96 | 2.47 | 5.04 | 9.00 |
+| 155 | 0.67 | 1.14 | 2.89 | 5.80 | 8.40 |
+| 173.975 | 0.60 | 0.98 | 2.47 | 5.51 | 9.38 |
+
+The 500 mW level's 0.67 W at 155 MHz stays: the output there is flat to the PA's turn-on, then drops (drive 925
+0.64 W, 919 0.62 W, 912 0.60 W, 905 0.38 W), so no drive over the turn-on gives 0.5 W, and a lower VHF floor would
+sit closer to the creep. The UHF 2.5 W part is 0.563 · H; at 0.584 the level read 0.03 to 1.05 dB high (mean
++0.47 dB), at 0.563 −0.42 to +0.63 dB (mean +0.04 dB). DMR bursts
+read the same as FM within 0.1 dB, and spread 0.11 dB at most.
+
+**The PA ramps.** DAC B moves in two parts on the shared APC ramp's curve (`core/radio/apc_ramp.h`), with the PA
+selected. The crawl runs between a part of the knee and the knee, which is the lowest level's drive (or the level's
+own, when lower): the PA's turn-on lies between them. The rise runs between the knee and the level's drive. The
+constants are in `boards/dm32/power_levels.h`.
+
+| Edge | Ramp | Then | Time |
+|---|---|---|---|
+| FM key-up | the PA select, 90 % of the knee, the crawl in 60 steps of 250 µs, the rise in 30 of 100 µs | the level's drive | 18 ms |
+| FM key-down | the rise down in 40 steps of 100 µs, the crawl down in 60 of 100 µs to 80 % of the knee, then to 0 in 20 of 100 µs | 0.3 ms for the PA loop's low-pass, the PA select off | 12.3 ms |
+| DMR burst end | 0.3 ms after the last symbol's point (8.5): the drive to 0, the PA select still on | the PA select off 0.8 ms later | 1.1 ms |
+
+The limits are those of ETSI EN 300 113 V3.1.1: the adjacent channel transient power at most 50 dB under the carrier
+for 12.5 kHz channels and 60 dB for 20 and 25 kHz (clauses 7.9.4.2.1 and 7.9.4.2.2, without the need to be under
+−27 dBm, which every level is above), an attack time of at most 25 ms (7.7.3) and a release time of at most 20 ms
+(7.8.3). A DMR burst's edges also sit in the 1.5 ms ramp regions of the burst's power mask (ETSI TS 102 361-1 clause
+10.2.3.1.1, figure 10.3). The measurement follows clause 7.9.3: the SDR bench's receiver behind a 60 dB pad, the
+adjacent channel filter of annex C in software (−6 dB 4.25 kHz from the adjacent channel's center, −26 dB at 5.25 kHz,
+−90 dB from 6.6 kHz; 8 kHz for 25 kHz channels), the peak of 20 µs averages over each edge against the carrier
+through the same filter, the worse side, at least 4 key-ups (FM) or 16 bursts (DMR) a level. The carrier is
+unmodulated for FM. DMR can't be, so the DMR figures include the modulation. Worst edge at the five levels, dBc:
+
+| MHz | FM key-up | FM key-down | FM 25 kHz key-up | FM 25 kHz key-down | DMR burst start | DMR burst end |
+|---|---|---|---|---|---|---|
+| 400.025 | −54.4 to −57.6 | −57.2 to −60.4 | | | −38.9 to −44.7 | −30.6 to −54.8 |
+| 440 | −56.0 to −60.7 | −55.5 to −61.2 | −53.9 to −57.4 | −55.5 to −57.7 | −29.6 to −42.4 | −33.4 to −43.1 |
+| 470 | −55.9 to −59.9 | −55.5 to −59.4 | | | −15.0 to −34.2 | −24.5 to −50.3 |
+| 475 | −57.2 to −58.7 | −57.7 to −60.7 | | | −13.4 to −30.4 | −27.7 to −50.9 |
+| 479.975 | −52.6 to −55.8 | −56.7 to −60.1 | −52.7 to −56.1 | −53.1 to −57.0 | −13.0 to −18.8 | −27.0 to −51.3 |
+| 137 | −59.6 to −62.1 | −59.2 to −61.0 | | | −37.1 to −45.2 | −30.8 to −50.0 |
+| 155 | −59.0 to −61.5 | −59.6 to −62.0 | −56.3 to −57.9 | −56.7 to −57.9 | −32.5 to −44.7 | −27.1 to −53.2 |
+| 173.975 | −55.9 to −59.9 | −58.5 to −61.8 | | | −31.5 to −43.1 | −19.7 to −45.3 |
+
+In each DMR range the low figure is the top level, the high one 500 mW.
+
+Every 12.5 kHz FM edge meets −50 dBc. At 25 kHz the edges read −53 to −58 dBc, against −60. The steady carrier
+reads −50 to −54 dBc on the same peak measure there (−51 to −57 dBc at 12.5 kHz): the edges are no higher than the
+carrier's own adjacent channel noise, and the average adjacent channel power of the steady carrier is −59 to −70
+dBc. Before these ramps (crawl and rise in 50 µs steps, 5 ms each way) the FM key-up read −17 to −30 dBc at 2.5 W
+and over at 479.975 MHz and the key-down −34 to −45 dBc at 400.025 MHz.
+
+- **Why the crawl is long.** DAC B is the PA loop's set point. Under about 0.5 W the loop barely sees the output, so
+  through a short crawl the loop's control winds up while the PA is dark, and when the PA turns on the carrier comes up
+  in 0.1-0.2 ms. A 2 ms wait for the synthesizer before the PA select changed nothing. Lengthening the crawl is what
+  helps: with 200 µs steps a 12 ms crawl read −49 to −53 dBc at 479.975 MHz and a 3 ms one −25 to −50; the rise's
+  length matters little. Starting the crawl at 90 % of the knee instead of 80 % gained 2-3 dB.
+- **Why the key-down goes on to 0.** At 400.025 MHz 80 % of the knee still gave about −12 dB of the 2.5 W level's
+  output, and the step to 0 from there put the adjacent channel 45 dB under the carrier at every level.
+- **A DMR burst's start** misses −50 dBc at every frequency and level (table): −13 dBc at the top levels at the top of
+  the UHF band, −30 to −45 dBc elsewhere. The PA comes up within 40 µs of its turn-on (the loop has
+  wound up while dark), with the carrier pulled up to 13 kHz at 479.975 MHz. Each lever was tried at 479.975 MHz, all
+  within the mask's 1.5 ms: no boost with a 0.8 ms raised-cosine drive ramp from 0 (−8 to −21 dBc); the PA selected
+  between bursts with the drive parked at 80 % or 95 % of the knee (−10 to −27; the output stays dark through the ramp,
+  then rises 44 dB in 40 µs); raised-cosine boost and drive points over 0.3-0.6 ms (−9 to −24); the FD6818 to TX 0.5 ms
+  earlier (−10 to −29); the FD6818's 0x36 level up its 17 values from 0x38 (−4 to −19, with 9.5 dB of overshoot at
+  500 mW). None reached −50 dBc: the PA loop's response to its turn-on is faster than the mask's ramp region allows to
+  shape, and the loop has no input but DAC B. The burst's start stays as 8.5 describes.
+- **A DMR burst's end** meets −50 dBc at 500 mW at most frequencies and misses at 1 W and over (table; the old ramp,
+  0.5 ms of drive down and then the PA select off, read −14 to −36). The loop's own fall with the drive at 0 is fast
+  at 1 W and under (about 40 dB a millisecond) and slow at the top levels (5-12 dB in 0.8-1.3 ms at 8 W, 440 MHz),
+  so the PA select still cuts a carrier 5-12 dB down there. A ramp of the drive in that time left the carrier 1-3 dB
+  down, so the cut came from higher. Starting the fall 0.7-1 ms before the last symbol's point, with the PA select
+  off 1.6 ms after the point, read −40 to −41 dBc at 8 W and 5 W, −47 at 2.5 W and −56 at 500 mW at 440 MHz: better,
+  but short of −50 at the top levels and with the last symbols up to 3 dB down, so that timing isn't used. Holding
+  the carrier longer leaves the mask.
+- **The FD6818's own output level is no second lever.** Under the PA loop's knee the drive has no control, so the
+  FD6818's transmit registers were tried as a second one, each written over the debug link during a key-up at
+  479.975 MHz. 0x28 (all 16 bits, 0x0000 to 0xFFFF; the radio's value is 0x6B38) and the PA bias word 0x19 (bits 3:0)
+  change the output by less than 0.05 dB at 500 mW, under the knee (drive 860) and at the top level. The driver enable,
+  0x30 bit 3 (0xC1FE to 0xC1F6), cuts the carrier by 49 dB. 0x36 (0x003F after power-on) sets the level that reaches
+  the PA: at the top level its bits 2:0 take the output down 11.6 dB in steps of 0.3 to 3.8 dB. At 500 mW the output
+  falls off a cliff, as for the drive: 0x3C reads −0.5 dB, 0x27 −1.5 dB, 0x34 −3.6 dB, 0x26 −5.1 dB, 0x2C −13.9 dB,
+  0x1E −22.7 dB, 0x38 −43.8 dB. Each write of 0x36 also moves the carrier about 1.7 kHz. A ramp of 0x36 through
+  those 17 values made every edge worse, FM and DMR. The ramps stay on DAC B alone, and 0x36 stays 0x003F.
+- **The other slot.** A DMR burst now ends 0.8 ms later than with a cut at once, so the receiver comes back 0.8 ms
+  later. With the simplex repeater (SFR) and split duplex HIL tests on a bench hotspot (`test_sfr_standalone`,
+  `test_hotspot_sfr`, `test_split_duplex`), the radio repeated 32 bursts with none lost and decoded both slots in
+  each receive mode, and the split tests that time the other half (`test_split_align`, `test_split_rx_half_labels`,
+  `test_split_tx_sched`) pass. The two-frequency repeater tests (`test_dmr_repeater_slots`,
+  `test_dmr_repeater_keyup`, `test_dmr_tx_split_repeater`) fail the same way on the firmware before the ramps: the
+  bench repeater heard none of the radio's inbound bursts on either build.
+- Not measured yet: a low battery and other radios.
 
 ---
 

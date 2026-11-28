@@ -31,8 +31,18 @@ bool pa_keyrun_parse(const uint8_t *a, uint16_t len, pa_keyrun_req_t *r)
 			.settle_us = get16(c + 8), .pa_us = get16(c + 10), .ease_pm = get16(c + 12),
 		};
 		at = (uint16_t)(at + PA_KEYRUN_CFG);
+		if ((a[4] & PA_KEYRUN_FLAG_LIFT) != 0u) {
+			if (len < at + 2u) {
+				return false;
+			}
+			r->cfg.lift_pm = get16(a + at);
+			at = (uint16_t)(at + 2u);
+		}
+	} else if ((a[4] & PA_KEYRUN_FLAG_LIFT) != 0u) {
+		return false;	// a lift without the constants it goes with
 	}
-	if ((a[4] & (uint8_t)~(PA_KEYRUN_FLAG_CFG | PA_KEYRUN_FLAG_REATTACH | PA_KEYRUN_FLAG_RESTART)) != 0u || r->n == 0u || len != at + 2u * r->n || r->key_ms == 0u ||
+	if ((a[4] & (uint8_t)~(PA_KEYRUN_FLAG_CFG | PA_KEYRUN_FLAG_REATTACH | PA_KEYRUN_FLAG_RESTART | PA_KEYRUN_FLAG_LIFT)) != 0u ||
+	    r->n == 0u || len != at + 2u * r->n || r->key_ms == 0u ||
 	    r->key_ms > PA_KEYRUN_KEY_MS_MAX || r->gap_ms < PA_KEYRUN_GAP_MS_MIN || r->gap_ms > PA_KEYRUN_GAP_MS_MAX) {
 		return false;
 	}

@@ -25,6 +25,10 @@
 // key-up, before the window when it has to (the window is the boosts'): the board's earliest point bounds it. A boost
 // stops at a as well
 //
+// lift (a part of ref, the drive just over the PA's turn-on) is a boost's least drive. The law sizes a boost from the
+// level's own drive, and a level a few counts over the turn-on gets a boost too small to bring the turn-on in the
+// window: its output creeps up through the first symbols. Its least boost brings it up in time
+//
 // So a level that is fast by itself leaves its time to the receiver, a slow one gets only the boost it needs (a
 // short high boost overshoots with the timer's jitter), and no level starts earlier than the window. A level at or
 // under the dead zone's edge gets the edge's boost (the law at d = dead), never none: the edge is a part of ref, and
@@ -57,10 +61,13 @@ typedef struct {
 	uint16_t settle_us;	// a boost ends this long before the first symbol (under window_us)
 	uint16_t pa_us;		// the PA on this long before, or with the first drive when that is later
 	uint16_t ease_pm;	// the fastest approach: at most this drive over the dead zone, in 1/1000 of ref (0: no limit)
+	uint16_t lift_pm;	// a boost's least drive, in 1/1000 of ref (0: none): the drive that brings the PA's turn-on in
+				// the window, so a level just over the turn-on comes up by the first symbol
 } pa_keyup_cfg_t;
 
 // A board that keys its PA with the drive, one fixed time before the first symbol at every level
-#define PA_KEYUP_FIXED(us)	{ .dead_pm = 0, .knee_us = 0, .slope_us = (us), .window_us = (us), .settle_us = 0, .pa_us = (us), .ease_pm = 0 }
+#define PA_KEYUP_FIXED(us)	{ .dead_pm = 0, .knee_us = 0, .slope_us = (us), .window_us = (us), .settle_us = 0, .pa_us = (us), .ease_pm = 0, \
+				  .lift_pm = 0 }
 
 // The boost's ceiling: a little over the top level, never far over what the cal table drives
 #define PA_KEYUP_BOOST_MAX_PCT	120u
