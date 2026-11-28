@@ -152,6 +152,8 @@ The Codeplug Editor converts these when you open them ([Files](04-programming.md
 Also sold as the Retevis RT84. A handheld for 136-174 and 400-480 MHz with a keypad, a channel knob, a volume knob
 with the power switch, three side keys and a color screen.
 
+Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on this radio. The radio sets the level in 3 dB steps, so two neighboring Mic gain steps can give the same level.
+
 ### Installing on the DM-1701
 
 Follow [Installing](02-installing.md) with these values:
@@ -355,6 +357,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 Covers the TYT MD-UV380, the MD-UV390, the Retevis RT3S and the MD-UV390 Plus 10 W, with or without GPS. **In
 bring-up: nothing has run on a radio yet.** It is the DM-1701's board design, and the image is built from the
 DM-1701's code with this radio's keys, display, power tables and GPS ([bring-up checklist](../testing/mduv380-bringup.md)).
+
+Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on this radio. The radio sets the level in 3 dB steps, so two neighboring Mic gain steps can give the same level.
 
 ### Installing on the MD-UV380
 
@@ -754,6 +758,8 @@ Board revision. Receiving works meanwhile. The installers do it for you when the
 version (V06.xx is V1-V3, V16.xx is V4), and otherwise ask for it right after the installation. Not sure? Pick V1-V3:
 if the radio then hears nothing on a channel it should hear, pick V4. A revision other than the one the radio runs
 applies from the next start ("Restart to apply"). Only install this if you can go back to the original firmware. The hardware facts are in [hardware-md9600.md](../spec/hardware-md9600.md).
+
+Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on this radio. The radio sets the level in 3 dB steps, so two neighboring Mic gain steps can give the same level.
 
 ### MD-9600 voice codec
 

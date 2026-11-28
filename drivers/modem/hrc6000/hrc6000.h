@@ -26,8 +26,23 @@ typedef struct {
 	uint8_t mod2;		// 4:0x45 (calibration "I", FM pair)
 	uint8_t mod1;		// 4:0x46 (calibration "Q", FM pair)
 	int8_t ref_offset;	// reference oscillator tune - 128 for the TX band
-	uint8_t mic_gain;	// 0..31
+	uint8_t mic_gain;	// 0..HRC6000_MIC_GAIN_MAX (hrc6000_mic_gain)
 } hrc6000_fm_tx_t;
+
+// Microphone gain, 4:0xE4 = 0x20 + gain (modem-hrc6000.md 2): bits 5-4 = 10 put the first stage at -12 dB and the
+// gain goes in bits 3-0, the second stage, 3 dB a step (hrc6000-registers.md 3.20). A gain above 15 would set bit 4,
+// which leaves the first stage at -12 dB and starts the steps again, so the driver clamps there
+#define HRC6000_MIC_GAIN_MAX	15u
+#define HRC6000_MIC_STEP_DB	3
+// A board's mic gain with the user's offset in dB (hal_radio_t.mic_gain), rounded to the nearest step and clamped to
+// 0..HRC6000_MIC_GAIN_MAX
+static inline uint8_t hrc6000_mic_gain(uint8_t base, int8_t offset_db)
+{
+	int half = HRC6000_MIC_STEP_DB / 2;
+	int steps = offset_db >= 0 ? (offset_db + half) / HRC6000_MIC_STEP_DB : -((-offset_db + half) / HRC6000_MIC_STEP_DB);
+	int v = (int)base + steps;
+	return (uint8_t)(v < 0 ? 0 : v > (int)HRC6000_MIC_GAIN_MAX ? (int)HRC6000_MIC_GAIN_MAX : v);
+}
 
 // The FM TX signaling generator used for single tones and DTMF (hrc6000_tx_pair): the registers it borrows, kept
 // to give back when the tone ends

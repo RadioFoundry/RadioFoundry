@@ -93,8 +93,8 @@ static uint8_t voice_lcss(uint8_t voice_index)
 
 static bool set_mic_gain(hrc_t *dev, uint8_t gain)
 {
-	if (gain > 31u) {
-		gain = 31u;
+	if (gain > HRC6000_MIC_GAIN_MAX) {
+		gain = HRC6000_MIC_GAIN_MAX;
 	}
 	return hrc_write(dev, 4, 0xE4, (uint8_t)(0x20u + gain));
 }

@@ -329,7 +329,7 @@ the debug link's SETTING op 29 sets it in RAM only.
 
 | Board | FM | DMR |
 |---|---|---|
-| with `hal_radio_t.mic_gain` (HR_C7000 boards) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | DMR: the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the PCM gain is the board's `mic_pcm_db` alone |
+| with `hal_radio_t.mic_gain` (HR_C6000 and HR_C7000 boards) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | DMR: the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the PCM gain is the board's `mic_pcm_db` alone |
 | without it | not changed | the PCM gain is the board's `mic_pcm_db` plus (step - 5) x 2 dB |
 
 **PCM gain.** The mic samples go to DMR's AMBE+2 encoder and P25's IMBE encoder (`ambeVoiceSetMicGainQ8` and
@@ -347,8 +347,13 @@ limiter cut: some cut on a shout is expected, a cut on normal speech says the ga
 P25 has the same pair in its own section: `p25v.tx_mic_peak` (after the gain) and `p25v.tx_mic_low_db`.
 
 The board only stores the offset in the hook; a change takes effect at the next transmission (the PCM gain at the
-next block). On an HR_C7000 radio the register is clamped to 0-42 dB (`hrc7000_mic_db`). The VOX meter reads the same
-codec ADC, so on these radios the board's mic gain also moves the VOX level; the PCM gain doesn't. Without
+next block). On an HR_C7000 radio the register is clamped to 0-42 dB (`hrc7000_mic_db`). On an HR_C6000 radio the
+register (4:0xE4 bits 3-0) moves in 3 dB steps, so `hrc6000_mic_gain` rounds the offset to the nearest step and clamps
+the result to 0-15: steps 0-10 give -3, -3, -2, -1, -1, 0, +1, +1, +2, +3, +3 register steps around the board's level
+(-9 to +9 dB). Host audio injected into the microphone input for FM transmit (`fm_tx_inject`) keeps the board's level,
+so the setting doesn't move a host's audio. On an HR_C7000 radio the VOX meter reads the same codec ADC, so the
+board's mic gain also moves the VOX level; the PCM gain doesn't. The HR_C6000 boards read VOX from an MCU ADC level tap
+ahead of the codec, so the setting leaves VOX alone. Without
 `CONFIG_DMR` and without the hook the row is dimmed.
 
 ### 3.7 DTMF transmit (CONFIG_DTMF)

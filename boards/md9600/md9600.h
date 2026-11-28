@@ -162,6 +162,12 @@ void md9600_speaker_fm(bool on, bool vhf);	// the core's FM squelch (hal_radio_t
 // receive set-up after the over (a no-op when not in FM TX)
 void md9600_c6000_fm_tx(uint32_t hz, bool wide);
 void md9600_c6000_fm_tx_end(void);
+// Settings > Mic gain as a dB offset (hal_radio_t.mic_gain, any task): only stored; the next FM TX start, DMR entry
+// or DMR TX start (md9600_c6000_dmr_tx, radio task) writes it into 4:0xE4 (hrc6000_mic_gain)
+void md9600_c6000_mic_gain(int8_t db);
+#if CONFIG_MD9600_DMR_TX
+void md9600_c6000_dmr_tx(void);
+#endif
 // The chip's tone generator in FM TX: the 1750 Hz burst, the roger beep, DTMF and APRS
 #define MD9600_TX_SIG	(CONFIG_MD9600_TX && (CONFIG_FM_TX_TONES || CONFIG_DTMF || CONFIG_APRS_AFSK))
 // During FM TX: the chip's tone generator sends low_hz + high_hz in place of the microphone (0, 0: the microphone

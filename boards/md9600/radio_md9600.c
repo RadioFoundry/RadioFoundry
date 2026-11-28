@@ -691,6 +691,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		if (md9600_rf_tx_check(&rf, hz, power) != MD9600_RF_OK) {
 			return false;
 		}
+		md9600_c6000_dmr_tx();	// the mic gain with the user's offset
 		dmr_hz = hz;
 		dmr_power = power;
 		keyup_plan(hz, power);
@@ -904,5 +905,6 @@ const hal_radio_t md9600_radio = {
 #if CONFIG_MD9600_TX
 	.tx_drive_level = tx_drive_level,
 	.tx_drive = tx_drive,
+	.mic_gain = md9600_c6000_mic_gain,
 #endif
 };
